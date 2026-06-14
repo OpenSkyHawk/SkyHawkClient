@@ -92,6 +92,7 @@ export interface AppState {
   recordEvents?: number
   replayFile?: string
   replayInfo?: { events: number; durationMs: number }
+  replayDriveSerial: boolean
 
   // telemetry + stats (live once relaying; seeded placeholders before)
   telemetry: TelemetryReadout[]
@@ -120,7 +121,12 @@ export interface AppState {
   set: (patch: Partial<AppState>) => void
   toggle: (key: 'logPaused' | 'autoscroll' | 'rawMode') => void
   setConfigField: (
-    patch: Partial<Pick<AppState, 'sourceMode' | 'transport' | 'host' | 'port' | 'autoReconnect'>>
+    patch: Partial<
+      Pick<
+        AppState,
+        'sourceMode' | 'transport' | 'host' | 'port' | 'autoReconnect' | 'replayDriveSerial'
+      >
+    >
   ) => void
   toggleRelay: () => void
   toggleCapture: () => void
@@ -134,7 +140,8 @@ function buildConfig(s: AppState): Partial<AppConfig> {
     transport: TRANSPORT_TO_IPC[s.transport],
     host: s.host,
     commandPort: Number(s.port) || 7778,
-    autoReconnect: s.autoReconnect
+    autoReconnect: s.autoReconnect,
+    replayDriveSerial: s.replayDriveSerial
   }
 }
 
@@ -156,6 +163,7 @@ export const useStore = create<AppState>((set, get) => ({
   aircraft: { name: 'NONE', inferred: false, supported: true },
 
   recording: false,
+  replayDriveSerial: false,
 
   telemetry: IDLE_TELEMETRY,
   bytesIn: 0,
@@ -232,7 +240,8 @@ export const useStore = create<AppState>((set, get) => ({
         transport: transport ?? 'tcp',
         host: cfg.host,
         port: String(cfg.commandPort),
-        autoReconnect: cfg.autoReconnect
+        autoReconnect: cfg.autoReconnect,
+        replayDriveSerial: cfg.replayDriveSerial
       })
     })
 

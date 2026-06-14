@@ -94,6 +94,7 @@ export interface AppConfig {
   commandPort: number
   listenPort: number // unicast-listen bind port
   autoReconnect: boolean
+  replayDriveSerial: boolean // Replay mode: also write the replayed export to the SimGateway
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -102,7 +103,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   host: '127.0.0.1',
   commandPort: 7778,
   listenPort: 5010,
-  autoReconnect: true
+  autoReconnect: true,
+  replayDriveSerial: false
 }
 
 const SOURCE_MODES: SourceMode[] = ['bridge', 'monitor', 'replay']
@@ -123,7 +125,11 @@ export function sanitizeConfig(raw: unknown): AppConfig {
     commandPort: num(r.commandPort, DEFAULT_CONFIG.commandPort),
     listenPort: num(r.listenPort, DEFAULT_CONFIG.listenPort),
     autoReconnect:
-      typeof r.autoReconnect === 'boolean' ? r.autoReconnect : DEFAULT_CONFIG.autoReconnect
+      typeof r.autoReconnect === 'boolean' ? r.autoReconnect : DEFAULT_CONFIG.autoReconnect,
+    replayDriveSerial:
+      typeof r.replayDriveSerial === 'boolean'
+        ? r.replayDriveSerial
+        : DEFAULT_CONFIG.replayDriveSerial
   }
 }
 

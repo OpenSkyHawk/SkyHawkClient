@@ -15,7 +15,8 @@ describe('sanitizeConfig', () => {
       host: '192.168.1.10',
       commandPort: 7778,
       listenPort: 5010,
-      autoReconnect: false
+      autoReconnect: false,
+      replayDriveSerial: true
     })
     expect(out).toEqual({
       sourceMode: 'bridge',
@@ -23,7 +24,8 @@ describe('sanitizeConfig', () => {
       host: '192.168.1.10',
       commandPort: 7778,
       listenPort: 5010,
-      autoReconnect: false
+      autoReconnect: false,
+      replayDriveSerial: true
     })
   })
 
