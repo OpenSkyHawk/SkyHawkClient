@@ -9,7 +9,7 @@ const PANELS: { title: string; note: string }[] = [
   { title: 'HID Status', note: 'Axes · buttons · hats (M5)' }
 ]
 
-export function App(): JSX.Element {
+export function App() {
   const [device, setDevice] = useState<DeviceStatus>({ state: 'no-device' })
 
   useEffect(() => {

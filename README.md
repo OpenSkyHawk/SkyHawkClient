@@ -29,7 +29,7 @@ repo](https://github.com/OpenSkyHawk/OpenSkyhawk) via `npm run sync` — see PRD
 ## Develop
 
 ```bash
-npm install      # Node 20+
+npm install      # Node 24+
 npm run dev      # launch the app (electron-vite)
 npm test         # vitest unit tests
 npm run lint
