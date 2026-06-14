@@ -56,6 +56,13 @@ export interface HidSnapshot {
   rateHz: number // reports/sec (on-change; 0 when idle)
 }
 
+/** One raw serial chunk for the live serial monitor. */
+export interface SerialFrame {
+  t: number
+  dir: 'tx' | 'rx' // tx = host -> device, rx = device -> host
+  hex: string
+}
+
 /** One sim-telemetry gauge readout (RPM / IAS / Flap / Press Alt / Fuel). */
 export interface TelemetryReadout {
   id: string // A-4E-C output identifier driving this gauge
@@ -74,6 +81,7 @@ export interface PushChannels {
   'hid:report': HidSnapshot
   'telemetry:tick': TelemetryReadout[]
   'nodes:status': NodeStatus[]
+  'serial:traffic': SerialFrame[]
 }
 
 export type PushChannel = keyof PushChannels
@@ -85,7 +93,8 @@ export const IPC = {
   logBatch: 'log:batch',
   hidReport: 'hid:report',
   telemetryTick: 'telemetry:tick',
-  nodesStatus: 'nodes:status'
+  nodesStatus: 'nodes:status',
+  serialTraffic: 'serial:traffic'
 } as const
 
 // ── control (renderer -> main, invoke/response) ──────────────────────────────
@@ -190,6 +199,7 @@ export const CTRL = {
   replayOpen: 'replay:open',
   hidAvailability: 'hid:availability',
   nodesRefresh: 'nodes:refresh',
+  serialMonitor: 'serial:monitor',
   debugDumpPorts: 'debug:dump-ports',
   debugReveal: 'debug:reveal'
 } as const
@@ -207,6 +217,7 @@ export interface SkyhawkApi {
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
   refreshNodes(): Promise<void>
+  setSerialMonitor(on: boolean): Promise<void>
   dumpSerialPorts(): Promise<DebugDumpResult>
   revealDebugLog(): Promise<void>
 }

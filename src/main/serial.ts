@@ -34,6 +34,7 @@ export interface SerialLink {
   stop(): void
   write(data: Buffer): void
   onData(cb: (chunk: Buffer) => void): void
+  onMonitor(cb: (dir: 'tx' | 'rx', chunk: Buffer) => void): void
   onError(cb: (err: Error) => void): void
   onOpen(cb: (portPath: string) => void): void
   onClose(cb: () => void): void
@@ -48,6 +49,7 @@ export class SerialBridge implements SerialLink {
   private readonly autoReconnect: boolean
 
   private dataCb: (chunk: Buffer) => void = () => {}
+  private monitorCb: (dir: 'tx' | 'rx', chunk: Buffer) => void = () => {}
   private errorCb: (err: Error) => void = () => {}
   private openCb: (portPath: string) => void = () => {}
   private closeCb: () => void = () => {}
@@ -58,6 +60,9 @@ export class SerialBridge implements SerialLink {
 
   onData(cb: (chunk: Buffer) => void): void {
     this.dataCb = cb
+  }
+  onMonitor(cb: (dir: 'tx' | 'rx', chunk: Buffer) => void): void {
+    this.monitorCb = cb
   }
   onError(cb: (err: Error) => void): void {
     this.errorCb = cb
@@ -92,7 +97,10 @@ export class SerialBridge implements SerialLink {
       debugLog('serial.open', { path })
       const port = new SerialPort({ path, baudRate: BAUD, autoOpen: false })
       this.port = port
-      port.on('data', (d: Buffer) => this.dataCb(d))
+      port.on('data', (d: Buffer) => {
+        this.monitorCb('rx', d)
+        this.dataCb(d)
+      })
       port.on('error', (e: Error) => {
         debugLog('serial.error', e.message)
         this.errorCb(e)
@@ -126,6 +134,7 @@ export class SerialBridge implements SerialLink {
 
   write(data: Buffer): void {
     if (this.port?.isOpen) this.port.write(data)
+    this.monitorCb('tx', data)
   }
 
   portPath(): string | undefined {

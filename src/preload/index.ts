@@ -33,6 +33,7 @@ const api: SkyhawkApi = {
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
   getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,
   refreshNodes: () => ipcRenderer.invoke(CTRL.nodesRefresh) as Promise<void>,
+  setSerialMonitor: (on: boolean) => ipcRenderer.invoke(CTRL.serialMonitor, on) as Promise<void>,
   dumpSerialPorts: () => ipcRenderer.invoke(CTRL.debugDumpPorts) as Promise<DebugDumpResult>,
   revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>
 }

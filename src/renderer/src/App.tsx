@@ -3,6 +3,7 @@ import { useStore, type TabId } from './store'
 import { Overview } from './tabs/Overview'
 import { Connection } from './tabs/Connection'
 import { Log } from './tabs/Log'
+import { Serial } from './tabs/Serial'
 import { Hid } from './tabs/Hid'
 import { Settings } from './tabs/Settings'
 
@@ -10,6 +11,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'connection', label: 'Connection' },
   { id: 'log', label: 'Log' },
+  { id: 'serial', label: 'Serial' },
   { id: 'hid', label: 'HID' },
   { id: 'settings', label: 'Settings' }
 ]
@@ -61,6 +63,7 @@ export function App() {
         {tab === 'overview' && <Overview />}
         {tab === 'connection' && <Connection />}
         {tab === 'log' && <Log />}
+        {tab === 'serial' && <Serial />}
         {tab === 'hid' && <Hid />}
         {tab === 'settings' && <Settings />}
       </main>
