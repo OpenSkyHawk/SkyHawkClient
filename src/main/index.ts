@@ -12,6 +12,8 @@ import {
 import { HID_CONTROLS, HID_ID } from './reference/hid-controls.generated'
 import { Session } from './session'
 import { loadConfig, saveConfig } from './settings'
+import { debugLog, debugLogPath, setDebugEnabled } from './debug'
+import { listSerialPorts } from './serial'
 
 /** Report indices the firmware catalogues, derived from HIDControls.h. */
 function hidAvailability(): HidAvailability {
@@ -48,12 +50,22 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.configGet, () => session.getConfig())
   ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => {
     const config = session.setConfig(patch)
+    setDebugEnabled(config.debugMode)
     saveConfig(config)
     return config
   })
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
   ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
+
+  ipcMain.handle(CTRL.debugDumpPorts, async () => {
+    const ports = await listSerialPorts()
+    debugLog('serial.list', ports, true) // force-write regardless of the toggle
+    return { path: debugLogPath(), count: ports.length }
+  })
+  ipcMain.handle(CTRL.debugReveal, () => {
+    shell.showItemInFolder(debugLogPath())
+  })
 
   ipcMain.handle(CTRL.captureToggle, async (): Promise<CaptureState> => {
     if (session.isRecording()) {
@@ -123,7 +135,8 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  session.setConfig(loadConfig()) // seed from persisted settings
+  const cfg = session.setConfig(loadConfig()) // seed from persisted settings
+  setDebugEnabled(cfg.debugMode)
   registerIpc()
   createWindow()
   app.on('activate', () => {

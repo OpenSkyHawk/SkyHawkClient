@@ -3,6 +3,7 @@ import {
   CTRL,
   type AppConfig,
   type CaptureState,
+  type DebugDumpResult,
   type HidAvailability,
   type PushChannel,
   type PushChannels,
@@ -26,7 +27,9 @@ const api: SkyhawkApi = {
   stopRelay: () => ipcRenderer.invoke(CTRL.relayStop) as Promise<RelayResult>,
   toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<CaptureState>,
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
-  getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>
+  getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,
+  dumpSerialPorts: () => ipcRenderer.invoke(CTRL.debugDumpPorts) as Promise<DebugDumpResult>,
+  revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('skyhawk', api)

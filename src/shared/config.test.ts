@@ -16,7 +16,8 @@ describe('sanitizeConfig', () => {
       commandPort: 7778,
       listenPort: 5010,
       autoReconnect: false,
-      replayDriveSerial: true
+      replayDriveSerial: true,
+      debugMode: true
     })
     expect(out).toEqual({
       sourceMode: 'bridge',
@@ -25,7 +26,8 @@ describe('sanitizeConfig', () => {
       commandPort: 7778,
       listenPort: 5010,
       autoReconnect: false,
-      replayDriveSerial: true
+      replayDriveSerial: true,
+      debugMode: true
     })
   })
 

@@ -94,6 +94,10 @@ export interface AppState {
   replayInfo?: { events: number; durationMs: number }
   replayDriveSerial: boolean
 
+  // developer / debug
+  debugMode: boolean
+  debugDump?: { path: string; count: number }
+
   // telemetry + stats (live once relaying; seeded placeholders before)
   telemetry: TelemetryReadout[]
   bytesIn: number
@@ -124,13 +128,21 @@ export interface AppState {
     patch: Partial<
       Pick<
         AppState,
-        'sourceMode' | 'transport' | 'host' | 'port' | 'autoReconnect' | 'replayDriveSerial'
+        | 'sourceMode'
+        | 'transport'
+        | 'host'
+        | 'port'
+        | 'autoReconnect'
+        | 'replayDriveSerial'
+        | 'debugMode'
       >
     >
   ) => void
   toggleRelay: () => void
   toggleCapture: () => void
   openReplay: () => void
+  dumpSerialPorts: () => void
+  revealDebugLog: () => void
   initBridge: () => void
 }
 
@@ -141,7 +153,8 @@ function buildConfig(s: AppState): Partial<AppConfig> {
     host: s.host,
     commandPort: Number(s.port) || 7778,
     autoReconnect: s.autoReconnect,
-    replayDriveSerial: s.replayDriveSerial
+    replayDriveSerial: s.replayDriveSerial,
+    debugMode: s.debugMode
   }
 }
 
@@ -164,6 +177,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   recording: false,
   replayDriveSerial: false,
+  debugMode: false,
 
   telemetry: IDLE_TELEMETRY,
   bytesIn: 0,
@@ -223,6 +237,14 @@ export const useStore = create<AppState>((set, get) => ({
     })
   },
 
+  dumpSerialPorts: () => {
+    void window.skyhawk?.dumpSerialPorts().then((r) => set({ debugDump: r }))
+  },
+
+  revealDebugLog: () => {
+    void window.skyhawk?.revealDebugLog()
+  },
+
   initBridge: () => {
     const api = window.skyhawk
     if (!api) return // running outside Electron (tests / web preview)
@@ -241,7 +263,8 @@ export const useStore = create<AppState>((set, get) => ({
         host: cfg.host,
         port: String(cfg.commandPort),
         autoReconnect: cfg.autoReconnect,
-        replayDriveSerial: cfg.replayDriveSerial
+        replayDriveSerial: cfg.replayDriveSerial,
+        debugMode: cfg.debugMode
       })
     })
 

@@ -17,6 +17,8 @@ export function Settings() {
   const s = useStore()
   const setConfigField = useStore((x) => x.setConfigField)
   const toggleCapture = useStore((x) => x.toggleCapture)
+  const dumpSerialPorts = useStore((x) => x.dumpSerialPorts)
+  const revealDebugLog = useStore((x) => x.revealDebugLog)
 
   return (
     <div className="settings">
@@ -64,6 +66,35 @@ export function Settings() {
             onClick={() => toggleCapture()}
           >
             {s.recording ? '■ Stop' : '● Record'}
+          </button>
+        </Row>
+      </div>
+
+      <div className="set-card" style={{ marginTop: 14 }}>
+        <Row k="Debug logging" sub="Write serial enumeration + device events to a local log file">
+          <button
+            className={`toggle${s.debugMode ? ' on' : ''}`}
+            onClick={() => setConfigField({ debugMode: !s.debugMode })}
+            aria-pressed={s.debugMode}
+          >
+            <span />
+          </button>
+        </Row>
+        <Row
+          k="Dump serial ports"
+          sub={
+            s.debugDump
+              ? `Wrote ${s.debugDump.count} port(s) → ${s.debugDump.path}`
+              : 'Write every detected serial port (all USB fields) to the log'
+          }
+        >
+          <button className="browse" onClick={() => dumpSerialPorts()}>
+            Dump
+          </button>
+        </Row>
+        <Row k="Debug log file" sub="Reveal the log in your file manager">
+          <button className="browse" onClick={() => revealDebugLog()}>
+            Reveal
           </button>
         </Row>
       </div>
