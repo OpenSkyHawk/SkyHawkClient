@@ -41,17 +41,6 @@ const TRANSPORT_TO_IPC: Record<Transport, DcsTransport> = {
   uni: 'unicast-listen'
 }
 
-// Representative A-4E-C controls for the placeholder log (name, value, dir, address).
-const POOL: [string, number, 'in' | 'out', number][] = [
-  ['RPM', 84, 'in', 0x8420],
-  ['D_IAS_DEG', 142, 'in', 0x8410],
-  ['D_ALT_NEEDLE', 14210, 'in', 0x8440],
-  ['D_FUEL', 3120, 'in', 0x8450],
-  ['D_FLAPS_IND', 50, 'in', 0x8460],
-  ['MASTER_ARM', 1, 'out', 0x8512],
-  ['GEAR_LEVER', 0, 'out', 0x8516]
-]
-
 const pad = (n: number) => String(n).padStart(2, '0')
 const pad3 = (n: number) => String(n).padStart(3, '0')
 const hex2 = (n: number) => (n & 0xff).toString(16).toUpperCase().padStart(2, '0')
@@ -67,28 +56,13 @@ function rawHex(addr: number, value: number | string): string {
   return `${hex2(addr >> 8)} ${hex2(addr)} ${hex2(v)} ${hex2(v >> 8)}`
 }
 
-function seedLog(): LogRow[] {
-  const now = Date.now()
-  return Array.from({ length: 18 }, (_, i) => {
-    const [name, value, dir, addr] = POOL[i % POOL.length]!
-    return {
-      id: i,
-      time: fmtTime(now - i * 280),
-      dir,
-      name,
-      value,
-      addrHex: hex4(addr),
-      raw: rawHex(addr, value)
-    }
-  })
-}
-
-const SEED_TELEMETRY: TelemetryReadout[] = [
-  { id: 'RPM', label: 'RPM', value: 84, pct: 0.84, unit: '% RPM' },
-  { id: 'D_IAS_DEG', label: 'IAS', value: 142, pct: 0.32, unit: 'KNOTS' },
-  { id: 'D_FLAPS_IND', label: 'Flap', value: 50, pct: 0.5, unit: '% DN' },
-  { id: 'D_ALT_NEEDLE', label: 'Press Alt', value: 14210, pct: 0.36, unit: 'FEET' },
-  { id: 'D_FUEL', label: 'Fuel', value: 62, pct: 0.62, unit: '% QTY' }
+// Idle gauges (value NaN -> "—") until live telemetry arrives.
+const IDLE_TELEMETRY: TelemetryReadout[] = [
+  { id: 'RPM', label: 'RPM', value: NaN, pct: 0, unit: '% RPM' },
+  { id: 'D_IAS_DEG', label: 'IAS', value: NaN, pct: 0, unit: '% FS' },
+  { id: 'D_FLAPS_IND', label: 'Flap', value: NaN, pct: 0, unit: '% DN' },
+  { id: 'D_ALT_NEEDLE', label: 'Press Alt', value: NaN, pct: 0, unit: '% FS' },
+  { id: 'D_FUEL', label: 'Fuel', value: NaN, pct: 0, unit: '% QTY' }
 ]
 
 const MAX_LOG = 500
@@ -131,11 +105,14 @@ export interface AppState {
   cmdsTotal: number
   lastCmd: string
 
-  // HID placeholders (wired in M5)
+  // HID live state + which report indices the firmware catalogues (rest dim)
   axes: number[]
   buttons: number[]
   hats: number[]
   hidRate: number
+  availAxes: number[]
+  availHats: number[]
+  availButtons: number[]
 
   log: LogRow[]
   private_logSeq: number
@@ -180,7 +157,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   recording: false,
 
-  telemetry: SEED_TELEMETRY,
+  telemetry: IDLE_TELEMETRY,
   bytesIn: 0,
   bytesOut: 0,
   fps: 0,
@@ -191,12 +168,15 @@ export const useStore = create<AppState>((set, get) => ({
   cmdsTotal: 0,
   lastCmd: '—',
 
-  axes: [4200, -1800, 22600, 0, 0, 0, -8000, 0],
-  buttons: [0, 3, 12, 45, 88, 102],
-  hats: [0, 8, 0, 3],
+  axes: Array(8).fill(0),
+  buttons: [],
+  hats: [0, 0, 0, 0],
+  availAxes: [],
+  availHats: [],
+  availButtons: [],
   hidRate: 0,
 
-  log: seedLog(),
+  log: [],
   private_logSeq: 1000,
 
   set: (patch) => set(patch),
@@ -238,6 +218,10 @@ export const useStore = create<AppState>((set, get) => ({
   initBridge: () => {
     const api = window.skyhawk
     if (!api) return // running outside Electron (tests / web preview)
+
+    void api
+      .getHidAvailability()
+      .then((a) => set({ availAxes: a.axes, availHats: a.hats, availButtons: a.buttons }))
 
     void api.getConfig().then((cfg) => {
       const transport = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(

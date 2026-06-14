@@ -11,11 +11,13 @@ interface TelemetrySpec {
   unit: string
 }
 
+// DCS-BIOS gauge outputs are 0..max needle positions, not engineering units, so
+// readouts are reported as percent of full scale (honest, no fake knots/feet).
 const TELEMETRY: TelemetrySpec[] = [
   { id: 'RPM', label: 'RPM', unit: '% RPM' },
-  { id: 'D_IAS_DEG', label: 'IAS', unit: 'KNOTS' },
+  { id: 'D_IAS_DEG', label: 'IAS', unit: '% FS' },
   { id: 'D_FLAPS_IND', label: 'Flap', unit: '% DN' },
-  { id: 'D_ALT_NEEDLE', label: 'Press Alt', unit: 'FEET' },
+  { id: 'D_ALT_NEEDLE', label: 'Press Alt', unit: '% FS' },
   { id: 'D_FUEL', label: 'Fuel', unit: '% QTY' }
 ]
 
@@ -87,9 +89,11 @@ export class Decoder {
 
   telemetrySnapshot(): TelemetryReadout[] {
     return TELEMETRY.map((t) => {
-      const value = this.telemetry.get(t.id) ?? NaN
+      const raw = this.telemetry.get(t.id) ?? NaN
       const max = this.telemetryMax.get(t.id) ?? 0xffff
-      const pct = Number.isNaN(value) ? 0 : Math.max(0, Math.min(1, value / max))
+      const pct = Number.isNaN(raw) ? 0 : Math.max(0, Math.min(1, raw / max))
+      // value = percent of full scale; NaN => "—" in the UI (not exported yet)
+      const value = Number.isNaN(raw) ? NaN : Math.round(pct * 100)
       return { id: t.id, label: t.label, value, pct, unit: t.unit }
     })
   }

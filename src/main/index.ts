@@ -4,12 +4,35 @@ import {
   CTRL,
   type AppConfig,
   type CaptureState,
+  type HidAvailability,
   type PushChannel,
   type PushChannels,
   type ReplayLoad
 } from '@shared/ipc'
+import { HID_CONTROLS, HID_ID } from './reference/hid-controls.generated'
 import { Session } from './session'
 import { loadConfig, saveConfig } from './settings'
+
+/** Report indices the firmware catalogues, derived from HIDControls.h. */
+function hidAvailability(): HidAvailability {
+  const axes: number[] = []
+  const hats: number[] = []
+  const buttons: number[] = []
+  for (const c of HID_CONTROLS) {
+    if (c.id >= HID_ID.AXIS_MIN && c.id <= HID_ID.AXIS_MAX && c.id - HID_ID.AXIS_MIN < 8) {
+      axes.push(c.id - HID_ID.AXIS_MIN)
+    } else if (c.id >= HID_ID.HAT_MIN && c.id <= HID_ID.HAT_MAX && c.id - HID_ID.HAT_MIN < 4) {
+      hats.push(c.id - HID_ID.HAT_MIN)
+    } else if (
+      c.id >= HID_ID.BUTTON_MIN &&
+      c.id <= HID_ID.BUTTON_MAX &&
+      c.id - HID_ID.BUTTON_MIN < 128
+    ) {
+      buttons.push(c.id - HID_ID.BUTTON_MIN)
+    }
+  }
+  return { axes, hats, buttons }
+}
 
 let mainWindow: BrowserWindow | null = null
 
@@ -30,6 +53,7 @@ function registerIpc(): void {
   })
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
+  ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
 
   ipcMain.handle(CTRL.captureToggle, async (): Promise<CaptureState> => {
     if (session.isRecording()) {

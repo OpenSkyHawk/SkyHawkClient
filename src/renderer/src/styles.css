@@ -1041,3 +1041,11 @@ body {
 .warn-banner b {
   color: #ffd27a;
 }
+
+/* HID controls the firmware doesn't catalogue yet — dimmed, not hidden */
+.hid--off {
+  opacity: 0.3;
+}
+.btn--off {
+  opacity: 0.25;
+}
