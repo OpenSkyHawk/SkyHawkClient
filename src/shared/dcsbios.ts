@@ -133,3 +133,27 @@ export class StringRegion {
 export function formatCommand(identifier: string, arg: string | number): string {
   return `${identifier} ${arg}\n`
 }
+
+/** Split "IDENTIFIER ARG" into its parts (first space separates). */
+export function parseCommand(line: string): { identifier: string; arg: string } {
+  const i = line.indexOf(' ')
+  return i === -1
+    ? { identifier: line, arg: '' }
+    : { identifier: line.slice(0, i), arg: line.slice(i + 1) }
+}
+
+/** Accumulates ASCII bytes and yields complete newline-terminated lines (CR stripped). */
+export class LineAssembler {
+  private buf = ''
+
+  push(bytes: Uint8Array): string[] {
+    for (let i = 0; i < bytes.length; i++) this.buf += String.fromCharCode(bytes[i]!)
+    const lines: string[] = []
+    let idx: number
+    while ((idx = this.buf.indexOf('\n')) >= 0) {
+      lines.push(this.buf.slice(0, idx).replace(/\r$/, ''))
+      this.buf = this.buf.slice(idx + 1)
+    }
+    return lines
+  }
+}

@@ -110,6 +110,7 @@ export interface AppState {
 
   // live link state
   deviceState: DeviceState
+  devicePort?: string
   aircraft: AircraftStatus
 
   // telemetry + stats (live once relaying; seeded placeholders before)
@@ -224,7 +225,7 @@ export const useStore = create<AppState>((set, get) => ({
       })
     })
 
-    api.on('device:status', (d) => set({ deviceState: d.state }))
+    api.on('device:status', (d) => set({ deviceState: d.state, devicePort: d.portPath }))
     api.on('aircraft:changed', (a) => set({ aircraft: a }))
     api.on('telemetry:tick', (t) => set({ telemetry: t }))
     api.on('stats:tick', (st) =>

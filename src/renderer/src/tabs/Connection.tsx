@@ -15,17 +15,20 @@ const TRANSPORTS: { id: Transport; title: string; detail: string }[] = [
   { id: 'uni', title: 'Unicast listen', detail: 'BIOSConfig.lua send_address' }
 ]
 
-const DEVICE_ROWS = [
-  { k: 'Identity', v: 'A-4E Skyhawk' },
-  { k: 'VID / PID', v: '0x2E8A / 0x4134' },
-  { k: 'Serial port', v: 'COM7 · /dev/cu.usbmodem2101' },
-  { k: 'Interfaces', v: 'CDC serial + HID' }
-]
-
 export function Connection() {
   const s = useStore()
   const setConfigField = useStore((x) => x.setConfigField)
   const toggleRelay = useStore((x) => x.toggleRelay)
+
+  const deviceRows = [
+    { k: 'Identity', v: 'A-4E Skyhawk' },
+    { k: 'VID / PID', v: '0x2E8A / 0x4134' },
+    {
+      k: 'Serial port',
+      v: s.devicePort ?? (s.sourceMode === 'bridge' ? 'scanning…' : 'monitor — no device')
+    },
+    { k: 'Interfaces', v: 'CDC serial + HID' }
+  ]
 
   return (
     <div className="conn">
@@ -75,7 +78,7 @@ export function Connection() {
           </span>
         </div>
         <div className="dev__body">
-          {DEVICE_ROWS.map((d) => (
+          {deviceRows.map((d) => (
             <div className="dev__row" key={d.k}>
               <span className="dev__k">{d.k}</span>
               <span className="dev__v">{d.v}</span>
