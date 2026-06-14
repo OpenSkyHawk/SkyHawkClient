@@ -105,6 +105,28 @@ export const DEFAULT_CONFIG: AppConfig = {
   autoReconnect: true
 }
 
+const SOURCE_MODES: SourceMode[] = ['bridge', 'monitor', 'replay']
+const TRANSPORTS: DcsTransport[] = ['loopback-multicast', 'unicast-listen', 'tcp-to-host']
+
+/** Coerce arbitrary (e.g. persisted/untrusted) data into a valid AppConfig. */
+export function sanitizeConfig(raw: unknown): AppConfig {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<AppConfig>
+  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
+  return {
+    sourceMode: SOURCE_MODES.includes(r.sourceMode as SourceMode)
+      ? (r.sourceMode as SourceMode)
+      : DEFAULT_CONFIG.sourceMode,
+    transport: TRANSPORTS.includes(r.transport as DcsTransport)
+      ? (r.transport as DcsTransport)
+      : DEFAULT_CONFIG.transport,
+    host: typeof r.host === 'string' && r.host ? r.host : DEFAULT_CONFIG.host,
+    commandPort: num(r.commandPort, DEFAULT_CONFIG.commandPort),
+    listenPort: num(r.listenPort, DEFAULT_CONFIG.listenPort),
+    autoReconnect:
+      typeof r.autoReconnect === 'boolean' ? r.autoReconnect : DEFAULT_CONFIG.autoReconnect
+  }
+}
+
 export interface RelayResult {
   ok: boolean
   error?: string

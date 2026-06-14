@@ -9,6 +9,7 @@ import {
   type ReplayLoad
 } from '@shared/ipc'
 import { Session } from './session'
+import { loadConfig, saveConfig } from './settings'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -22,7 +23,11 @@ const CAPTURE_FILTER = [{ name: 'DCS-BIOS capture', extensions: ['json'] }]
 
 function registerIpc(): void {
   ipcMain.handle(CTRL.configGet, () => session.getConfig())
-  ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => session.setConfig(patch))
+  ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => {
+    const config = session.setConfig(patch)
+    saveConfig(config)
+    return config
+  })
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
 
@@ -94,6 +99,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  session.setConfig(loadConfig()) // seed from persisted settings
   registerIpc()
   createWindow()
   app.on('activate', () => {
