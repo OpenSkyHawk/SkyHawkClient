@@ -13,9 +13,8 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["./src/shared/*"]
     },
     "types": ["node"]
   },
@@ -25,6 +24,6 @@
     "src/shared",
     "scripts",
     "electron.vite.config.ts",
-    "vitest.config.ts"
+    "vitest.config.mts"
   ]
 }
