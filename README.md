@@ -45,5 +45,8 @@ loopback-only, hence TCP is the remote transport.) See PRD §4.
 
 ## License
 
-**GPL-2.0-only** — see [LICENSE](./LICENSE). Matches DCS-BIOS (GPL v2), whose control-reference
-data the client bundles. Note: GPL permits commercial use; it cannot be made non-commercial.
+Copyright (c) 2026 OpenSkyHawk.
+
+**GPL-2.0-only** — see [LICENSE](./LICENSE) (verbatim GPL v2 text). Matches DCS-BIOS (GPL v2),
+whose control-reference data the client bundles. Note: GPL permits commercial use; it cannot be
+made non-commercial.
