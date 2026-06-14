@@ -68,6 +68,10 @@ const IDLE_TELEMETRY: TelemetryReadout[] = [
 
 const MAX_LOG = 500
 
+// Guards against duplicate IPC subscriptions (React StrictMode double-mounts the
+// init effect in dev; without this every push — and every log row — lands twice).
+let bridgeSubscribed = false
+
 export interface AppState {
   // UI state
   tab: TabId
@@ -146,7 +150,7 @@ export interface AppState {
   refreshNodes: () => void
   dumpSerialPorts: () => void
   revealDebugLog: () => void
-  initBridge: () => void
+  initBridge: () => (() => void) | void
 }
 
 function buildConfig(s: AppState): Partial<AppConfig> {
@@ -255,7 +259,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   initBridge: () => {
     const api = window.skyhawk
-    if (!api) return // running outside Electron (tests / web preview)
+    if (!api || bridgeSubscribed) return // outside Electron, or already subscribed
+    bridgeSubscribed = true
 
     void api
       .getHidAvailability()
@@ -276,47 +281,54 @@ export const useStore = create<AppState>((set, get) => ({
       })
     })
 
-    api.on('hid:report', (h) =>
-      set({
-        axes: h.axes,
-        buttons: h.buttons.flatMap((b, i) => (b ? [i] : [])),
-        hats: h.hats,
-        hidRate: h.rateHz
+    const unsubs = [
+      api.on('hid:report', (h) =>
+        set({
+          axes: h.axes,
+          buttons: h.buttons.flatMap((b, i) => (b ? [i] : [])),
+          hats: h.hats,
+          hidRate: h.rateHz
+        })
+      ),
+      api.on('device:status', (d) => set({ deviceState: d.state, devicePort: d.portPath })),
+      api.on('aircraft:changed', (a) => set({ aircraft: a })),
+      api.on('nodes:status', (n) => set({ nodes: n })),
+      api.on('telemetry:tick', (t) => set({ telemetry: t })),
+      api.on('stats:tick', (st) =>
+        set({
+          bytesIn: st.bytesInPerSec,
+          bytesOut: st.bytesOutPerSec,
+          fps: st.framesPerSec,
+          errors: st.errors,
+          uptime: st.uptimeSec,
+          reconnects: st.reconnects,
+          cmdsPerSec: st.commandsPerSec,
+          cmdsTotal: st.commandsTotal,
+          lastCmd: st.lastCommand ?? '—'
+        })
+      ),
+      api.on('log:batch', (rows) => {
+        const s = get()
+        if (s.logPaused) return
+        let seq = s.private_logSeq
+        const mapped: LogRow[] = rows.map((r: IpcLogRow) => ({
+          id: seq++,
+          time: fmtTime(r.t),
+          dir: r.dir,
+          name: r.name ?? hex4(r.address),
+          addrHex: hex4(r.address),
+          value: r.value,
+          raw: r.raw ?? rawHex(r.address, r.value)
+        }))
+        // newest first, capped
+        set({ log: [...mapped.reverse(), ...s.log].slice(0, MAX_LOG), private_logSeq: seq })
       })
-    )
-    api.on('device:status', (d) => set({ deviceState: d.state, devicePort: d.portPath }))
-    api.on('aircraft:changed', (a) => set({ aircraft: a }))
-    api.on('nodes:status', (n) => set({ nodes: n }))
-    api.on('telemetry:tick', (t) => set({ telemetry: t }))
-    api.on('stats:tick', (st) =>
-      set({
-        bytesIn: st.bytesInPerSec,
-        bytesOut: st.bytesOutPerSec,
-        fps: st.framesPerSec,
-        errors: st.errors,
-        uptime: st.uptimeSec,
-        reconnects: st.reconnects,
-        cmdsPerSec: st.commandsPerSec,
-        cmdsTotal: st.commandsTotal,
-        lastCmd: st.lastCommand ?? '—'
-      })
-    )
-    api.on('log:batch', (rows) => {
-      const s = get()
-      if (s.logPaused) return
-      let seq = s.private_logSeq
-      const mapped: LogRow[] = rows.map((r: IpcLogRow) => ({
-        id: seq++,
-        time: fmtTime(r.t),
-        dir: r.dir,
-        name: r.name ?? hex4(r.address),
-        addrHex: hex4(r.address),
-        value: r.value,
-        raw: r.raw ?? rawHex(r.address, r.value)
-      }))
-      // newest first, capped
-      set({ log: [...mapped.reverse(), ...s.log].slice(0, MAX_LOG), private_logSeq: seq })
-    })
+    ]
+
+    return () => {
+      for (const off of unsubs) off()
+      bridgeSubscribed = false
+    }
   }
 }))
 
