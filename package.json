@@ -19,6 +19,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "sync": "tsx scripts/sync-a4ec.ts",
+    "postinstall": "node scripts/postinstall.mjs",
     "prepare": "husky || true"
   },
   "dependencies": {
