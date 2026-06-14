@@ -1,5 +1,22 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
+import { CTRL, type AppConfig, type PushChannel, type PushChannels } from '@shared/ipc'
+import { Session } from './session'
+
+let mainWindow: BrowserWindow | null = null
+
+function emit<C extends PushChannel>(channel: C, payload: PushChannels[C]): void {
+  mainWindow?.webContents.send(channel, payload)
+}
+
+const session = new Session(emit)
+
+function registerIpc(): void {
+  ipcMain.handle(CTRL.configGet, () => session.getConfig())
+  ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => session.setConfig(patch))
+  ipcMain.handle(CTRL.relayStart, () => session.start())
+  ipcMain.handle(CTRL.relayStop, () => session.stop())
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -16,8 +33,12 @@ function createWindow(): void {
       sandbox: false
     }
   })
+  mainWindow = win
 
   win.on('ready-to-show', () => win.show())
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -33,6 +54,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  registerIpc()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -40,5 +62,6 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  session.stop()
   if (process.platform !== 'darwin') app.quit()
 })

@@ -54,6 +54,15 @@ export interface HidSnapshot {
   ageMs: number // time since last report; large => idle
 }
 
+/** One sim-telemetry gauge readout (RPM / IAS / Flap / Press Alt / Fuel). */
+export interface TelemetryReadout {
+  id: string // A-4E-C output identifier driving this gauge
+  label: string
+  value: number // raw decoded value (or NaN when not exported)
+  pct: number // 0..1 fill for the ring
+  unit: string
+}
+
 // main -> renderer channel payloads
 export interface PushChannels {
   'device:status': DeviceStatus
@@ -61,6 +70,7 @@ export interface PushChannels {
   'stats:tick': StatsSnapshot
   'log:batch': LogRow[]
   'hid:report': HidSnapshot
+  'telemetry:tick': TelemetryReadout[]
 }
 
 export type PushChannel = keyof PushChannels
@@ -70,5 +80,47 @@ export const IPC = {
   aircraftChanged: 'aircraft:changed',
   statsTick: 'stats:tick',
   logBatch: 'log:batch',
-  hidReport: 'hid:report'
+  hidReport: 'hid:report',
+  telemetryTick: 'telemetry:tick'
 } as const
+
+// ── control (renderer -> main, invoke/response) ──────────────────────────────
+
+export interface AppConfig {
+  sourceMode: SourceMode
+  transport: DcsTransport
+  host: string
+  commandPort: number
+  listenPort: number // unicast-listen bind port
+  autoReconnect: boolean
+}
+
+export const DEFAULT_CONFIG: AppConfig = {
+  sourceMode: 'monitor',
+  transport: 'tcp-to-host',
+  host: '127.0.0.1',
+  commandPort: 7778,
+  listenPort: 5010,
+  autoReconnect: true
+}
+
+export interface RelayResult {
+  ok: boolean
+  error?: string
+}
+
+export const CTRL = {
+  configGet: 'config:get',
+  configSet: 'config:set',
+  relayStart: 'relay:start',
+  relayStop: 'relay:stop'
+} as const
+
+/** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
+export interface SkyhawkApi {
+  on<C extends PushChannel>(channel: C, cb: (data: PushChannels[C]) => void): () => void
+  getConfig(): Promise<AppConfig>
+  setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
+  startRelay(): Promise<RelayResult>
+  stopRelay(): Promise<RelayResult>
+}

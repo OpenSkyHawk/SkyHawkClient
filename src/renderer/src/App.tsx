@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useStore, type TabId } from './store'
 import { Overview } from './tabs/Overview'
 import { Connection } from './tabs/Connection'
@@ -18,6 +19,9 @@ export function App() {
   const sourceMode = useStore((s) => s.sourceMode)
   const relaying = useStore((s) => s.relaying)
   const set = useStore((s) => s.set)
+  const initBridge = useStore((s) => s.initBridge)
+
+  useEffect(() => initBridge(), [initBridge])
 
   return (
     <div className="app">

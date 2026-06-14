@@ -1,18 +1,28 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { PushChannel, PushChannels } from '@shared/ipc'
+import {
+  CTRL,
+  type AppConfig,
+  type PushChannel,
+  type PushChannels,
+  type RelayResult,
+  type SkyhawkApi
+} from '@shared/ipc'
 
-// Minimal, typed bridge: the renderer subscribes to main-process push channels.
-// Control actions (set port, pause log, …) are added alongside as the app grows.
-const api = {
+// Typed bridge: main -> renderer push subscriptions + renderer -> main control.
+const api: SkyhawkApi = {
   on<C extends PushChannel>(channel: C, cb: (data: PushChannels[C]) => void): () => void {
     const listener = (_e: unknown, data: PushChannels[C]): void => cb(data)
     ipcRenderer.on(channel, listener)
     return () => {
       ipcRenderer.removeListener(channel, listener)
     }
-  }
+  },
+  getConfig: () => ipcRenderer.invoke(CTRL.configGet) as Promise<AppConfig>,
+  setConfig: (patch) => ipcRenderer.invoke(CTRL.configSet, patch) as Promise<AppConfig>,
+  startRelay: () => ipcRenderer.invoke(CTRL.relayStart) as Promise<RelayResult>,
+  stopRelay: () => ipcRenderer.invoke(CTRL.relayStop) as Promise<RelayResult>
 }
 
 contextBridge.exposeInMainWorld('skyhawk', api)
 
-export type SkyhawkApi = typeof api
+export type { SkyhawkApi }
