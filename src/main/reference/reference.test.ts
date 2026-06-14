@@ -1,0 +1,64 @@
+import { describe, expect, it } from 'vitest'
+import {
+  A4EC_OUTPUTS,
+  A4EC_OUTPUTS_BY_ADDRESS,
+  A4EC_INPUTS,
+  A4EC_INPUTS_BY_ID
+} from './a4ec-controls.generated'
+import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generated'
+import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
+import { ACFT_NAME } from './dcsbios-metadata'
+
+describe('a4ec-controls.generated', () => {
+  it('has outputs, each with a numeric address', () => {
+    expect(A4EC_OUTPUTS.length).toBeGreaterThan(300)
+    for (const o of A4EC_OUTPUTS) expect(Number.isInteger(o.address)).toBe(true)
+  })
+
+  it('indexes outputs by address', () => {
+    const sample = A4EC_OUTPUTS[0]!
+    const bucket = A4EC_OUTPUTS_BY_ADDRESS.get(sample.address)
+    expect(bucket).toBeDefined()
+    expect(bucket!.some((o) => o.id === sample.id)).toBe(true)
+  })
+
+  it('indexes inputs by id for command lookup', () => {
+    const sample = A4EC_INPUTS[0]!
+    expect(A4EC_INPUTS_BY_ID.get(sample.id)).toBeDefined()
+  })
+})
+
+describe('hid-controls.generated', () => {
+  it('maps the axis controlIds', () => {
+    expect(HID_CONTROLS.length).toBeGreaterThan(0)
+    expect(HID_CONTROLS_BY_ID.get(0x10)?.label).toBe('Roll')
+  })
+
+  it('carries the routing ranges', () => {
+    expect(HID_ID.AXIS_MIN).toBe(0x10)
+    expect(HID_ID.BUTTON_MAX).toBe(0xaf)
+    expect(HID_ID.HID_MAX).toBe(0xff)
+  })
+})
+
+describe('hid-report-layout.generated', () => {
+  it('is the fixed 34-byte layout', () => {
+    expect(HID_REPORT_LAYOUT.size).toBe(34)
+    expect(HID_REPORT_LAYOUT.buttons.offset).toBe(0)
+    expect(HID_REPORT_LAYOUT.hats.offset).toBe(16)
+    expect(HID_REPORT_LAYOUT.axes.offset).toBe(18)
+    expect(HID_REPORT_LAYOUT.axes.usages).toHaveLength(8)
+  })
+
+  it('declares signed axes (no 0x8000 bias)', () => {
+    expect(HID_REPORT_LAYOUT.axes.signed).toBe(true)
+    expect(HID_REPORT_LAYOUT.axes.min).toBe(-32768)
+  })
+})
+
+describe('dcsbios-metadata', () => {
+  it('pins _ACFT_NAME at 0x0000, 24 bytes', () => {
+    expect(ACFT_NAME.address).toBe(0x0000)
+    expect(ACFT_NAME.maxLength).toBe(24)
+  })
+})
