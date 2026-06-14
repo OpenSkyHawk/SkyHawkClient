@@ -57,6 +57,7 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
   ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
+  ipcMain.handle(CTRL.nodesRefresh, () => session.requestNodes())
 
   ipcMain.handle(CTRL.debugDumpPorts, async () => {
     const ports = await listSerialPorts()

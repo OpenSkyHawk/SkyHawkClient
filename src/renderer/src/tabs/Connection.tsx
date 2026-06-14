@@ -1,4 +1,50 @@
-import { useStore, type SourceMode, type Transport } from '../store'
+import { fmtUptime, useStore, type SourceMode, type Transport } from '../store'
+
+function NodesCard() {
+  const nodes = useStore((x) => x.nodes)
+  const sourceMode = useStore((x) => x.sourceMode)
+  const refreshNodes = useStore((x) => x.refreshNodes)
+  const isBridge = sourceMode === 'bridge'
+
+  return (
+    <div className="card field">
+      <div className="panel-h">
+        <span className="section-h">Connected nodes</span>
+        <button className="toolbtn" onClick={() => refreshNodes()} disabled={!isBridge}>
+          Refresh
+        </button>
+      </div>
+      {!isBridge ? (
+        <div className="hint">
+          PanelGroup node status is reported over the serial link — Bridge mode only.
+        </div>
+      ) : nodes.length === 0 ? (
+        <div className="hint">No nodes reported. Power on a PanelGroup, or press Refresh.</div>
+      ) : (
+        <div className="nodes">
+          {nodes.map((n) => (
+            <div className="node" key={n.nodeId}>
+              <span className={`node__dot${n.present ? ' on' : ''}`} />
+              <span className="node__id">Node {n.nodeId}</span>
+              <span className="node__meta">
+                up {fmtUptime(n.uptimeSec)} · rx {n.rxCount}
+              </span>
+              <span className="node__flags">
+                {n.boff && <b className="flag flag--err">BOFF</b>}
+                {n.epvf && <b className="flag flag--warn">EPVF</b>}
+                {(n.tec > 0 || n.rec > 0) && (
+                  <span className="node__err">
+                    TEC {n.tec} / REC {n.rec}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const HINTS: Record<SourceMode, string> = {
   bridge:
@@ -33,81 +79,85 @@ export function Connection() {
 
   return (
     <div className="conn">
-      {/* device card */}
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <div className="dev__head">
-          <div className="dev__icon">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#1e8fff"
-              strokeWidth="1.6"
-            >
-              <rect x="4" y="7" width="16" height="11" rx="2" />
-              <path d="M9 7V5h6v2M9 18v2M15 18v2" />
-            </svg>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div className="dev__name">A-4E Skyhawk · SimGateway</div>
-            <div className="dev__meta">composite USB · CDC + HID</div>
-          </div>
-          <span
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              fontFamily: 'var(--disp)',
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              color: s.relaying ? 'var(--green)' : 'var(--muted)'
-            }}
-          >
+      <div className="conn__left">
+        {/* device card */}
+        <div className="card" style={{ overflow: 'hidden' }}>
+          <div className="dev__head">
+            <div className="dev__icon">
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#1e8fff"
+                strokeWidth="1.6"
+              >
+                <rect x="4" y="7" width="16" height="11" rx="2" />
+                <path d="M9 7V5h6v2M9 18v2M15 18v2" />
+              </svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="dev__name">A-4E Skyhawk · SimGateway</div>
+              <div className="dev__meta">composite USB · CDC + HID</div>
+            </div>
             <span
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: s.relaying ? 'var(--green)' : 'var(--muted-3)',
-                boxShadow: s.relaying ? '0 0 8px var(--green)' : 'none'
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                fontFamily: 'var(--disp)',
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: s.relaying ? 'var(--green)' : 'var(--muted)'
               }}
-            />
-            {s.relaying ? 'Relaying' : 'Stopped'}
-          </span>
-        </div>
-        <div className="dev__body">
-          {deviceRows.map((d) => (
-            <div className="dev__row" key={d.k}>
-              <span className="dev__k">{d.k}</span>
-              <span className="dev__v">{d.v}</span>
-            </div>
-          ))}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingTop: 14
-            }}
-          >
-            <div>
-              <div className="dev__k">Auto-reconnect</div>
-              <div style={{ fontSize: 11, color: 'var(--muted-3)', marginTop: 2 }}>
-                Re-open the port on unplug
-              </div>
-            </div>
-            <button
-              className={`toggle${s.autoReconnect ? ' on' : ''}`}
-              onClick={() => setConfigField({ autoReconnect: !s.autoReconnect })}
-              aria-pressed={s.autoReconnect}
             >
-              <span />
-            </button>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: s.relaying ? 'var(--green)' : 'var(--muted-3)',
+                  boxShadow: s.relaying ? '0 0 8px var(--green)' : 'none'
+                }}
+              />
+              {s.relaying ? 'Relaying' : 'Stopped'}
+            </span>
+          </div>
+          <div className="dev__body">
+            {deviceRows.map((d) => (
+              <div className="dev__row" key={d.k}>
+                <span className="dev__k">{d.k}</span>
+                <span className="dev__v">{d.v}</span>
+              </div>
+            ))}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: 14
+              }}
+            >
+              <div>
+                <div className="dev__k">Auto-reconnect</div>
+                <div style={{ fontSize: 11, color: 'var(--muted-3)', marginTop: 2 }}>
+                  Re-open the port on unplug
+                </div>
+              </div>
+              <button
+                className={`toggle${s.autoReconnect ? ' on' : ''}`}
+                onClick={() => setConfigField({ autoReconnect: !s.autoReconnect })}
+                aria-pressed={s.autoReconnect}
+              >
+                <span />
+              </button>
+            </div>
           </div>
         </div>
+
+        <NodesCard />
       </div>
 
       {/* controls */}

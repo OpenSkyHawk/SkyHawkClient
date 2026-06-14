@@ -7,7 +7,9 @@ import {
 } from './a4ec-controls.generated'
 import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generated'
 import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
+import { NODE_STATUS } from './node-status.generated'
 import { ACFT_NAME } from './dcsbios-metadata'
+import { NODE_END_MSG, NODE_MSG, NODE_REQ_ADDR, SUPPORTED_NODE_PROTO } from '@shared/nodes'
 
 describe('a4ec-controls.generated', () => {
   it('has outputs, each with a numeric address', () => {
@@ -60,5 +62,14 @@ describe('dcsbios-metadata', () => {
   it('pins _ACFT_NAME at 0x0000, 24 bytes', () => {
     expect(ACFT_NAME.address).toBe(0x0000)
     expect(ACFT_NAME.maxLength).toBe(24)
+  })
+})
+
+describe('node-status.generated', () => {
+  it('matches the shared decoder contract (fails loudly on a firmware bump)', () => {
+    expect(NODE_STATUS.protoVersion).toBe(SUPPORTED_NODE_PROTO)
+    expect(NODE_STATUS.reqAddress).toBe(NODE_REQ_ADDR)
+    expect(NODE_STATUS.msgName).toBe(NODE_MSG)
+    expect(NODE_STATUS.endMsgName).toBe(NODE_END_MSG)
   })
 })

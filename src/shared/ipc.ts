@@ -1,5 +1,6 @@
 // Typed IPC contract between the Electron main process and the renderer.
 // Channels are one-way main -> renderer pushes; control actions are renderer -> main.
+import type { NodeStatus } from './nodes'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
 export type DcsTransport = 'loopback-multicast' | 'unicast-listen' | 'tcp-to-host'
@@ -72,6 +73,7 @@ export interface PushChannels {
   'log:batch': LogRow[]
   'hid:report': HidSnapshot
   'telemetry:tick': TelemetryReadout[]
+  'nodes:status': NodeStatus[]
 }
 
 export type PushChannel = keyof PushChannels
@@ -82,7 +84,8 @@ export const IPC = {
   statsTick: 'stats:tick',
   logBatch: 'log:batch',
   hidReport: 'hid:report',
-  telemetryTick: 'telemetry:tick'
+  telemetryTick: 'telemetry:tick',
+  nodesStatus: 'nodes:status'
 } as const
 
 // ── control (renderer -> main, invoke/response) ──────────────────────────────
@@ -174,6 +177,7 @@ export const CTRL = {
   captureToggle: 'capture:toggle',
   replayOpen: 'replay:open',
   hidAvailability: 'hid:availability',
+  nodesRefresh: 'nodes:refresh',
   debugDumpPorts: 'debug:dump-ports',
   debugReveal: 'debug:reveal'
 } as const
@@ -188,6 +192,7 @@ export interface SkyhawkApi {
   toggleCapture(): Promise<CaptureState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
+  refreshNodes(): Promise<void>
   dumpSerialPorts(): Promise<DebugDumpResult>
   revealDebugLog(): Promise<void>
 }
