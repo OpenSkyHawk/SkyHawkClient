@@ -3,6 +3,7 @@
 // (network), Bridge (serial), and Replay (recorded capture); recording can tap
 // any live mode.
 import { DcsBiosProtocol, LineAssembler, parseCommand } from '@shared/dcsbios'
+import { NODE_END_MSG, NODE_MSG, NodeRoster, nodeRosterRequest } from '@shared/nodes'
 import {
   DEFAULT_CONFIG,
   type AppConfig,
@@ -24,6 +25,7 @@ type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => voi
 const LOG_FLUSH_MS = 33
 const TELEMETRY_MS = 200
 const STATS_MS = 1000
+const NODES_REFRESH_MS = 5000
 const MAX_BATCH = 250
 
 export class Session {
@@ -34,6 +36,7 @@ export class Session {
   private replay?: ReplaySource
   private recorder?: Recorder
   private recordPath?: string
+  private readonly roster = new NodeRoster()
   private cmdAssembler = new LineAssembler()
   private readonly parser: DcsBiosProtocol
   private decoder = new Decoder()
@@ -64,6 +67,7 @@ export class Session {
     this.decoder = new Decoder()
     this.parser.reset()
     this.stats.reset()
+    this.roster.reset()
     this.cmdAssembler = new LineAssembler()
     this.logBuf = []
     const mode = this.config.sourceMode
@@ -114,6 +118,10 @@ export class Session {
         setInterval(() => this.flushTelemetry(), TELEMETRY_MS),
         setInterval(() => this.emit('stats:tick', this.stats.snapshot()), STATS_MS)
       ]
+      // Bridge: poll the node roster so silent deaths get reconciled.
+      if (mode === 'bridge') {
+        this.timers.push(setInterval(() => this.requestNodes(), NODES_REFRESH_MS))
+      }
       return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
@@ -141,14 +149,15 @@ export class Session {
     const s = new SerialBridge(this.config.autoReconnect)
     this.serial = s
     s.onData((chunk) => this.onSerialData(chunk))
-    s.onOpen((path) =>
+    s.onOpen((path) => {
       this.setDevice({
         state: 'relaying',
         portPath: path,
         vid: SIMGATEWAY_VID,
         pid: SIMGATEWAY_PID
       })
-    )
+      this.requestNodes() // seed the roster as soon as the device is up
+    })
     s.onClose(() => {
       this.stats.reconnect()
       this.setDevice({ state: 'reconnecting' })
@@ -202,6 +211,13 @@ export class Session {
     return !!this.recorder
   }
 
+  /** Ask PanelBridge for the full node roster (inject the request export to the serial). */
+  requestNodes(): void {
+    if (!this.serial) return
+    this.roster.beginBurst() // isolate the reply burst so prior deltas don't block pruning
+    this.serial.write(Buffer.from(nodeRosterRequest()))
+  }
+
   loadReplay(path: string): ReplayInfo {
     this.replay?.stop()
     this.replay = ReplaySource.load(path)
@@ -225,6 +241,11 @@ export class Session {
     for (const line of this.cmdAssembler.push(chunk)) {
       if (!line.trim()) continue
       const { identifier, arg } = parseCommand(line)
+      // Node-status messages are tapped to the roster, not logged as panel commands.
+      if (identifier === NODE_MSG || identifier === NODE_END_MSG) {
+        this.roster.applyMessage(identifier, arg)
+        continue
+      }
       this.stats.command(line.trim())
       this.logBuf.push({ t, dir: 'out', address: 0, name: identifier, value: arg })
     }
@@ -249,6 +270,7 @@ export class Session {
     const ac = this.decoder.aircraft()
     if (ac) this.emit('aircraft:changed', ac)
     if (this.hid) this.emit('hid:report', this.hid.snapshot())
+    if (this.roster.takeDirty()) this.emit('nodes:status', this.roster.snapshot())
   }
 
   private setDevice(status: DeviceStatus): void {

@@ -28,6 +28,7 @@ const api: SkyhawkApi = {
   toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<CaptureState>,
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
   getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,
+  refreshNodes: () => ipcRenderer.invoke(CTRL.nodesRefresh) as Promise<void>,
   dumpSerialPorts: () => ipcRenderer.invoke(CTRL.debugDumpPorts) as Promise<DebugDumpResult>,
   revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>
 }

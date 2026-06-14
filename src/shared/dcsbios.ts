@@ -134,6 +134,26 @@ export function formatCommand(identifier: string, arg: string | number): string 
   return `${identifier} ${arg}\n`
 }
 
+/**
+ * Encode a single 16-bit DCS-BIOS export write as a self-contained frame:
+ * sync (4×0x55) + address(LE) + count=2(LE) + value(LE). Used to inject the
+ * node-roster request into the export stream sent to the SimGateway.
+ */
+export function encodeExportFrame(address: number, value: number): Uint8Array {
+  return new Uint8Array([
+    0x55,
+    0x55,
+    0x55,
+    0x55,
+    address & 0xff,
+    (address >> 8) & 0xff,
+    0x02,
+    0x00,
+    value & 0xff,
+    (value >> 8) & 0xff
+  ])
+}
+
 /** Split "IDENTIFIER ARG" into its parts (first space separates). */
 export function parseCommand(line: string): { identifier: string; arg: string } {
   const i = line.indexOf(' ')

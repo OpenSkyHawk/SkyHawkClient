@@ -28,7 +28,7 @@ import { format } from 'prettier'
 
 const PIN = {
   repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
-  commit: '51f150f793c5b10b161bc06d587e4778fed60263'
+  commit: 'b31bed1698cab5e5760aeef27669e9852320db18'
 }
 
 const SRC = {
@@ -406,6 +406,42 @@ export const HID_REPORT_LAYOUT = {
   )
 }
 
+// ── node-status contract (reserved DCS-BIOS identifiers, #86) ─────────────────
+
+function genNodeStatus(header: string): string {
+  const num = (re: RegExp, label: string): number => {
+    const m = re.exec(header)
+    if (!m) throw new Error(`[sync] node-status contract missing in HIDControls.h: ${label}`)
+    return Number(m[1])
+  }
+  const str = (re: RegExp, label: string): string => {
+    const m = re.exec(header)
+    if (!m) throw new Error(`[sync] node-status contract missing in HIDControls.h: ${label}`)
+    return m[1]!
+  }
+  const protoVersion = num(/#define\s+NODE_STATUS_PROTO_VERSION\s+(\d+)/, 'PROTO_VERSION')
+  const reqAddress = num(/#define\s+NODE_STATUS_REQ_ADDR\s+(0x[0-9A-Fa-f]+)/, 'REQ_ADDR')
+  const msgName = str(/#define\s+NODE_STATUS_MSG_NAME\s+"([^"]+)"/, 'MSG_NAME')
+  const endMsgName = str(/#define\s+NODE_STATUS_END_MSG_NAME\s+"([^"]+)"/, 'END_MSG_NAME')
+
+  return (
+    banner([`${SRC.hidControls} (NODE_STATUS contract v${protoVersion})`]) +
+    `
+/**
+ * Reserved DCS-BIOS identifiers for PanelBridge node-status reporting (#86).
+ * The decoder in shared/nodes.ts is written for protoVersion; reference.test.ts
+ * asserts this matches SUPPORTED_NODE_PROTO so a firmware bump fails loudly.
+ */
+export const NODE_STATUS = {
+  protoVersion: ${protoVersion},
+  reqAddress: ${hex(reqAddress)},
+  msgName: ${q(msgName)},
+  endMsgName: ${q(endMsgName)}
+} as const
+`
+  )
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 async function writeGenerated(file: string, code: string): Promise<void> {
@@ -421,6 +457,7 @@ async function main(): Promise<void> {
     await writeGenerated('a4ec-controls.generated.ts', genA4ecControls(s.controls))
     await writeGenerated('hid-controls.generated.ts', genHidControls(s.hidControls))
     await writeGenerated('hid-report-layout.generated.ts', genHidReportLayout(s.simGateway))
+    await writeGenerated('node-status.generated.ts', genNodeStatus(s.hidControls))
   } finally {
     s.cleanup()
   }

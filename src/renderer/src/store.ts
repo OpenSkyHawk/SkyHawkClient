@@ -7,6 +7,7 @@ import type {
   LogRow as IpcLogRow,
   TelemetryReadout
 } from '@shared/ipc'
+import type { NodeStatus } from '@shared/nodes'
 
 export type TabId = 'overview' | 'connection' | 'log' | 'hid' | 'settings'
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
@@ -86,6 +87,7 @@ export interface AppState {
   deviceState: DeviceState
   devicePort?: string
   aircraft: AircraftStatus
+  nodes: NodeStatus[]
 
   // record / replay
   recording: boolean
@@ -141,6 +143,7 @@ export interface AppState {
   toggleRelay: () => void
   toggleCapture: () => void
   openReplay: () => void
+  refreshNodes: () => void
   dumpSerialPorts: () => void
   revealDebugLog: () => void
   initBridge: () => void
@@ -174,6 +177,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   deviceState: 'no-device',
   aircraft: { name: 'NONE', inferred: false, supported: true },
+  nodes: [],
 
   recording: false,
   replayDriveSerial: false,
@@ -245,6 +249,10 @@ export const useStore = create<AppState>((set, get) => ({
     void window.skyhawk?.revealDebugLog()
   },
 
+  refreshNodes: () => {
+    void window.skyhawk?.refreshNodes()
+  },
+
   initBridge: () => {
     const api = window.skyhawk
     if (!api) return // running outside Electron (tests / web preview)
@@ -278,6 +286,7 @@ export const useStore = create<AppState>((set, get) => ({
     )
     api.on('device:status', (d) => set({ deviceState: d.state, devicePort: d.portPath }))
     api.on('aircraft:changed', (a) => set({ aircraft: a }))
+    api.on('nodes:status', (n) => set({ nodes: n }))
     api.on('telemetry:tick', (t) => set({ telemetry: t }))
     api.on('stats:tick', (st) =>
       set({
