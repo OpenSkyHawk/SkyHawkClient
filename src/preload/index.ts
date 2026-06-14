@@ -4,10 +4,12 @@ import {
   type AppConfig,
   type CaptureState,
   type DebugDumpResult,
+  type ExportResult,
   type HidAvailability,
   type PushChannel,
   type PushChannels,
   type RelayResult,
+  type RelayStatus,
   type ReplayLoad,
   type SkyhawkApi
 } from '@shared/ipc'
@@ -25,6 +27,8 @@ const api: SkyhawkApi = {
   setConfig: (patch) => ipcRenderer.invoke(CTRL.configSet, patch) as Promise<AppConfig>,
   startRelay: () => ipcRenderer.invoke(CTRL.relayStart) as Promise<RelayResult>,
   stopRelay: () => ipcRenderer.invoke(CTRL.relayStop) as Promise<RelayResult>,
+  getStatus: () => ipcRenderer.invoke(CTRL.relayStatus) as Promise<RelayStatus>,
+  exportLog: (text: string) => ipcRenderer.invoke(CTRL.logExport, text) as Promise<ExportResult>,
   toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<CaptureState>,
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
   getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,

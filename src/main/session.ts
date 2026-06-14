@@ -43,6 +43,8 @@ export class Session {
   private readonly stats = new Stats()
   private logBuf: LogRow[] = []
   private running = false
+  private lastDevice: DeviceStatus = { state: 'no-device' }
+  private lastErrKey = ''
   private timers: ReturnType<typeof setInterval>[] = []
 
   constructor(private readonly emit: Emit) {
@@ -70,6 +72,7 @@ export class Session {
     this.roster.reset()
     this.cmdAssembler = new LineAssembler()
     this.logBuf = []
+    this.lastErrKey = ''
     const mode = this.config.sourceMode
 
     try {
@@ -94,6 +97,7 @@ export class Session {
         })
         t.onError((err) => {
           this.stats.error()
+          this.logError('DCS', err.message)
           if (!bridge) this.setDevice({ state: 'error', detail: err.message })
         })
         t.onConnected((connected) => {
@@ -164,6 +168,7 @@ export class Session {
     })
     s.onError((err) => {
       this.stats.error()
+      this.logError('SERIAL', err.message)
       this.setDevice({ state: 'error', detail: err.message })
     })
     s.start()
@@ -274,6 +279,20 @@ export class Session {
   }
 
   private setDevice(status: DeviceStatus): void {
+    this.lastDevice = status
     this.emit('device:status', status)
+  }
+
+  /** Snapshot so a (re)loaded renderer can rehydrate the running/relay state. */
+  status(): { running: boolean; device: DeviceStatus } {
+    return { running: this.running, device: this.lastDevice }
+  }
+
+  /** Push a client diagnostic into the log (deduped against the last identical one). */
+  private logError(tag: string, msg: string): void {
+    const key = `${tag}|${msg}`
+    if (key === this.lastErrKey) return
+    this.lastErrKey = key
+    this.logBuf.push({ t: Date.now(), dir: 'sys', address: 0, name: tag, value: msg })
   }
 }

@@ -17,7 +17,7 @@ export type DirFilter = 'all' | 'in' | 'out'
 export interface LogRow {
   id: number
   time: string
-  dir: 'in' | 'out'
+  dir: 'in' | 'out' | 'sys'
   name: string
   addrHex: string
   value: number | string
@@ -147,6 +147,8 @@ export interface AppState {
   toggleRelay: () => void
   toggleCapture: () => void
   openReplay: () => void
+  clearLog: () => void
+  exportLog: () => void
   refreshNodes: () => void
   dumpSerialPorts: () => void
   revealDebugLog: () => void
@@ -257,6 +259,20 @@ export const useStore = create<AppState>((set, get) => ({
     void window.skyhawk?.refreshNodes()
   },
 
+  clearLog: () => set({ log: [] }),
+
+  exportLog: () => {
+    const rows = get().log
+    if (rows.length === 0) return
+    // oldest-first TSV
+    const header = 'time\tdir\tcontrol\taddress\tvalue\traw'
+    const body = [...rows]
+      .reverse()
+      .map((r) => [r.time, r.dir, r.name, r.addrHex, String(r.value), r.raw].join('\t'))
+      .join('\n')
+    void window.skyhawk?.exportLog(`${header}\n${body}\n`)
+  },
+
   initBridge: () => {
     const api = window.skyhawk
     if (!api || bridgeSubscribed) return // outside Electron, or already subscribed
@@ -280,6 +296,14 @@ export const useStore = create<AppState>((set, get) => ({
         debugMode: cfg.debugMode
       })
     })
+
+    // Rehydrate from the live session: a dev reload resets the renderer but the
+    // main-process session keeps running, so the UI must not assume "stopped".
+    void api
+      .getStatus()
+      .then((st) =>
+        set({ relaying: st.running, deviceState: st.device.state, devicePort: st.device.portPath })
+      )
 
     const unsubs = [
       api.on('hid:report', (h) =>
