@@ -40,24 +40,30 @@ describe('nodeRosterRequest', () => {
 })
 
 describe('NodeRoster', () => {
-  it('applies live add/remove deltas', () => {
+  it('keeps a removed node, marked offline', () => {
     const r = new NodeRoster()
     r.applyMessage(NODE_MSG, '010100000000000000') // node 1 present
     r.applyMessage(NODE_MSG, '020100000000000000') // node 2 present
     expect(r.snapshot().map((n) => n.nodeId)).toEqual([1, 2])
-    r.applyMessage(NODE_MSG, '010000000000000000') // node 1 removed
-    expect(r.snapshot().map((n) => n.nodeId)).toEqual([2])
+    r.applyMessage(NODE_MSG, '010000000000000000') // node 1 removed (present=00)
+    expect(r.snapshot().map((n) => [n.nodeId, n.present])).toEqual([
+      [1, false],
+      [2, true]
+    ])
   })
 
-  it('prunes nodes absent from a completed roster burst', () => {
+  it('marks nodes absent from a completed burst offline (but keeps them)', () => {
     const r = new NodeRoster()
-    r.applyMessage(NODE_MSG, '010100000000000000') // node 1 present (stale)
+    r.applyMessage(NODE_MSG, '010100000000000000') // node 1 present
     r.takeDirty()
     // a fresh roster request returns only node 3, then END
     r.beginBurst() // client sends the request → isolate the reply burst
     r.applyMessage(NODE_MSG, '030100000000000000')
     r.applyMessage(NODE_END_MSG, '1')
-    expect(r.snapshot().map((n) => n.nodeId)).toEqual([3]) // node 1 pruned
+    expect(r.snapshot().map((n) => [n.nodeId, n.present])).toEqual([
+      [1, false], // went silent → offline, still listed
+      [3, true]
+    ])
     expect(r.takeDirty()).toBe(true)
   })
 })

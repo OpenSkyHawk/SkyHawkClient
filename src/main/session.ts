@@ -19,6 +19,7 @@ import { SerialBridge, SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
 import { debugLog } from './debug'
 import { HidReader } from './hid'
 import { Recorder, ReplaySource, type ReplayInfo } from './replay'
+import { NODE_NAMES } from './reference/node-names.generated'
 import { Decoder } from './decode'
 import { Stats } from './stats'
 
@@ -304,7 +305,10 @@ export class Session {
     const ac = this.decoder.aircraft()
     if (ac) this.emit('aircraft:changed', ac)
     if (this.hid) this.emit('hid:report', this.hid.snapshot())
-    if (this.roster.takeDirty()) this.emit('nodes:status', this.roster.snapshot())
+    if (this.roster.takeDirty()) {
+      const nodes = this.roster.snapshot().map((n) => ({ ...n, name: NODE_NAMES[n.nodeId]?.name }))
+      this.emit('nodes:status', nodes)
+    }
   }
 
   private setDevice(status: DeviceStatus): void {
