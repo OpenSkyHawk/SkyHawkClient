@@ -14,9 +14,9 @@ const BUTTONS_OFFSET = 0
 const HATS_OFFSET = 16
 const AXES_OFFSET = 18
 
-/** Firmware encodes each axis as uint16; the signed centre is value - 0x8000. */
+/** Axes are signed int16 on the wire (Logical Min −32768; no 0x8000 bias). */
 export function decodeAxis(raw: number): number {
-  return (raw & 0xffff) - 0x8000
+  return (raw << 16) >> 16
 }
 
 /** Button n lives at byte n/8, bit n%8 of the buttons[] block. */
@@ -25,9 +25,12 @@ export function isButtonPressed(buttons: Uint8Array, n: number): boolean {
   return (buttons[n >> 3]! & (1 << (n & 7))) !== 0
 }
 
-/** Hat nibble: 0 = centre, 1..8 = N..NW, anything > 8 is the null/centre value. */
+/**
+ * USB hat nibble: 0..7 = N/NE/E/SE/S/SW/W/NW, value >= 8 (e.g. 0xF) = null/centred.
+ * Returns a HAT_DIRS index: 0 = centre, 1..8 = N..NW.
+ */
 export function decodeHat(nibble: number): number {
-  return nibble >= 1 && nibble <= 8 ? nibble : 0
+  return nibble <= 7 ? nibble + 1 : 0
 }
 
 /** Decode a full 34-byte HID report into axes/buttons/hats. */

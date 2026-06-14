@@ -225,6 +225,14 @@ export const useStore = create<AppState>((set, get) => ({
       })
     })
 
+    api.on('hid:report', (h) =>
+      set({
+        axes: h.axes,
+        buttons: h.buttons.flatMap((b, i) => (b ? [i] : [])),
+        hats: h.hats,
+        hidRate: h.rateHz
+      })
+    )
     api.on('device:status', (d) => set({ deviceState: d.state, devicePort: d.portPath }))
     api.on('aircraft:changed', (a) => set({ aircraft: a }))
     api.on('telemetry:tick', (t) => set({ telemetry: t }))

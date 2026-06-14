@@ -13,6 +13,7 @@ import {
 } from '@shared/ipc'
 import { createTransport, type Transport } from './net'
 import { SerialBridge, SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
+import { HidReader } from './hid'
 import { Decoder } from './decode'
 import { Stats } from './stats'
 
@@ -27,6 +28,7 @@ export class Session {
   private config: AppConfig = { ...DEFAULT_CONFIG }
   private transport?: Transport
   private serial?: SerialBridge
+  private hid?: HidReader
   private cmdAssembler = new LineAssembler()
   private readonly parser: DcsBiosProtocol
   private decoder = new Decoder()
@@ -105,6 +107,12 @@ export class Session {
           this.setDevice({ state: 'error', detail: err.message })
         })
         s.start()
+
+        // HID runs in parallel with the serial CDC; errors just leave it idle.
+        const h = new HidReader()
+        this.hid = h
+        h.onError(() => {})
+        h.start()
       }
 
       this.setDevice({ state: 'scanning' })
@@ -125,6 +133,8 @@ export class Session {
     this.running = false
     for (const t of this.timers) clearInterval(t)
     this.timers = []
+    this.hid?.stop()
+    this.hid = undefined
     this.serial?.stop()
     this.serial = undefined
     this.transport?.stop()
@@ -165,6 +175,7 @@ export class Session {
     this.emit('telemetry:tick', this.decoder.telemetrySnapshot())
     const ac = this.decoder.aircraft()
     if (ac) this.emit('aircraft:changed', ac)
+    if (this.hid) this.emit('hid:report', this.hid.snapshot())
   }
 
   private setDevice(status: DeviceStatus): void {
