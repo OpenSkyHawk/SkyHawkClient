@@ -145,13 +145,21 @@ export interface ReplayLoad {
   durationMs?: number
 }
 
+/** Report indices the firmware actually catalogues (the rest dim in the HID panel). */
+export interface HidAvailability {
+  axes: number[]
+  hats: number[]
+  buttons: number[]
+}
+
 export const CTRL = {
   configGet: 'config:get',
   configSet: 'config:set',
   relayStart: 'relay:start',
   relayStop: 'relay:stop',
   captureToggle: 'capture:toggle',
-  replayOpen: 'replay:open'
+  replayOpen: 'replay:open',
+  hidAvailability: 'hid:availability'
 } as const
 
 /** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
@@ -163,4 +171,5 @@ export interface SkyhawkApi {
   stopRelay(): Promise<RelayResult>
   toggleCapture(): Promise<CaptureState>
   openReplay(): Promise<ReplayLoad>
+  getHidAvailability(): Promise<HidAvailability>
 }
