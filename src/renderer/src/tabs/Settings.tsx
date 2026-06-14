@@ -56,15 +56,6 @@ export function Settings() {
         </Row>
       </div>
 
-      <div className="set-card" style={{ marginTop: 14 }}>
-        <Row k="Theme" sub="Dark aerospace · matches the docs site">
-          <div className="theme-seg">
-            <span className="on">Dark</span>
-            <span>Light</span>
-          </div>
-        </Row>
-      </div>
-
       <div className="set-foot">OpenSkyhawk Client · com.openskyhawk.client · GPL-2.0-only</div>
     </div>
   )

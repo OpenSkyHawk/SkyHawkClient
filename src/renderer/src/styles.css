@@ -1011,25 +1011,6 @@ body {
   font-size: 12px;
   font-weight: 600;
 }
-.theme-seg {
-  display: flex;
-  padding: 3px;
-  gap: 3px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-}
-.theme-seg span {
-  padding: 7px 16px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted-2);
-}
-.theme-seg span.on {
-  background: var(--blue);
-  color: #04101f;
-}
 .set-foot {
   margin-top: 16px;
   font-family: var(--mono);
