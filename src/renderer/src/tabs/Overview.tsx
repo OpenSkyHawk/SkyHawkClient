@@ -58,54 +58,37 @@ export function Overview() {
   const linkSub =
     s.transport === 'tcp' ? `${s.host}:${s.port} · remote` : '239.255.50.10:5010 · local'
 
+  const connected = s.deviceState === 'connected' || s.deviceState === 'relaying'
+  const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
+  const acftSub = s.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
+
   const tiles = [
     {
-      label: 'Device',
-      value: s.relaying ? 'Connected' : 'Idle',
-      sub: s.relaying ? 'SimGateway · COM7' : 'awaiting start',
-      color: s.relaying ? 'var(--green)' : 'var(--muted)'
+      label: 'Link',
+      value: connected ? 'Connected' : s.relaying ? s.deviceState : 'Idle',
+      sub: connected ? s.deviceState : s.relaying ? 'connecting…' : 'awaiting start',
+      color: connected ? 'var(--green)' : s.relaying ? 'var(--gold)' : 'var(--muted)'
     },
-    { label: 'Aircraft', value: 'A-4E-C', sub: '_ACFT_NAME · metadata', color: 'var(--text)' },
+    {
+      label: 'Aircraft',
+      value: acft,
+      sub: acftSub,
+      color: s.aircraft.supported ? 'var(--text)' : 'var(--gold)'
+    },
     { label: 'DCS Link', value: link, sub: linkSub, color: 'var(--blue)' }
   ]
 
-  const gauges = [
-    {
-      label: 'RPM',
-      value: String(Math.round(s.rpm)),
-      unit: '% RPM',
-      pct: s.rpm / 100,
-      color: 'var(--blue)'
-    },
-    {
-      label: 'IAS',
-      value: String(Math.round(s.ias)),
-      unit: 'KNOTS',
-      pct: s.ias / 450,
-      color: 'var(--blue)'
-    },
-    {
-      label: 'Flap',
-      value: String(Math.round(s.flap)),
-      unit: '% DN',
-      pct: s.flap / 100,
-      color: 'var(--blue-2)'
-    },
-    {
-      label: 'Press Alt',
-      value: Math.round(s.alt).toLocaleString(),
-      unit: 'FEET',
-      pct: s.alt / 40000,
-      color: 'var(--blue-2)'
-    },
-    {
-      label: 'Fuel',
-      value: String(Math.round(s.fuel)),
-      unit: '% QTY',
-      pct: s.fuel / 100,
-      color: s.fuel < 25 ? 'var(--red)' : 'var(--gold)'
-    }
-  ]
+  const gaugeColor = (id: string, pct: number): string => {
+    if (id === 'D_FUEL') return pct < 0.25 ? 'var(--red)' : 'var(--gold)'
+    return id === 'D_FLAPS_IND' || id === 'D_ALT_NEEDLE' ? 'var(--blue-2)' : 'var(--blue)'
+  }
+  const gauges = s.telemetry.map((r) => ({
+    label: r.label,
+    value: Number.isNaN(r.value) ? '—' : Math.round(r.value).toLocaleString(),
+    unit: r.unit,
+    pct: r.pct,
+    color: gaugeColor(r.id, r.pct)
+  }))
 
   const health = [
     {
@@ -161,6 +144,13 @@ export function Overview() {
           ))}
         </div>
       </div>
+
+      {!s.aircraft.supported && (
+        <div className="warn-banner">
+          ⚠ <b>{s.aircraft.name}</b> loaded — named decode is A-4E-C only. Relaying &amp; stats
+          continue; the log shows raw addresses.
+        </div>
+      )}
 
       <div className="row-between" style={{ margin: '26px 2px 14px' }}>
         <div className="section-h">Sim Telemetry</div>

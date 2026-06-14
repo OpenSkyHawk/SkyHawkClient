@@ -24,8 +24,8 @@ const DEVICE_ROWS = [
 
 export function Connection() {
   const s = useStore()
-  const set = useStore((x) => x.set)
-  const toggle = useStore((x) => x.toggle)
+  const setConfigField = useStore((x) => x.setConfigField)
+  const toggleRelay = useStore((x) => x.toggleRelay)
 
   return (
     <div className="conn">
@@ -97,7 +97,7 @@ export function Connection() {
             </div>
             <button
               className={`toggle${s.autoReconnect ? ' on' : ''}`}
-              onClick={() => toggle('autoReconnect')}
+              onClick={() => setConfigField({ autoReconnect: !s.autoReconnect })}
               aria-pressed={s.autoReconnect}
             >
               <span />
@@ -117,7 +117,7 @@ export function Connection() {
               <button
                 key={m}
                 className={s.sourceMode === m ? 'on' : ''}
-                onClick={() => set({ sourceMode: m })}
+                onClick={() => setConfigField({ sourceMode: m })}
               >
                 {m[0]!.toUpperCase() + m.slice(1)}
               </button>
@@ -136,7 +136,7 @@ export function Connection() {
               <input
                 className="input"
                 value={s.host}
-                onChange={(e) => set({ host: e.target.value })}
+                onChange={(e) => setConfigField({ host: e.target.value })}
               />
             </div>
             <div style={{ width: 92 }}>
@@ -144,7 +144,7 @@ export function Connection() {
               <input
                 className="input"
                 value={s.port}
-                onChange={(e) => set({ port: e.target.value })}
+                onChange={(e) => setConfigField({ port: e.target.value })}
               />
             </div>
           </div>
@@ -154,7 +154,7 @@ export function Connection() {
               <button
                 key={t.id}
                 className={`radio${s.transport === t.id ? ' on' : ''}`}
-                onClick={() => set({ transport: t.id })}
+                onClick={() => setConfigField({ transport: t.id })}
               >
                 <span className="radio__dot">
                   <span />
@@ -170,7 +170,7 @@ export function Connection() {
 
         <button
           className={`bigbtn${s.relaying ? ' bigbtn--stop' : ''}`}
-          onClick={() => toggle('relaying')}
+          onClick={() => toggleRelay()}
         >
           {s.relaying ? 'Stop relay' : 'Start relay'}
         </button>

@@ -15,8 +15,7 @@ function Row({ k, sub, children }: { k: string; sub: string; children: ReactNode
 
 export function Settings() {
   const s = useStore()
-  const set = useStore((x) => x.set)
-  const toggle = useStore((x) => x.toggle)
+  const setConfigField = useStore((x) => x.setConfigField)
 
   return (
     <div className="settings">
@@ -31,7 +30,7 @@ export function Settings() {
             className="input"
             style={{ width: 160 }}
             value={s.host}
-            onChange={(e) => set({ host: e.target.value })}
+            onChange={(e) => setConfigField({ host: e.target.value })}
           />
         </Row>
         <Row k="Command port" sub="DCS-BIOS import / command sink">
@@ -39,13 +38,13 @@ export function Settings() {
             className="input"
             style={{ width: 100 }}
             value={s.port}
-            onChange={(e) => set({ port: e.target.value })}
+            onChange={(e) => setConfigField({ port: e.target.value })}
           />
         </Row>
         <Row k="Auto-reconnect" sub="Re-open the serial port on unplug">
           <button
             className={`toggle${s.autoReconnect ? ' on' : ''}`}
-            onClick={() => toggle('autoReconnect')}
+            onClick={() => setConfigField({ autoReconnect: !s.autoReconnect })}
             aria-pressed={s.autoReconnect}
           >
             <span />

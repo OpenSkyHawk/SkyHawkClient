@@ -1021,3 +1021,18 @@ body {
 .muted {
   color: var(--muted);
 }
+
+/* non-A-4E aircraft warning */
+.warn-banner {
+  margin: 18px 2px 0;
+  padding: 12px 16px;
+  border-radius: 11px;
+  background: rgba(244, 179, 33, 0.1);
+  border: 1px solid rgba(244, 179, 33, 0.4);
+  color: var(--gold);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.warn-banner b {
+  color: #ffd27a;
+}
