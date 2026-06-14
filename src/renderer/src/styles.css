@@ -137,6 +137,20 @@ body {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
+.pill--btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.pill--btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.pill--on.pill--btn:hover {
+  background: rgba(110, 231, 160, 0.16);
+}
 .pill__dot {
   width: 8px;
   height: 8px;

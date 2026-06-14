@@ -21,6 +21,7 @@ export function App() {
   const sourceMode = useStore((s) => s.sourceMode)
   const relaying = useStore((s) => s.relaying)
   const set = useStore((s) => s.set)
+  const toggleRelay = useStore((s) => s.toggleRelay)
   const initBridge = useStore((s) => s.initBridge)
 
   useEffect(() => initBridge(), [initBridge])
@@ -35,10 +36,14 @@ export function App() {
         </span>
         <div className="titlebar__right">
           <span className="ver">v0.1.0</span>
-          <span className={`pill${relaying ? ' pill--on' : ''}`}>
+          <button
+            className={`pill pill--btn${relaying ? ' pill--on' : ''}`}
+            onClick={() => toggleRelay()}
+            title={relaying ? 'Click to stop relaying' : 'Click to start relaying'}
+          >
             <span className="pill__dot" />
             <span className="pill__txt">{relaying ? 'Relaying' : 'Stopped'}</span>
-          </span>
+          </button>
         </div>
       </header>
 
