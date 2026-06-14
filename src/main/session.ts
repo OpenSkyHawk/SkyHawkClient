@@ -15,6 +15,7 @@ import {
 } from '@shared/ipc'
 import { createTransport, type Transport } from './net'
 import { SerialBridge, SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
+import { debugLog } from './debug'
 import { HidReader } from './hid'
 import { Recorder, ReplaySource, type ReplayInfo } from './replay'
 import { Decoder } from './decode'
@@ -248,6 +249,7 @@ export class Session {
       const { identifier, arg } = parseCommand(line)
       // Node-status messages are tapped to the roster, not logged as panel commands.
       if (identifier === NODE_MSG || identifier === NODE_END_MSG) {
+        debugLog('node', `${identifier} ${arg}`.trim())
         this.roster.applyMessage(identifier, arg)
         continue
       }
@@ -288,10 +290,11 @@ export class Session {
     return { running: this.running, device: this.lastDevice }
   }
 
-  /** Push a client diagnostic into the log (deduped against the last identical one). */
+  /** Push a client diagnostic into the in-app log + the debug log file. */
   private logError(tag: string, msg: string): void {
+    debugLog(`error.${tag}`, msg) // always reaches debug.log when debug mode is on
     const key = `${tag}|${msg}`
-    if (key === this.lastErrKey) return
+    if (key === this.lastErrKey) return // dedupe the in-app log only
     this.lastErrKey = key
     this.logBuf.push({ t: Date.now(), dir: 'sys', address: 0, name: tag, value: msg })
   }
