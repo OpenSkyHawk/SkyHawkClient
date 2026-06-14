@@ -45,4 +45,5 @@ loopback-only, hence TCP is the remote transport.) See PRD §4.
 
 ## License
 
-GPL-2.0-or-later — see [LICENSE](./LICENSE). Same lineage as the OpenSkyhawk firmware + DCS-BIOS.
+**GPL-2.0-only** — see [LICENSE](./LICENSE). Matches DCS-BIOS (GPL v2), whose control-reference
+data the client bundles. Note: GPL permits commercial use; it cannot be made non-commercial.
