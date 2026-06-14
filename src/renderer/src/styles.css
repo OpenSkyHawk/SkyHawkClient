@@ -1123,3 +1123,24 @@ body {
   opacity: 0.4;
   cursor: default;
 }
+
+/* raw serial monitor */
+.ser__grid {
+  grid-template-columns: 130px 56px 1fr 280px;
+}
+.ser__hex {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #cdd6e6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+.ser__ascii {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted-2);
+  white-space: pre;
+  overflow: hidden;
+}

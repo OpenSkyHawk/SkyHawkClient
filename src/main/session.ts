@@ -11,7 +11,8 @@ import {
   type LogRow,
   type PushChannel,
   type PushChannels,
-  type RelayResult
+  type RelayResult,
+  type SerialFrame
 } from '@shared/ipc'
 import { createTransport, type Transport } from './net'
 import { SerialBridge, SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
@@ -27,7 +28,9 @@ const LOG_FLUSH_MS = 33
 const TELEMETRY_MS = 200
 const STATS_MS = 1000
 const NODES_REFRESH_MS = 5000
+const SERIAL_FLUSH_MS = 50
 const MAX_BATCH = 250
+const MAX_SERIAL_BUF = 4000
 
 export class Session {
   private config: AppConfig = { ...DEFAULT_CONFIG }
@@ -43,6 +46,8 @@ export class Session {
   private decoder = new Decoder()
   private readonly stats = new Stats()
   private logBuf: LogRow[] = []
+  private serialMonitor = false
+  private serialBuf: SerialFrame[] = []
   private running = false
   private lastDevice: DeviceStatus = { state: 'no-device' }
   private lastErrKey = ''
@@ -121,6 +126,7 @@ export class Session {
       this.timers = [
         setInterval(() => this.flushLog(), LOG_FLUSH_MS),
         setInterval(() => this.flushTelemetry(), TELEMETRY_MS),
+        setInterval(() => this.flushSerial(), SERIAL_FLUSH_MS),
         setInterval(() => this.emit('stats:tick', this.stats.snapshot()), STATS_MS)
       ]
       // Bridge: poll the node roster so silent deaths get reconciled.
@@ -138,6 +144,7 @@ export class Session {
     const s = new SerialBridge(this.config.autoReconnect)
     this.serial = s
     s.onData(() => {}) // panel commands have nowhere to go with no DCS
+    s.onMonitor((dir, chunk) => this.onSerialTraffic(dir, chunk))
     s.onError(() => {}) // replay keeps feeding the UI regardless
     s.onOpen((path) =>
       this.setDevice({
@@ -154,6 +161,7 @@ export class Session {
     const s = new SerialBridge(this.config.autoReconnect)
     this.serial = s
     s.onData((chunk) => this.onSerialData(chunk))
+    s.onMonitor((dir, chunk) => this.onSerialTraffic(dir, chunk))
     s.onOpen((path) => {
       this.setDevice({
         state: 'relaying',
@@ -215,6 +223,25 @@ export class Session {
 
   isRecording(): boolean {
     return !!this.recorder
+  }
+
+  /** Toggle the raw serial monitor (gated to avoid streaming the export at full rate). */
+  setSerialMonitor(on: boolean): void {
+    this.serialMonitor = on
+    if (!on) this.serialBuf = []
+  }
+
+  private onSerialTraffic(dir: 'tx' | 'rx', chunk: Buffer): void {
+    if (!this.serialMonitor) return
+    this.serialBuf.push({ t: Date.now(), dir, hex: chunk.toString('hex') })
+    if (this.serialBuf.length > MAX_SERIAL_BUF) {
+      this.serialBuf.splice(0, this.serialBuf.length - MAX_SERIAL_BUF)
+    }
+  }
+
+  private flushSerial(): void {
+    if (this.serialBuf.length === 0) return
+    this.emit('serial:traffic', this.serialBuf.splice(0, MAX_SERIAL_BUF))
   }
 
   /** Ask PanelBridge for the full node roster (inject the request export to the serial). */

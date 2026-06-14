@@ -8,8 +8,13 @@ import type {
   TelemetryReadout
 } from '@shared/ipc'
 import type { NodeStatus } from '@shared/nodes'
+import type { SerialFrame } from '@shared/ipc'
 
-export type TabId = 'overview' | 'connection' | 'log' | 'hid' | 'settings'
+export type TabId = 'overview' | 'connection' | 'log' | 'serial' | 'hid' | 'settings'
+
+export interface SerialRow extends SerialFrame {
+  id: number
+}
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
 export type Transport = 'tcp' | 'loop' | 'uni'
 export type DirFilter = 'all' | 'in' | 'out'
@@ -67,6 +72,7 @@ const IDLE_TELEMETRY: TelemetryReadout[] = [
 ]
 
 const MAX_LOG = 1000
+const MAX_SERIAL = 2000
 
 // Guards against duplicate IPC subscriptions (React StrictMode double-mounts the
 // init effect in dev; without this every push — and every log row — lands twice).
@@ -128,6 +134,11 @@ export interface AppState {
   log: LogRow[]
   private_logSeq: number
 
+  // raw serial monitor
+  serialMonitor: boolean
+  serialLog: SerialRow[]
+  private_serialSeq: number
+
   set: (patch: Partial<AppState>) => void
   toggle: (key: 'logPaused' | 'autoscroll' | 'rawMode') => void
   setConfigField: (
@@ -149,6 +160,8 @@ export interface AppState {
   openReplay: () => void
   clearLog: () => void
   exportLog: () => void
+  setSerialMonitor: (on: boolean) => void
+  clearSerial: () => void
   refreshNodes: () => void
   dumpSerialPorts: () => void
   revealDebugLog: () => void
@@ -211,6 +224,10 @@ export const useStore = create<AppState>((set, get) => ({
   log: [],
   private_logSeq: 1000,
 
+  serialMonitor: false,
+  serialLog: [],
+  private_serialSeq: 0,
+
   set: (patch) => set(patch),
   toggle: (key) => set((s) => ({ [key]: !s[key] }) as Partial<AppState>),
 
@@ -260,6 +277,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   clearLog: () => set({ log: [] }),
+
+  setSerialMonitor: (on) => {
+    set({ serialMonitor: on })
+    void window.skyhawk?.setSerialMonitor(on)
+  },
+
+  clearSerial: () => set({ serialLog: [] }),
 
   exportLog: () => {
     const rows = get().log
@@ -317,6 +341,15 @@ export const useStore = create<AppState>((set, get) => ({
       api.on('device:status', (d) => set({ deviceState: d.state, devicePort: d.portPath })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:status', (n) => set({ nodes: n })),
+      api.on('serial:traffic', (frames) => {
+        const s = get()
+        let seq = s.private_serialSeq
+        const mapped: SerialRow[] = frames.map((f) => ({ id: seq++, ...f }))
+        set({
+          serialLog: [...mapped.reverse(), ...s.serialLog].slice(0, MAX_SERIAL),
+          private_serialSeq: seq
+        })
+      }),
       api.on('telemetry:tick', (t) => set({ telemetry: t })),
       api.on('stats:tick', (st) =>
         set({

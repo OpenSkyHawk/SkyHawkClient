@@ -60,6 +60,7 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.relayStatus, () => session.status())
   ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
   ipcMain.handle(CTRL.nodesRefresh, () => session.requestNodes())
+  ipcMain.handle(CTRL.serialMonitor, (_e, on: boolean) => session.setSerialMonitor(on))
 
   ipcMain.handle(CTRL.logExport, async (_e, text: string) => {
     const res = await dialog.showSaveDialog({
