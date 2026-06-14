@@ -151,6 +151,28 @@ export function Connection() {
                 'No capture loaded. Load a recorded session to replay it with no DCS running.'
               )}
             </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginTop: 14
+              }}
+            >
+              <div>
+                <div className="dev__k">Drive SimGateway</div>
+                <div style={{ fontSize: 11, color: 'var(--muted-3)', marginTop: 2 }}>
+                  Also write the replay to the serial device
+                </div>
+              </div>
+              <button
+                className={`toggle${s.replayDriveSerial ? ' on' : ''}`}
+                onClick={() => setConfigField({ replayDriveSerial: !s.replayDriveSerial })}
+                aria-pressed={s.replayDriveSerial}
+              >
+                <span />
+              </button>
+            </div>
           </div>
         )}
 

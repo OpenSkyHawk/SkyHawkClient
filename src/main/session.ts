@@ -71,9 +71,13 @@ export class Session {
     try {
       if (mode === 'replay') {
         if (!this.replay) return { ok: false, error: 'No capture loaded' }
+        if (this.config.replayDriveSerial) this.startSerialWriter()
         this.setDevice({ state: 'connected' })
         this.replay.play(
-          (chunk) => this.ingestExport(chunk),
+          (chunk) => {
+            this.ingestExport(chunk)
+            this.serial?.write(chunk) // optionally drive the real cockpit from the capture
+          },
           () => this.setDevice({ state: 'no-device' })
         )
       } else {
@@ -114,6 +118,23 @@ export class Session {
     } catch (err) {
       return { ok: false, error: (err as Error).message }
     }
+  }
+
+  /** Serial-only output for Replay mode: write the replayed export to the SimGateway. */
+  private startSerialWriter(): void {
+    const s = new SerialBridge(this.config.autoReconnect)
+    this.serial = s
+    s.onData(() => {}) // panel commands have nowhere to go with no DCS
+    s.onError(() => {}) // replay keeps feeding the UI regardless
+    s.onOpen((path) =>
+      this.setDevice({
+        state: 'relaying',
+        portPath: path,
+        vid: SIMGATEWAY_VID,
+        pid: SIMGATEWAY_PID
+      })
+    )
+    s.start()
   }
 
   private startBridgeDevices(): void {
