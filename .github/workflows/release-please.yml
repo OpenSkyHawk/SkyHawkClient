@@ -5,6 +5,8 @@ name: Release
 # Merging that PR is the manual "cut a release" request: release-please tags +
 # creates the GitHub Release, then the build job attaches the Win/Mac artifacts.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
