@@ -1,0 +1,103 @@
+:root {
+  --bg: #050a12;
+  --bg-2: #0a0e1a;
+  --panel: #0d1626;
+  --line: rgba(255, 255, 255, 0.08);
+  --blue: #1e8fff;
+  --blue-2: #3b8beb;
+  --text: #e8ecf4;
+  --muted: #9ca8bc;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: var(--bg-2);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.8rem 1.1rem;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.brand + .sub {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+}
+
+.pill {
+  margin-left: auto;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+}
+
+.pill--connected,
+.pill--relaying {
+  color: #6ee7a0;
+  border-color: rgba(110, 231, 160, 0.4);
+}
+
+.pill--error {
+  color: #ff7a7a;
+  border-color: rgba(255, 122, 122, 0.4);
+}
+
+.grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+  padding: 1.1rem;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.card h2 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.statusbar {
+  padding: 0.5rem 1.1rem;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}

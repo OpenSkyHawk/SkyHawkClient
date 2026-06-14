@@ -1,0 +1,56 @@
+{
+  "name": "openskyhawk-client",
+  "version": "0.0.0",
+  "description": "OpenSkyhawk Client — SimGateway connector + DCS-BIOS / HID monitor for the OpenSkyhawk A-4E cockpit.",
+  "license": "GPL-2.0-or-later",
+  "author": "OpenSkyHawk",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "sync": "tsx scripts/sync-a4ec.ts",
+    "prepare": "husky || true"
+  },
+  "dependencies": {
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/eslint-plugin": "^7.16.1",
+    "@typescript-eslint/parser": "^7.16.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.3",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.4"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml,css,html}": [
+      "prettier --write"
+    ]
+  }
+}

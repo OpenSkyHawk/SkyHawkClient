@@ -1,0 +1,20 @@
+appId: com.openskyhawk.client
+productName: OpenSkyhawk Client
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.utilities
+win:
+  target:
+    - nsis
+    - zip
+linux:
+  target:
+    - AppImage

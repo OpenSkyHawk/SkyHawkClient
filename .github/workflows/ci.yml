@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    name: Lint · Typecheck · Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Sync freshness check
+        run: |
+          npm run sync
+          git diff --exit-code -- src/main/reference \
+            || (echo "::error::generated reference files are stale — run 'npm run sync' and commit" && exit 1)
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  build-smoke:
+    name: Build smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
