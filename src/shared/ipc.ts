@@ -110,11 +110,26 @@ export interface RelayResult {
   error?: string
 }
 
+export interface CaptureState {
+  recording: boolean
+  path?: string
+  events?: number
+}
+
+export interface ReplayLoad {
+  loaded: boolean
+  path?: string
+  events?: number
+  durationMs?: number
+}
+
 export const CTRL = {
   configGet: 'config:get',
   configSet: 'config:set',
   relayStart: 'relay:start',
-  relayStop: 'relay:stop'
+  relayStop: 'relay:stop',
+  captureToggle: 'capture:toggle',
+  replayOpen: 'replay:open'
 } as const
 
 /** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
@@ -124,4 +139,6 @@ export interface SkyhawkApi {
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
+  toggleCapture(): Promise<CaptureState>
+  openReplay(): Promise<ReplayLoad>
 }

@@ -1,6 +1,7 @@
 // Orchestrates a live DCS-BIOS source: transport -> protocol parser -> decoder
-// -> stats, batching pushes to the renderer. Source-agnostic; Monitor mode in
-// M3, Bridge (serial) and Replay layer onto the same pipeline later.
+// -> stats, batching pushes to the renderer. Source-agnostic across Monitor
+// (network), Bridge (serial), and Replay (recorded capture); recording can tap
+// any live mode.
 import { DcsBiosProtocol, LineAssembler, parseCommand } from '@shared/dcsbios'
 import {
   DEFAULT_CONFIG,
@@ -14,6 +15,7 @@ import {
 import { createTransport, type Transport } from './net'
 import { SerialBridge, SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
 import { HidReader } from './hid'
+import { Recorder, ReplaySource, type ReplayInfo } from './replay'
 import { Decoder } from './decode'
 import { Stats } from './stats'
 
@@ -29,6 +31,9 @@ export class Session {
   private transport?: Transport
   private serial?: SerialBridge
   private hid?: HidReader
+  private replay?: ReplaySource
+  private recorder?: Recorder
+  private recordPath?: string
   private cmdAssembler = new LineAssembler()
   private readonly parser: DcsBiosProtocol
   private decoder = new Decoder()
@@ -61,62 +66,44 @@ export class Session {
     this.stats.reset()
     this.cmdAssembler = new LineAssembler()
     this.logBuf = []
-    const bridge = this.config.sourceMode === 'bridge'
+    const mode = this.config.sourceMode
 
     try {
-      const t = createTransport(this.config)
-      this.transport = t
-      t.onExport((chunk) => {
-        this.stats.addIn(chunk.length)
-        this.parser.processBuffer(chunk)
-        // Bridge: forward the export byte-for-byte to the SimGateway serial.
-        this.serial?.write(chunk)
-      })
-      t.onError((err) => {
-        this.stats.error()
-        if (!bridge) this.setDevice({ state: 'error', detail: err.message })
-      })
-      t.onConnected((connected) => {
-        if (bridge) return // serial drives the headline device status in Bridge mode
-        if (connected) {
-          this.setDevice({ state: 'connected' })
-        } else {
-          this.stats.reconnect()
-          this.setDevice({ state: 'reconnecting' })
-        }
-      })
-
-      if (bridge) {
-        const s = new SerialBridge(this.config.autoReconnect)
-        this.serial = s
-        s.onData((chunk) => this.onSerialData(chunk))
-        s.onOpen((path) =>
-          this.setDevice({
-            state: 'relaying',
-            portPath: path,
-            vid: SIMGATEWAY_VID,
-            pid: SIMGATEWAY_PID
-          })
+      if (mode === 'replay') {
+        if (!this.replay) return { ok: false, error: 'No capture loaded' }
+        this.setDevice({ state: 'connected' })
+        this.replay.play(
+          (chunk) => this.ingestExport(chunk),
+          () => this.setDevice({ state: 'no-device' })
         )
-        s.onClose(() => {
-          this.stats.reconnect()
-          this.setDevice({ state: 'reconnecting' })
+      } else {
+        const bridge = mode === 'bridge'
+        const t = createTransport(this.config)
+        this.transport = t
+        t.onExport((chunk) => {
+          this.ingestExport(chunk)
+          this.serial?.write(chunk) // Bridge: forward export byte-for-byte to the SimGateway
         })
-        s.onError((err) => {
+        t.onError((err) => {
           this.stats.error()
-          this.setDevice({ state: 'error', detail: err.message })
+          if (!bridge) this.setDevice({ state: 'error', detail: err.message })
         })
-        s.start()
+        t.onConnected((connected) => {
+          if (bridge) return // serial drives the headline device status in Bridge mode
+          if (connected) {
+            this.setDevice({ state: 'connected' })
+          } else {
+            this.stats.reconnect()
+            this.setDevice({ state: 'reconnecting' })
+          }
+        })
 
-        // HID runs in parallel with the serial CDC; errors just leave it idle.
-        const h = new HidReader()
-        this.hid = h
-        h.onError(() => {})
-        h.start()
+        if (bridge) this.startBridgeDevices()
+
+        this.setDevice({ state: 'scanning' })
+        t.start()
       }
 
-      this.setDevice({ state: 'scanning' })
-      t.start()
       this.running = true
       this.timers = [
         setInterval(() => this.flushLog(), LOG_FLUSH_MS),
@@ -129,10 +116,40 @@ export class Session {
     }
   }
 
+  private startBridgeDevices(): void {
+    const s = new SerialBridge(this.config.autoReconnect)
+    this.serial = s
+    s.onData((chunk) => this.onSerialData(chunk))
+    s.onOpen((path) =>
+      this.setDevice({
+        state: 'relaying',
+        portPath: path,
+        vid: SIMGATEWAY_VID,
+        pid: SIMGATEWAY_PID
+      })
+    )
+    s.onClose(() => {
+      this.stats.reconnect()
+      this.setDevice({ state: 'reconnecting' })
+    })
+    s.onError((err) => {
+      this.stats.error()
+      this.setDevice({ state: 'error', detail: err.message })
+    })
+    s.start()
+
+    // HID runs in parallel with the serial CDC; errors just leave it idle.
+    const h = new HidReader()
+    this.hid = h
+    h.onError(() => {})
+    h.start()
+  }
+
   stop(): RelayResult {
     this.running = false
     for (const t of this.timers) clearInterval(t)
     this.timers = []
+    this.replay?.stop()
     this.hid?.stop()
     this.hid = undefined
     this.serial?.stop()
@@ -144,10 +161,45 @@ export class Session {
     return { ok: true }
   }
 
+  // ── record / replay control ────────────────────────────────────────────────
+
+  startRecording(path: string): void {
+    this.recorder = new Recorder()
+    this.recordPath = path
+  }
+
+  stopRecording(): { path?: string; events: number } {
+    const events = this.recorder?.count ?? 0
+    if (this.recorder && this.recordPath) this.recorder.save(this.recordPath)
+    const path = this.recordPath
+    this.recorder = undefined
+    this.recordPath = undefined
+    return { path, events }
+  }
+
+  isRecording(): boolean {
+    return !!this.recorder
+  }
+
+  loadReplay(path: string): ReplayInfo {
+    this.replay?.stop()
+    this.replay = ReplaySource.load(path)
+    return this.replay.info()
+  }
+
+  // ── pipeline ───────────────────────────────────────────────────────────────
+
+  private ingestExport(chunk: Buffer): void {
+    this.stats.addIn(chunk.length)
+    this.parser.processBuffer(chunk)
+    this.recorder?.record('in', chunk)
+  }
+
   /** Panel commands arriving from the SimGateway serial: relay to DCS, log, count. */
   private onSerialData(chunk: Buffer): void {
     this.transport?.send(chunk) // byte-for-byte relay to DCS:7778
     this.stats.addOut(chunk.length)
+    this.recorder?.record('out', chunk)
     const t = Date.now()
     for (const line of this.cmdAssembler.push(chunk)) {
       if (!line.trim()) continue
