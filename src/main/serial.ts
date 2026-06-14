@@ -2,11 +2,19 @@
 // the DCS-BIOS byte stream both ways — exactly like the socat relay did. The HID
 // interface is a separate device the OS claims; it is handled in M5, not here.
 import { SerialPort } from 'serialport'
+import { debugLog } from './debug'
 
 export const SIMGATEWAY_VID = 0x2e8a
 export const SIMGATEWAY_PID = 0x4134
 const VID_HEX = SIMGATEWAY_VID.toString(16).padStart(4, '0')
 const PID_HEX = SIMGATEWAY_PID.toString(16).padStart(4, '0')
+
+export type SerialPortInfo = Awaited<ReturnType<typeof SerialPort.list>>[number]
+
+/** Raw enumeration of all serial ports (every PortInfo field) — for the debug dump. */
+export function listSerialPorts(): Promise<SerialPortInfo[]> {
+  return SerialPort.list()
+}
 
 /** USB-CDC ignores baud (virtual), but node-serialport requires a value. */
 const BAUD = 250000
@@ -75,21 +83,28 @@ export class SerialBridge implements SerialLink {
     try {
       const path = await findSimGatewayPort()
       if (!path) {
+        debugLog('serial.notFound', { vid: VID_HEX, pid: PID_HEX })
         this.errorCb(new Error('SimGateway serial port not found'))
         this.retry()
         return
       }
       this.path = path
+      debugLog('serial.open', { path })
       const port = new SerialPort({ path, baudRate: BAUD, autoOpen: false })
       this.port = port
       port.on('data', (d: Buffer) => this.dataCb(d))
-      port.on('error', (e: Error) => this.errorCb(e))
+      port.on('error', (e: Error) => {
+        debugLog('serial.error', e.message)
+        this.errorCb(e)
+      })
       port.on('close', () => {
+        debugLog('serial.close', { path })
         this.closeCb()
         this.retry()
       })
       port.open((err) => {
         if (err) {
+          debugLog('serial.openError', err.message)
           this.errorCb(err)
           this.retry()
         } else {

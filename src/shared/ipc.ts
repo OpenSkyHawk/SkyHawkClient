@@ -95,6 +95,7 @@ export interface AppConfig {
   listenPort: number // unicast-listen bind port
   autoReconnect: boolean
   replayDriveSerial: boolean // Replay mode: also write the replayed export to the SimGateway
+  debugMode: boolean // write diagnostics (serial enumeration, device events) to a local log file
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -104,7 +105,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   commandPort: 7778,
   listenPort: 5010,
   autoReconnect: true,
-  replayDriveSerial: false
+  replayDriveSerial: false,
+  debugMode: false
 }
 
 const SOURCE_MODES: SourceMode[] = ['bridge', 'monitor', 'replay']
@@ -129,7 +131,8 @@ export function sanitizeConfig(raw: unknown): AppConfig {
     replayDriveSerial:
       typeof r.replayDriveSerial === 'boolean'
         ? r.replayDriveSerial
-        : DEFAULT_CONFIG.replayDriveSerial
+        : DEFAULT_CONFIG.replayDriveSerial,
+    debugMode: typeof r.debugMode === 'boolean' ? r.debugMode : DEFAULT_CONFIG.debugMode
   }
 }
 
@@ -158,6 +161,11 @@ export interface HidAvailability {
   buttons: number[]
 }
 
+export interface DebugDumpResult {
+  path: string
+  count: number
+}
+
 export const CTRL = {
   configGet: 'config:get',
   configSet: 'config:set',
@@ -165,7 +173,9 @@ export const CTRL = {
   relayStop: 'relay:stop',
   captureToggle: 'capture:toggle',
   replayOpen: 'replay:open',
-  hidAvailability: 'hid:availability'
+  hidAvailability: 'hid:availability',
+  debugDumpPorts: 'debug:dump-ports',
+  debugReveal: 'debug:reveal'
 } as const
 
 /** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
@@ -178,4 +188,6 @@ export interface SkyhawkApi {
   toggleCapture(): Promise<CaptureState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
+  dumpSerialPorts(): Promise<DebugDumpResult>
+  revealDebugLog(): Promise<void>
 }
