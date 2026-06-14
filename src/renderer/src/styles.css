@@ -45,9 +45,19 @@ body {
   -webkit-app-region: drag;
 }
 
-.topbar__logo {
-  height: 30px;
-  width: auto;
+.brand {
+  font-weight: 900;
+  font-size: 0.95rem;
+  letter-spacing: 0.16em;
+  color: #fff;
+}
+
+.brand-sub {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .pill {

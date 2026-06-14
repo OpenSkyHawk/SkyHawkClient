@@ -22,7 +22,8 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <img className="topbar__logo" src={logo} alt="OpenSkyhawk Client" />
+        <span className="brand">OPEN&nbsp;SKYHAWK</span>
+        <span className="brand-sub">Client</span>
         <span className={`pill pill--${device.state}`}>{device.state.replace(/-/g, ' ')}</span>
       </header>
 
