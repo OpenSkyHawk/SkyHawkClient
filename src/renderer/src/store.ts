@@ -66,7 +66,7 @@ const IDLE_TELEMETRY: TelemetryReadout[] = [
   { id: 'D_FUEL', label: 'Fuel', value: NaN, pct: 0, unit: '% QTY' }
 ]
 
-const MAX_LOG = 500
+const MAX_LOG = 1000
 
 // Guards against duplicate IPC subscriptions (React StrictMode double-mounts the
 // init effect in dev; without this every push — and every log row — lands twice).

@@ -13,7 +13,7 @@ export function Log() {
     const q = s.search.trim().toLowerCase()
     rows = rows.filter((r) => (r.name + ' ' + r.addrHex).toLowerCase().includes(q))
   }
-  const view = rows.slice(0, 80)
+  const view = rows.slice(0, 1000)
 
   const dirBtn = (id: DirFilter, label: string) => (
     <button className={s.dirFilter === id ? 'on' : ''} onClick={() => set({ dirFilter: id })}>
