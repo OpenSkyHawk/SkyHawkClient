@@ -52,6 +52,7 @@ export interface HidSnapshot {
   buttons: boolean[] // 128
   hats: number[] // 4 (0 = centre)
   ageMs: number // time since last report; large => idle
+  rateHz: number // reports/sec (on-change; 0 when idle)
 }
 
 /** One sim-telemetry gauge readout (RPM / IAS / Flap / Press Alt / Fuel). */

@@ -63,5 +63,8 @@
   },
   "overrides": {
     "esbuild": "^0.28.0"
+  },
+  "optionalDependencies": {
+    "node-hid": "^3.3.0"
   }
 }
