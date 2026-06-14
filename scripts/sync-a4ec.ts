@@ -1,26 +1,433 @@
 /**
- * Firmware sync — generates `src/main/reference/*.generated.ts` from a PINNED
+ * Firmware sync — regenerates `src/main/reference/*.generated.ts` from a PINNED
  * commit of the OpenSkyhawk firmware repo. See PRD.md §7 / §12.
  *
- * Sources (sparse-fetched from the pinned commit):
- *   tools/gen_a4ec/data/A-4E-C.jsonp                -> a4ec-controls.generated.ts
- *   Firmware/Libraries/HIDControls/HIDControls.h    -> hid-controls.generated.ts
- *   Firmware/Libraries/SimGateway/SimGateway.cpp    -> hid-report-layout.generated.ts (asserted)
- *   Firmware/ScratchPad/DCS-BIOS/.../MetadataStart.json -> metadata.generated.ts (_ACFT_NAME @ 0x0000)
+ * Sources (read from the pinned commit):
+ *   tools/gen_a4ec/data/A-4E-C.jsonp             -> a4ec-controls.generated.ts
+ *   Firmware/Libraries/HIDControls/HIDControls.h -> hid-controls.generated.ts
+ *   Firmware/Libraries/SimGateway/SimGateway.cpp -> hid-report-layout.generated.ts (asserted)
  *
- * TODO(M2): implement the sparse-fetch + codegen. Until then this is a no-op so
- * `npm run sync` and the CI freshness gate stay green.
+ * The DCS-BIOS common-metadata address (_ACFT_NAME @ 0x0000) is NOT vendored in
+ * the firmware repo, so it lives in the hand-curated src/main/reference/dcsbios-metadata.ts.
+ *
+ * Source resolution:
+ *   1. --local <path> | OPENSKYHAWK_REPO_LOCAL=<path>  read files from a local checkout (no fetch)
+ *   2. otherwise sparse-fetch PIN.commit from PIN.repo into a temp dir
+ *
+ * Output is prettier-formatted in-process so a plain `npm run sync` reproduces
+ * the committed bytes exactly — that is what the CI freshness gate diffs.
+ * Generated banners carry the source commit (no timestamp, to stay deterministic).
+ *
+ * @copyright GPL-2.0-only
  */
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { format } from 'prettier'
 
-const PINNED = {
-  repo: 'git@github.com:OpenSkyHawk/OpenSkyhawk.git',
-  commit: '' // set when codegen lands in M2
+const PIN = {
+  repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
+  commit: '51f150f793c5b10b161bc06d587e4778fed60263'
 }
 
-function main(): void {
-  console.log(
-    `[sync-a4ec] stub — codegen lands in M2 (source ${PINNED.repo}@${PINNED.commit || 'unpinned'}). Nothing generated.`
+const SRC = {
+  controls: 'tools/gen_a4ec/data/A-4E-C.jsonp',
+  hidControls: 'Firmware/Libraries/HIDControls/HIDControls.h',
+  simGateway: 'Firmware/Libraries/SimGateway/SimGateway.cpp'
+}
+
+const REPO_ROOT = join(__dirname, '..')
+const OUT_DIR = join(REPO_ROOT, 'src', 'main', 'reference')
+
+const PRETTIER_OPTS = {
+  parser: 'typescript' as const,
+  semi: false,
+  singleQuote: true,
+  trailingComma: 'none' as const,
+  printWidth: 100,
+  tabWidth: 2
+}
+
+// ── source resolution ────────────────────────────────────────────────────────
+
+function localRoot(): string | null {
+  const idx = process.argv.indexOf('--local')
+  if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1]!
+  return process.env.OPENSKYHAWK_REPO_LOCAL ?? null
+}
+
+/** Sparse-fetch only the needed files at PIN.commit into a temp dir; returns its path. */
+function sparseFetch(paths: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), 'osh-sync-'))
+  const git = (args: string[]) =>
+    execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'ignore', 'inherit'] })
+  console.log(`[sync] sparse-fetching ${PIN.commit.slice(0, 10)} from ${PIN.repo}`)
+  git(['init', '-q'])
+  git(['remote', 'add', 'origin', PIN.repo])
+  git([
+    '-c',
+    'protocol.version=2',
+    'fetch',
+    '-q',
+    '--depth',
+    '1',
+    '--filter=blob:none',
+    'origin',
+    PIN.commit
+  ])
+  git(['sparse-checkout', 'init', '--no-cone'])
+  git(['sparse-checkout', 'set', '--no-cone', ...paths])
+  git(['checkout', '-q', PIN.commit])
+  return dir
+}
+
+interface Sources {
+  controls: string
+  hidControls: string
+  simGateway: string
+  cleanup: () => void
+}
+
+function loadSources(): Sources {
+  const local = localRoot()
+  if (local) {
+    console.log(`[sync] reading from local checkout: ${local}`)
+    const read = (p: string) => readFileSync(join(local, p), 'utf8')
+    return {
+      controls: read(SRC.controls),
+      hidControls: read(SRC.hidControls),
+      simGateway: read(SRC.simGateway),
+      cleanup: () => {}
+    }
+  }
+  const dir = sparseFetch(Object.values(SRC))
+  const read = (p: string) => readFileSync(join(dir, p), 'utf8')
+  return {
+    controls: read(SRC.controls),
+    hidControls: read(SRC.hidControls),
+    simGateway: read(SRC.simGateway),
+    cleanup: () => rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+const banner = (sources: string[]) =>
+  [
+    '// AUTO-GENERATED by `npm run sync` (scripts/sync-a4ec.ts) — DO NOT EDIT.',
+    `// Source: ${PIN.repo} @ ${PIN.commit}`,
+    ...sources.map((s) => `//   ${s}`),
+    ''
+  ].join('\n')
+
+const hex = (n: number) => '0x' + n.toString(16)
+const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+
+// ── A-4E-C controls ──────────────────────────────────────────────────────────
+
+interface RawOutput {
+  address?: number
+  mask?: number
+  shift_by?: number
+  max_value?: number
+  max_length?: number
+  type?: string
+  description?: string
+}
+interface RawInput {
+  interface?: string
+  max_value?: number
+}
+interface RawControl {
+  category?: string
+  identifier?: string
+  outputs?: RawOutput[]
+  inputs?: RawInput[]
+}
+
+function parseJsonp(text: string): Record<string, Record<string, RawControl>> {
+  let t = text
+  if (t.trimStart().startsWith('docdata[')) t = t.slice(t.indexOf('\n') + 1)
+  t = t.trimEnd().replace(/;\s*$/, '')
+  return JSON.parse(t)
+}
+
+function genA4ecControls(jsonp: string): string {
+  const doc = parseJsonp(jsonp)
+  const outputs: { id: string; category: string; o: RawOutput }[] = []
+  const inputs: { id: string; category: string; i: RawInput }[] = []
+
+  for (const [category, controls] of Object.entries(doc)) {
+    for (const [id, ctrl] of Object.entries(controls)) {
+      for (const o of ctrl.outputs ?? []) outputs.push({ id, category, o })
+      for (const i of ctrl.inputs ?? []) inputs.push({ id, category, i })
+    }
+  }
+
+  outputs.sort(
+    (a, b) => (a.o.address ?? 0) - (b.o.address ?? 0) || (a.o.shift_by ?? 0) - (b.o.shift_by ?? 0)
+  )
+  inputs.sort(
+    (a, b) => a.id.localeCompare(b.id) || (a.i.interface ?? '').localeCompare(b.i.interface ?? '')
+  )
+
+  const outRows = outputs.map(({ id, category, o }) => {
+    const max = o.max_value ?? o.max_length ?? 0
+    return `  { id: ${q(id)}, category: ${q(category)}, address: ${hex(o.address ?? 0)}, mask: ${hex(
+      o.mask ?? 0
+    )}, shift: ${o.shift_by ?? 0}, max: ${max}, type: ${q(o.type ?? '')}, description: ${q(
+      o.description ?? ''
+    )} }`
+  })
+
+  const inRows = inputs.map(
+    ({ id, category, i }) =>
+      `  { id: ${q(id)}, category: ${q(category)}, interface: ${q(i.interface ?? '')}, maxValue: ${
+        i.max_value ?? null
+      } }`
+  )
+
+  return (
+    banner([`${SRC.controls} (${outputs.length} outputs, ${inputs.length} inputs)`]) +
+    `
+export interface A4ecOutput {
+  /** DCS-BIOS control identifier, e.g. "ALT_PRESSURE". */
+  id: string
+  category: string
+  /** DCS-BIOS export address. */
+  address: number
+  /** Bit mask within the 16-bit word at \`address\`. */
+  mask: number
+  /** Right-shift applied after masking. */
+  shift: number
+  /** Max raw value (or string length for string outputs). */
+  max: number
+  /** "integer" | "string" | … */
+  type: string
+  description: string
+}
+
+export interface A4ecInput {
+  id: string
+  category: string
+  /** DCS-BIOS input interface, e.g. "set_state" | "fixed_step" | "action". */
+  interface: string
+  maxValue: number | null
+}
+
+export const A4EC_OUTPUTS: readonly A4ecOutput[] = [
+${outRows.join(',\n')}
+]
+
+export const A4EC_INPUTS: readonly A4ecInput[] = [
+${inRows.join(',\n')}
+]
+
+/** Decode-by-address: many controls can share one address via distinct masks. */
+export const A4EC_OUTPUTS_BY_ADDRESS: ReadonlyMap<number, readonly A4ecOutput[]> = (() => {
+  const m = new Map<number, A4ecOutput[]>()
+  for (const o of A4EC_OUTPUTS) {
+    const a = m.get(o.address)
+    if (a) a.push(o)
+    else m.set(o.address, [o])
+  }
+  return m
+})()
+
+/** Command lookup: identifier -> its input interfaces. */
+export const A4EC_INPUTS_BY_ID: ReadonlyMap<string, readonly A4ecInput[]> = (() => {
+  const m = new Map<string, A4ecInput[]>()
+  for (const i of A4EC_INPUTS) {
+    const a = m.get(i.id)
+    if (a) a.push(i)
+    else m.set(i.id, [i])
+  }
+  return m
+})()
+`
   )
 }
 
-main()
+// ── HID controls (CAN controlId space) ───────────────────────────────────────
+
+function titleCase(macroSuffix: string): string {
+  return macroSuffix
+    .toLowerCase()
+    .split('_')
+    .map((w) => (w === 'l' || w === 'r' ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(' ')
+}
+
+function genHidControls(header: string): string {
+  const defRe = /#define\s+(CTRL_\w+)\s+(0x[0-9A-Fa-f]+)\s*(?:\/\/\s*(.*))?$/gm
+  const controls: { id: number; macro: string; label: string; comment: string }[] = []
+  const sentinels: Record<string, number> = {}
+  let m: RegExpExecArray | null
+  while ((m = defRe.exec(header))) {
+    const macro = m[1]!
+    const id = parseInt(m[2]!, 16)
+    const comment = (m[3] ?? '').trim()
+    if (macro.startsWith('CTRL_ID_')) {
+      sentinels[macro] = id
+      continue
+    }
+    controls.push({ id, macro, label: titleCase(macro.replace(/^CTRL_/, '')), comment })
+  }
+  controls.sort((a, b) => a.id - b.id)
+
+  // Routing ranges from the header's "controlId routing by range" comment block.
+  const ranges: Record<string, [number, number]> = {}
+  const rangeRe = /0x([0-9A-Fa-f]+)[–-]0x([0-9A-Fa-f]+)\s+HID\s+(axes|hat switches|buttons)/g
+  let r: RegExpExecArray | null
+  while ((r = rangeRe.exec(header))) {
+    const key = r[3] === 'axes' ? 'AXIS' : r[3] === 'buttons' ? 'BUTTON' : 'HAT'
+    ranges[key] = [parseInt(r[1]!, 16), parseInt(r[2]!, 16)]
+  }
+
+  const rows = controls.map(
+    (c) =>
+      `  { id: ${hex(c.id)}, macro: ${q(c.macro)}, label: ${q(c.label)}, comment: ${q(c.comment)} }`
+  )
+
+  const rangeLines = (['AXIS', 'HAT', 'BUTTON'] as const)
+    .filter((k) => ranges[k])
+    .map((k) => `  ${k}_MIN: ${hex(ranges[k]![0])},\n  ${k}_MAX: ${hex(ranges[k]![1])}`)
+  const sentinelLines = Object.entries(sentinels).map(
+    ([k, v]) => `  ${k.replace(/^CTRL_ID_/, '')}: ${hex(v)}`
+  )
+
+  return (
+    banner([`${SRC.hidControls} (${controls.length} controls)`]) +
+    `
+export interface HidControl {
+  /** CAN controlId (0x0010–0x00FF). NOT a USB-report index. */
+  id: number
+  macro: string
+  label: string
+  comment: string
+}
+
+export const HID_CONTROLS: readonly HidControl[] = [
+${rows.join(',\n')}
+]
+
+/** controlId routing ranges + sentinels, mirrored from HIDControls.h. */
+export const HID_ID = {
+${[...rangeLines, ...sentinelLines].join(',\n')}
+} as const
+
+export const HID_CONTROLS_BY_ID: ReadonlyMap<number, HidControl> = new Map(
+  HID_CONTROLS.map((c) => [c.id, c])
+)
+`
+  )
+}
+
+// ── HID report layout (asserted against firmware struct) ──────────────────────
+
+function genHidReportLayout(cpp: string): string {
+  const structRe = /struct\s+__attribute__\(\(packed\)\)\s+HIDReport\s*\{([\s\S]*?)\}/
+  const body = structRe.exec(cpp)?.[1]
+  if (!body)
+    throw new Error('[sync] HIDReport struct not found in SimGateway.cpp — firmware layout changed')
+
+  const fieldRe = /(uint8_t|int16_t)\s+(\w+)\[(\d+)\]/g
+  const sizeOf: Record<string, number> = { uint8_t: 1, int16_t: 2 }
+  const fields: { name: string; ctype: string; count: number; bytes: number }[] = []
+  let f: RegExpExecArray | null
+  while ((f = fieldRe.exec(body))) {
+    const ctype = f[1]!
+    fields.push({ ctype, name: f[2]!, count: Number(f[3]), bytes: sizeOf[ctype]! * Number(f[3]) })
+  }
+
+  // Hard assertion: the decoder + UI depend on this exact 34-byte layout.
+  const expect = [
+    { name: 'buttons', ctype: 'uint8_t', count: 16 },
+    { name: 'hats', ctype: 'uint8_t', count: 2 },
+    { name: 'axes', ctype: 'int16_t', count: 8 }
+  ]
+  for (const e of expect) {
+    const got = fields.find((x) => x.name === e.name)
+    if (!got || got.ctype !== e.ctype || got.count !== e.count) {
+      throw new Error(
+        `[sync] HIDReport.${e.name} drift: expected ${e.ctype}[${e.count}], got ${
+          got ? `${got.ctype}[${got.count}]` : 'missing'
+        } — update the firmware-sync expectation and the decoder`
+      )
+    }
+  }
+
+  let offset = 0
+  const off: Record<string, number> = {}
+  for (const x of fields) {
+    off[x.name] = offset
+    offset += x.bytes
+  }
+  if (offset !== 34) throw new Error(`[sync] HIDReport total ${offset}B, expected 34B`)
+
+  // Axis USB usages, in report order, from the descriptor comments.
+  const usages = [...cpp.matchAll(/Usage \((X|Y|Z|Rx|Ry|Rz|Slider|Dial)\)/g)].map((u) => u[1]!)
+
+  return (
+    banner([`${SRC.simGateway} (HIDReport struct + descriptor)`]) +
+    `
+/**
+ * Fixed 34-byte SimGateway HID report. Asserted against the firmware struct at
+ * sync time, so a layout change fails \`npm run sync\` loudly.
+ *
+ * Semantics from the USB HID descriptor (NB: differ from the CAN controlId space):
+ *  - axes are SIGNED int16, little-endian, logical range −32768..32767 (no 0x8000 bias).
+ *  - hat nibbles encode 0..7 = N/NE/E/SE/S/SW/W/NW; value ≥ 8 (e.g. 0xF) = null/centered.
+ */
+export const HID_REPORT_LAYOUT = {
+  size: ${offset},
+  buttons: { offset: ${off.buttons}, bytes: 16, count: 128 },
+  hats: {
+    offset: ${off.hats},
+    bytes: 2,
+    count: 4,
+    nibbleBits: 4,
+    /** Decoded value ≥ this is the centered/null state. */
+    centeredAtOrAbove: 8,
+    nullNibble: 0xf
+  },
+  axes: {
+    offset: ${off.axes},
+    bytes: 16,
+    count: 8,
+    signed: true,
+    min: -32768,
+    max: 32767,
+    usages: [${usages.map(q).join(', ')}]
+  }
+} as const
+`
+  )
+}
+
+// ── main ─────────────────────────────────────────────────────────────────────
+
+async function writeGenerated(file: string, code: string): Promise<void> {
+  const formatted = await format(code, PRETTIER_OPTS)
+  writeFileSync(join(OUT_DIR, file), formatted)
+  console.log(`[sync] wrote src/main/reference/${file}`)
+}
+
+async function main(): Promise<void> {
+  mkdirSync(OUT_DIR, { recursive: true })
+  const s = loadSources()
+  try {
+    await writeGenerated('a4ec-controls.generated.ts', genA4ecControls(s.controls))
+    await writeGenerated('hid-controls.generated.ts', genHidControls(s.hidControls))
+    await writeGenerated('hid-report-layout.generated.ts', genHidReportLayout(s.simGateway))
+  } finally {
+    s.cleanup()
+  }
+  console.log('[sync] done.')
+}
+
+main().catch((err) => {
+  console.error(err instanceof Error ? err.message : err)
+  process.exit(1)
+})
