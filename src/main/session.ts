@@ -1,7 +1,7 @@
 // Orchestrates a live DCS-BIOS source: transport -> protocol parser -> decoder
 // -> stats, batching pushes to the renderer. Source-agnostic; Monitor mode in
 // M3, Bridge (serial) and Replay layer onto the same pipeline later.
-import { DcsBiosProtocol } from '@shared/dcsbios'
+import { DcsBiosProtocol, LineAssembler, parseCommand } from '@shared/dcsbios'
 import {
   DEFAULT_CONFIG,
   type AppConfig,
@@ -12,6 +12,7 @@ import {
   type RelayResult
 } from '@shared/ipc'
 import { createTransport, type Transport } from './net'
+import { SerialBridge, SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
 import { Decoder } from './decode'
 import { Stats } from './stats'
 
@@ -25,6 +26,8 @@ const MAX_BATCH = 250
 export class Session {
   private config: AppConfig = { ...DEFAULT_CONFIG }
   private transport?: Transport
+  private serial?: SerialBridge
+  private cmdAssembler = new LineAssembler()
   private readonly parser: DcsBiosProtocol
   private decoder = new Decoder()
   private readonly stats = new Stats()
@@ -54,7 +57,9 @@ export class Session {
     this.decoder = new Decoder()
     this.parser.reset()
     this.stats.reset()
+    this.cmdAssembler = new LineAssembler()
     this.logBuf = []
+    const bridge = this.config.sourceMode === 'bridge'
 
     try {
       const t = createTransport(this.config)
@@ -62,19 +67,46 @@ export class Session {
       t.onExport((chunk) => {
         this.stats.addIn(chunk.length)
         this.parser.processBuffer(chunk)
+        // Bridge: forward the export byte-for-byte to the SimGateway serial.
+        this.serial?.write(chunk)
       })
       t.onError((err) => {
         this.stats.error()
-        this.setDevice({ state: 'error', detail: err.message })
+        if (!bridge) this.setDevice({ state: 'error', detail: err.message })
       })
       t.onConnected((connected) => {
+        if (bridge) return // serial drives the headline device status in Bridge mode
         if (connected) {
-          this.setDevice({ state: this.config.sourceMode === 'bridge' ? 'relaying' : 'connected' })
+          this.setDevice({ state: 'connected' })
         } else {
           this.stats.reconnect()
           this.setDevice({ state: 'reconnecting' })
         }
       })
+
+      if (bridge) {
+        const s = new SerialBridge(this.config.autoReconnect)
+        this.serial = s
+        s.onData((chunk) => this.onSerialData(chunk))
+        s.onOpen((path) =>
+          this.setDevice({
+            state: 'relaying',
+            portPath: path,
+            vid: SIMGATEWAY_VID,
+            pid: SIMGATEWAY_PID
+          })
+        )
+        s.onClose(() => {
+          this.stats.reconnect()
+          this.setDevice({ state: 'reconnecting' })
+        })
+        s.onError((err) => {
+          this.stats.error()
+          this.setDevice({ state: 'error', detail: err.message })
+        })
+        s.start()
+      }
+
       this.setDevice({ state: 'scanning' })
       t.start()
       this.running = true
@@ -93,6 +125,8 @@ export class Session {
     this.running = false
     for (const t of this.timers) clearInterval(t)
     this.timers = []
+    this.serial?.stop()
+    this.serial = undefined
     this.transport?.stop()
     this.transport = undefined
     this.flushLog()
@@ -100,12 +134,17 @@ export class Session {
     return { ok: true }
   }
 
-  /** Send a DCS-BIOS command toward DCS (used by Bridge/Replay; no-op in pure Monitor). */
-  sendCommand(line: string): void {
-    const buf = Buffer.from(line, 'ascii')
-    this.transport?.send(buf)
-    this.stats.addOut(buf.length)
-    this.stats.command(line.trim())
+  /** Panel commands arriving from the SimGateway serial: relay to DCS, log, count. */
+  private onSerialData(chunk: Buffer): void {
+    this.transport?.send(chunk) // byte-for-byte relay to DCS:7778
+    this.stats.addOut(chunk.length)
+    const t = Date.now()
+    for (const line of this.cmdAssembler.push(chunk)) {
+      if (!line.trim()) continue
+      const { identifier, arg } = parseCommand(line)
+      this.stats.command(line.trim())
+      this.logBuf.push({ t, dir: 'out', address: 0, name: identifier, value: arg })
+    }
   }
 
   private onWrite(address: number, value: number): void {

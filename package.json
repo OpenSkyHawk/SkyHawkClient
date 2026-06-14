@@ -25,6 +25,7 @@
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "@fontsource-variable/saira": "^5.2.11",
+    "serialport": "^13.0.0",
     "zustand": "^4.5.4"
   },
   "devDependencies": {

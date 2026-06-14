@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { DcsBiosProtocol, StringRegion, formatCommand, ACFT_NAME_ADDRESS } from './dcsbios'
+import {
+  DcsBiosProtocol,
+  LineAssembler,
+  StringRegion,
+  formatCommand,
+  parseCommand,
+  ACFT_NAME_ADDRESS
+} from './dcsbios'
 
 /** Build a sync + one write block: addr, then count bytes of data words. */
 function frame(address: number, words: number[]): number[] {
@@ -61,5 +68,21 @@ describe('StringRegion', () => {
 describe('formatCommand', () => {
   it('builds an identifier + arg line', () => {
     expect(formatCommand('MASTER_ARM', 1)).toBe('MASTER_ARM 1\n')
+  })
+})
+
+describe('parseCommand', () => {
+  it('splits identifier from arg on the first space', () => {
+    expect(parseCommand('TACAN_CHAN_SEL 64')).toEqual({ identifier: 'TACAN_CHAN_SEL', arg: '64' })
+    expect(parseCommand('LAMP_TEST')).toEqual({ identifier: 'LAMP_TEST', arg: '' })
+  })
+})
+
+describe('LineAssembler', () => {
+  it('yields complete lines and buffers partials across chunks', () => {
+    const a = new LineAssembler()
+    const enc = (s: string) => new Uint8Array([...s].map((c) => c.charCodeAt(0)))
+    expect(a.push(enc('MASTER_ARM 1\nGEAR'))).toEqual(['MASTER_ARM 1'])
+    expect(a.push(enc('_LEVER 0\r\n'))).toEqual(['GEAR_LEVER 0'])
   })
 })
