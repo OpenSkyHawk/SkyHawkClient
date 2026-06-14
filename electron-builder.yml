@@ -6,11 +6,19 @@ directories:
 files:
   - out/**
   - package.json
+# Rebuild native deps (serialport, node-hid) against Electron's ABI, and keep
+# their .node binaries outside the asar archive so they can be dlopen'd at runtime.
+npmRebuild: true
+asar: true
+asarUnpack:
+  - '**/*.node'
+  - 'node_modules/{serialport,@serialport,node-hid,bindings,node-gyp-build,node-addon-api}/**'
 mac:
   target:
     - dmg
     - zip
   category: public.app-category.utilities
+  identity: null # unsigned MVP — skip code signing
 win:
   target:
     - nsis
