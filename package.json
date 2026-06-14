@@ -1,6 +1,6 @@
 {
   "name": "openskyhawk-client",
-  "version": "0.2.0",
+  "version": "0.0.0",
   "description": "OpenSkyhawk Client — SimGateway connector + DCS-BIOS / HID monitor for the OpenSkyhawk A-4E cockpit.",
   "license": "GPL-2.0-only",
   "author": "OpenSkyHawk",
