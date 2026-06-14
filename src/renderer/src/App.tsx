@@ -35,7 +35,7 @@ export function App() {
           <span className="w-client">CLIENT</span>
         </span>
         <div className="titlebar__right">
-          <span className="ver">v0.1.0</span>
+          <span className="ver">v{__APP_VERSION__}</span>
           <button
             className={`pill pill--btn${relaying ? ' pill--on' : ''}`}
             onClick={() => toggleRelay()}
