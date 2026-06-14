@@ -67,14 +67,17 @@ export function Connection() {
   const toggleRelay = useStore((x) => x.toggleRelay)
   const openReplay = useStore((x) => x.openReplay)
 
+  // The device details are live: populated once a SimGateway is actually found.
+  // Before that, only the match target (VID/PID) is shown — not real device data.
+  const connected = !!s.devicePort
   const deviceRows = [
-    { k: 'Identity', v: 'A-4E Skyhawk' },
-    { k: 'VID / PID', v: '0x2E8A / 0x4134' },
+    { k: 'Identity', v: connected ? 'A-4E Skyhawk' : '— no device' },
+    { k: 'VID / PID', v: connected ? '0x2E8A / 0x4134' : '0x2E8A / 0x4134 · target' },
     {
       k: 'Serial port',
       v: s.devicePort ?? (s.sourceMode === 'bridge' ? 'scanning…' : 'monitor — no device')
     },
-    { k: 'Interfaces', v: 'CDC serial + HID' }
+    { k: 'Interfaces', v: connected ? 'CDC serial + HID' : '—' }
   ]
 
   return (
