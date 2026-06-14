@@ -4,6 +4,8 @@ export function Log() {
   const s = useStore()
   const set = useStore((x) => x.set)
   const toggle = useStore((x) => x.toggle)
+  const clearLog = useStore((x) => x.clearLog)
+  const exportLog = useStore((x) => x.exportLog)
 
   let rows = s.log
   if (s.dirFilter !== 'all') rows = rows.filter((r) => r.dir === s.dirFilter)
@@ -61,7 +63,12 @@ export function Log() {
           <button className={`toolbtn${s.rawMode ? ' on' : ''}`} onClick={() => toggle('rawMode')}>
             {s.rawMode ? 'Raw' : 'Decoded'}
           </button>
-          <button className="toolbtn">Export</button>
+          <button className="toolbtn" onClick={() => clearLog()}>
+            Clear
+          </button>
+          <button className="toolbtn" onClick={() => exportLog()}>
+            Export
+          </button>
         </div>
       </div>
 
@@ -78,18 +85,33 @@ export function Log() {
             <span className="log__time">{r.time}</span>
             <span
               className="log__dir"
-              style={{ color: r.dir === 'in' ? 'var(--green)' : 'var(--blue)' }}
+              style={{
+                color:
+                  r.dir === 'sys' ? 'var(--red)' : r.dir === 'in' ? 'var(--green)' : 'var(--blue)'
+              }}
             >
-              {r.dir === 'in' ? 'IN ▸' : '◂ OUT'}
+              {r.dir === 'sys' ? '! SYS' : r.dir === 'in' ? 'IN ▸' : '◂ OUT'}
             </span>
-            <span className="log__name">{s.rawMode ? r.addrHex : r.name}</span>
+            <span
+              className="log__name"
+              style={r.dir === 'sys' ? { color: 'var(--red)' } : undefined}
+            >
+              {r.dir === 'sys' ? r.name : s.rawMode ? r.addrHex : r.name}
+            </span>
             <span
               className="log__val"
               style={{
-                color: s.rawMode ? 'var(--muted-4)' : r.dir === 'out' ? 'var(--blue)' : '#cdd6e6'
+                color:
+                  r.dir === 'sys'
+                    ? 'var(--red)'
+                    : s.rawMode
+                      ? 'var(--muted-4)'
+                      : r.dir === 'out'
+                        ? 'var(--blue)'
+                        : '#cdd6e6'
               }}
             >
-              {s.rawMode ? r.raw : String(r.value)}
+              {r.dir === 'sys' ? String(r.value) : s.rawMode ? r.raw : String(r.value)}
             </span>
           </div>
         ))}

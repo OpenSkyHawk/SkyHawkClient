@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   CTRL,
@@ -56,8 +57,20 @@ function registerIpc(): void {
   })
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
+  ipcMain.handle(CTRL.relayStatus, () => session.status())
   ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
   ipcMain.handle(CTRL.nodesRefresh, () => session.requestNodes())
+
+  ipcMain.handle(CTRL.logExport, async (_e, text: string) => {
+    const res = await dialog.showSaveDialog({
+      title: 'Export log',
+      defaultPath: `skyhawk-log-${Date.now()}.tsv`,
+      filters: [{ name: 'Log', extensions: ['tsv', 'txt'] }]
+    })
+    if (res.canceled || !res.filePath) return {}
+    writeFileSync(res.filePath, text)
+    return { path: res.filePath }
+  })
 
   ipcMain.handle(CTRL.debugDumpPorts, async () => {
     const ports = await listSerialPorts()

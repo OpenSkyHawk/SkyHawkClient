@@ -41,7 +41,7 @@ export interface StatsSnapshot {
 
 export interface LogRow {
   t: number
-  dir: 'in' | 'out'
+  dir: 'in' | 'out' | 'sys' // sys = client diagnostic (serial/transport error, …)
   address: number
   name?: string
   value: number | string
@@ -144,6 +144,16 @@ export interface RelayResult {
   error?: string
 }
 
+/** Live session state so a freshly (re)loaded renderer can rehydrate. */
+export interface RelayStatus {
+  running: boolean
+  device: DeviceStatus
+}
+
+export interface ExportResult {
+  path?: string
+}
+
 export interface CaptureState {
   recording: boolean
   path?: string
@@ -174,6 +184,8 @@ export const CTRL = {
   configSet: 'config:set',
   relayStart: 'relay:start',
   relayStop: 'relay:stop',
+  relayStatus: 'relay:status',
+  logExport: 'log:export',
   captureToggle: 'capture:toggle',
   replayOpen: 'replay:open',
   hidAvailability: 'hid:availability',
@@ -189,6 +201,8 @@ export interface SkyhawkApi {
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
+  getStatus(): Promise<RelayStatus>
+  exportLog(text: string): Promise<ExportResult>
   toggleCapture(): Promise<CaptureState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
