@@ -23,6 +23,8 @@
     "prepare": "husky || true"
   },
   "dependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@fontsource-variable/saira": "^5.2.11",
     "zustand": "^4.5.4"
   },
   "devDependencies": {

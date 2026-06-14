@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
-import type { DeviceStatus } from '@shared/ipc'
-import logo from './assets/logo.png'
-import { Overview, Connection, LogView, Hid, Settings } from './tabs'
-
-type TabId = 'overview' | 'connection' | 'log' | 'hid' | 'settings'
+import { useStore, type TabId } from './store'
+import { Overview } from './tabs/Overview'
+import { Connection } from './tabs/Connection'
+import { Log } from './tabs/Log'
+import { Hid } from './tabs/Hid'
+import { Settings } from './tabs/Settings'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -14,37 +14,49 @@ const TABS: { id: TabId; label: string }[] = [
 ]
 
 export function App() {
-  const [tab, setTab] = useState<TabId>('overview')
-  const [device, setDevice] = useState<DeviceStatus>({ state: 'no-device' })
-
-  useEffect(() => window.skyhawk?.on('device:status', setDevice), [])
+  const tab = useStore((s) => s.tab)
+  const sourceMode = useStore((s) => s.sourceMode)
+  const relaying = useStore((s) => s.relaying)
+  const set = useStore((s) => s.set)
 
   return (
     <div className="app">
-      <header className="topbar">
-        <span className="brand">OPEN&nbsp;SKYHAWK</span>
-        <span className="brand-sub">Client</span>
-        <span className={`pill pill--${device.state}`}>{device.state.replace(/-/g, ' ')}</span>
+      <header className="titlebar">
+        <span className="wordmark">
+          <span className="w-open">OPEN</span>
+          <span className="w-sky">SKYHAWK</span>
+          <span className="w-client">CLIENT</span>
+        </span>
+        <div className="titlebar__right">
+          <span className="ver">v0.1.0</span>
+          <span className={`pill${relaying ? ' pill--on' : ''}`}>
+            <span className="pill__dot" />
+            <span className="pill__txt">{relaying ? 'Relaying' : 'Stopped'}</span>
+          </span>
+        </div>
       </header>
 
-      <nav className="tabs" role="tablist" aria-label="Sections">
+      <nav className="tabbar" role="tablist" aria-label="Sections">
         {TABS.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
             className={`tab${tab === t.id ? ' tab--active' : ''}`}
-            onClick={() => setTab(t.id)}
+            onClick={() => set({ tab: t.id })}
           >
             {t.label}
           </button>
         ))}
+        <span className="tabbar__src">
+          SOURCE <b>{sourceMode}</b>
+        </span>
       </nav>
 
-      <main className="content" role="tabpanel">
-        {tab === 'overview' && <Overview logo={logo} device={device} />}
+      <main className="content scroll" role="tabpanel">
+        {tab === 'overview' && <Overview />}
         {tab === 'connection' && <Connection />}
-        {tab === 'log' && <LogView />}
+        {tab === 'log' && <Log />}
         {tab === 'hid' && <Hid />}
         {tab === 'settings' && <Settings />}
       </main>
