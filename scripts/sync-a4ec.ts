@@ -34,7 +34,8 @@ const PIN = {
 const SRC = {
   controls: 'tools/gen_a4ec/data/A-4E-C.jsonp',
   hidControls: 'Firmware/Libraries/HIDControls/HIDControls.h',
-  simGateway: 'Firmware/Libraries/SimGateway/SimGateway.cpp'
+  simGateway: 'Firmware/Libraries/SimGateway/SimGateway.cpp',
+  nodeIds: 'Firmware/NODE_IDS.md'
 }
 
 const REPO_ROOT = join(__dirname, '..')
@@ -86,6 +87,7 @@ interface Sources {
   controls: string
   hidControls: string
   simGateway: string
+  nodeIds: string
   cleanup: () => void
 }
 
@@ -98,6 +100,7 @@ function loadSources(): Sources {
       controls: read(SRC.controls),
       hidControls: read(SRC.hidControls),
       simGateway: read(SRC.simGateway),
+      nodeIds: read(SRC.nodeIds),
       cleanup: () => {}
     }
   }
@@ -107,6 +110,7 @@ function loadSources(): Sources {
     controls: read(SRC.controls),
     hidControls: read(SRC.hidControls),
     simGateway: read(SRC.simGateway),
+    nodeIds: read(SRC.nodeIds),
     cleanup: () => rmSync(dir, { recursive: true, force: true })
   }
 }
@@ -442,6 +446,31 @@ export const NODE_STATUS = {
   )
 }
 
+// ── NODE_ID -> panel name registry ───────────────────────────────────────────
+
+function genNodeNames(md: string): string {
+  const rows: { id: number; name: string; console: string }[] = []
+  // table rows: | NODE_ID | Panel Group | Console | Status |
+  const re = /^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|/gm
+  let m: RegExpExecArray | null
+  while ((m = re.exec(md))) {
+    rows.push({ id: Number(m[1]), name: m[2]!.trim(), console: m[3]!.trim() })
+  }
+  if (rows.length === 0) throw new Error('[sync] no NODE_ID rows found in NODE_IDS.md')
+  rows.sort((a, b) => a.id - b.id)
+  const entries = rows.map((r) => `  ${r.id}: { name: ${q(r.name)}, console: ${q(r.console)} }`)
+
+  return (
+    banner([`${SRC.nodeIds} (${rows.length} entries)`]) +
+    `
+/** CAN NODE_ID -> panel group name, from the firmware NODE_IDS.md registry. */
+export const NODE_NAMES: Record<number, { name: string; console: string }> = {
+${entries.join(',\n')}
+}
+`
+  )
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 async function writeGenerated(file: string, code: string): Promise<void> {
@@ -458,6 +487,7 @@ async function main(): Promise<void> {
     await writeGenerated('hid-controls.generated.ts', genHidControls(s.hidControls))
     await writeGenerated('hid-report-layout.generated.ts', genHidReportLayout(s.simGateway))
     await writeGenerated('node-status.generated.ts', genNodeStatus(s.hidControls))
+    await writeGenerated('node-names.generated.ts', genNodeNames(s.nodeIds))
   } finally {
     s.cleanup()
   }

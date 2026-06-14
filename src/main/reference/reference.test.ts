@@ -8,6 +8,7 @@ import {
 import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generated'
 import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
 import { NODE_STATUS } from './node-status.generated'
+import { NODE_NAMES } from './node-names.generated'
 import { ACFT_NAME } from './dcsbios-metadata'
 import { NODE_END_MSG, NODE_MSG, NODE_REQ_ADDR, SUPPORTED_NODE_PROTO } from '@shared/nodes'
 
@@ -55,6 +56,13 @@ describe('hid-report-layout.generated', () => {
   it('declares signed axes (no 0x8000 bias)', () => {
     expect(HID_REPORT_LAYOUT.axes.signed).toBe(true)
     expect(HID_REPORT_LAYOUT.axes.min).toBe(-32768)
+  })
+})
+
+describe('node-names.generated', () => {
+  it('maps NODE_ID 0 to PanelBridge and includes registered panels', () => {
+    expect(NODE_NAMES[0]?.name).toBe('PanelBridge')
+    expect(Object.keys(NODE_NAMES).length).toBeGreaterThan(0)
   })
 })
 

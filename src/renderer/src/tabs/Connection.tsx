@@ -23,13 +23,14 @@ function NodesCard() {
       ) : (
         <div className="nodes">
           {nodes.map((n) => (
-            <div className="node" key={n.nodeId}>
-              <span className={`node__dot${n.present ? ' on' : ''}`} />
-              <span className="node__id">Node {n.nodeId}</span>
+            <div className={`node${n.present ? '' : ' node--off'}`} key={n.nodeId}>
+              <span className={`node__dot${n.present ? ' on' : ' off'}`} />
+              <span className="node__id">{n.name ?? `Node ${n.nodeId}`}</span>
               <span className="node__meta">
-                up {fmtUptime(n.uptimeSec)} · rx {n.rxCount}
+                #{n.nodeId} · up {fmtUptime(n.uptimeSec)} · rx {n.rxCount}
               </span>
               <span className="node__flags">
+                {!n.present && <b className="flag flag--err">OFFLINE</b>}
                 {n.boff && <b className="flag flag--err">BOFF</b>}
                 {n.epvf && <b className="flag flag--warn">EPVF</b>}
                 {(n.tec > 0 || n.rec > 0) && (

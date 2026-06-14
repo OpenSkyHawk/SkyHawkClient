@@ -1082,6 +1082,13 @@ body {
   background: var(--green);
   box-shadow: 0 0 8px var(--green);
 }
+.node__dot.off {
+  background: var(--red);
+  box-shadow: 0 0 8px rgba(255, 122, 122, 0.6);
+}
+.node--off .node__id {
+  color: var(--muted);
+}
 .node__id {
   font-family: var(--disp);
   font-size: 13px;

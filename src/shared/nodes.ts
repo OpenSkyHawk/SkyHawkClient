@@ -15,6 +15,7 @@ const HEX_LEN = 18 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4)
 
 export interface NodeStatus {
   nodeId: number // 1..63
+  name?: string // panel name from the NODE_IDS registry (filled in main)
   present: boolean
   boff: boolean // CAN bus-off
   epvf: boolean // CAN error-passive
@@ -50,9 +51,10 @@ export function nodeRosterRequest(): Uint8Array {
 }
 
 /**
- * Tracks the present node set from the `_NODE_STATUS` stream. Bare messages are
- * live deltas (apply immediately); a request/boot burst ends with `_NODE_STATUS_END`,
- * after which nodes absent from that burst are pruned (authoritative roster).
+ * Tracks every node seen since reset. Bare messages are live deltas; a request/boot
+ * burst ends with `_NODE_STATUS_END`, after which nodes absent from the burst are
+ * marked offline (present=false) — they STAY in the roster (shown red) rather than
+ * being removed, so a panel that drops off is still visible.
  */
 export class NodeRoster {
   private nodes = new Map<number, NodeStatus>()
@@ -76,12 +78,14 @@ export class NodeRoster {
       const ns = parseNodeStatus(arg.trim())
       if (!ns) return
       this.burst.push(ns)
-      if (ns.present) this.nodes.set(ns.nodeId, ns)
-      else this.nodes.delete(ns.nodeId)
+      this.nodes.set(ns.nodeId, ns) // keep absent nodes too; present flag carries state
       this.dirty = true
     } else if (name === NODE_END_MSG) {
-      const present = new Set(this.burst.filter((n) => n.present).map((n) => n.nodeId))
-      for (const id of [...this.nodes.keys()]) if (!present.has(id)) this.nodes.delete(id)
+      // Nodes not in this burst went silent → mark offline, but keep them visible.
+      const seen = new Set(this.burst.map((n) => n.nodeId))
+      for (const [id, node] of this.nodes) {
+        if (!seen.has(id) && node.present) this.nodes.set(id, { ...node, present: false })
+      }
       this.burst = []
       this.dirty = true
     }
