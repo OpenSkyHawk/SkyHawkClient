@@ -19,6 +19,7 @@ export function Connection() {
   const s = useStore()
   const setConfigField = useStore((x) => x.setConfigField)
   const toggleRelay = useStore((x) => x.toggleRelay)
+  const openReplay = useStore((x) => x.openReplay)
 
   const deviceRows = [
     { k: 'Identity', v: 'A-4E Skyhawk' },
@@ -128,6 +129,30 @@ export function Connection() {
           </div>
           <div className="hint">{HINTS[s.sourceMode]}</div>
         </div>
+
+        {s.sourceMode === 'replay' && (
+          <div className="card field">
+            <div className="card-h" style={{ marginBottom: 12 }}>
+              Capture
+            </div>
+            <button className="browse" onClick={() => openReplay()}>
+              Load capture…
+            </button>
+            <div className="hint">
+              {s.replayFile ? (
+                <>
+                  <span style={{ color: 'var(--text)' }}>{s.replayFile.split(/[/\\]/).pop()}</span>
+                  {s.replayInfo
+                    ? ` · ${s.replayInfo.events} events · ${(s.replayInfo.durationMs / 1000).toFixed(1)}s`
+                    : ''}
+                  {' — press Start to play.'}
+                </>
+              ) : (
+                'No capture loaded. Load a recorded session to replay it with no DCS running.'
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="card field">
           <div className="card-h" style={{ marginBottom: 12 }}>

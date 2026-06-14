@@ -1,6 +1,13 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
-import { CTRL, type AppConfig, type PushChannel, type PushChannels } from '@shared/ipc'
+import {
+  CTRL,
+  type AppConfig,
+  type CaptureState,
+  type PushChannel,
+  type PushChannels,
+  type ReplayLoad
+} from '@shared/ipc'
 import { Session } from './session'
 
 let mainWindow: BrowserWindow | null = null
@@ -11,11 +18,44 @@ function emit<C extends PushChannel>(channel: C, payload: PushChannels[C]): void
 
 const session = new Session(emit)
 
+const CAPTURE_FILTER = [{ name: 'DCS-BIOS capture', extensions: ['json'] }]
+
 function registerIpc(): void {
   ipcMain.handle(CTRL.configGet, () => session.getConfig())
   ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => session.setConfig(patch))
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
+
+  ipcMain.handle(CTRL.captureToggle, async (): Promise<CaptureState> => {
+    if (session.isRecording()) {
+      const { path, events } = session.stopRecording()
+      return { recording: false, path, events }
+    }
+    const res = await dialog.showSaveDialog({
+      title: 'Record DCS-BIOS capture',
+      defaultPath: `skyhawk-capture-${Date.now()}.json`,
+      filters: CAPTURE_FILTER
+    })
+    if (res.canceled || !res.filePath) return { recording: false }
+    session.startRecording(res.filePath)
+    return { recording: true, path: res.filePath }
+  })
+
+  ipcMain.handle(CTRL.replayOpen, async (): Promise<ReplayLoad> => {
+    const res = await dialog.showOpenDialog({
+      title: 'Open DCS-BIOS capture',
+      properties: ['openFile'],
+      filters: CAPTURE_FILTER
+    })
+    const path = res.filePaths[0]
+    if (res.canceled || !path) return { loaded: false }
+    try {
+      const info = session.loadReplay(path)
+      return { loaded: true, path, events: info.events, durationMs: info.durationMs }
+    } catch {
+      return { loaded: false }
+    }
+  })
 }
 
 function createWindow(): void {

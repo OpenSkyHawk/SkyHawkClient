@@ -1011,6 +1011,11 @@ body {
   font-size: 12px;
   font-weight: 600;
 }
+.browse--rec {
+  background: rgba(255, 122, 122, 0.14);
+  border-color: rgba(255, 122, 122, 0.45);
+  color: #ff9a9a;
+}
 .set-foot {
   margin-top: 16px;
   font-family: var(--mono);

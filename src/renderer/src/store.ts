@@ -113,6 +113,12 @@ export interface AppState {
   devicePort?: string
   aircraft: AircraftStatus
 
+  // record / replay
+  recording: boolean
+  recordEvents?: number
+  replayFile?: string
+  replayInfo?: { events: number; durationMs: number }
+
   // telemetry + stats (live once relaying; seeded placeholders before)
   telemetry: TelemetryReadout[]
   bytesIn: number
@@ -140,6 +146,8 @@ export interface AppState {
     patch: Partial<Pick<AppState, 'sourceMode' | 'transport' | 'host' | 'port' | 'autoReconnect'>>
   ) => void
   toggleRelay: () => void
+  toggleCapture: () => void
+  openReplay: () => void
   initBridge: () => void
 }
 
@@ -169,6 +177,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   deviceState: 'no-device',
   aircraft: { name: 'NONE', inferred: false, supported: true },
+
+  recording: false,
 
   telemetry: SEED_TELEMETRY,
   bytesIn: 0,
@@ -206,6 +216,23 @@ export const useStore = create<AppState>((set, get) => ({
       void window.skyhawk?.setConfig(buildConfig(s)).then(() => window.skyhawk?.startRelay())
       set({ relaying: true })
     }
+  },
+
+  toggleCapture: () => {
+    void window.skyhawk
+      ?.toggleCapture()
+      .then((r) => set({ recording: r.recording, recordEvents: r.events }))
+  },
+
+  openReplay: () => {
+    void window.skyhawk?.openReplay().then((r) => {
+      if (r.loaded) {
+        set({
+          replayFile: r.path,
+          replayInfo: { events: r.events ?? 0, durationMs: r.durationMs ?? 0 }
+        })
+      }
+    })
   },
 
   initBridge: () => {

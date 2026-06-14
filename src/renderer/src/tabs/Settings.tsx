@@ -16,6 +16,7 @@ function Row({ k, sub, children }: { k: string; sub: string; children: ReactNode
 export function Settings() {
   const s = useStore()
   const setConfigField = useStore((x) => x.setConfigField)
+  const toggleCapture = useStore((x) => x.toggleCapture)
 
   return (
     <div className="settings">
@@ -50,8 +51,20 @@ export function Settings() {
             <span />
           </button>
         </Row>
-        <Row k="Capture file" sub="Record / replay DCS-BIOS sessions">
-          <button className="browse">Choose…</button>
+        <Row
+          k="Record session"
+          sub={
+            s.recording
+              ? `Recording${s.recordEvents != null ? ` · ${s.recordEvents} events` : ''}…`
+              : 'Capture the DCS-BIOS stream to a file for replay'
+          }
+        >
+          <button
+            className={`browse${s.recording ? ' browse--rec' : ''}`}
+            onClick={() => toggleCapture()}
+          >
+            {s.recording ? '■ Stop' : '● Record'}
+          </button>
         </Row>
       </div>
 
