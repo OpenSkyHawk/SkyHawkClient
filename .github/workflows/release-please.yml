@@ -1,9 +1,8 @@
 name: Release
 
-# Every push to main only updates a release PR (a live preview of the next
-# version + changelog computed from conventional commits — it releases nothing).
-# Merging that PR is the manual "cut a release" request: release-please tags +
-# creates the GitHub Release, then the build job attaches the Win/Mac artifacts.
+# Fires on push to main ONLY when a release PR is merged (commit message starts
+# with "chore(main): release"). Normal commits are ignored.
+# Dispatch with rebuild_tag to re-attach artifacts to an existing release.
 on:
   push:
     branches: [main]
@@ -21,6 +20,7 @@ permissions:
 jobs:
   release-please:
     name: Release PR / tag
+    if: "startsWith(github.event.head_commit.message, 'chore(main): release') || github.event_name == 'workflow_dispatch'"
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.rp.outputs.release_created }}
