@@ -80,7 +80,7 @@ export function Overview() {
 
   const gaugeColor = (id: string, pct: number): string => {
     if (id === 'D_FUEL') return pct < 0.25 ? 'var(--red)' : 'var(--gold)'
-    return id === 'D_FLAPS_IND' || id === 'D_ALT_NEEDLE' ? 'var(--blue-2)' : 'var(--blue)'
+    return id === 'D_FLAPS_IND' || id === 'ALT_FT' ? 'var(--blue-2)' : 'var(--blue)'
   }
   const gauges = s.telemetry.map((r) => ({
     label: r.label,
