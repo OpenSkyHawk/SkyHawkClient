@@ -46,10 +46,10 @@ jobs:
       - run: npm ci
       - name: Build & package (Windows)
         if: runner.os == 'Windows'
-        run: npm run build:win
+        run: npm run build:win -- --publish never
       - name: Build & package (macOS)
         if: runner.os == 'macOS'
-        run: npm run build:mac
+        run: npm run build:mac -- --publish never
       - name: Attach artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
