@@ -41,6 +41,6 @@ describe('Decoder aircraft tracking', () => {
 describe('Decoder telemetry', () => {
   it('exposes the five readouts', () => {
     const ids = new Decoder().telemetrySnapshot().map((r) => r.id)
-    expect(ids).toEqual(['RPM', 'D_IAS_DEG', 'D_FLAPS_IND', 'D_ALT_NEEDLE', 'D_FUEL'])
+    expect(ids).toEqual(['RPM', 'D_IAS_DEG', 'D_FLAPS_IND', 'ALT_FT', 'D_FUEL'])
   })
 })

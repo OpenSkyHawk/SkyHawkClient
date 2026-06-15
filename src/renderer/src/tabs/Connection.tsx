@@ -1,5 +1,19 @@
 import { fmtUptime, useStore, type SourceMode, type Transport } from '../store'
 
+const REC_DOT = (
+  <span
+    style={{
+      display: 'inline-block',
+      width: 8,
+      height: 8,
+      borderRadius: '50%',
+      background: 'var(--red)',
+      marginRight: 6,
+      verticalAlign: 'middle'
+    }}
+  />
+)
+
 function NodesCard() {
   const nodes = useStore((x) => x.nodes)
   const sourceMode = useStore((x) => x.sourceMode)
@@ -67,6 +81,7 @@ export function Connection() {
   const setConfigField = useStore((x) => x.setConfigField)
   const toggleRelay = useStore((x) => x.toggleRelay)
   const openReplay = useStore((x) => x.openReplay)
+  const toggleCapture = useStore((x) => x.toggleCapture)
 
   // The device details are live: populated once a SimGateway is actually found.
   // Before that, only the match target (VID/PID) is shown — not real device data.
@@ -271,6 +286,30 @@ export function Connection() {
             ))}
           </div>
         </div>
+
+        {s.sourceMode !== 'replay' && (
+          <div className="card field">
+            <div className="card-h" style={{ marginBottom: 12 }}>
+              Record
+            </div>
+            <button className="browse" onClick={() => toggleCapture()} disabled={!s.relaying}>
+              {s.recording ? (
+                <>
+                  {REC_DOT}Stop recording · {s.recordEvents ?? 0} events
+                </>
+              ) : (
+                'Start recording…'
+              )}
+            </button>
+            <div className="hint">
+              {s.recording
+                ? 'Recording live DCS-BIOS stream. Stop to save — replay the file on any machine with no DCS.'
+                : s.relaying
+                  ? 'Capture a live session to replay later with no DCS running.'
+                  : 'Start the relay first to enable recording.'}
+            </div>
+          </div>
+        )}
 
         <button
           className={`bigbtn${s.relaying ? ' bigbtn--stop' : ''}`}
