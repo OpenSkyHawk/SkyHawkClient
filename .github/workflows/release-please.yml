@@ -8,6 +8,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      rebuild_tag:
+        description: 'Tag name to rebuild & re-attach artifacts (e.g. openskyhawk-client-v1.0.0). Leave blank for normal release-please run.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -31,7 +36,7 @@ jobs:
   build:
     name: Build & attach (${{ matrix.os }})
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    if: needs.release-please.outputs.release_created == 'true' || inputs.rebuild_tag != ''
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +58,7 @@ jobs:
       - name: Attach artifacts to the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          tag_name: ${{ needs.release-please.outputs.tag_name || inputs.rebuild_tag }}
           fail_on_unmatched_files: false
           files: |
             release/*.exe
