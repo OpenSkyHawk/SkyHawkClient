@@ -1,0 +1,65 @@
+<svg viewBox="0 0 820 160" xmlns="http://www.w3.org/2000/svg" role="img" font-family="system-ui,-apple-system,sans-serif">
+  <title>OpenSkyhawk Client position in the stack</title>
+  <desc>DCS World connects via UDP/TCP to OpenSkyhawk Client, which bridges USB CDC serial to SimGateway. SimGateway connects via UART to PanelBridge, which connects via CAN bus to PanelGroups. SimGateway also exposes a HID joystick interface read by the Client.</desc>
+
+  <rect width="820" height="160" fill="#0d1117" rx="10"/>
+
+  <!-- DCS World -->
+  <rect x="14" y="50" width="88" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="58" y="76" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="700">DCS</text>
+  <text x="58" y="94" text-anchor="middle" fill="#8b949e" font-size="10">World</text>
+
+  <!-- arrow UDP/TCP -->
+  <line x1="102" y1="80" x2="138" y2="80" stroke="#1e8fff" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="120" y="73" text-anchor="middle" fill="#1e8fff" font-size="9">UDP/TCP</text>
+
+  <!-- OpenSkyhawk Client -->
+  <rect x="140" y="40" width="148" height="80" rx="6" fill="#0e1f33" stroke="#1e8fff" stroke-width="2"/>
+  <text x="214" y="70" text-anchor="middle" fill="#e6f3ff" font-size="11" font-weight="700">OpenSkyhawk</text>
+  <text x="214" y="85" text-anchor="middle" fill="#1e8fff" font-size="11" font-weight="700">Client</text>
+  <text x="214" y="103" text-anchor="middle" fill="#8b949e" font-size="9">bridge + monitor</text>
+
+  <!-- arrow USB CDC -->
+  <line x1="288" y1="80" x2="324" y2="80" stroke="#30363d" stroke-width="1.5" marker-end="url(#arrd)"/>
+  <text x="306" y="73" text-anchor="middle" fill="#8b949e" font-size="9">USB CDC</text>
+
+  <!-- SimGateway -->
+  <rect x="326" y="50" width="108" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="380" y="76" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="700">SimGateway</text>
+  <text x="380" y="92" text-anchor="middle" fill="#8b949e" font-size="9">RP2040</text>
+
+  <!-- HID arc back to Client -->
+  <path d="M 380 110 Q 380 138 297 138 Q 214 138 214 120" fill="none" stroke="#1e8fff" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arrs)"/>
+  <text x="302" y="149" text-anchor="middle" fill="#1e8fff" font-size="9">HID joystick</text>
+
+  <!-- arrow UART -->
+  <line x1="434" y1="80" x2="468" y2="80" stroke="#30363d" stroke-width="1.5" marker-end="url(#arrd)"/>
+  <text x="451" y="73" text-anchor="middle" fill="#8b949e" font-size="9">UART</text>
+
+  <!-- PanelBridge -->
+  <rect x="470" y="50" width="108" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="524" y="76" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="700">PanelBridge</text>
+  <text x="524" y="92" text-anchor="middle" fill="#8b949e" font-size="9">STM32</text>
+
+  <!-- arrow CAN -->
+  <line x1="578" y1="80" x2="614" y2="80" stroke="#30363d" stroke-width="1.5" marker-end="url(#arrd)"/>
+  <text x="596" y="73" text-anchor="middle" fill="#8b949e" font-size="9">CAN bus</text>
+
+  <!-- PanelGroups (stacked to hint at multiple) -->
+  <rect x="624" y="54" width="108" height="52" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1" opacity="0.4"/>
+  <rect x="620" y="50" width="108" height="60" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="674" y="76" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="700">PanelGroups</text>
+  <text x="674" y="92" text-anchor="middle" fill="#8b949e" font-size="9">STM32 nodes</text>
+
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#1e8fff"/>
+    </marker>
+    <marker id="arrd" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#30363d"/>
+    </marker>
+    <marker id="arrs" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#1e8fff"/>
+    </marker>
+  </defs>
+</svg>

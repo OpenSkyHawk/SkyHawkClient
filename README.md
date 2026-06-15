@@ -12,11 +12,7 @@ Download: [GitHub Releases](https://github.com/OpenSkyHawk/SkyHawkClient/release
 
 ## How it fits the OpenSkyhawk stack
 
-```
-DCS  ──DCS-BIOS (UDP/TCP)──  OpenSkyhawk Client  ──USB CDC serial──  SimGateway ── UART ── PanelBridge ── CAN ── PanelGroups
-                                   │                                   └ HID joystick ─────────────────────────────────┘
-                                   └ reads the HID interface too (axes/buttons/hats)
-```
+![OpenSkyhawk stack diagram](./assets/stack-diagram.svg)
 
 ## Source modes
 
