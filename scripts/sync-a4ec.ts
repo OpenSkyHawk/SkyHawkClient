@@ -34,6 +34,7 @@ const PIN = {
 const SRC = {
   controls: 'tools/gen_a4ec/data/A-4E-C.jsonp',
   hidControls: 'Firmware/Libraries/HIDControls/HIDControls.h',
+  nodeStatus: 'Firmware/Libraries/NodeStatus/NodeStatus.h',
   simGateway: 'Firmware/Libraries/SimGateway/SimGateway.cpp',
   nodeIds: 'Firmware/NODE_IDS.md'
 }
@@ -86,6 +87,7 @@ function sparseFetch(paths: string[]): string {
 interface Sources {
   controls: string
   hidControls: string
+  nodeStatus: string
   simGateway: string
   nodeIds: string
   cleanup: () => void
@@ -99,6 +101,7 @@ function loadSources(): Sources {
     return {
       controls: read(SRC.controls),
       hidControls: read(SRC.hidControls),
+      nodeStatus: read(SRC.nodeStatus),
       simGateway: read(SRC.simGateway),
       nodeIds: read(SRC.nodeIds),
       cleanup: () => {}
@@ -109,6 +112,7 @@ function loadSources(): Sources {
   return {
     controls: read(SRC.controls),
     hidControls: read(SRC.hidControls),
+    nodeStatus: read(SRC.nodeStatus),
     simGateway: read(SRC.simGateway),
     nodeIds: read(SRC.nodeIds),
     cleanup: () => rmSync(dir, { recursive: true, force: true })
@@ -415,12 +419,12 @@ export const HID_REPORT_LAYOUT = {
 function genNodeStatus(header: string): string {
   const num = (re: RegExp, label: string): number => {
     const m = re.exec(header)
-    if (!m) throw new Error(`[sync] node-status contract missing in HIDControls.h: ${label}`)
+    if (!m) throw new Error(`[sync] node-status contract missing in NodeStatus.h: ${label}`)
     return Number(m[1])
   }
   const str = (re: RegExp, label: string): string => {
     const m = re.exec(header)
-    if (!m) throw new Error(`[sync] node-status contract missing in HIDControls.h: ${label}`)
+    if (!m) throw new Error(`[sync] node-status contract missing in NodeStatus.h: ${label}`)
     return m[1]!
   }
   const protoVersion = num(/#define\s+NODE_STATUS_PROTO_VERSION\s+(\d+)/, 'PROTO_VERSION')
@@ -429,7 +433,7 @@ function genNodeStatus(header: string): string {
   const endMsgName = str(/#define\s+NODE_STATUS_END_MSG_NAME\s+"([^"]+)"/, 'END_MSG_NAME')
 
   return (
-    banner([`${SRC.hidControls} (NODE_STATUS contract v${protoVersion})`]) +
+    banner([`${SRC.nodeStatus} (NODE_STATUS contract v${protoVersion})`]) +
     `
 /**
  * Reserved DCS-BIOS identifiers for PanelBridge node-status reporting (#86).
@@ -486,7 +490,7 @@ async function main(): Promise<void> {
     await writeGenerated('a4ec-controls.generated.ts', genA4ecControls(s.controls))
     await writeGenerated('hid-controls.generated.ts', genHidControls(s.hidControls))
     await writeGenerated('hid-report-layout.generated.ts', genHidReportLayout(s.simGateway))
-    await writeGenerated('node-status.generated.ts', genNodeStatus(s.hidControls))
+    await writeGenerated('node-status.generated.ts', genNodeStatus(s.nodeStatus))
     await writeGenerated('node-names.generated.ts', genNodeNames(s.nodeIds))
   } finally {
     s.cleanup()
