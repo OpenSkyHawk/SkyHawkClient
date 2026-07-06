@@ -42,6 +42,7 @@ function NodesCard() {
               <span className="node__id">{n.name ?? `Node ${n.nodeId}`}</span>
               <span className="node__meta">
                 #{n.nodeId} · up {fmtUptime(n.uptimeSec)} · rx {n.rxCount}
+                {n.dieTempC != null && <> · ~{n.dieTempC}°C</>}
               </span>
               <span className="node__flags">
                 {!n.present && <b className="flag flag--err">OFFLINE</b>}

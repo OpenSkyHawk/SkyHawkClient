@@ -4,14 +4,15 @@
 import { encodeExportFrame } from './dcsbios'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
-export const SUPPORTED_NODE_PROTO = 1
+export const SUPPORTED_NODE_PROTO = 2
 
 /** Reserved DCS-BIOS identifiers (must equal node-status.generated.ts). */
 export const NODE_MSG = '_NODE_STATUS'
 export const NODE_END_MSG = '_NODE_STATUS_END'
 export const NODE_REQ_ADDR = 0x86fe
 
-const HEX_LEN = 18 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4)
+// proto v2: 26 hex — the v1 fields plus the node's cached HEALTH_n telemetry.
+const HEX_LEN = 26 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4) dieTempC(2) hFlags(2) faultMask(2) faultId(2)
 
 export interface NodeStatus {
   nodeId: number // 1..63
@@ -23,16 +24,23 @@ export interface NodeStatus {
   rxCount: number // node-accepted CAN RX count
   tec: number // transmit error counter (esr low byte)
   rec: number // receive error counter (esr high byte)
+  // HEALTH_n telemetry (proto v2). Uncalibrated internal MCU sensor — die temp, not ambient.
+  dieTempC: number | null // whole °C; null = not yet seen (sentinel 0x80)
+  overheat: boolean // hFlags bit0 (opt-in firmware trip; usually false)
+  degraded: boolean // hFlags bit1 — a peripheral tripped (rendered by #40, parsed here)
+  faultId: number // fault code, 0 = none (index into a client-side label table; #40)
 }
 
-/** Decode the 18-hex `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
+/** Decode the 26-hex `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
 export function parseNodeStatus(hex: string): NodeStatus | null {
-  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]{18}$/.test(hex)) return null
+  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]{26}$/.test(hex)) return null
   const f = (i: number, n: number) => parseInt(hex.slice(i, i + n), 16)
   const nodeId = f(0, 2)
   if (nodeId < 1 || nodeId > 63) return null
   const flags = f(4, 2)
   const esr = f(14, 4)
+  const traw = f(18, 2) // int8 two's-complement; 0x80 = not-yet-seen sentinel
+  const hf = f(20, 2) // byte 22 (faultMask) reserved/unused; skipped
   return {
     nodeId,
     present: f(2, 2) === 1,
@@ -41,7 +49,11 @@ export function parseNodeStatus(hex: string): NodeStatus | null {
     uptimeSec: f(6, 4),
     rxCount: f(10, 4),
     tec: esr & 0xff,
-    rec: (esr >> 8) & 0xff
+    rec: (esr >> 8) & 0xff,
+    dieTempC: traw === 0x80 ? null : traw < 128 ? traw : traw - 256,
+    overheat: (hf & 0x01) !== 0,
+    degraded: (hf & 0x02) !== 0,
+    faultId: f(24, 2)
   }
 }
 
