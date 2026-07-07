@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { NODE_END_MSG, NODE_MSG, NodeRoster, parseNodeStatus, nodeRosterRequest } from './nodes'
+import {
+  NODE_END_MSG,
+  NODE_MSG,
+  NodeRoster,
+  parseNodeStatus,
+  nodeRosterRequest,
+  nodeDotState,
+  nodeFaultTag,
+  nodeFaultTooltip,
+  type NodeStatus
+} from './nodes'
+
+const node = (over: Partial<NodeStatus>): NodeStatus => ({
+  nodeId: 1,
+  present: true,
+  boff: false,
+  epvf: false,
+  uptimeSec: 0,
+  rxCount: 0,
+  tec: 0,
+  rec: 0,
+  dieTempC: 30,
+  overheat: false,
+  degraded: false,
+  faultId: 0,
+  ...over
+})
 
 describe('parseNodeStatus', () => {
   it('decodes the documented example 030102000A0003110024000000', () => {
@@ -86,5 +112,42 @@ describe('NodeRoster', () => {
       [3, true]
     ])
     expect(r.takeDirty()).toBe(true)
+  })
+})
+
+describe('nodeDotState', () => {
+  it('offline wins over everything', () => {
+    expect(nodeDotState(node({ present: false, degraded: true, overheat: true }))).toBe('off')
+  })
+  it('present + degraded or overheat → warn (amber)', () => {
+    expect(nodeDotState(node({ degraded: true }))).toBe('warn')
+    expect(nodeDotState(node({ overheat: true }))).toBe('warn')
+  })
+  it('present + healthy → on', () => {
+    expect(nodeDotState(node({}))).toBe('on')
+  })
+})
+
+describe('nodeFaultTag / nodeFaultTooltip', () => {
+  it('uses the enriched abbr + label + description', () => {
+    const n = node({
+      degraded: true,
+      faultId: 1,
+      faultAbbr: 'I2C',
+      faultLabel: 'I2C peripheral',
+      faultDesc: 'an I2C device tripped its breaker'
+    })
+    expect(nodeFaultTag(n)).toBe('I2C')
+    expect(nodeFaultTooltip(n)).toBe('I2C peripheral — an I2C device tripped its breaker')
+  })
+  it('falls back to `Fault N` for an unknown/reserved id (no enrichment)', () => {
+    const n = node({ degraded: true, faultId: 0x99 })
+    expect(nodeFaultTag(n)).toBe('Fault 153')
+    expect(nodeFaultTooltip(n)).toBe('Fault 153')
+  })
+  it('tooltip is the label alone when there is no description', () => {
+    expect(
+      nodeFaultTooltip(node({ faultId: 2, faultAbbr: 'OVER', faultLabel: 'Over voltage' }))
+    ).toBe('Over voltage')
   })
 })

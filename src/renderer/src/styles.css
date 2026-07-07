@@ -1100,6 +1100,14 @@ body {
   background: var(--red);
   box-shadow: 0 0 8px rgba(255, 122, 122, 0.6);
 }
+.node__dot.warn {
+  background: var(--gold);
+  box-shadow: 0 0 8px rgba(244, 179, 33, 0.6);
+}
+.node__temp--hot {
+  color: var(--gold);
+  font-weight: 600;
+}
 .node--off .node__id {
   color: var(--muted);
 }
