@@ -20,6 +20,7 @@ import { debugLog } from './debug'
 import { HidReader } from './hid'
 import { Recorder, ReplaySource, type ReplayInfo } from './replay'
 import { NODE_NAMES } from './reference/node-names.generated'
+import { NODE_FAULT_CODES } from './reference/node-status.generated'
 import { Decoder } from './decode'
 import { Stats } from './stats'
 
@@ -306,7 +307,16 @@ export class Session {
     if (ac) this.emit('aircraft:changed', ac)
     if (this.hid) this.emit('hid:report', this.hid.snapshot())
     if (this.roster.takeDirty()) {
-      const nodes = this.roster.snapshot().map((n) => ({ ...n, name: NODE_NAMES[n.nodeId]?.name }))
+      const nodes = this.roster.snapshot().map((n) => {
+        const fc = n.faultId ? NODE_FAULT_CODES[n.faultId] : undefined
+        return {
+          ...n,
+          name: NODE_NAMES[n.nodeId]?.name,
+          faultAbbr: fc?.abbr,
+          faultLabel: fc?.label,
+          faultDesc: fc?.description
+        }
+      })
       this.emit('nodes:status', nodes)
     }
   }

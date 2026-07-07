@@ -1,4 +1,5 @@
 import { fmtUptime, useStore, type SourceMode, type Transport } from '../store'
+import { nodeDotState, nodeFaultTag, nodeFaultTooltip } from '@shared/nodes'
 
 const REC_DOT = (
   <span
@@ -38,15 +39,27 @@ function NodesCard() {
         <div className="nodes">
           {nodes.map((n) => (
             <div className={`node${n.present ? '' : ' node--off'}`} key={n.nodeId}>
-              <span className={`node__dot${n.present ? ' on' : ' off'}`} />
+              <span className={`node__dot ${nodeDotState(n)}`} />
               <span className="node__id">{n.name ?? `Node ${n.nodeId}`}</span>
               <span className="node__meta">
                 #{n.nodeId} · up {fmtUptime(n.uptimeSec)} · rx {n.rxCount}
-                {n.dieTempC != null && <> · ~{n.dieTempC}°C</>}
+                {n.dieTempC != null && (
+                  <>
+                    {' · '}
+                    <span className={n.overheat ? 'node__temp node__temp--hot' : 'node__temp'}>
+                      {n.overheat && '🔥 '}~{n.dieTempC}°C
+                    </span>
+                  </>
+                )}
               </span>
               <span className="node__flags">
                 {!n.present && <b className="flag flag--err">OFFLINE</b>}
                 {n.boff && <b className="flag flag--err">BOFF</b>}
+                {n.degraded && (
+                  <b className="flag flag--warn" title={nodeFaultTooltip(n)}>
+                    {nodeFaultTag(n)}
+                  </b>
+                )}
                 {n.epvf && <b className="flag flag--warn">EPVF</b>}
                 {(n.tec > 0 || n.rec > 0) && (
                   <span className="node__err">

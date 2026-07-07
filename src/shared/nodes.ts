@@ -33,6 +33,29 @@ export interface NodeStatus {
   overheat: boolean // hFlags bit0 (opt-in firmware trip; usually false)
   degraded: boolean // hFlags bit1 — a registered FaultSource reports non-NONE (rendered by #40, parsed here)
   faultId: number // fault code, 0 = none; label via NODE_FAULT_CODES (node-status.generated.ts), render #40
+  // Fault-dictionary enrichment — filled in main from NODE_FAULT_CODES; undefined when healthy or an
+  // unknown/reserved id (the decoder passes any faultId through). Renderer falls back to `Fault N`.
+  faultAbbr?: string
+  faultLabel?: string
+  faultDesc?: string
+}
+
+/** Status-dot state: offline wins, then any amber condition (overheat/degraded), else healthy. */
+export function nodeDotState(n: NodeStatus): 'on' | 'off' | 'warn' {
+  if (!n.present) return 'off'
+  if (n.overheat || n.degraded) return 'warn'
+  return 'on'
+}
+
+/** Short degraded-badge tag — the fault abbr, or `Fault N` for an unknown/reserved id. */
+export function nodeFaultTag(n: NodeStatus): string {
+  return n.faultAbbr ?? `Fault ${n.faultId}`
+}
+
+/** Degraded-badge tooltip — full label + firmware description (falls back to the tag). */
+export function nodeFaultTooltip(n: NodeStatus): string {
+  const label = n.faultLabel ?? nodeFaultTag(n)
+  return n.faultDesc ? `${label} — ${n.faultDesc}` : label
 }
 
 /** Decode the 26-hex `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
