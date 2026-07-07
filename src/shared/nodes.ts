@@ -1,5 +1,5 @@
 // PanelBridge node-status decode + roster (pure, no Node/Electron deps).
-// Wire contract: HIDControls.h NODE_STATUS_* (mirrored in
+// Wire contract: NodeStatus.h NODE_STATUS_* (mirrored in
 // src/main/reference/node-status.generated.ts; reference.test asserts they match).
 import { encodeExportFrame } from './dcsbios'
 
@@ -31,7 +31,7 @@ export interface NodeStatus {
   // HEALTH_n telemetry (proto v2). Uncalibrated internal MCU sensor — die temp, not ambient.
   dieTempC: number | null // whole °C; null = not yet seen (sentinel 0x80)
   overheat: boolean // hFlags bit0 (opt-in firmware trip; usually false)
-  degraded: boolean // hFlags bit1 — a peripheral tripped (rendered by #40, parsed here)
+  degraded: boolean // hFlags bit1 — a registered FaultSource reports non-NONE (rendered by #40, parsed here)
   faultId: number // fault code, 0 = none; label via NODE_FAULT_CODES (node-status.generated.ts), render #40
 }
 

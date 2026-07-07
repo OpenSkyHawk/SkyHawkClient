@@ -494,15 +494,21 @@ export const NODE_HEALTH_FLAGS = {
 ${flagEntries}
 } as const
 
+export interface NodeFaultInfo {
+  name: string
+  label: string
+  description: string
+}
+
 /**
  * HEALTH_n \`faultId\` dictionary — from NodeFaultCode (NodeStatus.h). id -> human label
  * (SkyHawkClient#40 render) + the firmware comment as a description. \`label\` is derived from
  * the enum name; \`description\` is verbatim from the header. Append-only, mirrors the firmware.
+ *
+ * Partial: parseNodeStatus() passes through ANY wire faultId, incl. reserved/newer codes this
+ * build doesn't know — indexing returns \`NodeFaultInfo | undefined\`, so callers must \`?.\` + fall back.
  */
-export const NODE_FAULT_CODES: Record<
-  number,
-  { name: string; label: string; description: string }
-> = {
+export const NODE_FAULT_CODES: Partial<Record<number, NodeFaultInfo>> = {
 ${faultEntries}
 } as const
 `

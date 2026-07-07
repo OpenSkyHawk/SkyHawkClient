@@ -99,7 +99,10 @@ describe('node-status.generated', () => {
     expect(NODE_FAULT_CODES[1]?.label).toBe('I2C peripheral')
     // every entry carries a non-empty label except NONE
     for (const [id, e] of Object.entries(NODE_FAULT_CODES)) {
-      if (Number(id) !== 0) expect(e.label.length).toBeGreaterThan(0)
+      if (Number(id) !== 0) expect(e?.label.length).toBeGreaterThan(0)
     }
+    // an unknown/reserved id (parseNodeStatus passes any faultId through) is undefined, not a crash —
+    // the Partial<Record> type forces callers to ?.-guard.
+    expect(NODE_FAULT_CODES[0x99]).toBeUndefined()
   })
 })
