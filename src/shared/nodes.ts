@@ -1,5 +1,5 @@
 // PanelBridge node-status decode + roster (pure, no Node/Electron deps).
-// Wire contract: HIDControls.h NODE_STATUS_* (mirrored in
+// Wire contract: NodeStatus.h NODE_STATUS_* (mirrored in
 // src/main/reference/node-status.generated.ts; reference.test asserts they match).
 import { encodeExportFrame } from './dcsbios'
 
@@ -10,6 +10,10 @@ export const SUPPORTED_NODE_PROTO = 2
 export const NODE_MSG = '_NODE_STATUS'
 export const NODE_END_MSG = '_NODE_STATUS_END'
 export const NODE_REQ_ADDR = 0x86fe
+
+/** hFlags bit masks (must equal NODE_HEALTH_FLAGS in node-status.generated.ts; reference.test checks). */
+export const HFLAG_OVERHEAT = 0x01
+export const HFLAG_DEGRADED = 0x02
 
 // proto v2: 26 hex — the v1 fields plus the node's cached HEALTH_n telemetry.
 const HEX_LEN = 26 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4) dieTempC(2) hFlags(2) faultMask(2) faultId(2)
@@ -27,8 +31,8 @@ export interface NodeStatus {
   // HEALTH_n telemetry (proto v2). Uncalibrated internal MCU sensor — die temp, not ambient.
   dieTempC: number | null // whole °C; null = not yet seen (sentinel 0x80)
   overheat: boolean // hFlags bit0 (opt-in firmware trip; usually false)
-  degraded: boolean // hFlags bit1 — a peripheral tripped (rendered by #40, parsed here)
-  faultId: number // fault code, 0 = none (index into a client-side label table; #40)
+  degraded: boolean // hFlags bit1 — a registered FaultSource reports non-NONE (rendered by #40, parsed here)
+  faultId: number // fault code, 0 = none; label via NODE_FAULT_CODES (node-status.generated.ts), render #40
 }
 
 /** Decode the 26-hex `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
@@ -51,8 +55,8 @@ export function parseNodeStatus(hex: string): NodeStatus | null {
     tec: esr & 0xff,
     rec: (esr >> 8) & 0xff,
     dieTempC: traw === 0x80 ? null : traw < 128 ? traw : traw - 256,
-    overheat: (hf & 0x01) !== 0,
-    degraded: (hf & 0x02) !== 0,
+    overheat: (hf & HFLAG_OVERHEAT) !== 0,
+    degraded: (hf & HFLAG_DEGRADED) !== 0,
     faultId: f(24, 2)
   }
 }

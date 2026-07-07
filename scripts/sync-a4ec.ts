@@ -28,12 +28,13 @@ import { format } from 'prettier'
 
 const PIN = {
   repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
-  commit: 'b82b843d8d0f1a2fc9a7952e96e935bf18377ef0'
+  commit: '19245eafe3ecdbfcbe3a9ab12bb60f8ceb10f748'
 }
 
 const SRC = {
   controls: 'tools/gen_a4ec/data/A-4E-C.jsonp',
   hidControls: 'Firmware/Libraries/HIDControls/HIDControls.h',
+  nodeStatus: 'Firmware/Libraries/NodeStatus/NodeStatus.h',
   simGateway: 'Firmware/Libraries/SimGateway/SimGateway.cpp',
   nodeIds: 'Firmware/NODE_IDS.md'
 }
@@ -86,6 +87,7 @@ function sparseFetch(paths: string[]): string {
 interface Sources {
   controls: string
   hidControls: string
+  nodeStatus: string
   simGateway: string
   nodeIds: string
   cleanup: () => void
@@ -99,6 +101,7 @@ function loadSources(): Sources {
     return {
       controls: read(SRC.controls),
       hidControls: read(SRC.hidControls),
+      nodeStatus: read(SRC.nodeStatus),
       simGateway: read(SRC.simGateway),
       nodeIds: read(SRC.nodeIds),
       cleanup: () => {}
@@ -109,6 +112,7 @@ function loadSources(): Sources {
   return {
     controls: read(SRC.controls),
     hidControls: read(SRC.hidControls),
+    nodeStatus: read(SRC.nodeStatus),
     simGateway: read(SRC.simGateway),
     nodeIds: read(SRC.nodeIds),
     cleanup: () => rmSync(dir, { recursive: true, force: true })
@@ -127,6 +131,40 @@ const banner = (sources: string[]) =>
 
 const hex = (n: number) => '0x' + n.toString(16)
 const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
+
+/**
+ * Parse a `enum class Name : type { A = 0x01,  // comment ... }` block into ordered entries.
+ * Captures each `NAME = value` plus the trailing `//` comment (the human description).
+ */
+function parseEnum(
+  header: string,
+  enumName: string
+): { name: string; value: number; comment: string }[] {
+  const block = new RegExp(`enum class ${enumName}\\s*:\\s*\\w+\\s*\\{([\\s\\S]*?)\\}`).exec(header)
+  if (!block) throw new Error(`[sync] enum ${enumName} not found in NodeStatus.h`)
+  const line = /^\s*([A-Z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)\s*,?\s*(?:\/\/\s*(.*?))?\s*$/gm
+  const entries: { name: string; value: number; comment: string }[] = []
+  let m: RegExpExecArray | null
+  while ((m = line.exec(block[1]!))) {
+    entries.push({ name: m[1]!, value: Number(m[2]), comment: (m[3] ?? '').trim() })
+  }
+  if (entries.length === 0) throw new Error(`[sync] enum ${enumName} had no entries`)
+  return entries
+}
+
+/** ENUM_NAME -> short badge tag: the first underscore token (I2C_PERIPHERAL -> I2C, OVER_VOLTAGE -> OVER). */
+const abbr = (name: string): string => name.split('_')[0]!
+
+/** ENUM_NAME -> human label: title-case the first word, lower-case the rest, keep acronyms (I2C). */
+const labelize = (name: string): string =>
+  name
+    .split('_')
+    .map((w, i) => {
+      if (/\d/.test(w)) return w // keep tokens with digits verbatim (e.g. I2C)
+      const lower = w.toLowerCase()
+      return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower
+    })
+    .join(' ')
 
 // ── A-4E-C controls ──────────────────────────────────────────────────────────
 
@@ -415,12 +453,12 @@ export const HID_REPORT_LAYOUT = {
 function genNodeStatus(header: string): string {
   const num = (re: RegExp, label: string): number => {
     const m = re.exec(header)
-    if (!m) throw new Error(`[sync] node-status contract missing in HIDControls.h: ${label}`)
+    if (!m) throw new Error(`[sync] node-status contract missing in NodeStatus.h: ${label}`)
     return Number(m[1])
   }
   const str = (re: RegExp, label: string): string => {
     const m = re.exec(header)
-    if (!m) throw new Error(`[sync] node-status contract missing in HIDControls.h: ${label}`)
+    if (!m) throw new Error(`[sync] node-status contract missing in NodeStatus.h: ${label}`)
     return m[1]!
   }
   const protoVersion = num(/#define\s+NODE_STATUS_PROTO_VERSION\s+(\d+)/, 'PROTO_VERSION')
@@ -428,8 +466,19 @@ function genNodeStatus(header: string): string {
   const msgName = str(/#define\s+NODE_STATUS_MSG_NAME\s+"([^"]+)"/, 'MSG_NAME')
   const endMsgName = str(/#define\s+NODE_STATUS_END_MSG_NAME\s+"([^"]+)"/, 'END_MSG_NAME')
 
+  const healthFlags = parseEnum(header, 'NodeHealthFlag')
+  const faultCodes = parseEnum(header, 'NodeFaultCode')
+
+  const flagEntries = healthFlags.map((e) => `  ${e.name}: ${hex(e.value)}`).join(',\n')
+  const faultEntries = faultCodes
+    .map(
+      (e) =>
+        `  ${e.value}: { name: ${q(e.name)}, abbr: ${q(abbr(e.name))}, label: ${q(labelize(e.name))}, description: ${q(e.comment)} }`
+    )
+    .join(',\n')
+
   return (
-    banner([`${SRC.hidControls} (NODE_STATUS contract v${protoVersion})`]) +
+    banner([`${SRC.nodeStatus} (NODE_STATUS contract v${protoVersion})`]) +
     `
 /**
  * Reserved DCS-BIOS identifiers for PanelBridge node-status reporting (#86).
@@ -441,6 +490,30 @@ export const NODE_STATUS = {
   reqAddress: ${hex(reqAddress)},
   msgName: ${q(msgName)},
   endMsgName: ${q(endMsgName)}
+} as const
+
+/** HEALTH_n \`flags\` bits — from NodeHealthFlag (NodeStatus.h). Decoder masks against these. */
+export const NODE_HEALTH_FLAGS = {
+${flagEntries}
+} as const
+
+export interface NodeFaultInfo {
+  name: string
+  abbr: string
+  label: string
+  description: string
+}
+
+/**
+ * HEALTH_n \`faultId\` dictionary — from NodeFaultCode (NodeStatus.h). id -> human label
+ * (SkyHawkClient#40 render) + the firmware comment as a description. \`label\` is derived from
+ * the enum name; \`description\` is verbatim from the header. Append-only, mirrors the firmware.
+ *
+ * Partial: parseNodeStatus() passes through ANY wire faultId, incl. reserved/newer codes this
+ * build doesn't know — indexing returns \`NodeFaultInfo | undefined\`, so callers must \`?.\` + fall back.
+ */
+export const NODE_FAULT_CODES: Partial<Record<number, NodeFaultInfo>> = {
+${faultEntries}
 } as const
 `
   )
@@ -486,7 +559,7 @@ async function main(): Promise<void> {
     await writeGenerated('a4ec-controls.generated.ts', genA4ecControls(s.controls))
     await writeGenerated('hid-controls.generated.ts', genHidControls(s.hidControls))
     await writeGenerated('hid-report-layout.generated.ts', genHidReportLayout(s.simGateway))
-    await writeGenerated('node-status.generated.ts', genNodeStatus(s.hidControls))
+    await writeGenerated('node-status.generated.ts', genNodeStatus(s.nodeStatus))
     await writeGenerated('node-names.generated.ts', genNodeNames(s.nodeIds))
   } finally {
     s.cleanup()

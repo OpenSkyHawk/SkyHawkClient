@@ -7,10 +7,17 @@ import {
 } from './a4ec-controls.generated'
 import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generated'
 import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
-import { NODE_STATUS } from './node-status.generated'
+import { NODE_STATUS, NODE_HEALTH_FLAGS, NODE_FAULT_CODES } from './node-status.generated'
 import { NODE_NAMES } from './node-names.generated'
 import { ACFT_NAME } from './dcsbios-metadata'
-import { NODE_END_MSG, NODE_MSG, NODE_REQ_ADDR, SUPPORTED_NODE_PROTO } from '@shared/nodes'
+import {
+  HFLAG_DEGRADED,
+  HFLAG_OVERHEAT,
+  NODE_END_MSG,
+  NODE_MSG,
+  NODE_REQ_ADDR,
+  SUPPORTED_NODE_PROTO
+} from '@shared/nodes'
 
 describe('a4ec-controls.generated', () => {
   it('has outputs, each with a numeric address', () => {
@@ -79,5 +86,24 @@ describe('node-status.generated', () => {
     expect(NODE_STATUS.reqAddress).toBe(NODE_REQ_ADDR)
     expect(NODE_STATUS.msgName).toBe(NODE_MSG)
     expect(NODE_STATUS.endMsgName).toBe(NODE_END_MSG)
+  })
+
+  it('health-flag masks match the decoder (firmware bit reassignment fails loudly)', () => {
+    expect(NODE_HEALTH_FLAGS.OVERHEAT).toBe(HFLAG_OVERHEAT)
+    expect(NODE_HEALTH_FLAGS.DEGRADED).toBe(HFLAG_DEGRADED)
+  })
+
+  it('fault-code dictionary pins the core codes (append-only; a renumber fails loudly)', () => {
+    expect(NODE_FAULT_CODES[0]?.name).toBe('NONE')
+    expect(NODE_FAULT_CODES[1]?.name).toBe('I2C_PERIPHERAL')
+    expect(NODE_FAULT_CODES[1]?.abbr).toBe('I2C')
+    expect(NODE_FAULT_CODES[1]?.label).toBe('I2C peripheral')
+    // every entry carries a non-empty label except NONE
+    for (const [id, e] of Object.entries(NODE_FAULT_CODES)) {
+      if (Number(id) !== 0) expect(e?.label.length).toBeGreaterThan(0)
+    }
+    // an unknown/reserved id (parseNodeStatus passes any faultId through) is undefined, not a crash —
+    // the Partial<Record> type forces callers to ?.-guard.
+    expect(NODE_FAULT_CODES[0x99]).toBeUndefined()
   })
 })
