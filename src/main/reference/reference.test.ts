@@ -96,6 +96,7 @@ describe('node-status.generated', () => {
   it('fault-code dictionary pins the core codes (append-only; a renumber fails loudly)', () => {
     expect(NODE_FAULT_CODES[0]?.name).toBe('NONE')
     expect(NODE_FAULT_CODES[1]?.name).toBe('I2C_PERIPHERAL')
+    expect(NODE_FAULT_CODES[1]?.abbr).toBe('I2C')
     expect(NODE_FAULT_CODES[1]?.label).toBe('I2C peripheral')
     // every entry carries a non-empty label except NONE
     for (const [id, e] of Object.entries(NODE_FAULT_CODES)) {

@@ -152,6 +152,9 @@ function parseEnum(
   return entries
 }
 
+/** ENUM_NAME -> short badge tag: the first underscore token (I2C_PERIPHERAL -> I2C, OVER_VOLTAGE -> OVER). */
+const abbr = (name: string): string => name.split('_')[0]!
+
 /** ENUM_NAME -> human label: title-case the first word, lower-case the rest, keep acronyms (I2C). */
 const labelize = (name: string): string =>
   name
@@ -470,7 +473,7 @@ function genNodeStatus(header: string): string {
   const faultEntries = faultCodes
     .map(
       (e) =>
-        `  ${e.value}: { name: ${q(e.name)}, label: ${q(labelize(e.name))}, description: ${q(e.comment)} }`
+        `  ${e.value}: { name: ${q(e.name)}, abbr: ${q(abbr(e.name))}, label: ${q(labelize(e.name))}, description: ${q(e.comment)} }`
     )
     .join(',\n')
 
@@ -496,6 +499,7 @@ ${flagEntries}
 
 export interface NodeFaultInfo {
   name: string
+  abbr: string
   label: string
   description: string
 }

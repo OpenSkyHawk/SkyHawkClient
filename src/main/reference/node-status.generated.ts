@@ -22,6 +22,7 @@ export const NODE_HEALTH_FLAGS = {
 
 export interface NodeFaultInfo {
   name: string
+  abbr: string
   label: string
   description: string
 }
@@ -35,21 +36,34 @@ export interface NodeFaultInfo {
  * build doesn't know — indexing returns `NodeFaultInfo | undefined`, so callers must `?.` + fall back.
  */
 export const NODE_FAULT_CODES: Partial<Record<number, NodeFaultInfo>> = {
-  0: { name: 'NONE', label: 'None', description: '' },
+  0: { name: 'NONE', abbr: 'NONE', label: 'None', description: '' },
   1: {
     name: 'I2C_PERIPHERAL',
+    abbr: 'I2C',
     label: 'I2C peripheral',
     description: 'an I2C device (OLED/mux/expander) tripped its I2cHealth breaker'
   },
-  2: { name: 'OVER_VOLTAGE', label: 'Over voltage', description: 'rail over-voltage (PDU)' },
-  3: { name: 'UNDER_VOLTAGE', label: 'Under voltage', description: 'rail under-voltage (PDU)' },
+  2: {
+    name: 'OVER_VOLTAGE',
+    abbr: 'OVER',
+    label: 'Over voltage',
+    description: 'rail over-voltage (PDU)'
+  },
+  3: {
+    name: 'UNDER_VOLTAGE',
+    abbr: 'UNDER',
+    label: 'Under voltage',
+    description: 'rail under-voltage (PDU)'
+  },
   4: {
     name: 'SHORT_CIRCUIT',
+    abbr: 'SHORT',
     label: 'Short circuit',
     description: 'rail short / over-current (PDU)'
   },
   5: {
     name: 'HOST_LINK_LOST',
+    abbr: 'HOST',
     label: 'Host link lost',
     description: 'PanelBridge lost the host serial link'
   }
