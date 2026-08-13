@@ -85,6 +85,15 @@ describe('calibration state lifecycle', () => {
     expect(s.getState().cal?.calibratedMask).toBe(0b01)
   })
 
+  it('carries the report age, not just the rate', async () => {
+    // HidReader has always computed ageMs, and the store used to take only rateHz — so the
+    // freshness signal existed in main and was dropped at the IPC boundary.
+    const s = await freshStore()
+    push('hid:report', { axes: [1], buttons: [false], hats: [0], ageMs: 90_000, rateHz: 3 })
+    expect(s.getState().hidRate).toBe(3)
+    expect(s.getState().hidAgeMs).toBe(90_000)
+  })
+
   it('rehydrates the snapshot on a renderer reload', async () => {
     // The regression: a reload builds a fresh store while the main-process session keeps
     // running. No port-open event follows, so no cal:data is pushed, and without the snapshot
