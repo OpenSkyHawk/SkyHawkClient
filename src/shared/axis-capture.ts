@@ -35,6 +35,13 @@ export interface CaptureConfig {
    * How far short of the best travel a sweep may fall before it is rejected.
    *
    * Asymmetric by design — see `judgeSweep`.
+   *
+   * Sized off real variation, not a round number: two honest sweeps of the same bench axis gave
+   * 16538…48933 and 13973…50925, a 6.9% shortfall on min and 5.4% on max against the wider
+   * travel. A threshold near 10% would sit close enough to that to reject swings the user did
+   * nothing wrong on. Erring permissive is also the cheaper mistake here — with widest-wins an
+   * accepted-but-short sweep contributes nothing to the result, so this rule coaches the user
+   * rather than protecting the numbers.
    */
   shortfallFraction: number
   /** Accepted sweeps needed before the axis is done. Rejected attempts do not count. */
@@ -46,7 +53,7 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   endpointHoldMs: 1000,
   centreStableMs: 5000,
   centreCapMs: 15000,
-  shortfallFraction: 0.1,
+  shortfallFraction: 0.15,
   sweepsRequired: 3
 }
 

@@ -156,12 +156,30 @@ describe('accept and reject', () => {
     expect(s.rejection).toMatch(/high end/)
   })
 
-  it('tolerates a small shortfall', () => {
+  it('tolerates the variation two honest swings actually show', () => {
+    // Not a hypothetical: these are two real sweeps of the same bench axis, minutes apart. The
+    // shortfall between them is 6.9% on min and 5.4% on max, so a threshold anywhere near 10%
+    // would reject a swing the user did nothing wrong on.
     let s = beginCapture(0, false)
-    s = sweep(s, { lo: 13000, hi: 51000 }) // travel 38000, slack 3800
-    s = sweep(s, { lo: 15000, hi: 51000 }) // 2000 short — within slack
-    expect(s.phase).toBe('capturing')
+    s = sweep(s, { lo: 13973, hi: 50925 })
+    s = sweep(s, { lo: 16538, hi: 48933 })
+    expect(s.phase, 'real swing-to-swing variation must not be rejected').toBe('capturing')
     expect(s.accepted).toHaveLength(2)
+  })
+
+  it('pins the shortfall threshold on both sides of the boundary', () => {
+    // travel 38000, so the slack is 5700 at 15%.
+    const inside = sweep(sweep(beginCapture(0, false), { lo: 13000, hi: 51000 }), {
+      lo: 18500, // 5500 short — just inside
+      hi: 51000
+    })
+    expect(inside.phase, '5500 of 5700 slack').toBe('capturing')
+
+    const outside = sweep(sweep(beginCapture(0, false), { lo: 13000, hi: 51000 }), {
+      lo: 19000, // 6000 short — just outside
+      hi: 51000
+    })
+    expect(outside.phase, '6000 exceeds 5700 slack').toBe('rejected')
   })
 
   it('supersedes a short first sweep instead of rejecting it', () => {
