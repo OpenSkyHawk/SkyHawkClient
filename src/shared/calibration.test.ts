@@ -17,8 +17,7 @@ import {
   encodeCommit,
   encodeHello,
   encodeReset,
-  encodeSessionOpen,
-  toSigned
+  encodeSessionOpen
 } from './calibration'
 
 const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)))
@@ -329,14 +328,6 @@ describe('decoders', () => {
     })
     // An absent slot carries controlId 0 and zeroed endpoints, not junk.
     expect(cal.axes[7]).toMatchObject({ controlId: 0, min: 0, centre: 0, max: 0 })
-  })
-})
-
-describe('unit conversion', () => {
-  it('maps the unsigned wire range onto signed ±32767', () => {
-    expect(toSigned(0)).toBe(-32768)
-    expect(toSigned(32768)).toBe(0)
-    expect(toSigned(65535)).toBe(32767)
   })
 })
 

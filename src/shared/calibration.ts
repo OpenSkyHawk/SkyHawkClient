@@ -8,8 +8,9 @@
 // CRC covers TYPE‖SEQ‖LEN‖PAYLOAD — the magic is excluded, because checksumming constant
 // bytes adds no detection power and doubles the chance of two implementations disagreeing.
 //
-// Values are unsigned 0–65535 on the wire and in device storage, matching the node. The
-// ±32767 the HID report and DCS show is a display convention; see toSigned().
+// Values are unsigned 0–65535 on the wire and in device storage, matching the node, and stay
+// that way throughout the client. The ±32767 seen on the HID tab comes from the HID report,
+// where the firmware applied the offset; nothing here re-derives it.
 
 /**
  * Constants restated from src/main/reference/axis-cal.generated.ts.
@@ -125,18 +126,16 @@ export function crc16(data: Uint8Array): number {
 }
 
 // ── units ────────────────────────────────────────────────────────────────────
-
-/**
- * Unsigned wire value -> the signed ±32767 the HID report and DCS display.
- *
- * **This is the only unsigned->signed conversion in the client, and it must stay that way.**
- * Applying the offset twice, or zero times, still yields plausible in-range values, so getting
- * it wrong is silent rather than loud. Capture and COMMIT work in unsigned throughout; convert
- * once, at the display edge.
- */
-export function toSigned(unsigned: number): number {
-  return unsigned - 32768
-}
+//
+// **The client converts nothing.** Every value on this channel is unsigned 0-65535 — RAW's
+// `raw` and `cal`, the CAL_DATA endpoints, and what COMMIT stores — and it is displayed in
+// those units.
+//
+// The unsigned->signed offset exists once in the whole system, in HIDAxis::dispatch()
+// (SimGateway.cpp), which subtracts 32768 on the way into the HID report. That is the joystick
+// path, and the HID tab already reads those values signed, straight from the report. Adding a
+// second conversion here would create something that fails silently when applied twice or not
+// at all, and would show endpoints in units other than the ones being committed.
 
 // ── framing ──────────────────────────────────────────────────────────────────
 
