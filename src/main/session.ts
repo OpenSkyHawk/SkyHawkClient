@@ -206,7 +206,10 @@ export class Session {
     s.onClose(() => {
       // Fail anything in flight and release held bytes: a reconnect must not resume
       // mid-candidate, and an awaiting caller would otherwise hang on a reply that cannot come.
-      this.cal?.close()
+      // The released bytes are a candidate that never completed — not a frame, therefore DCS
+      // traffic — so they go on down the relay rather than being dropped here.
+      const held = this.cal?.close()
+      if (held?.length) this.relayFromDevice(held)
       this.stats.reconnect()
       this.setDevice({ state: 'reconnecting' })
     })
@@ -310,7 +313,18 @@ export class Session {
     // up to ~250 frames/s — that binary has no business reaching DCS. Second, the gateway
     // injects frames at arbitrary byte boundaries, so one can land mid-line; removing its bytes
     // is exactly what rejoins the interrupted line for the assembler below.
-    const rest = this.cal ? this.cal.ingest(chunk) : chunk
+    this.relayFromDevice(this.cal ? this.cal.ingest(chunk) : chunk)
+  }
+
+  /**
+   * Everything downstream of the de-mux: relay to DCS, count, record, assemble lines.
+   *
+   * Split out because it has a second caller. On port close the de-mux flushes any incomplete
+   * candidate it was holding, and those bytes were never a frame — they belong to the DCS
+   * stream. Dropping them would breach the byte-preservation guarantee the whole de-mux design
+   * rests on. They must not be fed back through the de-mux, which is why this starts below it.
+   */
+  private relayFromDevice(rest: Buffer): void {
     if (rest.length === 0) return
 
     this.transport?.send(rest) // byte-for-byte relay to DCS:7778
