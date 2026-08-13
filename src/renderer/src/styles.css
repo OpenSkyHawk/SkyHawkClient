@@ -973,15 +973,88 @@ body {
   align-items: center;
   justify-content: space-between;
 }
+/* Reports card — the right-hand column is Hats above this, per the design. */
+.hid__col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-self: stretch;
+}
+.hid__hats {
+  flex: 1;
+}
+.rate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 20px;
+}
+.rate__state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.rate__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.rate__label {
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.rate__rule {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.1);
+}
+/* Green through gold as reports age; red only when the link is down, never for silence. */
+.rate--live {
+  color: var(--green);
+  background: var(--green);
+}
+.rate--idle {
+  color: var(--blue);
+  background: var(--blue);
+}
+.rate--stale {
+  color: var(--gold);
+  background: var(--gold);
+}
+.rate--down {
+  color: var(--red);
+  background: var(--red);
+}
+.rate__label.rate--live,
+.rate__label.rate--idle,
+.rate__label.rate--stale,
+.rate__label.rate--down {
+  background: none;
+}
+.rate__dot.rate--live {
+  box-shadow: 0 0 8px var(--green);
+}
+.rate__dot.rate--down {
+  box-shadow: 0 0 8px var(--red);
+}
 .rate__num {
   font-family: var(--mono);
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--green);
+  font-size: 13px;
+  color: #cdd6e6;
+  white-space: nowrap;
 }
 .rate__num small {
-  font-size: 13px;
+  font-size: 11px;
   color: var(--muted-2);
+}
+.meta--lit {
+  color: var(--blue);
 }
 
 .btns {

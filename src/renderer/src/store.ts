@@ -128,6 +128,8 @@ export interface AppState {
   buttons: number[]
   hats: number[]
   hidRate: number
+  /** Since the last report, or since we began listening if none has arrived. */
+  hidAgeMs: number
   availAxes: number[]
   availHats: number[]
   availButtons: number[]
@@ -230,6 +232,7 @@ export const useStore = create<AppState>((set, get) => ({
   availHats: [],
   availButtons: [],
   hidRate: 0,
+  hidAgeMs: 0,
 
   log: [],
   private_logSeq: 1000,
@@ -351,7 +354,8 @@ export const useStore = create<AppState>((set, get) => ({
           axes: h.axes,
           buttons: h.buttons.flatMap((b, i) => (b ? [i] : [])),
           hats: h.hats,
-          hidRate: h.rateHz
+          hidRate: h.rateHz,
+          hidAgeMs: h.ageMs
         })
       ),
       api.on('device:status', (d) => {

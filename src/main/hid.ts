@@ -32,6 +32,15 @@ export class HidReader {
   private buttons: boolean[] = Array(HID_BUTTON_COUNT).fill(false)
   private hats: number[] = Array(HID_HAT_COUNT).fill(0)
   private lastReportAt = 0
+  /**
+   * When we began listening.
+   *
+   * Used as the age baseline until the first report arrives. Reporting an infinite age would be
+   * literally true and practically wrong: the device sends only on change, so an idle stick has
+   * sent nothing a second after connecting, and a freshness readout would call that stale. What
+   * the user actually wants to know is how long we have been listening without hearing anything.
+   */
+  private listeningSince = 0
   private reportCount = 0
   private prevSnapAt = Date.now()
   private prevCount = 0
@@ -56,6 +65,7 @@ export class HidReader {
 
   start(): void {
     this.stopped = false
+    this.listeningSince = Date.now()
     void this.open()
   }
 
@@ -98,7 +108,8 @@ export class HidReader {
    * `sampleRate()` owns the window instead.
    */
   snapshot(): HidSnapshot {
-    const ageMs = this.lastReportAt ? Date.now() - this.lastReportAt : Number.MAX_SAFE_INTEGER
+    const since = this.lastReportAt || this.listeningSince
+    const ageMs = since ? Date.now() - since : Number.MAX_SAFE_INTEGER
     return { axes: this.axes, buttons: this.buttons, hats: this.hats, ageMs, rateHz: this.rateHz }
   }
 

@@ -1,4 +1,5 @@
 import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
+import { freshness } from '../freshness'
 import { CalibrationDialog, useCalibration } from '../CalibrationDialog'
 
 /**
@@ -97,6 +98,7 @@ export function Hid() {
   const availAxes = new Set(s.availAxes)
   const availHats = new Set(s.availHats)
   const availButtons = new Set(s.availButtons)
+  const fresh = freshness(s.relaying, s.hidAgeMs)
 
   // Two different notions of "this axis exists", answering different questions:
   //   availAxes   — what HIDControls.h catalogues, i.e. what the report layout can carry
@@ -196,24 +198,29 @@ export function Hid() {
         ))}
       </div>
 
-      <div className="card field">
-        <div className="panel-h">
-          <span className="section-h">Hats</span>
-          <span className="meta">8-way POV</span>
+      <div className="hid__col">
+        <div className="card field hid__hats">
+          <div className="panel-h">
+            <span className="section-h">Hats</span>
+            <span className="meta">8-way POV</span>
+          </div>
+          <div className="hats">
+            {s.hats.map((d, i) => (
+              <Hat key={i} idx={i} dir={d} avail={availHats.has(i)} />
+            ))}
+          </div>
         </div>
-        <div className="hats">
-          {s.hats.map((d, i) => (
-            <Hat key={i} idx={i} dir={d} avail={availHats.has(i)} />
-          ))}
-        </div>
-        <div
-          className="rate"
-          style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}
-        >
-          <span className="card-h">Report Rate</span>
-          <span className="rate__num">
-            {s.hidRate}
-            <small> Hz</small>
+
+        <div className="card rate">
+          <span className="section-h">Reports</span>
+          <span className="rate__state">
+            <span className={`rate__dot ${fresh.cls}`} />
+            <span className={`rate__label ${fresh.cls}`}>{fresh.label}</span>
+            <span className="rate__rule" />
+            <span className="rate__num">
+              {s.hidRate}
+              <small> Hz</small>
+            </span>
           </span>
         </div>
       </div>
@@ -222,7 +229,8 @@ export function Hid() {
         <div className="panel-h">
           <span className="section-h">Buttons</span>
           <span className="meta">
-            {lit.size} pressed · {availButtons.size} mapped
+            128 × 1-bit · {availButtons.size} mapped ·{' '}
+            <span className="meta--lit">{lit.size} lit</span>
           </span>
         </div>
         <div className="btns__grid">
