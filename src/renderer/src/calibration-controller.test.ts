@@ -442,6 +442,67 @@ describe('CalibrationController writing', () => {
     expect(c2.selfCentring(0)).toBe(false)
   })
 
+  it('handles a whole-blob corruption, where every axis is lost at once', async () => {
+    // This is the failure part 5 exists for, and it is not the single-axis case. One CRC covers
+    // all eight axes, so a power loss inside the erase window invalidates the lot: _calLoad()
+    // rejects the blob and calls calBlobClear(), zeroing every entry. presentMask comes from the
+    // sketch's HIDAxis registrations rather than the blob, so the axes stay present and go
+    // uncalibrated together — and the offer has to cover all of them, in one write queue.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    d.loseFromDevice(1)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    expect(c2.snapshot().restorable?.axes).toEqual([0, 1])
+
+    d.calls.length = 0
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(d.calls.filter((x) => x.startsWith('commit') || x === 'read')).toEqual([
+      'commit:0',
+      'read',
+      'commit:1',
+      'read'
+    ])
+    expect(d.stored[0]).toEqual({ min: 13000, centre: 32000, max: 51000 })
+    expect(d.stored[1]).toEqual({ min: 14000, centre: 33000, max: 52000 })
+  })
+
+  it('reports a restore that half-lands, naming what did store', async () => {
+    // Multi-axis restore is the common shape after a corruption, so a failure part-way through
+    // is a real case rather than a contrived one. It must not read as "nothing was restored".
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    d.loseFromDevice(1)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    let commits = 0
+    const realCommit = d.api.calCommit
+    d.api.calCommit = async (a) => {
+      if (++commits === 2) return { ok: false, kind: 'timeout', message: 'no answer' }
+      return realCommit(a)
+    }
+
+    await c2.restore()
+    expect(c2.snapshot().failure?.kind).toBe('timeout')
+    expect(c2.snapshot().storedBeforeFailure, 'the first axis did land').toEqual([0])
+    expect(c2.dirtyAxes(), 'and the one that did not is still pending').toEqual([1])
+  })
+
   it('can be dismissed and reopened, and closes itself once restored', async () => {
     // "Not now" has to work, and the offer has to survive it: the device is still missing
     // something, so dismissing is a deferral rather than an answer.
