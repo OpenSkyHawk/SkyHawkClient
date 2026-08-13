@@ -201,7 +201,7 @@ export class Session {
         pid: SIMGATEWAY_PID
       })
       this.requestNodes() // seed the roster as soon as the device is up
-      void this.seedCalibration() // badges, with no dialog open
+      void this.readCalibrationState() // badges, with no dialog open
     })
     s.onClose(() => {
       // Fail anything in flight and release held bytes: a reconnect must not resume
@@ -368,17 +368,23 @@ export class Session {
   // ── axis calibration (#46) ─────────────────────────────────────────────────
 
   /**
-   * Say hello and read stored calibration as soon as the port opens, so the HID tab can show
-   * per-axis badges without anyone opening the dialog. Both are answered outside a session.
+   * Read-only: ask the gateway what it is and what calibration it holds, once per port open.
    *
-   * Failure here is not an error state: a gateway flashed with older firmware simply never
-   * answers, and everything else about the relay keeps working.
+   * Writes nothing. It exists so the HID tab can show per-axis calibrated/uncalibrated badges
+   * and an uncalibrated count **without anyone opening the dialog** — which is precisely why
+   * the firmware answers HELLO and GET_CAL outside a session. Everything that changes stored
+   * calibration is scoped to an open dialog.
+   *
+   * Also captures the board's USB serial, the key part of the restore cache in #46.
+   *
+   * Failure is not an error state: a gateway on older firmware simply never answers, and the
+   * relay is unaffected either way.
    */
-  private async seedCalibration(): Promise<void> {
+  private async readCalibrationState(): Promise<void> {
     this.calSerialNumber = await this.gatewaySerialNumber()
     const hello = await this.calHello()
     if (!hello.ok) {
-      debugLog('cal.seed', `no calibration channel: ${hello.message}`)
+      debugLog('cal.absent', `no calibration channel: ${hello.message}`)
       return
     }
     const { proto, blobVersion, fw } = hello.value
@@ -390,7 +396,7 @@ export class Session {
     })
     const read = await this.calRead()
     if (!read.ok) {
-      debugLog('cal.seed', `read failed: ${read.message}`)
+      debugLog('cal.absent', `read failed: ${read.message}`)
       return
     }
     // Masks, not endpoints: this is the line a bug report needs — which axes the sketch
