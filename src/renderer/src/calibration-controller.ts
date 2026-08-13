@@ -28,6 +28,15 @@ export interface CalibrationApi {
 export interface DraftAxis extends CaptureResult {
   /** Whether this axis returns to rest. Defaults true; the user can override per axis. */
   selfCentring: boolean
+  /**
+   * The rest position as measured, kept even while a midpoint is in use.
+   *
+   * `centre` is the value that will be written, so switching to "no rest position" replaces it.
+   * Without somewhere to keep the measurement, that switch is destructive and switching back
+   * does not undo it: the user gets a midpoint that looks exactly as plausible as the rest
+   * position they spent three sweeps capturing. Undefined when the capture never measured one.
+   */
+  capturedCentre?: number
 }
 
 export type WritePhase =
@@ -40,6 +49,14 @@ export type WritePhase =
    * proves "stored", and the badges are driven from it rather than from what was sent.
    */
   | 'verifying'
+  /**
+   * Every axis stored, held on screen so the user can see it.
+   *
+   * The work is finished here — this phase exists only because the whole save takes a few
+   * hundred milliseconds, and a result that vanishes as fast as it appeared is indistinguishable
+   * from nothing having happened.
+   */
+  | 'done'
 
 export interface WriteProgress {
   phase: WritePhase
@@ -59,6 +76,15 @@ export interface CalibrationState {
   device?: CalSnapshot
   /** Per-axis edits not yet written. Survives switching axes. */
   drafts: Record<number, DraftAxis>
+  /**
+   * Whether each axis returns to rest, chosen by the user.
+   *
+   * Held separately from the drafts because the choice has to be made *before* capturing — it
+   * decides whether the flow has a third point at all. Keying it to a draft would mean the first
+   * capture on every axis ran the centre step regardless, and the setting only became reachable
+   * once it was too late to matter. Defaults to true; see DraftAxis.selfCentring.
+   */
+  restPosition: Record<number, boolean>
   /**
    * Axis a STREAM_SELECT is in flight for, if any.
    *
@@ -84,6 +110,15 @@ export interface CalibrationState {
   failure?: CalFailure & { axis?: number }
   /** Axes that did store before a failure stopped the queue — worth naming in the UI. */
   storedBeforeFailure?: number[]
+  /**
+   * A confirmation to hold on screen for a few seconds.
+   *
+   * Every one of these operations finishes in well under a second — a COMMIT plus a read-back is
+   * two round trips against a 2 s timeout, and the erase is ~28 ms. Clearing the state the
+   * instant the work is done means the only evidence anything happened is a flicker, which reads
+   * as "nothing happened" rather than "done". Success needs to stay put long enough to be read.
+   */
+  notice?: { kind: 'written' | 'erased'; axes: number[] }
   busy: boolean
 }
 
@@ -91,6 +126,7 @@ const emptyState = (): CalibrationState => ({
   open: false,
   axis: 0,
   drafts: {},
+  restPosition: {},
   streaming: false,
   busy: false
 })
@@ -105,6 +141,8 @@ export class CalibrationController {
   private state = emptyState()
   private listeners = new Set<(s: CalibrationState) => void>()
   private ticker?: ReturnType<typeof setInterval>
+  private holdTimer?: ReturnType<typeof setTimeout>
+  private noticeTimer?: ReturnType<typeof setTimeout>
 
   constructor(
     private readonly api: CalibrationApi,
@@ -199,14 +237,14 @@ export class CalibrationController {
     // this is the proof that data is flowing for the selected axis. A frame for the axis we just
     // left never gets this far, and so never counts as confirmation.
     if (capture !== this.state.capture || live !== this.state.live) {
-      this.set({ capture, live, streaming: true })
+      this.advanceCapture(capture, { live, streaming: true })
     }
   }
 
-  /** Begin capturing the axis on screen. */
-  startCapture(selfCentring = true): void {
+  /** Begin capturing the axis on screen, honouring its rest-position setting. */
+  startCapture(): void {
     this.set({
-      capture: beginCapture(this.now(), selfCentring),
+      capture: beginCapture(this.now(), this.selfCentring()),
       failure: undefined
     })
   }
@@ -228,10 +266,7 @@ export class CalibrationController {
       const c = this.state.capture
       if (!c || c.phase !== 'capturing') return
       const next = tick(c, this.now())
-      if (next !== c) {
-        this.set({ capture: next })
-        if (next.phase === 'complete' && next.result) this.bankResult(next.result)
-      }
+      if (next !== c) this.advanceCapture(next)
     }, 100)
   }
 
@@ -240,22 +275,63 @@ export class CalibrationController {
     this.ticker = undefined
   }
 
-  /** A finished capture becomes a draft; nothing is written until the user saves. */
-  private bankResult(result: CaptureResult): void {
-    const selfCentring = this.state.capture?.selfCentring ?? true
-    this.set({
-      drafts: { ...this.state.drafts, [this.state.axis]: { ...result, selfCentring } },
-      capture: undefined
-    })
+  /**
+   * Commit a new capture state, banking the draft the moment it completes.
+   *
+   * **Both completion paths must come through here.** A hold commits either from the ticker (the
+   * axis went silent, which is the common case at a mechanical stop) or from inside `push` when
+   * an arriving sample happens to be the one that satisfies the dwell. Banking only in the
+   * ticker leaves the sample-completed capture stranded: `phase` is `complete`, so the ticker
+   * returns on its own guard, no draft is ever created, and the Write button greys out on a
+   * capture the user just finished. That was intermittent by construction — the same axis
+   * completes down either path depending on when the last sample lands.
+   */
+  private advanceCapture(capture: CaptureState | undefined, extra: Partial<CalibrationState> = {}) {
+    if (capture?.phase === 'complete' && capture.result) {
+      this.set({
+        ...extra,
+        capture: undefined,
+        drafts: {
+          ...this.state.drafts,
+          [this.state.axis]: {
+            ...capture.result,
+            selfCentring: capture.selfCentring,
+            capturedCentre: capture.selfCentring ? capture.result.centre : undefined
+          }
+        }
+      })
+      return
+    }
+    this.set({ ...extra, capture })
   }
 
-  /** Change the rest-position setting for the axis on screen, re-deriving centre if needed. */
+  /** Whether the axis on screen is set to return to rest. Defaults true for every axis. */
+  selfCentring(axis = this.state.axis): boolean {
+    return this.state.restPosition[axis] ?? true
+  }
+
+  /**
+   * Change the rest-position setting for the axis on screen.
+   *
+   * Works before a capture as well as after — that is the point, since the setting decides
+   * whether the capture has a centre step. When a draft already exists its centre is re-derived
+   * from `capturedCentre`, so the switch is a view of the capture rather than an edit to it and
+   * toggling back restores the measured rest position exactly.
+   */
   setSelfCentring(selfCentring: boolean): void {
-    const d = this.state.drafts[this.state.axis]
-    if (!d) return
-    const centre = selfCentring ? d.centre : midpoint(d.min, d.max)
+    const axis = this.state.axis
+    const restPosition = { ...this.state.restPosition, [axis]: selfCentring }
+    const d = this.state.drafts[axis]
+    if (!d) {
+      this.set({ restPosition })
+      return
+    }
+    // Derived from the toggle, never written over the measurement — so this is a view of the
+    // same capture and flipping back and forth costs nothing.
+    const centre = selfCentring ? (d.capturedCentre ?? d.centre) : midpoint(d.min, d.max)
     this.set({
-      drafts: { ...this.state.drafts, [this.state.axis]: { ...d, selfCentring, centre } }
+      restPosition,
+      drafts: { ...this.state.drafts, [axis]: { ...d, selfCentring, centre } }
     })
   }
 
@@ -339,7 +415,41 @@ export class CalibrationController {
       this.set({ device: read.value, drafts })
     }
 
-    this.set({ write: undefined })
+    this.set({
+      write: { phase: 'done', queue, at: queue.length - 1, stored: [...stored] }
+    })
+    this.hold(() => {
+      this.set({ write: undefined })
+      this.flash({ kind: 'written', axes: [...stored] })
+    })
+  }
+
+  /**
+   * Hold a finished state on screen before moving on.
+   *
+   * Long enough to read a short line, short enough not to block the next action — and always
+   * cancellable, since the user may act before it fires.
+   */
+  private hold(then: () => void): void {
+    this.clearHold()
+    this.holdTimer = setTimeout(then, 2200)
+  }
+
+  private clearHold(): void {
+    if (this.holdTimer) clearTimeout(this.holdTimer)
+    this.holdTimer = undefined
+  }
+
+  /**
+   * Show a confirmation for long enough to be read, then take it down.
+   *
+   * Carries which axes rather than a sentence: the wording is the dialog's business, and the
+   * controller has no reason to reach into the renderer's label table.
+   */
+  private flash(notice: NonNullable<CalibrationState['notice']>): void {
+    if (this.noticeTimer) clearTimeout(this.noticeTimer)
+    this.set({ notice })
+    this.noticeTimer = setTimeout(() => this.set({ notice: undefined }), 6000)
   }
 
   /** Does the device now hold exactly what this draft asked for? */
@@ -417,6 +527,7 @@ export class CalibrationController {
     const drafts = { ...this.state.drafts }
     delete drafts[idx]
     this.set({ busy: false, drafts, device: read.value })
+    this.flash({ kind: 'erased', axes: [idx] })
   }
 
   /** Discard a snapshot that describes a board no longer attached. */
@@ -430,6 +541,9 @@ export class CalibrationController {
 
   dispose(): void {
     this.stopTicking()
+    this.clearHold()
+    if (this.noticeTimer) clearTimeout(this.noticeTimer)
+    this.noticeTimer = undefined
     this.listeners.clear()
   }
 }

@@ -1210,3 +1210,855 @@ body {
   white-space: pre;
   overflow: hidden;
 }
+
+/* ── axis calibration dialog ──────────────────────────────────────────────
+   Values taken from the design mock (OpenSkyhawk Client.dc.html), not
+   approximated: sizes, colours and spacing are as specified there. */
+.cd {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(3, 6, 12, 0.74);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  padding: 30px;
+}
+.cd__sheet {
+  width: 900px;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #0d1626 0%, #0a121f 100%);
+  border: 1px solid rgba(30, 143, 255, 0.3);
+  border-radius: 16px;
+  box-shadow: 0 34px 100px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+}
+
+/* header */
+.cd__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(110deg, rgba(30, 143, 255, 0.09), transparent);
+  flex: none;
+}
+.cd__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(30, 143, 255, 0.12);
+  border: 1px solid rgba(30, 143, 255, 0.32);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.cd__title {
+  flex: 1;
+  min-width: 0;
+}
+.cd__h1 {
+  font-family: var(--disp);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #e8ecf4;
+}
+.cd__h2 {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #6b86b0;
+  margin-top: 2px;
+}
+.cd__ok {
+  color: var(--green);
+}
+.cd__pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #9ca8bc;
+}
+.cd__pilldot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6b86b0;
+}
+.cd__x {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: #9ca8bc;
+  font-size: 16px;
+  line-height: 1;
+  flex: none;
+}
+.cd__x:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* step strip */
+.cd__strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(5, 10, 18, 0.5);
+  flex: none;
+}
+.cd__step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 18px;
+}
+.cd__stepn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  color: #6b86b0;
+}
+.cd__stepn.is-now {
+  background: var(--blue);
+  color: #04121f;
+}
+.cd__stepn.is-done {
+  background: rgba(110, 231, 160, 0.15);
+  color: var(--green);
+}
+.cd__steplabel {
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: #6b86b0;
+}
+.cd__steplabel.is-now {
+  color: #e8ecf4;
+}
+.cd__hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: #6b86b0;
+}
+
+/* body */
+.cd__body {
+  display: grid;
+  grid-template-columns: 208px 1fr;
+  flex: 1;
+  min-height: 0;
+}
+.cd__list {
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(5, 10, 18, 0.35);
+  overflow-y: auto;
+}
+.cd__axis {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+}
+.cd__axis:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+}
+.cd__axis.is-on {
+  background: rgba(30, 143, 255, 0.12);
+  border-color: rgba(30, 143, 255, 0.34);
+}
+.cd__axis:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.cd__axisname {
+  flex: 1;
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 600;
+  color: #cdd6e6;
+}
+.cd__slot {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: #46566f;
+  white-space: nowrap;
+}
+.cd__mark {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--gold);
+  width: 8px;
+  flex: none;
+}
+.cd__axisval {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #6b86b0;
+}
+.cd__note {
+  margin-top: auto;
+  padding: 10px 4px 2px;
+  font-size: 10px;
+  color: #46566f;
+  line-height: 1.5;
+}
+
+/* detail */
+.cd__detail {
+  padding: 20px 22px;
+  overflow-y: auto;
+  min-height: 0;
+}
+.cd__label {
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #6b86b0;
+}
+.cd__label--sm {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+.cd__dim {
+  color: #46566f;
+}
+.cd__readouts {
+  display: flex;
+  gap: 28px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+.cd__big {
+  font-family: var(--mono);
+  font-size: 28px;
+  font-weight: 600;
+  color: #e8ecf4;
+  line-height: 1.15;
+}
+.cd__big--blue {
+  color: var(--blue);
+}
+.cd__vrule {
+  width: 1px;
+  height: 38px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.cd__travel {
+  margin-left: auto;
+  text-align: right;
+}
+.cd__travelrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.cd__tq {
+  font-family: var(--mono);
+  font-size: 16px;
+  color: #9ca8bc;
+}
+.cd__tq--ok {
+  color: var(--green);
+}
+.cd__tq--warn {
+  color: #ffb4b4;
+}
+.cd__tqlabel {
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cd__travelcounts {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #5a6b86;
+  white-space: nowrap;
+}
+
+/* travel bar */
+.cd__barhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+}
+.cd__holding {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.cd__holddot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: blink 0.8s ease-in-out infinite;
+}
+.cd__bar {
+  position: relative;
+  height: 34px;
+  background: #050a12;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.cd__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(30, 143, 255, 0.14);
+  border-left: 1px solid rgba(30, 143, 255, 0.5);
+  border-right: 1px solid rgba(30, 143, 255, 0.5);
+}
+.cd__centre {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.3);
+}
+.cd__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--green);
+  box-shadow: 0 0 10px var(--green);
+  transition: left 0.09s linear;
+}
+.cd__scale {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #5a6b86;
+  margin-bottom: 18px;
+}
+
+/* endpoint cards */
+.cd__cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.cd__card {
+  padding: 11px 13px;
+  background: #050a12;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+}
+.cd__cardval {
+  font-family: var(--mono);
+  font-size: 15px;
+  color: #e8ecf4;
+  margin-top: 4px;
+}
+
+/* warning */
+.cd__warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: rgba(244, 179, 33, 0.08);
+  border: 1px solid rgba(244, 179, 33, 0.28);
+  margin-bottom: 12px;
+  font-size: 11px;
+  color: #d9c08a;
+  line-height: 1.5;
+}
+.cd__warnicon {
+  color: var(--gold);
+  font-size: 13px;
+  line-height: 1.3;
+  flex: none;
+}
+
+/* rest position */
+.cd__rest {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.cd__seg {
+  display: flex;
+  padding: 3px;
+  gap: 3px;
+  background: #050a12;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  flex: none;
+}
+.cd__segbtn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: transparent;
+  color: #6b86b0;
+}
+.cd__segbtn.is-on {
+  background: var(--blue);
+  color: #04121f;
+}
+.cd__segbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cd__restnote {
+  font-size: 10px;
+  color: #5a6b86;
+  line-height: 1.45;
+}
+
+/* actions */
+.cd__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.cd__primary {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  flex: 1;
+  padding: 11px;
+  border-radius: 9px;
+  background: rgba(30, 143, 255, 0.14);
+  border: 1px solid rgba(30, 143, 255, 0.4);
+  color: #5cb0ff;
+  font-family: var(--disp);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.cd__primary--sm {
+  flex: none;
+  padding: 9px 16px;
+}
+.cd__primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cd__ghost {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 9px 16px;
+  border-radius: 9px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #9ca8bc;
+  font-family: var(--disp);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.cd__ghost:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cd__diag {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #6b86b0;
+  white-space: nowrap;
+}
+
+/* dwell prompt */
+.cd__dwell {
+  padding: 14px 16px;
+  border-radius: 11px;
+  background: rgba(244, 179, 33, 0.07);
+  border: 1px solid rgba(244, 179, 33, 0.25);
+  margin-bottom: 12px;
+}
+.cd__dwellrow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.cd__arrow {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--gold);
+  flex: none;
+  animation: blink 1.1s ease-in-out infinite;
+}
+.cd__prompt {
+  flex: 1;
+  font-family: var(--disp);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--gold);
+  line-height: 1.25;
+}
+.cd__dwelltime {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--gold);
+  white-space: nowrap;
+  flex: none;
+}
+.cd__dwellbar {
+  position: relative;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  margin-top: 11px;
+  overflow: hidden;
+}
+.cd__dwellbar > span {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  transition: width 0.08s linear;
+}
+.cd__dwellnote {
+  font-size: 11px;
+  color: #d9c08a;
+  line-height: 1.5;
+  margin-top: 9px;
+}
+
+/* shortfall + convergence */
+.cd__short {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 11px;
+  color: var(--gold);
+  line-height: 1.55;
+}
+.cd__shortbar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  background: var(--gold);
+  flex: none;
+}
+.cd__conv {
+  margin-bottom: 14px;
+}
+.cd__convrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.cd__convn {
+  width: 58px;
+  font-family: var(--disp);
+  font-size: 11px;
+  font-weight: 600;
+  color: #8595ad;
+  flex: none;
+}
+.cd__convrange {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #cdd6e6;
+  white-space: nowrap;
+}
+.cd__convspan {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #5a6b86;
+  margin-left: auto;
+}
+.cd__foot {
+  font-size: 10px;
+  color: #5a6b86;
+  margin-top: 9px;
+  line-height: 1.5;
+}
+
+/* write sequence */
+.cd__save {
+  padding: 12px 22px;
+  background: rgba(5, 10, 18, 0.6);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex: none;
+}
+.cd__saverow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+.cd__spin {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #5cb0ff;
+  animation: spin 0.7s linear infinite;
+  flex: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.cd__savetext {
+  flex: 1;
+  font-size: 11px;
+  color: #9ca8bc;
+}
+.cd__savecount {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #6b86b0;
+  white-space: nowrap;
+}
+.cd__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cd__chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.cd__chipname {
+  font-family: var(--disp);
+  font-size: 11px;
+  font-weight: 600;
+  color: #cdd6e6;
+  white-space: nowrap;
+}
+.cd__chiptag {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: #6b86b0;
+}
+.cd__chiptag.is-done {
+  color: var(--green);
+}
+
+/* error */
+.cd__err {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 22px;
+  background: rgba(255, 122, 122, 0.07);
+  border-top: 1px solid rgba(255, 122, 122, 0.25);
+  font-size: 11px;
+  color: #ffb4b4;
+  line-height: 1.55;
+  flex: none;
+}
+.cd__err b {
+  color: var(--red);
+}
+.cd__errbar {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
+  background: var(--red);
+  flex: none;
+}
+
+/* footer */
+.cd__bar2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(5, 10, 18, 0.4);
+  flex: none;
+}
+.cd__spacer {
+  flex: 1;
+}
+.cd__invalid {
+  font-size: 11px;
+  color: var(--gold);
+}
+
+/* dwell panel — travelling (gold) vs holding (green). The colour IS the instruction:
+   gold means keep moving, green means stop moving and let the timer run. */
+.cd__dwell.is-hold {
+  background: rgba(110, 231, 160, 0.07);
+  border-color: rgba(110, 231, 160, 0.28);
+}
+.cd__dwell.is-hold .cd__arrow,
+.cd__dwell.is-hold .cd__prompt,
+.cd__dwell.is-hold .cd__dwelltime {
+  color: var(--green);
+}
+.cd__dwell.is-hold .cd__arrow {
+  animation: none;
+}
+.cd__dwell.is-hold .cd__dwellbar > span {
+  background: var(--green);
+}
+.cd__dwell.is-hold .cd__dwellnote {
+  color: #9ec9b0;
+}
+.cd__spikes {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #6b86b0;
+  margin-bottom: 12px;
+}
+.cd__convnote {
+  margin-left: auto;
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #6b86b0;
+}
+.cd__convnote.is-short {
+  color: var(--gold);
+}
+
+/* Held confirmations. Every one of these operations finishes in a few hundred milliseconds, so
+   without a hold the only evidence is a flicker — which reads as nothing having happened. */
+.cd__save.is-done {
+  background: rgba(110, 231, 160, 0.07);
+  border-top-color: rgba(110, 231, 160, 0.3);
+}
+.cd__save.is-done .cd__savetext {
+  color: var(--green);
+}
+.cd__tick {
+  width: 11px;
+  color: var(--green);
+  font-size: 13px;
+  line-height: 1;
+  flex: none;
+}
+.cd__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 22px;
+  background: rgba(110, 231, 160, 0.07);
+  border-top: 1px solid rgba(110, 231, 160, 0.28);
+  font-size: 11px;
+  color: #9ec9b0;
+  line-height: 1.55;
+  flex: none;
+}
+.cd__notice.is-erased {
+  background: rgba(255, 255, 255, 0.04);
+  border-top-color: rgba(255, 255, 255, 0.12);
+  color: #9ca8bc;
+}
+.cd__noticeicon {
+  color: var(--green);
+  flex: none;
+  font-size: 12px;
+}
+.cd__notice.is-erased .cd__noticeicon {
+  color: #6b86b0;
+}
+
+/* Calibrate button — the mock's values. Was unstyled, so it fell through to the platform's
+   native button chrome: a white pill on a dark panel. */
+.calbtn {
+  appearance: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  background: rgba(30, 143, 255, 0.12);
+  border: 1px solid rgba(30, 143, 255, 0.38);
+  color: #5cb0ff;
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.calbtn:hover {
+  background: rgba(30, 143, 255, 0.2);
+}
+
+/* Armed delete. Red only in this state — the resting button is not the dangerous one. */
+.cd__ghost--danger {
+  background: rgba(255, 122, 122, 0.12);
+  border-color: rgba(255, 122, 122, 0.55);
+  color: var(--red);
+}

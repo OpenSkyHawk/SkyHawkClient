@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_CAPTURE_CONFIG } from '@shared/axis-capture'
+import { DEFAULT_CAPTURE_CONFIG, midpoint } from '@shared/axis-capture'
 import type { CalRawSample, CalResult, CalSnapshot } from '@shared/ipc'
 import { CalibrationController, type CalibrationApi } from './calibration-controller'
 
@@ -71,20 +71,22 @@ function samples(idx: number, values: number[], step = 200): CalRawSample[] {
   return values.map((raw, i) => ({ t: clock + i * step, idx, raw, cal: raw }))
 }
 
-/** Drive a full sweep on the controller the way a user's movements would. */
+/**
+ * Drive a full sweep the way a user's movements would — including the journey.
+ *
+ * The axis has to travel between points, not merely appear at them: a hold commits nothing
+ * unless the step registered real movement, which is what stops a resting axis being captured
+ * as a stop.
+ */
 async function sweep(c: CalibrationController, lo: number, hi: number, centre?: number) {
-  const hold = (v: number) => {
-    c.ingest(samples(0, [v, v + 150])) // the value, then the noise that confirms it
-    clock += C.endpointHoldMs + 200
-    vi.advanceTimersByTime(C.endpointHoldMs + 200)
+  const moveTo = (from: number, to: number, ms = C.endpointHoldMs + 200) => {
+    c.ingest(samples(0, [from, to, to + 150]))
+    clock += ms
+    vi.advanceTimersByTime(ms)
   }
-  hold(hi)
-  hold(lo)
-  if (centre !== undefined) {
-    c.ingest(samples(0, [centre, centre + 120]))
-    clock += C.centreStableMs + 200
-    vi.advanceTimersByTime(C.centreStableMs + 200)
-  }
+  moveTo(32000, hi)
+  moveTo(hi, lo)
+  if (centre !== undefined) moveTo(lo, centre, C.centreStableMs + 200)
   await Promise.resolve()
 }
 
@@ -125,7 +127,7 @@ describe('CalibrationController', () => {
     const d = fakeDevice()
     const c = new CalibrationController(d.api, now)
     await c.open(0)
-    c.startCapture(true)
+    c.startCapture()
     await sweep(c, 13000, 51000, 32000)
     await sweep(c, 13000, 51000, 32000)
     await sweep(c, 13000, 51000, 32000)
@@ -136,6 +138,33 @@ describe('CalibrationController', () => {
       d.calls.filter((x) => x.startsWith('commit')),
       'capture must not write'
     ).toHaveLength(0)
+  })
+
+  it('banks the draft when the last hold completes on a sample, not on a tick', async () => {
+    // A hold commits down either path — the ticker, when a settled axis has gone silent, or
+    // `push`, when the sample that satisfies the dwell happens to be the one that arrives. The
+    // sample path is what a user hits when the axis is still emitting noise at rest, and banking
+    // only from the ticker stranded it: phase 'complete', no draft, Write greyed out on a
+    // capture that had just finished. Here the clock advances without the interval firing, so
+    // every commit lands on an arriving sample.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    c.startCapture()
+    await sweep(c, 13000, 51000, 32000)
+    await sweep(c, 13000, 51000, 32000)
+
+    const holdViaSample = (from: number, to: number, ms = C.endpointHoldMs + 200) => {
+      c.ingest(samples(0, [from, to, to + 150]))
+      clock += ms
+      c.ingest(samples(0, [to + 100])) // in band, arriving late: this sample completes the hold
+    }
+    holdViaSample(32000, 51000)
+    holdViaSample(51000, 13000)
+    holdViaSample(13000, 32000, C.centreStableMs + 200)
+
+    expect(c.snapshot().capture, 'a finished capture must not linger in state').toBeUndefined()
+    expect(c.dirtyAxes(), 'the third sweep completed, so there is something to write').toEqual([0])
   })
 
   it('stays on the current axis when STREAM_SELECT is refused', async () => {
@@ -187,11 +216,35 @@ describe('CalibrationController', () => {
     expect(c.snapshot().streaming).toBe(true)
   })
 
+  it('restores the measured centre when the rest position is toggled back', async () => {
+    // Switching to "no rest position" replaces centre with the midpoint, because that is what
+    // gets written. If it overwrote the measurement, switching back would hand the user a
+    // midpoint that looks exactly as plausible as the rest position three sweeps had measured —
+    // silently, and with no way to tell the difference.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    c.startCapture()
+    // An off-centre rest position on purpose: a rig that rests exactly at the midpoint would
+    // make this test pass no matter what the toggle did.
+    for (let i = 0; i < 3; i++) await sweep(c, 13000, 51000, 29000)
+    const measured = c.snapshot().drafts[0]!.centre
+    expect(measured, 'a measured rest position is not the midpoint').not.toBe(
+      midpoint(13000, 51000)
+    )
+
+    c.setSelfCentring(false)
+    expect(c.snapshot().drafts[0]!.centre).toBe(midpoint(13000, 51000))
+
+    c.setSelfCentring(true)
+    expect(c.snapshot().drafts[0]!.centre, 'the capture is intact').toBe(measured)
+  })
+
   it('keeps drafts when switching axes', async () => {
     const d = fakeDevice()
     const c = new CalibrationController(d.api, now)
     await c.open(0)
-    c.startCapture(true)
+    c.startCapture()
     for (let i = 0; i < 3; i++) await sweep(c, 13000, 51000, 32000)
 
     await c.selectAxis(1)
@@ -231,8 +284,30 @@ describe('CalibrationController writing', () => {
       'commit:1',
       'read'
     ])
-    expect(c.snapshot().write).toBeUndefined()
     expect(c.dirtyAxes(), 'drafts clear only once the device confirms').toEqual([])
+
+    // The work is finished, but the result is held on screen: a whole save is two round trips
+    // and lands in a few hundred milliseconds, so clearing it immediately leaves a flicker that
+    // reads as nothing having happened.
+    expect(c.snapshot().write).toMatchObject({ phase: 'done', stored: [0, 1] })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(c.snapshot().write).toBeUndefined()
+    expect(c.snapshot().notice).toEqual({ kind: 'written', axes: [0, 1] })
+  })
+
+  it('confirms a delete, which is otherwise invisible', async () => {
+    // The dialog shows nothing after an erase — same numbers, one badge changed on another
+    // screen. Without a word the user cannot tell a successful delete from a no-op.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+
+    await c.deleteAxis(0)
+    expect(c.snapshot().notice).toEqual({ kind: 'erased', axes: [0] })
+    expect(c.snapshot().device?.axes[0]?.calibrated, 'and the read-back agrees').toBe(false)
   })
 
   it('drives state from the read-back, not from what was sent', async () => {
@@ -357,6 +432,47 @@ describe('CalibrationController writing', () => {
     const c = new CalibrationController(d.api, now)
     withDrafts(c, { 0: [13000, 32000, 51000], 2: [40000, 100, 200] })
     expect(c.invalidAxis()).toEqual({ axis: 2, reason: 'centre must fall between min and max' })
+  })
+
+  it('lets the rest position be chosen before any capture', async () => {
+    // The choice decides whether the capture has a centre step at all, so it has to be reachable
+    // first. Tying it to a draft meant the first capture on every axis ran the centre step
+    // regardless, and the setting only became available once it was too late to matter.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    expect(c.selfCentring(), 'defaults to capturing a rest position').toBe(true)
+
+    c.setSelfCentring(false)
+    expect(c.selfCentring()).toBe(false)
+
+    c.startCapture()
+    expect(c.snapshot().capture?.selfCentring, 'the capture honours the choice').toBe(false)
+  })
+
+  it('a non-centring capture never asks for a release, and derives the midpoint', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    c.setSelfCentring(false)
+    c.startCapture()
+    for (let i = 0; i < 3; i++) await sweep(c, 13000, 51000) // no centre passed
+    expect(c.snapshot().drafts[0]).toMatchObject({
+      min: 13000,
+      max: 51000,
+      centre: 32000, // midpoint of the captured travel
+      selfCentring: false
+    })
+  })
+
+  it('remembers the choice per axis', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    c.setSelfCentring(false)
+    await c.selectAxis(1)
+    expect(c.selfCentring(), 'axis 1 keeps the default').toBe(true)
+    expect(c.selfCentring(0), 'axis 0 keeps its own choice').toBe(false)
   })
 
   it('re-derives centre when an axis is marked non-centring', async () => {
