@@ -127,7 +127,7 @@ describe('CalibrationController', () => {
     const d = fakeDevice()
     const c = new CalibrationController(d.api, now)
     await c.open(0)
-    c.startCapture(true)
+    c.startCapture()
     await sweep(c, 13000, 51000, 32000)
     await sweep(c, 13000, 51000, 32000)
     await sweep(c, 13000, 51000, 32000)
@@ -193,7 +193,7 @@ describe('CalibrationController', () => {
     const d = fakeDevice()
     const c = new CalibrationController(d.api, now)
     await c.open(0)
-    c.startCapture(true)
+    c.startCapture()
     for (let i = 0; i < 3; i++) await sweep(c, 13000, 51000, 32000)
 
     await c.selectAxis(1)
@@ -359,6 +359,47 @@ describe('CalibrationController writing', () => {
     const c = new CalibrationController(d.api, now)
     withDrafts(c, { 0: [13000, 32000, 51000], 2: [40000, 100, 200] })
     expect(c.invalidAxis()).toEqual({ axis: 2, reason: 'centre must fall between min and max' })
+  })
+
+  it('lets the rest position be chosen before any capture', async () => {
+    // The choice decides whether the capture has a centre step at all, so it has to be reachable
+    // first. Tying it to a draft meant the first capture on every axis ran the centre step
+    // regardless, and the setting only became available once it was too late to matter.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    expect(c.selfCentring(), 'defaults to capturing a rest position').toBe(true)
+
+    c.setSelfCentring(false)
+    expect(c.selfCentring()).toBe(false)
+
+    c.startCapture()
+    expect(c.snapshot().capture?.selfCentring, 'the capture honours the choice').toBe(false)
+  })
+
+  it('a non-centring capture never asks for a release, and derives the midpoint', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    c.setSelfCentring(false)
+    c.startCapture()
+    for (let i = 0; i < 3; i++) await sweep(c, 13000, 51000) // no centre passed
+    expect(c.snapshot().drafts[0]).toMatchObject({
+      min: 13000,
+      max: 51000,
+      centre: 32000, // midpoint of the captured travel
+      selfCentring: false
+    })
+  })
+
+  it('remembers the choice per axis', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    c.setSelfCentring(false)
+    await c.selectAxis(1)
+    expect(c.selfCentring(), 'axis 1 keeps the default').toBe(true)
+    expect(c.selfCentring(0), 'axis 0 keeps its own choice').toBe(false)
   })
 
   it('re-derives centre when an axis is marked non-centring', async () => {

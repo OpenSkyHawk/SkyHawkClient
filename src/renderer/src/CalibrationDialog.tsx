@@ -197,7 +197,7 @@ export function CalibrationDialog({
   // Values on screen: the draft if the user has captured one, otherwise what the device holds.
   const shown = draft ?? (stored?.calibrated ? stored : undefined)
   const travel = travelQuality(shown?.min, shown?.max)
-  const selfCentring = draft?.selfCentring ?? cap?.selfCentring ?? true
+  const selfCentring = controller.selfCentring()
   const order: Point[] = selfCentring ? ['stopA', 'stopB', 'centre'] : ['stopA', 'stopB']
 
   /**
@@ -333,14 +333,14 @@ export function CalibrationDialog({
                 <button
                   className={`calseg__btn${selfCentring ? ' is-on' : ''}`}
                   onClick={() => controller.setSelfCentring(true)}
-                  disabled={writing || !draft}
+                  disabled={writing || cap?.phase === 'capturing'}
                 >
                   Self-centring
                 </button>
                 <button
                   className={`calseg__btn${!selfCentring ? ' is-on' : ''}`}
                   onClick={() => controller.setSelfCentring(false)}
-                  disabled={writing || !draft}
+                  disabled={writing || cap?.phase === 'capturing'}
                 >
                   None
                 </button>
@@ -360,7 +360,7 @@ export function CalibrationDialog({
               ) : !cap ? (
                 <button
                   className="calbtn calbtn--primary"
-                  onClick={() => controller.startCapture(selfCentring)}
+                  onClick={() => controller.startCapture()}
                   disabled={writing}
                 >
                   {draft || stored?.calibrated ? 'Re-capture travel' : 'Start travel capture'}

@@ -60,6 +60,15 @@ export interface CalibrationState {
   /** Per-axis edits not yet written. Survives switching axes. */
   drafts: Record<number, DraftAxis>
   /**
+   * Whether each axis returns to rest, chosen by the user.
+   *
+   * Held separately from the drafts because the choice has to be made *before* capturing — it
+   * decides whether the flow has a third point at all. Keying it to a draft would mean the first
+   * capture on every axis ran the centre step regardless, and the setting only became reachable
+   * once it was too late to matter. Defaults to true; see DraftAxis.selfCentring.
+   */
+  restPosition: Record<number, boolean>
+  /**
    * Axis a STREAM_SELECT is in flight for, if any.
    *
    * `axis` does not move until the device acknowledges. Switching optimistically would leave us
@@ -91,6 +100,7 @@ const emptyState = (): CalibrationState => ({
   open: false,
   axis: 0,
   drafts: {},
+  restPosition: {},
   streaming: false,
   busy: false
 })
@@ -203,10 +213,10 @@ export class CalibrationController {
     }
   }
 
-  /** Begin capturing the axis on screen. */
-  startCapture(selfCentring = true): void {
+  /** Begin capturing the axis on screen, honouring its rest-position setting. */
+  startCapture(): void {
     this.set({
-      capture: beginCapture(this.now(), selfCentring),
+      capture: beginCapture(this.now(), this.selfCentring()),
       failure: undefined
     })
   }
@@ -242,20 +252,37 @@ export class CalibrationController {
 
   /** A finished capture becomes a draft; nothing is written until the user saves. */
   private bankResult(result: CaptureResult): void {
-    const selfCentring = this.state.capture?.selfCentring ?? true
+    const selfCentring = this.state.capture?.selfCentring ?? this.selfCentring()
     this.set({
       drafts: { ...this.state.drafts, [this.state.axis]: { ...result, selfCentring } },
       capture: undefined
     })
   }
 
-  /** Change the rest-position setting for the axis on screen, re-deriving centre if needed. */
+  /** Whether the axis on screen is set to return to rest. Defaults true for every axis. */
+  selfCentring(axis = this.state.axis): boolean {
+    return this.state.restPosition[axis] ?? true
+  }
+
+  /**
+   * Change the rest-position setting for the axis on screen.
+   *
+   * Works before a capture as well as after — that is the point, since the setting decides
+   * whether the capture has a centre step. When a draft already exists its centre is re-derived,
+   * because switching to "no rest position" means the captured rest value no longer applies.
+   */
   setSelfCentring(selfCentring: boolean): void {
-    const d = this.state.drafts[this.state.axis]
-    if (!d) return
+    const axis = this.state.axis
+    const restPosition = { ...this.state.restPosition, [axis]: selfCentring }
+    const d = this.state.drafts[axis]
+    if (!d) {
+      this.set({ restPosition })
+      return
+    }
     const centre = selfCentring ? d.centre : midpoint(d.min, d.max)
     this.set({
-      drafts: { ...this.state.drafts, [this.state.axis]: { ...d, selfCentring, centre } }
+      restPosition,
+      drafts: { ...this.state.drafts, [axis]: { ...d, selfCentring, centre } }
     })
   }
 
