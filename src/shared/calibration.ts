@@ -127,15 +127,20 @@ export function crc16(data: Uint8Array): number {
 
 // ── units ────────────────────────────────────────────────────────────────────
 //
-// **The client converts nothing.** Every value on this channel is unsigned 0-65535 — RAW's
-// `raw` and `cal`, the CAL_DATA endpoints, and what COMMIT stores — and it is displayed in
-// those units.
+// **One convention, no conversion: unsigned 0-65535 everywhere.** RAW's `raw` and `cal`, the
+// CAL_DATA endpoints, and what COMMIT stores are all in the node's ADC space, and stay that way
+// through the client.
 //
-// The unsigned->signed offset exists once in the whole system, in HIDAxis::dispatch()
-// (SimGateway.cpp), which subtracts 32768 on the way into the HID report. That is the joystick
-// path, and the HID tab already reads those values signed, straight from the report. Adding a
-// second conversion here would create something that fails silently when applied twice or not
-// at all, and would show endpoints in units other than the ones being committed.
+// The unsigned->signed offset exists once in the whole system, at SimGateway.cpp:216 inside
+// HIDAxis::dispatch(), which subtracts 32768 on the way into the HID report. It is a fixed
+// constant, never per-axis: all the per-axis variation lives in the stored `centre`, which is
+// why an axis resting at raw 34728 still reads exactly 0 to DCS. Nothing is lost by leaving the
+// offset unapplied here, and the signed view already exists on the HID tab, read straight from
+// the report where the firmware put it.
+//
+// Converting only some values would be the worst of both: the offset applied twice, or not at
+// all, still yields plausible in-range numbers and fails silently, and endpoints would be shown
+// in units other than the ones being committed.
 
 // ── framing ──────────────────────────────────────────────────────────────────
 
