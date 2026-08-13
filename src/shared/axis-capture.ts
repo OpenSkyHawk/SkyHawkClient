@@ -28,11 +28,26 @@ export interface CaptureConfig {
   /**
    * Movement smaller than this leaves the held value alone.
    *
-   * Measured rest spread on the bench rig was 387 counts peak-to-peak (stdev 28.7, post-EWMA),
-   * arriving at roughly one sample per second. A detector that restarted on *any* new sample
-   * would race that noise: sometimes it completes, sometimes it never does, depending how
-   * jittery the individual axis is. The band has to clear the noise — but not by so much that
-   * it accepts a stop the user has not actually reached.
+   * A detector that restarted on *any* new sample would race the noise: sometimes completing,
+   * sometimes not, depending how jittery the individual axis is. So movement has to clear a
+   * threshold — but not one so wide that it accepts a stop the user has not actually reached.
+   *
+   * **This is the least-settled constant here.** Measured rest spread on the bench rig was
+   * 320–387 counts peak-to-peak (stdev 28.7, post-EWMA) at roughly one sample per second, which
+   * argues for something above 400. It is set below that deliberately, because 500 raw counts is
+   * ~885 output counts after a typical 1.77× stretch — 2.7% of a half-axis — and accepting a
+   * stop that early is its own kind of wrong.
+   *
+   * The trade lands on hold *duration*, not correctness: a rest swing across most of the noise
+   * envelope restarts the timer, so a hold occasionally takes several seconds rather than one.
+   * The node's 128-count hysteresis keeps most steps under the threshold, so this should be
+   * uncommon. `interruptions` is the instrument for tuning it — a climbing count during a hold
+   * means the band is too tight for that axis.
+   *
+   * Worth knowing for the hall-sensor bench: a fixed raw band is a larger *fraction* of travel
+   * on a low-travel axis. The bench stick spans ~37000 counts, but a short-arc axis may develop
+   * only half that, doubling this threshold's relative size exactly where resolution is already
+   * tightest.
    */
   bandCounts: number
   /** How long an endpoint must stay inside the band before it counts as held. */
@@ -59,7 +74,7 @@ export interface CaptureConfig {
 }
 
 export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
-  bandCounts: 500,
+  bandCounts: 300,
   endpointHoldMs: 1000,
   centreStableMs: 5000,
   centreCapMs: 15000,
@@ -67,7 +82,10 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   sweepsRequired: 3
 }
 
-/** Unsigned 0–65535, as the wire and device storage use. Convert for display, never here. */
+/**
+ * Unsigned 0–65535, as the wire and device storage use — and as the dialog displays. The client
+ * applies no offset anywhere, so there is nothing to convert on the way in or out.
+ */
 export interface CaptureSample {
   /** Stamped on arrival in main, not at render time — batching would otherwise skew dwell. */
   t: number

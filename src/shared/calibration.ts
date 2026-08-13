@@ -8,8 +8,9 @@
 // CRC covers TYPE‖SEQ‖LEN‖PAYLOAD — the magic is excluded, because checksumming constant
 // bytes adds no detection power and doubles the chance of two implementations disagreeing.
 //
-// Values are unsigned 0–65535 on the wire and in device storage, matching the node. The
-// ±32767 the HID report and DCS show is a display convention; see toSigned().
+// Values are unsigned 0–65535 on the wire and in device storage, matching the node, and stay
+// that way throughout the client. The ±32767 seen on the HID tab comes from the HID report,
+// where the firmware applied the offset; nothing here re-derives it.
 
 /**
  * Constants restated from src/main/reference/axis-cal.generated.ts.
@@ -125,18 +126,21 @@ export function crc16(data: Uint8Array): number {
 }
 
 // ── units ────────────────────────────────────────────────────────────────────
-
-/**
- * Unsigned wire value -> the signed ±32767 the HID report and DCS display.
- *
- * **This is the only unsigned->signed conversion in the client, and it must stay that way.**
- * Applying the offset twice, or zero times, still yields plausible in-range values, so getting
- * it wrong is silent rather than loud. Capture and COMMIT work in unsigned throughout; convert
- * once, at the display edge.
- */
-export function toSigned(unsigned: number): number {
-  return unsigned - 32768
-}
+//
+// **One convention, no conversion: unsigned 0-65535 everywhere.** RAW's `raw` and `cal`, the
+// CAL_DATA endpoints, and what COMMIT stores are all in the node's ADC space, and stay that way
+// through the client.
+//
+// The unsigned->signed offset exists once in the whole system, at SimGateway.cpp:216 inside
+// HIDAxis::dispatch(), which subtracts 32768 on the way into the HID report. It is a fixed
+// constant, never per-axis: all the per-axis variation lives in the stored `centre`, which is
+// why an axis resting at raw 34728 still reads exactly 0 to DCS. Nothing is lost by leaving the
+// offset unapplied here, and the signed view already exists on the HID tab, read straight from
+// the report where the firmware put it.
+//
+// Converting only some values would be the worst of both: the offset applied twice, or not at
+// all, still yields plausible in-range numbers and fails silently, and endpoints would be shown
+// in units other than the ones being committed.
 
 // ── framing ──────────────────────────────────────────────────────────────────
 

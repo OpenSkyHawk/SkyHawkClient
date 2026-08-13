@@ -17,8 +17,7 @@ import {
   encodeCommit,
   encodeHello,
   encodeReset,
-  encodeSessionOpen,
-  toSigned
+  encodeSessionOpen
 } from './calibration'
 
 const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)))
@@ -296,8 +295,27 @@ describe('decoders', () => {
     expect(decodeNack(hex('050503'))).toEqual({ type: CAL_TYPE.COMMIT, reason: 0x05, detail: 3 })
   })
 
-  it('decodes RAW, keeping raw and cal distinct', () => {
+  it('decodes RAW, keeping raw and cal distinct — and both unsigned', () => {
+    // One convention across the whole channel. If a conversion is ever added for `cal` alone,
+    // this fails: the offset applied to some values and not others is the silent-failure case,
+    // and endpoints would then be displayed in units other than the ones committed.
     expect(decodeRaw(hex('0283340080'))).toEqual({ idx: 2, raw: 13443, cal: 32768 })
+  })
+
+  it('leaves CAL_DATA endpoints exactly as committed', () => {
+    // Endpoints are positions in ADC space and are what COMMIT stores, so the numbers decoded
+    // here are the bytes written to flash — no re-basing between what is shown and what is sent.
+    const p = new Uint8Array(82)
+    p[0] = 0b1
+    const put = (o: number, v: number) => {
+      p[o] = v & 0xff
+      p[o + 1] = (v >> 8) & 0xff
+    }
+    put(4, 13443)
+    put(6, 34728)
+    put(8, 50704)
+    const a = decodeCalData(p).axes[0]!
+    expect([a.min, a.centre, a.max]).toEqual([13443, 34728, 50704])
   })
 
   it('decodes CAL_DATA masks and all eight slots', () => {
@@ -329,14 +347,6 @@ describe('decoders', () => {
     })
     // An absent slot carries controlId 0 and zeroed endpoints, not junk.
     expect(cal.axes[7]).toMatchObject({ controlId: 0, min: 0, centre: 0, max: 0 })
-  })
-})
-
-describe('unit conversion', () => {
-  it('maps the unsigned wire range onto signed ±32767', () => {
-    expect(toSigned(0)).toBe(-32768)
-    expect(toSigned(32768)).toBe(0)
-    expect(toSigned(65535)).toBe(32767)
   })
 })
 
