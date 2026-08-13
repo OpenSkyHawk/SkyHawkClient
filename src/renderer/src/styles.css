@@ -905,6 +905,12 @@ body {
   border-color: var(--green);
   color: var(--green);
 }
+/* Gold, matching every other "changed but not committed" signal in the app. */
+.calbadge--edit {
+  background: rgba(244, 179, 33, 0.12);
+  border-color: var(--gold);
+  color: var(--gold);
+}
 /* Uncalibrated count: gold when any axis needs attention, green when none do. */
 .panel-h .meta--warn {
   color: var(--gold);
@@ -1422,12 +1428,6 @@ body {
   font-size: 9px;
   color: #46566f;
   white-space: nowrap;
-}
-.cd__mark {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--gold);
-  width: 8px;
 }
 .cd__axisval {
   font-family: var(--mono);
@@ -2031,4 +2031,26 @@ body {
 }
 .cd__notice.is-erased .cd__noticeicon {
   color: #6b86b0;
+}
+
+/* Calibrate button — the mock's values. Was unstyled, so it fell through to the platform's
+   native button chrome: a white pill on a dark panel. */
+.calbtn {
+  appearance: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  background: rgba(30, 143, 255, 0.12);
+  border: 1px solid rgba(30, 143, 255, 0.38);
+  color: #5cb0ff;
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.calbtn:hover {
+  background: rgba(30, 143, 255, 0.2);
 }
