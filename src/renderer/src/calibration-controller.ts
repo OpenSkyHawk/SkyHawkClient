@@ -59,6 +59,22 @@ export interface CalibrationState {
   device?: CalSnapshot
   /** Per-axis edits not yet written. Survives switching axes. */
   drafts: Record<number, DraftAxis>
+  /**
+   * Axis a STREAM_SELECT is in flight for, if any.
+   *
+   * `axis` does not move until the device acknowledges. Switching optimistically would leave us
+   * filtering for an axis the gateway is not streaming — every sample dropped on `idx`, so the
+   * readout and capture look dead — and retrying the same axis would early-return as a no-op.
+   */
+  switchingTo?: number
+  /**
+   * Whether a sample for the current axis has actually arrived since it was selected.
+   *
+   * The ACK proves the device accepted the selection; this proves data is flowing. Kept separate
+   * and non-blocking because the node emits only on change: a steady axis may send nothing at
+   * all, so gating the UI on it would read as a hang.
+   */
+  streaming: boolean
   /** Live capture for the axis on screen, absent when not capturing. */
   capture?: CaptureState
   /** Most recent sample for the streamed axis, for the live readout. */
@@ -75,6 +91,7 @@ const emptyState = (): CalibrationState => ({
   open: false,
   axis: 0,
   drafts: {},
+  streaming: false,
   busy: false
 })
 
@@ -136,10 +153,24 @@ export class CalibrationController {
    * moving along the rail, and they are written together at the end.
    */
   async selectAxis(axis: number): Promise<void> {
-    if (axis === this.state.axis) return
-    this.set({ axis, capture: undefined, live: undefined, busy: true })
+    if (axis === this.state.axis || this.state.switchingTo === axis) return
+    this.set({ switchingTo: axis, busy: true, failure: undefined })
+
     const r = await this.api.calStreamSelect(axis)
-    this.set({ busy: false, failure: r.ok ? undefined : { ...r, axis } })
+    if (!r.ok) {
+      // Stay where we were. The gateway is still streaming the previous axis, so pretending
+      // otherwise would drop every sample on `idx` and leave a retry unable to fire.
+      this.set({ switchingTo: undefined, busy: false, failure: { ...r, axis } })
+      return
+    }
+    this.set({
+      axis,
+      switchingTo: undefined,
+      busy: false,
+      streaming: false,
+      capture: undefined,
+      live: undefined
+    })
   }
 
   async close(): Promise<void> {
@@ -164,7 +195,12 @@ export class CalibrationController {
       live = { raw: s.raw, cal: s.cal }
       if (capture) capture = pushSample(capture, { t: s.t, raw: s.raw })
     }
-    if (capture !== this.state.capture || live !== this.state.live) this.set({ capture, live })
+    // Reaching here means a sample matched `axis` — the `continue` above filters the rest — so
+    // this is the proof that data is flowing for the selected axis. A frame for the axis we just
+    // left never gets this far, and so never counts as confirmation.
+    if (capture !== this.state.capture || live !== this.state.live) {
+      this.set({ capture, live, streaming: true })
+    }
   }
 
   /** Begin capturing the axis on screen. */
@@ -306,6 +342,13 @@ export class CalibrationController {
     this.set({ write: undefined })
   }
 
+  /** Does the device now hold exactly what this draft asked for? */
+  private confirms(snap: CalSnapshot | undefined, idx: number): boolean {
+    const d = this.state.drafts[idx]
+    const a = snap?.axes[idx]
+    return !!d && !!a && a.calibrated && a.min === d.min && a.centre === d.centre && a.max === d.max
+  }
+
   /**
    * Stop the queue, keep the dirty state, and re-read.
    *
@@ -315,11 +358,22 @@ export class CalibrationController {
    */
   private async failWrite(f: CalFailure, axis: number, stored: number[]): Promise<void> {
     const read = await this.api.calRead()
+    const device = read.ok ? read.value : this.state.device
+
+    // A timeout cannot tell "never received" from "wrote it and the reply was lost" — so if the
+    // re-read shows the device holding exactly what we asked for, the write *did* land. Say so:
+    // leaving the draft dirty would invite the user to rewrite a value already verified, and
+    // omitting the axis from `stored` would under-report what succeeded.
+    const landed = this.confirms(device, axis)
+    const drafts = { ...this.state.drafts }
+    if (landed) delete drafts[axis]
+
     this.set({
       write: undefined,
-      device: read.ok ? read.value : this.state.device,
+      device,
+      drafts,
       failure: { ...f, axis },
-      storedBeforeFailure: stored
+      storedBeforeFailure: landed ? [...stored, axis] : stored
     })
   }
 
@@ -339,10 +393,30 @@ export class CalibrationController {
       })
       return
     }
+    // The ACK says "received". Only a read showing the axis uncalibrated says "erased" — same
+    // rule the write path follows, and the reason the draft must not be discarded on the ACK
+    // alone. A failed read, or an axis still calibrated, is a failure to report rather than a
+    // refresh to shrug at.
     const read = await this.api.calRead()
+    if (!read.ok) {
+      this.set({ busy: false, failure: { ...read, axis: idx } })
+      return
+    }
+    if (read.value.axes[idx]?.calibrated) {
+      this.set({
+        busy: false,
+        device: read.value,
+        failure: {
+          kind: 'error',
+          message: 'The device acknowledged the delete but still reports this axis as calibrated.',
+          axis: idx
+        }
+      })
+      return
+    }
     const drafts = { ...this.state.drafts }
     delete drafts[idx]
-    this.set({ busy: false, drafts, device: read.ok ? read.value : this.state.device })
+    this.set({ busy: false, drafts, device: read.value })
   }
 
   /** Discard a snapshot that describes a board no longer attached. */

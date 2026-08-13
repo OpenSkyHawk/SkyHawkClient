@@ -138,6 +138,55 @@ describe('CalibrationController', () => {
     ).toHaveLength(0)
   })
 
+  it('stays on the current axis when STREAM_SELECT is refused', async () => {
+    // Switching optimistically would leave us filtering for an axis the gateway is not
+    // streaming: every sample dropped on idx, so the readout and capture look dead. Worse, a
+    // retry of the same axis would early-return as a no-op, with no way out.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    d.api.calStreamSelect = async () => ({
+      ok: false,
+      kind: 'nack',
+      reason: 0x06,
+      reasonName: 'NO_SESSION',
+      detail: 0xff,
+      message: 'refused'
+    })
+
+    await c.selectAxis(1)
+    expect(c.snapshot().axis, 'the device is still streaming axis 0').toBe(0)
+    expect(c.snapshot().switchingTo).toBeUndefined()
+    const f = c.snapshot().failure
+    expect(f?.kind === 'nack' && f.reasonName).toBe('NO_SESSION')
+
+    // Samples for the axis the device really is streaming still land.
+    c.ingest(samples(0, [40000]))
+    expect(c.snapshot().live?.raw).toBe(40000)
+
+    // And retrying the same axis is possible, because we never claimed to be on it.
+    d.api.calStreamSelect = async () => ok(null)
+    await c.selectAxis(1)
+    expect(c.snapshot().axis).toBe(1)
+  })
+
+  it('reports streaming only once a sample for the new axis arrives', async () => {
+    // The ACK proves the device accepted the selection; a sample proves data is flowing. Kept
+    // separate because the node emits only on change, so a steady axis may send nothing at all.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    await c.selectAxis(1)
+    expect(c.snapshot().streaming, 'accepted, but nothing has arrived yet').toBe(false)
+
+    // A sample for the axis we just left proves nothing about the new one.
+    c.ingest(samples(0, [40000]))
+    expect(c.snapshot().streaming, 'a stale frame must not count as confirmation').toBe(false)
+
+    c.ingest(samples(1, [30000]))
+    expect(c.snapshot().streaming).toBe(true)
+  })
+
   it('keeps drafts when switching axes', async () => {
     const d = fakeDevice()
     const c = new CalibrationController(d.api, now)
@@ -252,6 +301,41 @@ describe('CalibrationController writing', () => {
       c.snapshot().device?.axes[0]?.calibrated,
       'the re-read must reveal the write that did land'
     ).toBe(true)
+    // And having proved it landed, the draft must not sit dirty inviting a redundant rewrite.
+    expect(c.dirtyAxes(), 'a confirmed write is no longer pending').toEqual([])
+    expect(c.snapshot().storedBeforeFailure, 'it stored, so say so').toEqual([0])
+  })
+
+  it('does not mistake a pre-existing calibration for the write landing', async () => {
+    // The dangerous shape: the axis was already calibrated, the user edits it, and the commit
+    // times out without landing. The device still reports `calibrated` — with the OLD values.
+    // Reconciling on that flag alone would clear the draft and discard the user's edit while the
+    // device holds something else entirely.
+    const d = fakeDevice()
+    d.stored[0] = { min: 20000, centre: 32000, max: 45000 } // an older calibration
+    d.api.calCommit = async () => ({ ok: false, kind: 'timeout', message: 'no reply' })
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] }) // wider, and different
+
+    await c.save()
+
+    expect(c.snapshot().device?.axes[0]?.calibrated, 'the old calibration is still there').toBe(
+      true
+    )
+    expect(c.dirtyAxes(), 'the edit did not land, so it stays pending').toEqual([0])
+    expect(c.snapshot().storedBeforeFailure).toEqual([])
+  })
+
+  it('keeps the draft when a timed-out commit did NOT land', async () => {
+    const d = fakeDevice()
+    d.api.calCommit = async () => ({ ok: false, kind: 'timeout', message: 'no reply' })
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    expect(c.dirtyAxes(), 'nothing was stored, so the edit is still pending').toEqual([0])
+    expect(c.snapshot().storedBeforeFailure).toEqual([])
   })
 
   it('names the axes that did store before a failure stopped the queue', async () => {
@@ -299,6 +383,29 @@ describe('CalibrationController delete', () => {
     await c.open(0)
     await c.deleteAxis(0)
     expect(c.snapshot().device?.axes[0]?.calibrated).toBe(false)
+  })
+
+  it('does not treat a delete as done when the device cannot be re-read', async () => {
+    // The ACK says "received". Only a read showing the axis uncalibrated says "erased" — the
+    // same rule the write path follows.
+    const d = fakeDevice()
+    d.stored[0] = { min: 13000, centre: 32000, max: 51000 }
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    d.fail.read = { ok: false, kind: 'timeout', message: 'no reply' }
+    await c.deleteAxis(0)
+    expect(c.snapshot().failure?.kind, 'an unverified delete is a failure').toBe('timeout')
+  })
+
+  it('does not treat a delete as done when the axis comes back still calibrated', async () => {
+    const d = fakeDevice()
+    d.stored[0] = { min: 13000, centre: 32000, max: 51000 }
+    d.api.calReset = async () => ok(null) // acknowledges, erases nothing
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    await c.deleteAxis(0)
+    expect(c.snapshot().failure?.message).toMatch(/still reports this axis as calibrated/)
+    expect(c.snapshot().device?.axes[0]?.calibrated).toBe(true)
   })
 
   it('surfaces a delete failure — RESET is the same flash write as COMMIT', async () => {
