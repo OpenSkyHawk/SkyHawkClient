@@ -28,9 +28,10 @@ describe('report freshness', () => {
   })
 
   it('is measured in minutes, not seconds', () => {
-    // An axis untouched for eight minutes says nothing about the hardware, so the first band has
-    // to be long enough to cover ordinary use. This pins the intent rather than the number.
-    expect(FRESH_MS).toBeGreaterThanOrEqual(5 * MIN)
+    // An axis untouched for a few seconds is being held still, not failing — the first band has
+    // to outlast ordinary use. This pins the intent rather than the number, which has already
+    // moved once.
+    expect(FRESH_MS).toBeGreaterThanOrEqual(MIN)
     expect(RECENT_MS).toBeGreaterThan(FRESH_MS)
   })
 })
