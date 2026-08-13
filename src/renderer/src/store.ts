@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type {
   AircraftStatus,
   AppConfig,
+  CalSnapshot,
   DcsTransport,
   DeviceState,
   LogRow as IpcLogRow,
@@ -130,6 +131,15 @@ export interface AppState {
   availAxes: number[]
   availHats: number[]
   availButtons: number[]
+
+  /**
+   * Stored axis calibration, as last read back from the attached device.
+   *
+   * `undefined` means "not known" — no device, or a gateway whose firmware predates the
+   * calibration protocol and never answers. That is deliberately distinct from "uncalibrated":
+   * showing every axis as uncalibrated because we failed to ask would be a lie.
+   */
+  cal?: CalSnapshot
 
   log: LogRow[]
   private_logSeq: number
@@ -338,7 +348,13 @@ export const useStore = create<AppState>((set, get) => ({
           hidRate: h.rateHz
         })
       ),
-      api.on('device:status', (d) => set({ deviceState: d.state, devicePort: d.portPath })),
+      api.on('device:status', (d) => {
+        set({ deviceState: d.state, devicePort: d.portPath })
+        // The device went away: drop the calibration snapshot rather than leave stale badges
+        // describing a board that is no longer attached.
+        if (d.state === 'no-device') set({ cal: undefined })
+      }),
+      api.on('cal:data', (c) => set({ cal: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:status', (n) => set({ nodes: n })),
       api.on('serial:traffic', (frames) => {

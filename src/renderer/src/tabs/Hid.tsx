@@ -1,6 +1,52 @@
 import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
 
-function Axis({ label, raw, avail }: { label: string; raw: number; avail: boolean }) {
+/**
+ * Per-axis stored-calibration state.
+ *
+ * `undefined` is a third state, not a synonym for uncalibrated: it means we have not been able
+ * to ask the device — no gateway attached, or firmware predating the calibration protocol.
+ * Rendering "RAW" in that case would assert something we do not know.
+ */
+type CalState = 'cal' | 'raw' | undefined
+
+/**
+ * The column is always reserved, so values stay aligned whether or not an axis has a badge.
+ *
+ * An undeclared slot gets an empty cell rather than a RAW badge: RAW means "declared, and the
+ * device holds no calibration for it" — something the user can act on. A slot the sketch never
+ * declared is not awaiting calibration, and badging it would both overstate the work outstanding
+ * and contradict the uncalibrated count in the header.
+ */
+function CalBadge({ state }: { state: CalState }) {
+  if (!state) return <span className="axis__cal" />
+  const cal = state === 'cal'
+  return (
+    <span className="axis__cal">
+      <span
+        className={`calbadge${cal ? ' calbadge--on' : ''}`}
+        title={
+          cal
+            ? 'Calibrated — endpoints stored on the device'
+            : 'Uncalibrated — values pass through untransformed'
+        }
+      >
+        {cal ? 'CAL' : 'RAW'}
+      </span>
+    </span>
+  )
+}
+
+function Axis({
+  label,
+  raw,
+  avail,
+  cal
+}: {
+  label: string
+  raw: number
+  avail: boolean
+  cal: CalState
+}) {
   const pct = Math.max(-1, Math.min(1, raw / 32768)) // signed ±32768
   const fillW = Math.abs(pct) * 50 // % of half-track
   const left = pct >= 0 ? 50 : 50 - fillW
@@ -12,6 +58,7 @@ function Axis({ label, raw, avail }: { label: string; raw: number; avail: boolea
         {avail && <span className="axis__fill" style={{ left: left + '%', width: fillW + '%' }} />}
       </div>
       <span className="axis__val">{avail ? raw : '—'}</span>
+      <CalBadge state={cal} />
     </div>
   )
 }
@@ -43,15 +90,44 @@ export function Hid() {
   const availHats = new Set(s.availHats)
   const availButtons = new Set(s.availButtons)
 
+  // Two different notions of "this axis exists", answering different questions:
+  //   availAxes   — what HIDControls.h catalogues, i.e. what the report layout can carry
+  //   presentMask — what THIS gateway's sketch actually declares
+  //
+  // An axis is live only if both are true. A catalogued slot the device never declared reads a
+  // constant 0, and rendering that as a value implies a reading that does not exist — so it gets
+  // the same dimmed em-dash treatment as an uncatalogued slot. Until the device tells us
+  // (no gateway, or firmware predating the protocol) we fall back to the catalogue alone.
+  const present = s.cal ? s.cal.axes.filter((a) => a.present) : []
+  const uncalibrated = present.filter((a) => !a.calibrated).length
+  const axisLive = (i: number) =>
+    availAxes.has(i) && (s.cal ? (s.cal.axes[i]?.present ?? false) : true)
+
+  // Calibration is a property of the attached device, so badges follow presentMask alone.
+  const calState = (i: number): CalState => {
+    const a = s.cal?.axes[i]
+    if (!a?.present) return undefined
+    return a.calibrated ? 'cal' : 'raw'
+  }
+
   return (
     <div className="hid">
       <div className="card field">
         <div className="panel-h">
           <span className="section-h">Axes</span>
-          <span className="meta">int16 · ±32768</span>
+          <span className="meta">
+            {s.cal ? `${present.length} of 8 slots · device-reported` : 'int16 · ±32768'}
+          </span>
+          {s.cal && (
+            <span className={`meta ${uncalibrated ? 'meta--warn' : 'meta--ok'}`}>
+              {uncalibrated
+                ? `${uncalibrated} ${uncalibrated === 1 ? 'axis' : 'axes'} uncalibrated`
+                : 'all axes calibrated'}
+            </span>
+          )}
         </div>
         {s.axes.map((v, i) => (
-          <Axis key={i} label={AXIS_LABELS[i]!} raw={v} avail={availAxes.has(i)} />
+          <Axis key={i} label={AXIS_LABELS[i]!} raw={v} avail={axisLive(i)} cal={calState(i)} />
         ))}
       </div>
 
