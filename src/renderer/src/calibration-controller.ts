@@ -130,6 +130,17 @@ export interface CalibrationState {
    * as "nothing happened" rather than "done". Success needs to stay put long enough to be read.
    */
   notice?: { kind: 'written' | 'erased'; axes: number[] }
+  /**
+   * Axes the cache holds that the device has lost, and the copy itself.
+   *
+   * Present does not mean acted on. This is an *offer* — restoring automatically onto a board
+   * whose calibration went missing would be right most of the time and catastrophic the rest,
+   * because the one case that produces a missing calibration and a populated cache is also the
+   * case where the board might have been swapped. Wrong endpoints fail open and stay invisible.
+   */
+  restorable?: { board: CachedBoard; axes: number[] }
+  /** Whether the restore offer is expanded for review. Never restores without this. */
+  restoreOpen: boolean
   busy: boolean
 }
 
@@ -139,6 +150,7 @@ const emptyState = (): CalibrationState => ({
   drafts: {},
   restPosition: {},
   streaming: false,
+  restoreOpen: false,
   busy: false
 })
 
@@ -197,12 +209,16 @@ export class CalibrationController {
     // rest position it does not have.
     const cache = await this.api.calCacheRead()
     const restPosition = { ...this.state.restPosition }
+    let restorable: CalibrationState['restorable']
     if (cache.ok && cache.value.board) {
       for (const [key, a] of Object.entries(cache.value.board.axes)) {
         restPosition[Number(key)] = a.selfCentring
       }
+      if (cache.value.regressed.length > 0) {
+        restorable = { board: cache.value.board, axes: cache.value.regressed }
+      }
     }
-    this.set({ busy: false, failure: undefined, restPosition })
+    this.set({ busy: false, failure: undefined, restPosition, restorable })
     this.startTicking()
   }
 
@@ -261,6 +277,42 @@ export class CalibrationController {
     if (capture !== this.state.capture || live !== this.state.live) {
       this.advanceCapture(capture, { live, streaming: true })
     }
+  }
+
+  /** Show or hide the restore offer. Reviewing is deliberately a separate step from restoring. */
+  setRestoreOpen(restoreOpen: boolean): void {
+    this.set({ restoreOpen })
+  }
+
+  /**
+   * Write the cached copy back, for the axes the device has lost.
+   *
+   * Nothing new on the wire — this seeds drafts from the cache and runs the ordinary save, so it
+   * inherits the read-back verification, the failure paths, and the re-cache. A restore that
+   * half-lands is therefore reported the same way a half-landed save is.
+   *
+   * Only regressed axes are queued. An axis the device still holds is not replaced: the device's
+   * copy is the authority, and the cache exists to fill a gap, not to overrule one.
+   */
+  async restore(): Promise<void> {
+    const r = this.state.restorable
+    if (!r || this.state.write) return
+    // `restPosition` is not touched here: open() seeded it from this same cache entry, and
+    // restore() cannot run before open().
+    const drafts = { ...this.state.drafts }
+    for (const idx of r.axes) {
+      const a = r.board.axes[idx]
+      if (!a) continue
+      drafts[idx] = {
+        min: a.min,
+        centre: a.centre,
+        max: a.max,
+        selfCentring: a.selfCentring,
+        capturedCentre: a.selfCentring ? a.centre : undefined
+      }
+    }
+    this.set({ drafts, restoreOpen: false, failure: undefined })
+    await this.save()
   }
 
   /** Begin capturing the axis on screen, honouring its rest-position setting. */

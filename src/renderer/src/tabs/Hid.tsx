@@ -123,6 +123,33 @@ export function Hid() {
       {calib.open && calib.controller && (
         <CalibrationDialog controller={calib.controller} onClose={() => void calib.close()} />
       )}
+      {calib.offer && present.length > 0 && (
+        <div className="calrestore">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#5cb0ff"
+            strokeWidth="1.8"
+          >
+            <path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5" />
+          </svg>
+          <span className="calrestore__txt">
+            {calib.offer.axes.length === 1
+              ? `${AXIS_LABELS[calib.offer.axes[0]!]} has no calibration on the device`
+              : `${calib.offer.axes.length} axes have no calibration on the device`}
+            , but this client holds a copy the device confirmed
+            {calib.offer.confirmedAt
+              ? ` on ${new Date(calib.offer.confirmedAt).toLocaleString()}`
+              : ''}
+            .
+          </span>
+          <button className="calbtn" onClick={() => void calib.start(calib.offer!.axes[0]!, true)}>
+            Review &amp; restore…
+          </button>
+        </div>
+      )}
       <div className="card field">
         <div className="panel-h">
           <span className="section-h">Axes</span>

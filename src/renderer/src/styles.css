@@ -2062,3 +2062,131 @@ body {
   border-color: rgba(255, 122, 122, 0.55);
   color: var(--red);
 }
+
+/* Restore offer. Blue, not amber: nothing is wrong with the app — the device lost something the
+   client happens to still have, and the user decides whether to put it back. */
+.calrestore {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border-radius: 12px;
+  background: rgba(30, 143, 255, 0.07);
+  border: 1px solid rgba(30, 143, 255, 0.28);
+}
+.calrestore > svg {
+  flex: none;
+}
+.calrestore__txt {
+  flex: 1;
+  font-size: 12px;
+  color: #a9c6e8;
+  line-height: 1.5;
+}
+
+/* Restore panel — a review step, never a one-click action. The values are shown because the one
+   scenario that produces a populated cache and an uncalibrated device is also the one where the
+   board might have been swapped, and wrong endpoints fail open. */
+.cd__restore {
+  padding: 14px 22px;
+  background: rgba(30, 143, 255, 0.06);
+  border-top: 1px solid rgba(30, 143, 255, 0.28);
+  flex: none;
+}
+.cd__restorehead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.cd__restoretitle {
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #e8ecf4;
+}
+.cd__restorewhen {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #6b86b0;
+  white-space: nowrap;
+}
+.cd__restorerows {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 9px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.cd__restorerow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(5, 10, 18, 0.4);
+}
+.cd__restorerow:last-child {
+  border-bottom: 0;
+}
+.cd__restorename {
+  width: 62px;
+  font-family: var(--disp);
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca8bc;
+  flex: none;
+}
+.cd__restorevals {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #cdd6e6;
+  white-space: nowrap;
+}
+.cd__restorestate {
+  margin-left: auto;
+  font-size: 10px;
+  color: #5a6b86;
+  white-space: nowrap;
+}
+.cd__restorefoot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cd__restorenote {
+  flex: 1;
+  font-size: 10px;
+  color: #5a6b86;
+  line-height: 1.5;
+}
+.cd__restorenote code {
+  font-family: var(--mono);
+  color: #6b86b0;
+}
+/* Dismissed, not gone: the offer stays reachable, because the device is still missing something. */
+.cd__reoffer {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 22px;
+  background: rgba(30, 143, 255, 0.05);
+  border: 0;
+  border-top: 1px solid rgba(30, 143, 255, 0.2);
+  color: #7fa8d8;
+  font-size: 11px;
+}
+.cd__reofferdot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--blue);
+  flex: none;
+}

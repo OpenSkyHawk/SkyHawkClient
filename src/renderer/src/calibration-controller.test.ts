@@ -65,7 +65,15 @@ function fakeDevice() {
     },
     // An in-memory stand-in for <userData>/calibration-cache.json, so what the controller keeps
     // is observable rather than merely "a call was made".
-    calCacheRead: async () => ok({ board: cached, regressed: [] as number[] }),
+    calCacheRead: async () => {
+      calls.push('cache:read')
+      const regressed = cached
+        ? Object.keys(cached.axes)
+            .map(Number)
+            .filter((i) => !stored[i])
+        : []
+      return ok({ board: cached, regressed })
+    },
     calCacheStore: async (axes: CalCacheEntry[]) => {
       calls.push('cache:store:' + axes.map((a) => a.idx).join(','))
       cached = {
@@ -87,7 +95,15 @@ function fakeDevice() {
       return ok(null)
     }
   }
-  return { api, stored, calls, fail, cache: () => cached }
+  return {
+    api,
+    stored,
+    calls,
+    fail,
+    cache: () => cached,
+    /** Make the device lose a calibration the cache still holds — a reflash, or a bad CRC. */
+    loseFromDevice: (idx: number) => delete stored[idx]
+  }
 }
 
 let clock = 0
@@ -379,6 +395,129 @@ describe('CalibrationController writing', () => {
 
     await c.deleteAxis(0)
     expect(d.cache()?.axes[0], 'a deliberate erase reaches the cache').toBeUndefined()
+  })
+
+  it('offers a restore only for axes the device has lost', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    // Axis 0 vanishes from the device without being deleted — a reflash, or a failed CRC. Axis 1
+    // is untouched, and must not be offered: the device's own copy is the authority.
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    expect(c2.snapshot().restorable?.axes).toEqual([0])
+    expect(c2.snapshot().restoreOpen, 'reviewing is a separate, deliberate step').toBe(false)
+  })
+
+  it('restores by replaying a commit, and verifies it like any other write', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    c.setSelfCentring(false)
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    d.calls.length = 0
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+
+    // Nothing new on the wire — the ordinary write path, so the read-back verification comes free.
+    expect(d.calls.filter((x) => x.startsWith('commit') || x === 'read')).toEqual([
+      'commit:0',
+      'read'
+    ])
+    expect(d.stored[0]).toEqual({ min: 13000, centre: 32000, max: 51000 })
+    // The rest position comes back with the numbers, or their meaning is lost.
+    expect(c2.selfCentring(0)).toBe(false)
+  })
+
+  it('can be dismissed and reopened, and closes itself once restored', async () => {
+    // "Not now" has to work, and the offer has to survive it: the device is still missing
+    // something, so dismissing is a deferral rather than an answer.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    c2.setRestoreOpen(true)
+    expect(c2.snapshot().restoreOpen).toBe(true)
+    c2.setRestoreOpen(false)
+    expect(c2.snapshot().restoreOpen, 'dismissible').toBe(false)
+    expect(c2.snapshot().restorable, 'but still on offer').toBeDefined()
+
+    c2.setRestoreOpen(true)
+    await c2.restore()
+    expect(c2.snapshot().restoreOpen, 'and closed once acted on').toBe(false)
+  })
+
+  it('re-caches a restored axis with its rest position intact', async () => {
+    // The restore writes the draft, and the draft is what gets cached again on confirmation. If
+    // it lost selfCentring on the way through, a second loss would restore numbers whose meaning
+    // had quietly changed.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    c.setSelfCentring(false)
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(d.cache()!.axes[0]).toMatchObject({ min: 13000, max: 51000, selfCentring: false })
+  })
+
+  it('leaves an axis the device still holds alone', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    d.calls.length = 0
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(d.calls.filter((x) => x.startsWith('commit'))).toEqual(['commit:0'])
+  })
+
+  it('does not offer a restore when the device still holds everything', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    expect(c2.snapshot().restorable).toBeUndefined()
   })
 
   it('confirms a delete, which is otherwise invisible', async () => {
