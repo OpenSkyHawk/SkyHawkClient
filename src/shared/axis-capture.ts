@@ -82,7 +82,10 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   sweepsRequired: 3
 }
 
-/** Unsigned 0–65535, as the wire and device storage use. Convert for display, never here. */
+/**
+ * Unsigned 0–65535, as the wire and device storage use — and as the dialog displays. The client
+ * applies no offset anywhere, so there is nothing to convert on the way in or out.
+ */
 export interface CaptureSample {
   /** Stamped on arrival in main, not at render time — batching would otherwise skew dwell. */
   t: number

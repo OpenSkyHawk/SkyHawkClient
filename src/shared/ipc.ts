@@ -83,9 +83,15 @@ export interface TelemetryReadout {
 export interface CalRawSample {
   t: number
   idx: number
-  /** Pre-transform sensor reading, unsigned 0–65535. */
+  /** Pre-transform sensor reading. Unsigned 0–65535, and displayed in those units. */
   raw: number
-  /** The same sample through the calibration the device currently holds — not a preview. */
+  /**
+   * The same sample through the calibration the device currently holds — not a preview of the
+   * endpoints being captured.
+   *
+   * Also unsigned 0–65535. One convention across this whole channel: converting this value but
+   * not the endpoints is the silent-failure case.
+   */
   cal: number
 }
 
@@ -265,7 +271,14 @@ export interface CalHello {
 
 export interface CalCommitAxis {
   idx: number
-  /** Unsigned 0–65535, as stored. Convert from display units before calling. */
+  /**
+   * Unsigned 0–65535 calibration-channel counts — positions in the node's ADC space, exactly as
+   * the device stores them.
+   *
+   * **Pass through unchanged.** These are the same units the dialog displays and the capture
+   * logic works in, so there is no conversion to undo. The client applies no offset anywhere;
+   * the −32768 lives once in the firmware, at SimGateway.cpp:216, on the way into the HID report.
+   */
   min: number
   centre: number
   max: number
