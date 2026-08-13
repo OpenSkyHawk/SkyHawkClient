@@ -542,7 +542,9 @@ export function CalibrationDialog({
             <span>
               {s.notice.axes.map((i) => AXIS_LABELS[i]).join(', ')}
               {s.notice.kind === 'written'
-                ? ' written to the device and read back. The axis now reports through this calibration.'
+                ? ` written to the device and read back. ${
+                    s.notice.axes.length === 1 ? 'The axis now reports' : 'They now report'
+                  } through this calibration.`
                 : ' calibration erased. The axis now passes through untransformed.'}
             </span>
           </div>

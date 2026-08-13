@@ -475,6 +475,49 @@ describe('CalibrationController writing', () => {
     expect(d.stored[1]).toEqual({ min: 14000, centre: 33000, max: 52000 })
   })
 
+  it('stops offering once the device holds the axes again', async () => {
+    // Found on the rig: the offer survived a successful restore, so the client went on inviting
+    // the user to write older numbers over the ones it had just confirmed.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    d.loseFromDevice(1)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    expect(c2.snapshot().restorable?.axes).toEqual([0, 1])
+
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(c2.snapshot().restorable, 'nothing left to offer').toBeUndefined()
+  })
+
+  it('stops offering an axis the user recalibrated by hand', async () => {
+    // The other way out of the regressed set. The device holds it either way, so an offer to
+    // write the older copy over it would be actively harmful rather than merely stale.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    d.loseFromDevice(1)
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    withDrafts(c2, { 0: [11000, 30000, 49000] })
+    await c2.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(c2.snapshot().restorable?.axes, 'only the one still missing').toEqual([1])
+  })
+
   it('reports a restore that half-lands, naming what did store', async () => {
     // Multi-axis restore is the common shape after a corruption, so a failure part-way through
     // is a real case rather than a contrived one. It must not read as "nothing was restored".

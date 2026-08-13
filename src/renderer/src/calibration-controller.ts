@@ -279,6 +279,24 @@ export class CalibrationController {
     }
   }
 
+  /**
+   * Recompute the offer from the cache and the device's latest report.
+   *
+   * Runs after every write, not only after a restore. An axis can leave the regressed set two
+   * ways — restored from the cache, or simply recalibrated by hand — and in both cases the device
+   * now holds it, so continuing to offer a copy invites the user to overwrite good data with
+   * older numbers.
+   */
+  private async refreshOffer(): Promise<void> {
+    const cache = await this.api.calCacheRead()
+    this.set({
+      restorable:
+        cache.ok && cache.value.board && cache.value.regressed.length
+          ? { board: cache.value.board, axes: cache.value.regressed }
+          : undefined
+    })
+  }
+
   /** Show or hide the restore offer. Reviewing is deliberately a separate step from restoring. */
   setRestoreOpen(restoreOpen: boolean): void {
     this.set({ restoreOpen })
@@ -496,6 +514,7 @@ export class CalibrationController {
       this.set({ device: read.value, drafts })
     }
 
+    await this.refreshOffer()
     this.set({
       write: { phase: 'done', queue, at: queue.length - 1, stored: [...stored] }
     })
@@ -566,6 +585,7 @@ export class CalibrationController {
       failure: { ...f, axis },
       storedBeforeFailure: landed ? [...stored, axis] : stored
     })
+    await this.refreshOffer()
   }
 
   /**
