@@ -140,6 +140,33 @@ describe('CalibrationController', () => {
     ).toHaveLength(0)
   })
 
+  it('banks the draft when the last hold completes on a sample, not on a tick', async () => {
+    // A hold commits down either path — the ticker, when a settled axis has gone silent, or
+    // `push`, when the sample that satisfies the dwell happens to be the one that arrives. The
+    // sample path is what a user hits when the axis is still emitting noise at rest, and banking
+    // only from the ticker stranded it: phase 'complete', no draft, Write greyed out on a
+    // capture that had just finished. Here the clock advances without the interval firing, so
+    // every commit lands on an arriving sample.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    c.startCapture()
+    await sweep(c, 13000, 51000, 32000)
+    await sweep(c, 13000, 51000, 32000)
+
+    const holdViaSample = (from: number, to: number, ms = C.endpointHoldMs + 200) => {
+      c.ingest(samples(0, [from, to, to + 150]))
+      clock += ms
+      c.ingest(samples(0, [to + 100])) // in band, arriving late: this sample completes the hold
+    }
+    holdViaSample(32000, 51000)
+    holdViaSample(51000, 13000)
+    holdViaSample(13000, 32000, C.centreStableMs + 200)
+
+    expect(c.snapshot().capture, 'a finished capture must not linger in state').toBeUndefined()
+    expect(c.dirtyAxes(), 'the third sweep completed, so there is something to write').toEqual([0])
+  })
+
   it('stays on the current axis when STREAM_SELECT is refused', async () => {
     // Switching optimistically would leave us filtering for an axis the gateway is not
     // streaming: every sample dropped on idx, so the readout and capture look dead. Worse, a
@@ -233,8 +260,30 @@ describe('CalibrationController writing', () => {
       'commit:1',
       'read'
     ])
-    expect(c.snapshot().write).toBeUndefined()
     expect(c.dirtyAxes(), 'drafts clear only once the device confirms').toEqual([])
+
+    // The work is finished, but the result is held on screen: a whole save is two round trips
+    // and lands in a few hundred milliseconds, so clearing it immediately leaves a flicker that
+    // reads as nothing having happened.
+    expect(c.snapshot().write).toMatchObject({ phase: 'done', stored: [0, 1] })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(c.snapshot().write).toBeUndefined()
+    expect(c.snapshot().notice).toEqual({ kind: 'written', axes: [0, 1] })
+  })
+
+  it('confirms a delete, which is otherwise invisible', async () => {
+    // The dialog shows nothing after an erase — same numbers, one badge changed on another
+    // screen. Without a word the user cannot tell a successful delete from a no-op.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+
+    await c.deleteAxis(0)
+    expect(c.snapshot().notice).toEqual({ kind: 'erased', axes: [0] })
+    expect(c.snapshot().device?.axes[0]?.calibrated, 'and the read-back agrees').toBe(false)
   })
 
   it('drives state from the read-back, not from what was sent', async () => {

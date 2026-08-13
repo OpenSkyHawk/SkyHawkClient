@@ -40,6 +40,14 @@ export type WritePhase =
    * proves "stored", and the badges are driven from it rather than from what was sent.
    */
   | 'verifying'
+  /**
+   * Every axis stored, held on screen so the user can see it.
+   *
+   * The work is finished here — this phase exists only because the whole save takes a few
+   * hundred milliseconds, and a result that vanishes as fast as it appeared is indistinguishable
+   * from nothing having happened.
+   */
+  | 'done'
 
 export interface WriteProgress {
   phase: WritePhase
@@ -93,6 +101,15 @@ export interface CalibrationState {
   failure?: CalFailure & { axis?: number }
   /** Axes that did store before a failure stopped the queue — worth naming in the UI. */
   storedBeforeFailure?: number[]
+  /**
+   * A confirmation to hold on screen for a few seconds.
+   *
+   * Every one of these operations finishes in well under a second — a COMMIT plus a read-back is
+   * two round trips against a 2 s timeout, and the erase is ~28 ms. Clearing the state the
+   * instant the work is done means the only evidence anything happened is a flicker, which reads
+   * as "nothing happened" rather than "done". Success needs to stay put long enough to be read.
+   */
+  notice?: { kind: 'written' | 'erased'; axes: number[] }
   busy: boolean
 }
 
@@ -115,6 +132,8 @@ export class CalibrationController {
   private state = emptyState()
   private listeners = new Set<(s: CalibrationState) => void>()
   private ticker?: ReturnType<typeof setInterval>
+  private holdTimer?: ReturnType<typeof setTimeout>
+  private noticeTimer?: ReturnType<typeof setTimeout>
 
   constructor(
     private readonly api: CalibrationApi,
@@ -209,7 +228,7 @@ export class CalibrationController {
     // this is the proof that data is flowing for the selected axis. A frame for the axis we just
     // left never gets this far, and so never counts as confirmation.
     if (capture !== this.state.capture || live !== this.state.live) {
-      this.set({ capture, live, streaming: true })
+      this.advanceCapture(capture, { live, streaming: true })
     }
   }
 
@@ -238,10 +257,7 @@ export class CalibrationController {
       const c = this.state.capture
       if (!c || c.phase !== 'capturing') return
       const next = tick(c, this.now())
-      if (next !== c) {
-        this.set({ capture: next })
-        if (next.phase === 'complete' && next.result) this.bankResult(next.result)
-      }
+      if (next !== c) this.advanceCapture(next)
     }, 100)
   }
 
@@ -250,13 +266,30 @@ export class CalibrationController {
     this.ticker = undefined
   }
 
-  /** A finished capture becomes a draft; nothing is written until the user saves. */
-  private bankResult(result: CaptureResult): void {
-    const selfCentring = this.state.capture?.selfCentring ?? this.selfCentring()
-    this.set({
-      drafts: { ...this.state.drafts, [this.state.axis]: { ...result, selfCentring } },
-      capture: undefined
-    })
+  /**
+   * Commit a new capture state, banking the draft the moment it completes.
+   *
+   * **Both completion paths must come through here.** A hold commits either from the ticker (the
+   * axis went silent, which is the common case at a mechanical stop) or from inside `push` when
+   * an arriving sample happens to be the one that satisfies the dwell. Banking only in the
+   * ticker leaves the sample-completed capture stranded: `phase` is `complete`, so the ticker
+   * returns on its own guard, no draft is ever created, and the Write button greys out on a
+   * capture the user just finished. That was intermittent by construction — the same axis
+   * completes down either path depending on when the last sample lands.
+   */
+  private advanceCapture(capture: CaptureState | undefined, extra: Partial<CalibrationState> = {}) {
+    if (capture?.phase === 'complete' && capture.result) {
+      this.set({
+        ...extra,
+        capture: undefined,
+        drafts: {
+          ...this.state.drafts,
+          [this.state.axis]: { ...capture.result, selfCentring: capture.selfCentring }
+        }
+      })
+      return
+    }
+    this.set({ ...extra, capture })
   }
 
   /** Whether the axis on screen is set to return to rest. Defaults true for every axis. */
@@ -366,7 +399,41 @@ export class CalibrationController {
       this.set({ device: read.value, drafts })
     }
 
-    this.set({ write: undefined })
+    this.set({
+      write: { phase: 'done', queue, at: queue.length - 1, stored: [...stored] }
+    })
+    this.hold(() => {
+      this.set({ write: undefined })
+      this.flash({ kind: 'written', axes: [...stored] })
+    })
+  }
+
+  /**
+   * Hold a finished state on screen before moving on.
+   *
+   * Long enough to read a short line, short enough not to block the next action — and always
+   * cancellable, since the user may act before it fires.
+   */
+  private hold(then: () => void): void {
+    this.clearHold()
+    this.holdTimer = setTimeout(then, 2200)
+  }
+
+  private clearHold(): void {
+    if (this.holdTimer) clearTimeout(this.holdTimer)
+    this.holdTimer = undefined
+  }
+
+  /**
+   * Show a confirmation for long enough to be read, then take it down.
+   *
+   * Carries which axes rather than a sentence: the wording is the dialog's business, and the
+   * controller has no reason to reach into the renderer's label table.
+   */
+  private flash(notice: NonNullable<CalibrationState['notice']>): void {
+    if (this.noticeTimer) clearTimeout(this.noticeTimer)
+    this.set({ notice })
+    this.noticeTimer = setTimeout(() => this.set({ notice: undefined }), 6000)
   }
 
   /** Does the device now hold exactly what this draft asked for? */
@@ -444,6 +511,7 @@ export class CalibrationController {
     const drafts = { ...this.state.drafts }
     delete drafts[idx]
     this.set({ busy: false, drafts, device: read.value })
+    this.flash({ kind: 'erased', axes: [idx] })
   }
 
   /** Discard a snapshot that describes a board no longer attached. */
@@ -457,6 +525,9 @@ export class CalibrationController {
 
   dispose(): void {
     this.stopTicking()
+    this.clearHold()
+    if (this.noticeTimer) clearTimeout(this.noticeTimer)
+    this.noticeTimer = undefined
     this.listeners.clear()
   }
 }

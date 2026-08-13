@@ -1999,3 +1999,45 @@ body {
 .cd__convnote.is-short {
   color: var(--gold);
 }
+
+/* Held confirmations. Every one of these operations finishes in a few hundred milliseconds, so
+   without a hold the only evidence is a flicker — which reads as nothing having happened. */
+.cd__save.is-done {
+  background: rgba(110, 231, 160, 0.07);
+  border-top-color: rgba(110, 231, 160, 0.3);
+}
+.cd__save.is-done .cd__savetext {
+  color: var(--green);
+}
+.cd__tick {
+  width: 11px;
+  color: var(--green);
+  font-size: 13px;
+  line-height: 1;
+  flex: none;
+}
+.cd__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 22px;
+  background: rgba(110, 231, 160, 0.07);
+  border-top: 1px solid rgba(110, 231, 160, 0.28);
+  font-size: 11px;
+  color: #9ec9b0;
+  line-height: 1.55;
+  flex: none;
+}
+.cd__notice.is-erased {
+  background: rgba(255, 255, 255, 0.04);
+  border-top-color: rgba(255, 255, 255, 0.12);
+  color: #9ca8bc;
+}
+.cd__noticeicon {
+  color: var(--green);
+  flex: none;
+  font-size: 12px;
+}
+.cd__notice.is-erased .cd__noticeicon {
+  color: #6b86b0;
+}

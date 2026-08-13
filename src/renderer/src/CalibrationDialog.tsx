@@ -351,7 +351,7 @@ export function CalibrationDialog({
                 </button>
               )}
               <span className="cd__diag">
-                {cap
+                {cap?.phase === 'capturing'
                   ? `Sweep ${cap.accepted.length + 1} of ${cap.config.sweepsRequired}`
                   : draft
                     ? `${DEFAULT_CAPTURE_CONFIG.sweepsRequired} of ${DEFAULT_CAPTURE_CONFIG.sweepsRequired} sweeps captured`
@@ -429,13 +429,19 @@ export function CalibrationDialog({
         </div>
 
         {s.write && (
-          <div className="cd__save">
+          <div className={`cd__save${s.write.phase === 'done' ? ' is-done' : ''}`}>
             <div className="cd__saverow">
-              <span className="cd__spin" />
+              {s.write.phase === 'done' ? (
+                <span className="cd__tick">✓</span>
+              ) : (
+                <span className="cd__spin" />
+              )}
               <span className="cd__savetext">
                 {s.write.phase === 'writing'
                   ? `Writing ${AXIS_LABELS[s.write.queue[s.write.at]!]} to the device…`
-                  : `Reading ${AXIS_LABELS[s.write.queue[s.write.at]!]} back from the device…`}
+                  : s.write.phase === 'verifying'
+                    ? `Reading ${AXIS_LABELS[s.write.queue[s.write.at]!]} back from the device…`
+                    : `Stored on the device — read back and confirmed.`}
               </span>
               <span className="cd__savecount">
                 {s.write.at + 1} of {s.write.queue.length}
@@ -451,6 +457,18 @@ export function CalibrationDialog({
                 </span>
               ))}
             </div>
+          </div>
+        )}
+
+        {s.notice && !s.write && (
+          <div className={`cd__notice${s.notice.kind === 'erased' ? ' is-erased' : ''}`}>
+            <span className="cd__noticeicon">{s.notice.kind === 'written' ? '✓' : '⌫'}</span>
+            <span>
+              {s.notice.axes.map((i) => AXIS_LABELS[i]).join(', ')}
+              {s.notice.kind === 'written'
+                ? ' written to the device and read back. The axis now reports through this calibration.'
+                : ' calibration erased. The axis now passes through untransformed.'}
+            </span>
           </div>
         )}
 
