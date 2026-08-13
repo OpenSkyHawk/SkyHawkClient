@@ -170,8 +170,29 @@ export class CalibrationController {
   constructor(
     private readonly api: CalibrationApi,
     /** Injected so tests can drive time; defaults to the wall clock. */
-    private readonly now: () => number = () => Date.now()
+    private readonly now: () => number = () => Date.now(),
+    /**
+     * Shortest time each write phase stays on screen.
+     *
+     * A COMMIT is a few tens of milliseconds and the read-back little more, so without a floor
+     * the per-axis messages — which name the axis being written — are gone before they can be
+     * read, and a multi-axis write looks like a single flash. This trades total time for
+     * legibility: each axis costs two phases, so a queue of N axes spends 2 × N × this padding.
+     *
+     * Tests pass 0. The delay is deliberately not part of what they assert, and paying it on
+     * every save would make the suite slow for nothing.
+     */
+    private readonly phaseMinMs: number = 700
   ) {}
+
+  /** Run something, then wait out whatever is left of the minimum display time. */
+  private async atLeast<T>(fn: () => Promise<T>): Promise<T> {
+    const started = this.now()
+    const result = await fn()
+    const left = this.phaseMinMs - (this.now() - started)
+    if (left > 0) await new Promise((r) => setTimeout(r, left))
+    return result
+  }
 
   subscribe(fn: (s: CalibrationState) => void): () => void {
     this.listeners.add(fn)
@@ -469,7 +490,9 @@ export class CalibrationController {
       const d = this.state.drafts[idx]!
       this.set({ write: { phase: 'writing', queue, at, stored: [...stored] } })
 
-      const commit = await this.api.calCommit({ idx, min: d.min, centre: d.centre, max: d.max })
+      const commit = await this.atLeast(() =>
+        this.api.calCommit({ idx, min: d.min, centre: d.centre, max: d.max })
+      )
       if (!commit.ok) {
         await this.failWrite(commit, idx, stored)
         return
@@ -477,7 +500,7 @@ export class CalibrationController {
 
       // The ACK said "received". Only the read-back says "stored".
       this.set({ write: { phase: 'verifying', queue, at, stored: [...stored] } })
-      const read = await this.api.calRead()
+      const read = await this.atLeast(() => this.api.calRead())
       if (!read.ok) {
         await this.failWrite(read, idx, stored)
         return
@@ -532,7 +555,7 @@ export class CalibrationController {
    */
   private hold(then: () => void): void {
     this.clearHold()
-    this.holdTimer = setTimeout(then, 2200)
+    this.holdTimer = setTimeout(then, 3000)
   }
 
   private clearHold(): void {
