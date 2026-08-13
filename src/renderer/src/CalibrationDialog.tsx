@@ -136,6 +136,22 @@ export function CalibrationDialog({
   const steps = ['Full travel', 'Review & write']
   const stepIndex = cap?.phase === 'capturing' ? 0 : 1
 
+  /**
+   * Delete is armed by the first click and performed by the second.
+   *
+   * RESET writes flash the moment it is sent, and nothing on this side holds a copy yet, so a
+   * stray click costs three sweeps of work with no way back. Disarms itself after a few seconds
+   * and whenever the axis changes, so an armed button can never be inherited by a different
+   * axis than the one the user was looking at.
+   */
+  const [armed, setArmed] = useState(false)
+  useEffect(() => setArmed(false), [s.axis])
+  useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(false), 4000)
+    return () => clearTimeout(t)
+  }, [armed])
+
   /** A held "Captured" beat, so each point lands visibly before the prompt moves on. */
   const [beat, setBeat] = useState<{ p: Point; v: number } | null>(null)
   const prev = useRef<Partial<Record<Point, number>>>({})
@@ -497,8 +513,18 @@ export function CalibrationDialog({
           )}
           <div className="cd__spacer" />
           {stored?.calibrated && !writing && (
-            <button className="cd__ghost" onClick={() => void controller.deleteAxis(s.axis)}>
-              Delete calibration
+            <button
+              className={`cd__ghost${armed ? ' cd__ghost--danger' : ''}`}
+              onClick={() => {
+                if (!armed) {
+                  setArmed(true)
+                  return
+                }
+                setArmed(false)
+                void controller.deleteAxis(s.axis)
+              }}
+            >
+              {armed ? `Erase ${AXIS_LABELS[s.axis]} from the device?` : 'Delete calibration'}
             </button>
           )}
           <button className="cd__ghost" onClick={onClose} disabled={writing}>

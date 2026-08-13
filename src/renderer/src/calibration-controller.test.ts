@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_CAPTURE_CONFIG } from '@shared/axis-capture'
+import { DEFAULT_CAPTURE_CONFIG, midpoint } from '@shared/axis-capture'
 import type { CalRawSample, CalResult, CalSnapshot } from '@shared/ipc'
 import { CalibrationController, type CalibrationApi } from './calibration-controller'
 
@@ -214,6 +214,30 @@ describe('CalibrationController', () => {
 
     c.ingest(samples(1, [30000]))
     expect(c.snapshot().streaming).toBe(true)
+  })
+
+  it('restores the measured centre when the rest position is toggled back', async () => {
+    // Switching to "no rest position" replaces centre with the midpoint, because that is what
+    // gets written. If it overwrote the measurement, switching back would hand the user a
+    // midpoint that looks exactly as plausible as the rest position three sweeps had measured —
+    // silently, and with no way to tell the difference.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    c.startCapture()
+    // An off-centre rest position on purpose: a rig that rests exactly at the midpoint would
+    // make this test pass no matter what the toggle did.
+    for (let i = 0; i < 3; i++) await sweep(c, 13000, 51000, 29000)
+    const measured = c.snapshot().drafts[0]!.centre
+    expect(measured, 'a measured rest position is not the midpoint').not.toBe(
+      midpoint(13000, 51000)
+    )
+
+    c.setSelfCentring(false)
+    expect(c.snapshot().drafts[0]!.centre).toBe(midpoint(13000, 51000))
+
+    c.setSelfCentring(true)
+    expect(c.snapshot().drafts[0]!.centre, 'the capture is intact').toBe(measured)
   })
 
   it('keeps drafts when switching axes', async () => {

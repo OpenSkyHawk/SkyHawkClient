@@ -28,6 +28,15 @@ export interface CalibrationApi {
 export interface DraftAxis extends CaptureResult {
   /** Whether this axis returns to rest. Defaults true; the user can override per axis. */
   selfCentring: boolean
+  /**
+   * The rest position as measured, kept even while a midpoint is in use.
+   *
+   * `centre` is the value that will be written, so switching to "no rest position" replaces it.
+   * Without somewhere to keep the measurement, that switch is destructive and switching back
+   * does not undo it: the user gets a midpoint that looks exactly as plausible as the rest
+   * position they spent three sweeps capturing. Undefined when the capture never measured one.
+   */
+  capturedCentre?: number
 }
 
 export type WritePhase =
@@ -284,7 +293,11 @@ export class CalibrationController {
         capture: undefined,
         drafts: {
           ...this.state.drafts,
-          [this.state.axis]: { ...capture.result, selfCentring: capture.selfCentring }
+          [this.state.axis]: {
+            ...capture.result,
+            selfCentring: capture.selfCentring,
+            capturedCentre: capture.selfCentring ? capture.result.centre : undefined
+          }
         }
       })
       return
@@ -301,8 +314,9 @@ export class CalibrationController {
    * Change the rest-position setting for the axis on screen.
    *
    * Works before a capture as well as after — that is the point, since the setting decides
-   * whether the capture has a centre step. When a draft already exists its centre is re-derived,
-   * because switching to "no rest position" means the captured rest value no longer applies.
+   * whether the capture has a centre step. When a draft already exists its centre is re-derived
+   * from `capturedCentre`, so the switch is a view of the capture rather than an edit to it and
+   * toggling back restores the measured rest position exactly.
    */
   setSelfCentring(selfCentring: boolean): void {
     const axis = this.state.axis
@@ -312,7 +326,9 @@ export class CalibrationController {
       this.set({ restPosition })
       return
     }
-    const centre = selfCentring ? d.centre : midpoint(d.min, d.max)
+    // Derived from the toggle, never written over the measurement — so this is a view of the
+    // same capture and flipping back and forth costs nothing.
+    const centre = selfCentring ? (d.capturedCentre ?? d.centre) : midpoint(d.min, d.max)
     this.set({
       restPosition,
       drafts: { ...this.state.drafts, [axis]: { ...d, selfCentring, centre } }

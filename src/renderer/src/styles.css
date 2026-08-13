@@ -2055,3 +2055,10 @@ body {
 .calbtn:hover {
   background: rgba(30, 143, 255, 0.2);
 }
+
+/* Armed delete. Red only in this state — the resting button is not the dangerous one. */
+.cd__ghost--danger {
+  background: rgba(255, 122, 122, 0.12);
+  border-color: rgba(255, 122, 122, 0.55);
+  color: var(--red);
+}
