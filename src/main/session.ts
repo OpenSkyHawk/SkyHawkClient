@@ -232,6 +232,10 @@ export class Session {
       })
       this.requestNodes() // seed the roster as soon as the device is up
       void this.readCalibrationState() // badges, with no dialog open
+      // Same physical device, so the port reopening is proof it re-enumerated and any HID handle
+      // we hold is stale. This is the reliable trigger: a disconnect does not surface as a
+      // node-hid error event on every platform, and serial recovery is proven.
+      this.hid?.reopen()
     })
     s.onClose(() => {
       // Fail anything in flight and release held bytes: a reconnect must not resume
@@ -251,10 +255,12 @@ export class Session {
     })
     s.start()
 
-    // HID runs in parallel with the serial CDC; errors just leave it idle.
+    // HID runs in parallel with the serial CDC. It reconnects on its own now, so its errors are
+    // worth recording rather than swallowing — they are how we learn whether an unplug surfaces
+    // here at all, or only as the serial port dropping.
     const h = new HidReader()
     this.hid = h
-    h.onError(() => {})
+    h.onError((err) => debugLog('hid.error', { message: err.message }))
     h.onReport(() => this.pushHid())
     h.start()
   }
