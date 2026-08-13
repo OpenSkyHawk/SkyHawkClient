@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { holdProgress, sweepsRemaining } from '@shared/axis-capture'
+import {
+  DEFAULT_CAPTURE_CONFIG,
+  hasTravelled,
+  holdProgress,
+  holdRemainingMs,
+  sweepsRemaining
+} from '@shared/axis-capture'
 import type { CalSnapshot } from '@shared/ipc'
 import { CalibrationController, type CalibrationState } from './calibration-controller'
 import { AXIS_LABELS, useStore } from './store'
@@ -10,157 +16,17 @@ import { AXIS_LABELS, useStore } from './store'
  * language — so this is the single place the two meet.
  *
  * **Display only. Never call this on a value being committed.** The offset applied twice, or
- * zero times, still yields plausible in-range numbers and fails silently, which is why the
- * conversion lives in exactly one function used at exactly one layer.
+ * zero times, still yields plausible in-range numbers and fails silently.
  */
 const toDisplay = (unsigned: number) => unsigned - 32768
-
-/** Format an unsigned device value in the signed units the user recognises. */
 const fmt = (n: number) => toDisplay(n).toLocaleString('en-US')
-
-/** Format a raw count difference — a span, so no offset applies. */
+/** A span, not a position — no offset applies. */
 const fmtSpan = (n: number) => n.toLocaleString('en-US')
+const pct = (v: number) => Math.max(0, Math.min(100, (v / 65535) * 100)).toFixed(2) + '%'
 
 type Point = 'stopA' | 'stopB' | 'centre'
 
-const POINT_LABEL: Record<Point, string> = {
-  stopA: 'First stop',
-  stopB: 'Second stop',
-  centre: 'Rest position'
-}
-
-/** What to tell the user to do right now. Derived from the capture, never from a step counter. */
-function instruction(s: CalibrationState): { title: string; detail: string } {
-  const cap = s.capture
-  if (!cap) {
-    return {
-      title: 'Ready to capture',
-      detail: 'Three sweeps. Each one records both stops, then where the axis rests.'
-    }
-  }
-  if (cap.phase === 'rejected') {
-    return { title: 'That sweep fell short', detail: cap.rejection ?? '' }
-  }
-  if (cap.phase === 'complete') {
-    return { title: 'All three sweeps captured', detail: 'Review the values, then write them.' }
-  }
-  // The axis has not gone anywhere yet, so a progress bar would fill and commit nothing. Say
-  // what is actually being waited for.
-  if (cap.awaitingMovement) {
-    return cap.step === 'centre'
-      ? { title: 'Let it return to rest', detail: 'Release the axis and take your hand off it.' }
-      : {
-          title: cap.step === 'stopA' ? 'Sweep to one stop' : 'Now to the other stop',
-          detail: 'Waiting for the axis to move — go all the way to the mechanical stop.'
-        }
-  }
-  const holding = cap.ref !== null && holdProgress(cap) > 0
-  if (cap.step === 'centre') {
-    return {
-      title: 'Let it return to rest',
-      detail: holding ? 'Settling — leave it alone.' : 'Release the axis and take your hand off.'
-    }
-  }
-  return {
-    title: cap.step === 'stopA' ? 'Sweep all the way to one stop' : 'Now all the way to the other',
-    detail: holding
-      ? 'Hold it against the stop.'
-      : 'Reach the mechanical stop, then hold still there.'
-  }
-}
-
-/**
- * The whole sequence, always visible.
- *
- * Showing only the current instruction made the flow feel like it skipped: a point was captured
- * and the text changed in the same frame, with no way to know what had just happened or what was
- * coming. The checklist answers both without the user having to infer them.
- */
-function Steps({
-  order,
-  current,
-  captured,
-  progress,
-  justCaptured
-}: {
-  order: Point[]
-  current?: Point
-  captured: Partial<Record<Point, number>>
-  progress: number
-  justCaptured?: Point
-}) {
-  return (
-    <ol className="calsteps">
-      {order.map((p) => {
-        const done = captured[p] !== undefined
-        const isNow = p === current
-        return (
-          <li
-            key={p}
-            className={`calsteps__row${isNow ? ' is-now' : ''}${done ? ' is-done' : ''}${
-              justCaptured === p ? ' is-flash' : ''
-            }`}
-          >
-            <span className="calsteps__mark">{done ? '✓' : isNow ? '›' : ''}</span>
-            <span className="calsteps__label">{POINT_LABEL[p]}</span>
-            <span className="calsteps__val mono">{done ? fmt(captured[p]!) : ''}</span>
-            {isNow && !done && (
-              <span className="calsteps__prog">
-                <span style={{ width: progress * 100 + '%' }} />
-              </span>
-            )}
-          </li>
-        )
-      })}
-    </ol>
-  )
-}
-
-function RangeBar({
-  value,
-  min,
-  centre,
-  max
-}: {
-  value?: number
-  min?: number
-  centre?: number
-  max?: number
-}) {
-  const pct = (v: number) => Math.max(0, Math.min(100, (v / 65535) * 100))
-  const captured = min !== undefined && max !== undefined
-  return (
-    <div>
-      <div className="calnum__label">Captured range</div>
-      <div className="calbar">
-        {captured && (
-          <span
-            className="calbar__band"
-            style={{ left: pct(min) + '%', width: pct(max) - pct(min) + '%' }}
-          />
-        )}
-        {centre !== undefined && (
-          <span className="calbar__centre" style={{ left: pct(centre) + '%' }} />
-        )}
-        {value !== undefined && <span className="calbar__now" style={{ left: pct(value) + '%' }} />}
-      </div>
-      <div className="calbar__scale mono">
-        <span>-32,768</span>
-        <span>0</span>
-        <span>32,767</span>
-      </div>
-    </div>
-  )
-}
-
-/**
- * Travel as a fraction of the ADC range, with a descriptive band.
- *
- * Descriptive, not prescriptive, and never styled as an error: 40% is the expected healthy
- * result for a short-arc axis, and "fit a different sensor" is unactionable at calibration time
- * because it is soldered in by then. Thresholds live here so retuning after the hall-sensor
- * bench is one edit.
- */
+/** Descriptive, never an error: 40% is the expected healthy result for a short-arc axis. */
 const TRAVEL_BANDS = [
   { at: 0.6, label: 'Good', tone: 'ok' },
   { at: 0.3, label: 'Workable', tone: '' },
@@ -170,9 +36,73 @@ const TRAVEL_BANDS = [
 function travelQuality(min?: number, max?: number) {
   if (min === undefined || max === undefined) return null
   const counts = max - min
-  const frac = counts / 65535
-  const band = TRAVEL_BANDS.find((b) => frac >= b.at)!
-  return { counts, pct: Math.round(frac * 100), ...band }
+  const band = TRAVEL_BANDS.find((b) => counts / 65535 >= b.at)!
+  return { counts, pct: Math.round((counts / 65535) * 100), ...band }
+}
+
+/**
+ * The live prompt during a capture.
+ *
+ * Two states per step, because they ask for opposite things and reading the wrong one wastes a
+ * sweep: **travelling** (gold — keep moving, the bar is not counting yet) and **holding**
+ * (green — stop moving, the bar is the dwell timer). The split is `hasTravelled`, not
+ * `awaitingMovement`: that flag only rises after a full hold has already elapsed, so it reads
+ * false for the first second of every step whether or not the user has touched the axis.
+ *
+ * Direction words are derived, never assumed. `startRaw` is where the axis sat when capture
+ * opened, so "upper" means the raw count went up from there — which stays correct on an
+ * inverted axis and on a short-arc axis that never crosses the midpoint. Before the axis has
+ * moved at all in the first step there is no evidence either way, so the copy stays neutral.
+ */
+function prompt(s: CalibrationState, startRaw: number | null) {
+  const cap = s.capture
+  if (!cap || cap.phase !== 'capturing') return null
+  const holding = hasTravelled(cap)
+  const dir = (v: number) => (startRaw === null || v >= startRaw ? 'upper' : 'lower')
+
+  if (cap.step === 'centre') {
+    return {
+      arrow: holding ? '■' : '↓',
+      text: holding ? 'Let it settle — hands off' : 'Release the axis and let it return to rest',
+      note: holding
+        ? 'The axis is settled, so the device has stopped reporting. That is normal — the dwell timer runs on the clock.'
+        : 'Take your hand off it completely; a hand resting on the axis is a held position.',
+      holding
+    }
+  }
+
+  // stopA has no direction until the axis moves; stopB is whichever way stopA was not.
+  const side =
+    cap.step === 'stopA'
+      ? s.live && cap.movedBy > 0
+        ? dir(s.live.raw)
+        : null
+      : cap.current.stopA !== undefined
+        ? dir(cap.current.stopA) === 'upper'
+          ? 'lower'
+          : 'upper'
+        : null
+
+  if (holding) {
+    return {
+      arrow: '■',
+      text: side ? `HOLD it at the ${side} stop` : 'HOLD it against the stop',
+      note: 'The axis is settled, so the device has stopped reporting. That is normal — the dwell timer runs on the clock.',
+      holding
+    }
+  }
+  return {
+    arrow: side === 'lower' ? '▼' : side === 'upper' ? '▲' : '↕',
+    text: !side
+      ? 'Sweep the axis all the way to either stop'
+      : cap.step === 'stopA'
+        ? `Push the axis to its ${side.toUpperCase()} stop`
+        : `Now ${side === 'lower' ? 'pull' : 'push'} it to its ${side.toUpperCase()} stop`,
+    note: cap.awaitingMovement
+      ? 'Nothing has moved yet — take the axis all the way to the mechanical stop.'
+      : 'Keep moving steadily until you reach the stop.',
+    holding
+  }
 }
 
 export function CalibrationDialog({
@@ -185,34 +115,42 @@ export function CalibrationDialog({
   const [s, setS] = useState<CalibrationState>(() => controller.snapshot())
   useEffect(() => controller.subscribe(setS), [controller])
 
-  const device = s.device
-  const present = useMemo(() => device?.axes.filter((a) => a.present) ?? [], [device])
+  const present = useMemo(() => s.device?.axes.filter((a) => a.present) ?? [], [s.device])
   const draft = s.drafts[s.axis]
-  const stored = device?.axes[s.axis]
+  const stored = s.device?.axes[s.axis]
   const cap = s.capture
-  const inst = instruction(s)
-  const invalid = controller.invalidAxis()
   const writing = !!s.write
-
-  // Values on screen: the draft if the user has captured one, otherwise what the device holds.
+  const invalid = controller.invalidAxis()
   const shown = draft ?? (stored?.calibrated ? stored : undefined)
   const travel = travelQuality(shown?.min, shown?.max)
   const selfCentring = controller.selfCentring()
-  const order: Point[] = selfCentring ? ['stopA', 'stopB', 'centre'] : ['stopA', 'stopB']
+  // Where the axis sat when capture opened — the only honest anchor for "upper"/"lower".
+  const startRaw = useRef<number | null>(null)
+  if (!cap) startRaw.current = null
+  else if (startRaw.current === null && s.live) startRaw.current = s.live.raw
+  const p = prompt(s, startRaw.current)
+  const dirty = controller.dirtyAxes()
 
-  /**
-   * A held "Captured X" moment before the instruction moves on.
-   *
-   * Without it a point was captured and the text changed in the same frame, which read as the
-   * flow skipping a step rather than completing one. Presentation only — the reducer advances
-   * immediately, as it should.
-   */
+  const steps = [
+    { n: '1', label: 'Full travel' },
+    ...(selfCentring ? [{ n: '2', label: 'Centre' }] : []),
+    { n: selfCentring ? '3' : '2', label: 'Review & write' }
+  ]
+  const stepIndex = !cap
+    ? draft
+      ? steps.length - 1
+      : 0
+    : cap.step === 'centre' && selfCentring
+      ? 1
+      : 0
+
+  /** A held "Captured" beat, so each point lands visibly before the prompt moves on. */
   const [beat, setBeat] = useState<{ p: Point; v: number } | null>(null)
   const prev = useRef<Partial<Record<Point, number>>>({})
   useEffect(() => {
     const now = (cap?.current ?? {}) as Partial<Record<Point, number>>
-    for (const p of ['stopA', 'stopB', 'centre'] as Point[]) {
-      if (now[p] !== undefined && prev.current[p] === undefined) setBeat({ p, v: now[p]! })
+    for (const k of ['stopA', 'stopB', 'centre'] as Point[]) {
+      if (now[k] !== undefined && prev.current[k] === undefined) setBeat({ p: k, v: now[k]! })
     }
     prev.current = cap ? { ...now } : {}
   }, [cap])
@@ -223,199 +161,339 @@ export function CalibrationDialog({
   }, [beat])
 
   return (
-    <div className="calmodal">
-      <div className="calmodal__sheet">
-        <div className="calmodal__head">
-          <span className="section-h">Axis calibration</span>
-          <span className="meta meta--warn">DCS link paused while this is open</span>
-          <button className="calbtn" onClick={onClose} disabled={writing}>
-            Close
+    <div className="cd">
+      <div className="cd__sheet">
+        <header className="cd__head">
+          <span className="cd__icon">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#1e8fff"
+              strokeWidth="1.8"
+            >
+              <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />
+            </svg>
+          </span>
+          <div className="cd__title">
+            <div className="cd__h1">Axis Calibration · {AXIS_LABELS[s.axis]}</div>
+            <div className="cd__h2">
+              SimGateway · <span className="cd__ok">connected</span> · signed ±32767
+            </div>
+          </div>
+          <span className="cd__pill">
+            <span className="cd__pilldot" />
+            <span>DCS link paused</span>
+          </span>
+          <button className="cd__x" onClick={onClose} disabled={writing}>
+            ✕
           </button>
+        </header>
+
+        <div className="cd__strip">
+          {steps.map((st, i) => (
+            <div key={st.n} className="cd__step">
+              <span
+                className={`cd__stepn${i === stepIndex ? ' is-now' : ''}${
+                  i < stepIndex ? ' is-done' : ''
+                }`}
+              >
+                {st.n}
+              </span>
+              <span className={`cd__steplabel${i === stepIndex ? ' is-now' : ''}`}>{st.label}</span>
+            </div>
+          ))}
+          <span className="cd__hint">
+            {cap
+              ? `${sweepsRemaining(cap)} sweep${sweepsRemaining(cap) === 1 ? '' : 's'} remaining`
+              : selfCentring
+                ? 'Three sweeps per axis — one is not enough to find the stops.'
+                : 'Three sweeps per axis. No rest position, so centre is the midpoint.'}
+          </span>
         </div>
 
-        <div className="calmodal__body">
-          {/* axis rail */}
-          <div className="calrail">
-            {present.map((a) => {
-              const d = s.drafts[a.idx]
-              const label = d ? 'EDIT' : a.calibrated ? 'CAL' : 'RAW'
-              return (
-                <button
-                  key={a.idx}
-                  className={`calrail__item${a.idx === s.axis ? ' is-on' : ''}`}
-                  onClick={() => void controller.selectAxis(a.idx)}
-                  disabled={writing || s.switchingTo !== undefined}
-                >
-                  <span>{AXIS_LABELS[a.idx]}</span>
-                  <span className={`calrail__tag calrail__tag--${label.toLowerCase()}`}>
-                    {s.switchingTo === a.idx ? '…' : label}
-                  </span>
-                </button>
-              )
-            })}
+        <div className="cd__body">
+          <div className="cd__list">
+            {present.map((a) => (
+              <button
+                key={a.idx}
+                className={`cd__axis${a.idx === s.axis ? ' is-on' : ''}`}
+                onClick={() => void controller.selectAxis(a.idx)}
+                disabled={writing || s.switchingTo !== undefined}
+              >
+                <span className={`cd__dot${a.calibrated ? ' is-cal' : ''}`} />
+                <span className="cd__axisname">{AXIS_LABELS[a.idx]}</span>
+                <span className="cd__slot">{a.idx}</span>
+                <span className="cd__mark">{s.drafts[a.idx] ? '●' : ''}</span>
+                <span className="cd__axisval">
+                  {s.switchingTo === a.idx ? '…' : a.calibrated ? 'cal' : 'raw'}
+                </span>
+              </button>
+            ))}
+            <div className="cd__note">
+              {present.length} of 8 slots · device-reported. Edits are kept when you switch axes and
+              written together.
+            </div>
           </div>
 
-          {/* detail */}
-          <div className="caldetail">
-            <div className="calhead">
+          <div className="cd__detail">
+            <div className="cd__readouts">
               <div>
-                <div className="calnum__label">Raw input</div>
-                <div className="calnum calnum--lg">{s.live ? fmt(s.live.raw) : '—'}</div>
+                <div className="cd__label">Raw input</div>
+                <div className="cd__big">{s.live ? fmt(s.live.raw) : '—'}</div>
               </div>
-              <div className="calhead__sep" />
+              <div className="cd__vrule" />
               <div>
-                <div className="calnum__label">To DCS · through stored calibration</div>
-                <div className="calnum calnum--lg calnum--blue">
-                  {s.live ? fmt(s.live.cal) : '—'}
+                <div className="cd__label">
+                  To DCS <span className="cd__dim">· through stored calibration</span>
+                </div>
+                <div className="cd__big cd__big--blue">{s.live ? fmt(s.live.cal) : '—'}</div>
+              </div>
+              <div className="cd__travel">
+                <div className="cd__label">Recorded travel</div>
+                <div className="cd__travelrow">
+                  <span className={`cd__tq cd__tq--${travel?.tone ?? ''}`}>
+                    {travel ? `${travel.pct}%` : '—'}
+                  </span>
+                  <span className="cd__travelcounts">
+                    {travel ? `${fmtSpan(travel.counts)} counts` : ''}
+                  </span>
+                  <span className={`cd__tqlabel cd__tq--${travel?.tone ?? ''}`}>
+                    {travel?.label ?? ''}
+                  </span>
                 </div>
               </div>
-              {travel && (
-                <div className="calhead__travel">
-                  <div className="calnum__label">Recorded travel</div>
-                  <div>
-                    <span className={`calpct calpct--${travel.tone}`}>{travel.pct}%</span>{' '}
-                    <span className="mono">{fmtSpan(travel.counts)} counts</span>{' '}
-                    <span className={`calpct calpct--${travel.tone}`}>
-                      {travel.label.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-              )}
             </div>
 
-            <RangeBar
-              value={s.live?.raw}
-              min={shown?.min}
-              centre={shown?.centre}
-              max={shown?.max}
-            />
+            <div className="cd__barhead">
+              <span className="cd__label">Captured range</span>
+              {cap?.phase === 'capturing' && !cap.awaitingMovement && (
+                <span className="cd__holding">
+                  <span className="cd__holddot" />
+                  Hold at each stop
+                </span>
+              )}
+            </div>
+            <div className="cd__bar">
+              {shown && (
+                <span
+                  className="cd__band"
+                  style={{
+                    left: pct(shown.min),
+                    width: (((shown.max - shown.min) / 65535) * 100).toFixed(2) + '%'
+                  }}
+                />
+              )}
+              {shown && <span className="cd__centre" style={{ left: pct(shown.centre) }} />}
+              {s.live && <span className="cd__now" style={{ left: pct(s.live.raw) }} />}
+            </div>
+            <div className="cd__scale">
+              <span>−32768</span>
+              <span>0</span>
+              <span>32767</span>
+            </div>
 
-            <div className="calcards">
+            <div className="cd__cards">
               {(['min', 'centre', 'max'] as const).map((k) => (
-                <div key={k} className="calcard">
-                  <div className="calnum__label">{k}</div>
-                  <div className="calnum">{shown ? fmt(shown[k]) : '—'}</div>
+                <div key={k} className="cd__card">
+                  <div className="cd__label cd__label--sm">{k === 'centre' ? 'Center' : k}</div>
+                  <div className="cd__cardval">{shown ? fmt(shown[k]) : '—'}</div>
                 </div>
               ))}
             </div>
 
-            <div className="calstep">
-              <div className="calstep__title">
-                {beat ? `Captured ${POINT_LABEL[beat.p]}` : inst.title}
-              </div>
-              <div className="calstep__detail">
-                {beat ? <span className="mono">{fmt(beat.v)}</span> : inst.detail}
-              </div>
+            <div className="cd__warn">
+              <span className="cd__warnicon">⚠</span>
+              <span>
+                The joystick stays live to DCS throughout — sweeping this axis will move whatever it
+                is bound to in the sim. Pause the mission or unbind the axis before capturing.
+              </span>
             </div>
 
-            {cap && cap.phase !== 'complete' && (
-              <Steps
-                order={order}
-                current={cap.phase === 'capturing' ? (cap.step as Point) : undefined}
-                captured={cap.current as Partial<Record<Point, number>>}
-                progress={cap.awaitingMovement ? 0 : holdProgress(cap)}
-                justCaptured={beat?.p}
-              />
-            )}
-
-            {cap?.awaitingConfirmation && (
-              <div className="meta">holding — waiting for the axis to report again</div>
-            )}
-
-            <div className="calwarn">
-              The joystick stays live to DCS throughout — sweeping this axis will move whatever it
-              is bound to in the sim. Pause the mission or unbind the axis before capturing.
-            </div>
-
-            <div className="calrest">
-              <span className="calnum__label">Rest position</span>
-              <div className="calseg">
+            <div className="cd__rest">
+              <span className="cd__label">Rest position</span>
+              <div className="cd__seg">
                 <button
-                  className={`calseg__btn${selfCentring ? ' is-on' : ''}`}
+                  className={`cd__segbtn${selfCentring ? ' is-on' : ''}`}
                   onClick={() => controller.setSelfCentring(true)}
                   disabled={writing || cap?.phase === 'capturing'}
                 >
                   Self-centring
                 </button>
                 <button
-                  className={`calseg__btn${!selfCentring ? ' is-on' : ''}`}
+                  className={`cd__segbtn${!selfCentring ? ' is-on' : ''}`}
                   onClick={() => controller.setSelfCentring(false)}
                   disabled={writing || cap?.phase === 'capturing'}
                 >
                   None
                 </button>
               </div>
-              <span className="meta">
+              <span className="cd__restnote">
                 {selfCentring
                   ? 'Returns to a rest position — centre is captured, not assumed.'
                   : 'No rest position — centre is the midpoint of the captured travel.'}
               </span>
             </div>
 
-            <div className="calactions">
+            <div className="cd__actions">
               {cap?.phase === 'rejected' ? (
-                <button className="calbtn calbtn--primary" onClick={() => controller.retry()}>
+                <button className="cd__primary" onClick={() => controller.retry()}>
                   Redo that sweep
                 </button>
-              ) : !cap ? (
+              ) : (
                 <button
-                  className="calbtn calbtn--primary"
+                  className="cd__primary"
                   onClick={() => controller.startCapture()}
-                  disabled={writing}
+                  disabled={writing || cap?.phase === 'capturing'}
                 >
                   {draft || stored?.calibrated ? 'Re-capture travel' : 'Start travel capture'}
                 </button>
-              ) : (
-                <span className="meta">
-                  {sweepsRemaining(cap)} sweep{sweepsRemaining(cap) === 1 ? '' : 's'} remaining
-                  {cap.interruptions > 0 ? ` · ${cap.interruptions} interruptions` : ''}
-                </span>
               )}
+              <span className="cd__diag">
+                {cap
+                  ? `Sweep ${cap.accepted.length + 1} of ${cap.config.sweepsRequired}`
+                  : draft
+                    ? `${DEFAULT_CAPTURE_CONFIG.sweepsRequired} of ${DEFAULT_CAPTURE_CONFIG.sweepsRequired} sweeps captured`
+                    : `${DEFAULT_CAPTURE_CONFIG.sweepsRequired} sweeps per axis`}
+              </span>
+            </div>
+
+            {!!cap?.interruptions && (
+              <div className="cd__spikes">{cap.interruptions} spikes rejected</div>
+            )}
+
+            {p && cap && (
+              <div className={`cd__dwell${p.holding || beat ? ' is-hold' : ''}`}>
+                <div className="cd__dwellrow">
+                  <span className="cd__arrow">{beat ? '✓' : p.arrow}</span>
+                  <span className="cd__prompt">{beat ? `Captured ${fmt(beat.v)}` : p.text}</span>
+                  <span className="cd__dwelltime">
+                    {beat
+                      ? ''
+                      : cap.awaitingConfirmation
+                        ? 'waiting for a sample'
+                        : p.holding
+                          ? `hold ${(holdRemainingMs(cap) / 1000).toFixed(1)} s more`
+                          : ''}
+                  </span>
+                </div>
+                <div className="cd__dwellbar">
+                  <span style={{ width: (p.holding ? holdProgress(cap) * 100 : 0) + '%' }} />
+                </div>
+                <div className="cd__dwellnote">
+                  {cap.awaitingConfirmation
+                    ? 'Held long enough, waiting for the axis to report again — a settled axis emits only on change.'
+                    : p.note}
+                </div>
+              </div>
+            )}
+
+            {cap?.phase === 'rejected' && (
+              <div className="cd__short">
+                <span className="cd__shortbar" />
+                <span>{cap.rejection}</span>
+              </div>
+            )}
+
+            {cap && cap.accepted.length > 0 && (
+              <div className="cd__conv">
+                <div className="cd__label">Sweep convergence</div>
+                {cap.accepted.map((w, i) => {
+                  // Accepted sweeps are within slack by construction, so this flags the ones that
+                  // still contribute nothing under widest-wins rather than reporting a fault.
+                  const widest = Math.max(...cap.accepted.map((a) => a.max - a.min))
+                  const short = widest - (w.max - w.min) > widest * cap.config.shortfallFraction
+                  return (
+                    <div key={i} className="cd__convrow">
+                      <span className="cd__convn">Sweep {i + 1}</span>
+                      <span className="cd__convrange">
+                        {fmt(w.min)} … {fmt(w.max)}
+                      </span>
+                      <span className="cd__convspan">{fmtSpan(w.max - w.min)} counts</span>
+                      <span className={`cd__convnote${short ? ' is-short' : ''}`}>
+                        {short ? 'short of widest' : i > 0 ? 'settled' : ''}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className="cd__foot">
+              The device applies a two-segment map so centre lands exactly on 0 signed, plus a
+              128-count output hysteresis — so no deadzone setting is needed. Curves and inversion
+              are left to DCS.
             </div>
           </div>
         </div>
 
-        {/* footer: write + failures */}
-        <div className="calmodal__foot">
-          {s.failure && (
-            <div className="calfail">
-              <b>{s.failure.kind === 'timeout' ? 'No answer from the device' : 'Refused'}</b>{' '}
+        {s.write && (
+          <div className="cd__save">
+            <div className="cd__saverow">
+              <span className="cd__spin" />
+              <span className="cd__savetext">
+                {s.write.phase === 'writing'
+                  ? `Writing ${AXIS_LABELS[s.write.queue[s.write.at]!]} to the device…`
+                  : `Reading ${AXIS_LABELS[s.write.queue[s.write.at]!]} back from the device…`}
+              </span>
+              <span className="cd__savecount">
+                {s.write.at + 1} of {s.write.queue.length}
+              </span>
+            </div>
+            <div className="cd__chips">
+              {s.write.queue.map((idx) => (
+                <span key={idx} className="cd__chip">
+                  <span className="cd__chipname">{AXIS_LABELS[idx]}</span>
+                  <span className={`cd__chiptag${s.write!.stored.includes(idx) ? ' is-done' : ''}`}>
+                    {s.write!.stored.includes(idx) ? 'stored' : 'queued'}
+                  </span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {s.failure && (
+          <div className="cd__err">
+            <span className="cd__errbar" />
+            <div>
+              <b>{s.failure.kind === 'timeout' ? 'No acknowledgement' : 'The device refused'}</b>{' '}
               {s.failure.message}
               {s.storedBeforeFailure?.length ? (
-                <span>
+                <>
                   {' '}
                   Stored before stopping:{' '}
                   {s.storedBeforeFailure.map((i) => AXIS_LABELS[i]).join(', ')}.
-                </span>
+                </>
               ) : null}
             </div>
-          )}
-          {s.write && (
-            <span className="meta">
-              {s.write.phase === 'writing' ? 'Writing' : 'Reading back'}{' '}
-              {AXIS_LABELS[s.write.queue[s.write.at]!]} — {s.write.at + 1} of {s.write.queue.length}
-            </span>
-          )}
+          </div>
+        )}
+
+        <footer className="cd__bar2">
           {invalid && !writing && (
-            <span className="meta meta--warn">
+            <span className="cd__invalid">
               {AXIS_LABELS[invalid.axis]}: {invalid.reason}
             </span>
           )}
-          <div className="calmodal__actions">
-            {stored?.calibrated && !writing && (
-              <button className="calbtn" onClick={() => void controller.deleteAxis(s.axis)}>
-                Delete calibration
-              </button>
-            )}
-            <button
-              className="calbtn calbtn--primary"
-              onClick={() => void controller.save()}
-              disabled={writing || !controller.dirtyAxes().length || !!invalid}
-            >
-              {writing ? 'Writing…' : `Write ${controller.dirtyAxes().length || ''}`.trim()}
+          <div className="cd__spacer" />
+          {stored?.calibrated && !writing && (
+            <button className="cd__ghost" onClick={() => void controller.deleteAxis(s.axis)}>
+              Delete calibration
             </button>
-          </div>
-        </div>
+          )}
+          <button className="cd__ghost" onClick={onClose} disabled={writing}>
+            Cancel
+          </button>
+          <button
+            className="cd__primary cd__primary--sm"
+            onClick={() => void controller.save()}
+            disabled={writing || !dirty.length || !!invalid}
+          >
+            {writing ? 'Writing…' : dirty.length ? `Write ${dirty.length} axis` : 'Write'}
+          </button>
+        </footer>
       </div>
     </div>
   )
@@ -439,7 +517,6 @@ export function useCalibration(device?: CalSnapshot) {
     }
   }, [controller, api])
 
-  // The device is the source of truth for badges; a different board clears drafts.
   useEffect(() => controller?.deviceChanged(device), [controller, device])
 
   return {
@@ -454,7 +531,6 @@ export function useCalibration(device?: CalSnapshot) {
       if (!controller) return
       await controller.close()
       setOpen(false)
-      // Badges follow the device, so refresh from it rather than from what we think we wrote.
       const r = await window.skyhawk?.calRead()
       if (r?.ok) setCal({ cal: r.value })
     }

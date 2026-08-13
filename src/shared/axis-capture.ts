@@ -50,7 +50,21 @@ export interface CaptureConfig {
    * tightest.
    */
   bandCounts: number
-  /** How long an endpoint must stay inside the band before it counts as held. */
+  /**
+   * How long an endpoint must stay inside the band before it counts as held.
+   *
+   * **This is the only thing separating a stop from a hesitation.** Both look identical to the
+   * detector: the movement gate has already been satisfied by the sweep itself, so a pause
+   * anywhere along the travel is a candidate endpoint. Observed on the rig at 1000 ms — a sweep
+   * that paused at 33128 (dead centre) banked it as the lower stop, while the same axis reached
+   * 11950 on the next sweep.
+   *
+   * Raised to 1500 ms rather than solved structurally, because widest-wins already keeps a short
+   * sweep out of the stored numbers and the rejection rule catches a later one. If holds keep
+   * committing mid-sweep, the real fix is a grace window after each commit that reopens the step
+   * when the axis travels further the same way — a stop is a place you cannot pass, so passing
+   * it is proof it was not one.
+   */
   endpointHoldMs: number
   /** Stability required at rest before a centre sample is taken. */
   centreStableMs: number
@@ -87,7 +101,7 @@ export interface CaptureConfig {
 
 export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   bandCounts: 300,
-  endpointHoldMs: 1000,
+  endpointHoldMs: 1500,
   centreStableMs: 5000,
   centreCapMs: 15000,
   minTravelCounts: 2000,
@@ -250,6 +264,30 @@ function holdTarget(s: CaptureState): number {
 export function holdProgress(s: CaptureState): number {
   if (s.phase !== 'capturing' || s.ref === null) return 0
   return Math.min(1, (s.now - s.refSince) / holdTarget(s))
+}
+
+/**
+ * Milliseconds left on the current hold — for a countdown, not a decision.
+ *
+ * Floors at zero rather than going negative: once the time is up the hold is waiting on
+ * corroboration or on the movement gate, and a countdown running below zero would suggest the
+ * clock is what is holding things up.
+ */
+export function holdRemainingMs(s: CaptureState): number {
+  if (s.phase !== 'capturing' || s.ref === null) return holdTarget(s)
+  return Math.max(0, holdTarget(s) - (s.now - s.refSince))
+}
+
+/**
+ * Whether the axis has travelled far enough this step for a hold to mean anything.
+ *
+ * This is the honest "are they still sweeping, or are they at the stop?" test, and the UI needs
+ * it because `awaitingMovement` cannot answer that question: that flag is only raised once a
+ * full hold has elapsed with too little travel, so for the first second of every step it reads
+ * false whether or not the user has touched the axis.
+ */
+export function hasTravelled(s: CaptureState): boolean {
+  return s.movedBy >= s.config.minTravelCounts
 }
 
 /**

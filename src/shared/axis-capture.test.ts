@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CAPTURE_CONFIG,
   beginCapture,
+  hasTravelled,
   holdProgress,
+  holdRemainingMs,
   midpoint,
   push,
   reconcile,
@@ -181,6 +183,36 @@ describe('the stability detector', () => {
     s = push(s, { t: 0, raw: 40000 })
     s = tick(s, C.endpointHoldMs / 2)
     expect(holdProgress(s)).toBeCloseTo(0.5, 2)
+    expect(holdRemainingMs(s)).toBe(C.endpointHoldMs / 2)
+  })
+
+  it('floors the countdown at zero while a hold waits on corroboration', () => {
+    let s = beginCapture(0)
+    s = push(s, { t: 0, raw: 32000 })
+    s = push(s, { t: 100, raw: 50000 }) // travelled, but only one reading at the stop
+    s = tick(s, 100 + C.endpointHoldMs * 3)
+    expect(s.awaitingConfirmation, 'still waiting, so the clock is not the blocker').toBe(true)
+    expect(holdRemainingMs(s)).toBe(0)
+  })
+
+  it('reports travel separately from the movement flag the reducer raises late', () => {
+    let s = beginCapture(0)
+    s = push(s, { t: 0, raw: 32000 })
+    s = push(s, { t: 100, raw: 32000 + C.minTravelCounts - 1 })
+    // The hold has not elapsed yet, so `awaitingMovement` is still false — the UI would read
+    // that as "at the stop" and tell the user to hold still a step early.
+    expect(s.awaitingMovement).toBe(false)
+    expect(hasTravelled(s)).toBe(false)
+    s = push(s, { t: 200, raw: 32000 + C.minTravelCounts })
+    expect(hasTravelled(s)).toBe(true)
+  })
+
+  it('centre holds run against the centre target, not the endpoint one', () => {
+    let s = moveAndHold(beginCapture(0), 32000, 51000)
+    s = moveAndHold(s, 51000, 13000)
+    s = push(s, { t: s.now + 200, raw: 32000 })
+    expect(s.step).toBe('centre')
+    expect(holdRemainingMs(s)).toBe(C.centreStableMs)
   })
 })
 
