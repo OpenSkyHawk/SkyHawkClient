@@ -9,6 +9,16 @@
 // sample collected from the rig there was not one repeated value. A dwell defined as "N
 // consecutive samples agreed" can therefore never complete. Dwell has to be wall-clock against
 // the last value received.
+//
+// The second fact, which pulls the other way: **RAW frames are droppable.** The gateway discards
+// a whole frame rather than stall the relay when the CDC buffer is short. So elapsed time alone
+// is not proof that a value is real — the sequence settled -> spike -> (return frame lost) leaves
+// a spike sitting as the current value with nothing following it. A hold therefore needs both:
+// the time to elapse, and a second in-band sample corroborating that the value is a real rest
+// rather than a lone reading whose successor never arrived.
+//
+// The SEQ counter cannot substitute for that. A gap is only visible on the next arriving frame,
+// and in the case that matters no next frame arrives.
 
 /**
  * Every threshold in one block, as #46 requires, so retuning after the hall-sensor bench is a
@@ -121,8 +131,26 @@ export interface CaptureState {
   now: number
   /** When the current step began — the centre cap measures from here. */
   stepSince: number
-  /** Samples gathered during the current centre step, for the capped-out fallback. */
-  centreSamples: number[]
+  /**
+   * Samples gathered during the current centre step, timestamped for the capped-out fallback.
+   *
+   * Timestamps are load-bearing: collection begins the instant stopB commits, so the early
+   * entries are the spring travelling from the mechanical stop back toward rest. Averaging that
+   * transit together with the rest readings would drag the stored centre toward the last stop.
+   */
+  centreSamples: { t: number; raw: number }[]
+  /**
+   * Whether a second in-band sample has confirmed the current reference.
+   *
+   * Without this a lone spike commits. RAW is explicitly droppable under CDC back-pressure, so
+   * the sequence settled -> spike -> (return frame dropped) leaves the spike as the reference
+   * with nothing following it, and a hold evaluated purely on elapsed time would commit it —
+   * which widest-wins would then preserve over every good sweep.
+   *
+   * The SEQ gap cannot rescue this: a gap is only visible on the next arriving frame, and here
+   * nothing arrives. Corroboration is the only signal available.
+   */
+  corroborated: boolean
   /**
    * Times the hold restarted during this sweep.
    *
@@ -134,6 +162,14 @@ export interface CaptureState {
   interruptions: number
   /** Why the last sweep was rejected, for the UI to explain. */
   rejection?: string
+  /**
+   * The hold has run long enough but nothing has confirmed the value yet.
+   *
+   * Surfaced so the UI can say "holding — waiting for confirmation" rather than appearing hung.
+   * Normally under a second: measured rest noise is 387 counts peak-to-peak, comfortably above
+   * the node's 128-count emission threshold, so samples do keep arriving at roughly 1/s.
+   */
+  awaitingConfirmation: boolean
   result?: CaptureResult
 }
 
@@ -155,7 +191,9 @@ export function beginCapture(
     now,
     stepSince: now,
     centreSamples: [],
-    interruptions: 0
+    interruptions: 0,
+    corroborated: false,
+    awaitingConfirmation: false
   }
 }
 
@@ -275,6 +313,8 @@ function finishSweep(s: CaptureState): CaptureState {
     stepSince: s.now,
     centreSamples: [],
     interruptions: 0,
+    corroborated: false,
+    awaitingConfirmation: false,
     rejection: undefined
   }
 }
@@ -288,7 +328,9 @@ function commitStep(s: CaptureState, value: number): CaptureState {
     ref: null,
     refSince: s.now,
     stepSince: s.now,
-    centreSamples: []
+    centreSamples: [],
+    corroborated: false,
+    awaitingConfirmation: false
   }
 
   if (s.step === 'stopA') return { ...next, step: 'stopB' }
@@ -311,18 +353,48 @@ export function tick(s: CaptureState, now: number): CaptureState {
   const next = { ...s, now }
 
   if (next.step === 'centre' && now - next.stepSince >= next.config.centreCapMs) {
-    // Never settled inside the band. Use the mean of what arrived rather than abandoning the
-    // sweep — it is the best estimate available, and refusing to finish would strand the user.
-    const mean = next.centreSamples.length
-      ? Math.round(next.centreSamples.reduce((a, b) => a + b, 0) / next.centreSamples.length)
-      : (next.ref ?? 0)
-    return commitStep(next, mean)
+    // Never settled inside the band. Use what arrived rather than stranding the user — but only
+    // the rest cluster, never the release transit. Collection starts the moment stopB commits,
+    // so the early samples are the spring travelling back from the mechanical stop; averaging
+    // those in would pull the stored centre toward the stop the user last held. Bounded two
+    // ways: recent in time, and near the value currently being timed.
+    return commitStep(next, restCluster(next))
   }
 
   if (next.ref !== null && now - next.refSince >= holdTarget(next)) {
+    // Elapsed time alone is not enough. An uncorroborated reference may be a spike whose
+    // return frame was dropped, and committing it would write a wrong endpoint to flash that
+    // widest-wins then protects. Keep holding and let the UI explain why.
+    if (!next.corroborated) return { ...next, awaitingConfirmation: true }
     return commitStep(next, next.ref)
   }
   return next
+}
+
+/**
+ * The settled readings at the end of a centre step, excluding release transit.
+ *
+ * Bounded by recency alone, and anchored to the last sample rather than to the clock. Transit
+ * is at the *start* of the step by construction — collection begins when stopB commits, while
+ * the spring is still travelling back from the mechanical stop — so a trailing window excludes
+ * it without needing to reason about values at all.
+ *
+ * Filtering by proximity to the current reference was tried and is wrong: when the axis jitters
+ * symmetrically about rest, the reference is whichever side it last landed on, so the "cluster"
+ * is one extreme rather than the centre between them. Anchoring the window to the clock instead
+ * of the last sample is also wrong — emission is sparse and change-gated, so a stream that went
+ * quiet before the cap would leave the window empty.
+ *
+ * The mean, not the median: symmetric jitter averages to the rest position, whereas a median
+ * over an alternating stream lands on one side or the other depending on how many samples
+ * happened to arrive.
+ */
+function restCluster(s: CaptureState): number {
+  const last = s.centreSamples.at(-1)
+  if (!last) return s.ref ?? 0
+  const since = last.t - s.config.centreStableMs
+  const recent = s.centreSamples.filter((x) => x.t >= since)
+  return Math.round(recent.reduce((a, b) => a + b.raw, 0) / recent.length)
 }
 
 /** Feed one RAW sample. */
@@ -330,22 +402,31 @@ export function push(s: CaptureState, sample: CaptureSample): CaptureState {
   if (s.phase !== 'capturing') return { ...s, now: sample.t }
 
   let next: CaptureState = { ...s, now: sample.t }
-  if (next.step === 'centre') next = { ...next, centreSamples: [...next.centreSamples, sample.raw] }
+  if (next.step === 'centre') {
+    next = { ...next, centreSamples: [...next.centreSamples, { t: sample.t, raw: sample.raw }] }
+  }
 
   if (next.ref === null) {
-    next = { ...next, ref: sample.raw, refSince: sample.t }
+    next = { ...next, ref: sample.raw, refSince: sample.t, corroborated: false }
   } else if (Math.abs(sample.raw - next.ref) > next.config.bandCounts) {
     // Moved out of band: a new value to time, and the previous hold is abandoned. A spike lands
-    // here, restarts the clock, and is gone by the time the hold completes — which is precisely
-    // why it can never be committed as an endpoint.
+    // here and restarts the clock, so when its return frame arrives the hold completes on the
+    // settled reading. When that return frame is *dropped* instead, this alone would leave the
+    // spike as the reference — which is what `corroborated` exists to catch.
     next = {
       ...next,
       ref: sample.raw,
       refSince: sample.t,
+      corroborated: false,
+      awaitingConfirmation: false,
       interruptions: next.interruptions + 1
     }
+  } else {
+    // Inside the band: noise, not movement. The reference and its clock are left alone — and
+    // this sample is the confirmation that the reference is a real hold rather than a lone
+    // reading whose successor was dropped.
+    next = { ...next, corroborated: true, awaitingConfirmation: false }
   }
-  // Inside the band: noise, not movement. The reference and its clock are left alone.
 
   return tick(next, sample.t)
 }
@@ -364,6 +445,8 @@ export function retrySweep(s: CaptureState, now: number): CaptureState {
     stepSince: now,
     centreSamples: [],
     interruptions: 0,
+    corroborated: false,
+    awaitingConfirmation: false,
     rejection: undefined
   }
 }

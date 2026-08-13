@@ -14,9 +14,17 @@ import {
 
 const C = DEFAULT_CAPTURE_CONFIG
 
-/** Feed a value and hold it long enough to commit, the way a user reaching a stop would. */
+/**
+ * Feed a value and hold it long enough to commit, the way a user reaching a stop would.
+ *
+ * Two samples, not one. A real hold is not silent: measured rest noise is 387 counts
+ * peak-to-peak, comfortably over the node's 128-count emission threshold, so readings keep
+ * arriving at roughly 1/s. The second sample is that noise, and it is what confirms the value
+ * is a genuine hold rather than a lone reading whose successor was dropped.
+ */
 function holdAt(s: CaptureState, value: number, from: number, ms = C.endpointHoldMs + 1) {
   let next = push(s, { t: from, raw: value })
+  next = push(next, { t: from + Math.min(300, ms - 1), raw: value + 150 }) // in-band noise
   next = tick(next, from + ms)
   return next
 }
@@ -30,6 +38,7 @@ function sweep(
   next = holdAt(next, lo, next.now + 100)
   if (centre !== undefined && next.step === 'centre') {
     next = push(next, { t: next.now + 100, raw: centre })
+    next = push(next, { t: next.now + 400, raw: centre + 120 }) // in-band noise confirms it
     next = tick(next, next.now + C.centreStableMs + 1)
   }
   return next
@@ -37,13 +46,43 @@ function sweep(
 
 describe('the stability detector', () => {
   it('completes on wall clock, not on a sample count', () => {
-    // The measurement this whole design turns on: the node emits only on change, so a settled
-    // axis sends nothing. One sample then silence must still complete the hold.
+    // The measurement this design turns on: the node emits only on change, so a hold produces
+    // a trickle of noise readings, never a steady stream. Two samples and then silence must
+    // complete the hold — the elapsed time does the work, not the count.
     let s = beginCapture(0)
     s = push(s, { t: 0, raw: 50000 })
-    expect(s.current.stopA).toBeUndefined()
+    s = push(s, { t: 200, raw: 50150 })
+    expect(s.current.stopA, 'not yet — the hold time has not elapsed').toBeUndefined()
     s = tick(s, C.endpointHoldMs + 1)
-    expect(s.current.stopA, 'silence must not stall the hold').toBe(50000)
+    expect(s.current.stopA, 'silence after confirmation must not stall the hold').toBe(50000)
+  })
+
+  it('will not commit a value nothing has confirmed', () => {
+    // The dropped-return spike. RAW is explicitly droppable under CDC back-pressure, so
+    // settled -> spike -> (return frame lost) leaves the spike as the reference with nothing
+    // following it. Committing on elapsed time alone would write it to flash, and widest-wins
+    // would then protect it over every good sweep.
+    //
+    // The SEQ gap cannot save us here: a gap is only visible on the next arriving frame, and in
+    // this sequence none arrives.
+    let s = beginCapture(0)
+    s = push(s, { t: 0, raw: 50000 })
+    s = push(s, { t: 200, raw: 50150 }) // settled and confirmed
+    s = push(s, { t: 400, raw: 61000 }) // spike; its return frame is dropped
+    s = tick(s, 400 + C.endpointHoldMs + 1)
+
+    expect(s.current.stopA, 'a lone spike must never be committed').toBeUndefined()
+    expect(s.awaitingConfirmation, 'and the UI must be able to explain the wait').toBe(true)
+  })
+
+  it('commits once a confirming sample finally arrives', () => {
+    let s = beginCapture(0)
+    s = push(s, { t: 0, raw: 50000 })
+    s = tick(s, C.endpointHoldMs + 1)
+    expect(s.awaitingConfirmation).toBe(true)
+    s = push(s, { t: C.endpointHoldMs + 200, raw: 50120 })
+    expect(s.current.stopA, 'confirmation releases the already-elapsed hold').toBe(50000)
+    expect(s.awaitingConfirmation).toBe(false)
   })
 
   it('is not restarted by noise inside the band', () => {
@@ -67,13 +106,16 @@ describe('the stability detector', () => {
   })
 
   it('never lets a spike become an endpoint', () => {
-    // A spike is rejected by construction: it restarts the clock, the value returns, and the
-    // hold completes on the settled reading. No separate outlier filter exists or is needed.
+    // The ordinary case, where the return frame is delivered: the spike restarts the clock, the
+    // value returns, and the hold completes on the settled reading. No separate outlier filter
+    // is needed for this. The case where the return frame is *dropped* is covered above by the
+    // corroboration requirement — that one is not handled by this mechanism at all.
     let s = beginCapture(0)
     s = push(s, { t: 0, raw: 50000 })
     s = push(s, { t: 300, raw: 61000 }) // spike
     s = push(s, { t: 320, raw: 50040 }) // and gone
-    s = tick(s, 320 + C.endpointHoldMs + 1)
+    s = push(s, { t: 520, raw: 50100 }) // settled again, and confirmed
+    s = tick(s, 520 + C.endpointHoldMs + 1)
     expect(s.current.stopA).toBe(50040)
     expect(s.current.stopA).not.toBe(61000)
     expect(s.interruptions, 'the interruption is worth surfacing to the user').toBe(2)
@@ -94,6 +136,7 @@ describe('sweep flow', () => {
     s = holdAt(s, 13000, 100)
     s = holdAt(s, 51000, s.now + 100)
     s = push(s, { t: s.now + 100, raw: 32000 })
+    s = push(s, { t: s.now + 400, raw: 32120 })
     s = tick(s, s.now + C.centreStableMs + 1)
     expect(s.accepted[0]).toEqual(lowFirst.accepted[0])
   })
@@ -262,7 +305,8 @@ describe('centre capture', () => {
     expect(s.step).toBe('centre')
     const t = s.now
     s = push(s, { t: t + 50, raw: 32000 })
-    s = tick(s, t + 50 + C.centreStableMs + 1)
+    s = push(s, { t: t + 350, raw: 32130 }) // in-band noise confirms the rest position
+    s = tick(s, t + 350 + C.centreStableMs + 1)
     expect(s.accepted[0]!.centre, 'stable for 5 s is enough').toBe(32000)
   })
 
@@ -277,6 +321,39 @@ describe('centre capture', () => {
       s = push(s, { t: t + i * 1000, raw: i % 2 ? 31000 : 33000 }) // never settles
     }
     s = tick(s, t + C.centreCapMs + 1)
-    expect(s.accepted[0]!.centre).toBe(32000)
+    // No exact answer exists for an axis that never settles — the fallback is an estimate, so
+    // assert the neighbourhood rather than pretending to a precision it does not have.
+    expect(s.accepted[0]!.centre).toBeGreaterThan(31500)
+    expect(s.accepted[0]!.centre).toBeLessThan(32500)
+  })
+
+  it('excludes the release transit from the capped-out average', () => {
+    // The bug this exists for. Collection starts the instant stopB commits, so the first
+    // readings are the spring travelling from the mechanical stop back toward rest. Averaging
+    // that trajectory in drags the stored centre toward the stop the user last held.
+    //
+    // The earlier test could not catch it: it alternated symmetrically about centre, so the
+    // transit and the rest readings happened to average to the same number.
+    let s = beginCapture(0, true)
+    s = holdAt(s, 51000, 100)
+    s = holdAt(s, 13000, s.now + 100) // last stop is the LOW end
+    const t = s.now
+
+    // One-directional climb away from that stop, then noisy rest near 32000 that never settles
+    // inside the band for a full 5 s.
+    const transit = [14000, 18000, 23000, 28000]
+    transit.forEach((raw, i) => (s = push(s, { t: t + (i + 1) * 400, raw })))
+    let at = t + 2000
+    for (let i = 0; i < 12; i++) {
+      at += 1000
+      s = push(s, { t: at, raw: i % 2 ? 31400 : 32600 })
+    }
+    s = tick(s, t + C.centreCapMs + 1)
+
+    const centre = s.accepted[0]!.centre!
+    const naive = Math.round([...transit, ...Array(12).fill(32000)].reduce((a, b) => a + b, 0) / 16)
+    expect(centre, 'transit must not be averaged in').toBeGreaterThan(naive)
+    expect(centre, 'the answer is the rest cluster').toBeGreaterThan(31000)
+    expect(centre).toBeLessThan(33000)
   })
 })
