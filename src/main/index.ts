@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   CTRL,
   type AppConfig,
+  type CalCacheEntry,
   type CalCommitAxis,
   type CaptureState,
   type HidAvailability,
@@ -72,6 +73,9 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.calStreamSelect, (_e, axisIdx: number) => session.calStreamSelect(axisIdx))
   ipcMain.handle(CTRL.calCommit, (_e, axis: CalCommitAxis) => session.calCommit(axis))
   ipcMain.handle(CTRL.calReset, (_e, idx: number) => session.calReset(idx))
+  ipcMain.handle(CTRL.calCacheRead, () => session.calCacheRead())
+  ipcMain.handle(CTRL.calCacheStore, (_e, axes: CalCacheEntry[]) => session.calCacheStore(axes))
+  ipcMain.handle(CTRL.calCacheDrop, (_e, idx: number) => session.calCacheDrop(idx))
   ipcMain.handle(CTRL.calSessionClose, () => session.calSessionClose())
 
   ipcMain.handle(CTRL.logExport, async (_e, text: string) => {

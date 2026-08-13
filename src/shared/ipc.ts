@@ -1,5 +1,6 @@
 // Typed IPC contract between the Electron main process and the renderer.
 // Channels are one-way main -> renderer pushes; control actions are renderer -> main.
+import type { CachedAxis, CachedBoard } from './cal-cache'
 import type { NodeStatus } from './nodes'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
@@ -304,7 +305,10 @@ export const CTRL = {
   calStreamSelect: 'cal:stream-select',
   calCommit: 'cal:commit',
   calReset: 'cal:reset',
-  calSessionClose: 'cal:session-close'
+  calSessionClose: 'cal:session-close',
+  calCacheRead: 'cal:cache-read',
+  calCacheStore: 'cal:cache-store',
+  calCacheDrop: 'cal:cache-drop'
 } as const
 
 /** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
@@ -336,4 +340,31 @@ export interface SkyhawkApi {
   /** Deletes stored calibration for one axis, or all with 0xFF. Persists immediately. */
   calReset(idx: number): Promise<CalResult<null>>
   calSessionClose(): Promise<CalResult<null>>
+
+  // ── the client's copy of what the device confirmed storing (#46, part 5) ──
+  /**
+   * What the cache holds for the board currently attached, and which of its axes the device has
+   * since lost. `board` is undefined when nothing is cached, or when the port reports no serial —
+   * without one there is no way to tell this board's calibration from another's.
+   */
+  calCacheRead(): Promise<CalResult<{ board?: CachedBoard; regressed: number[] }>>
+  /**
+   * Record axes the device has **confirmed** storing — call after the read-back, never after the
+   * ACK. Caching what was sent rather than what came back would preserve client optimism as if it
+   * were device state, which is the one thing this copy must never do.
+   */
+  calCacheStore(axes: CalCacheEntry[]): Promise<CalResult<null>>
+  /**
+   * Forget an axis the user deliberately deleted, or the whole board with `0xFF`.
+   *
+   * A deletion has to reach the cache. Inferring it from a later read is impossible — an axis that
+   * is uncalibrated because the user erased it looks exactly like one that lost its calibration,
+   * and the client would offer to restore what was just deleted.
+   */
+  calCacheDrop(idx: number): Promise<CalResult<null>>
+}
+
+/** One axis on its way into the cache: the confirmed values plus the setting the device cannot hold. */
+export interface CalCacheEntry extends CachedAxis {
+  idx: number
 }

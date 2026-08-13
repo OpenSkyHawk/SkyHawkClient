@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   CTRL,
   type AppConfig,
+  type CalCacheEntry,
   type CalCommitAxis,
   type CalHello,
   type CalResult,
@@ -17,6 +18,7 @@ import {
   type ReplayLoad,
   type SkyhawkApi
 } from '@shared/ipc'
+import type { CachedBoard } from '@shared/cal-cache'
 
 // Typed bridge: main -> renderer push subscriptions + renderer -> main control.
 const api: SkyhawkApi = {
@@ -51,6 +53,14 @@ const api: SkyhawkApi = {
   calCommit: (axis: CalCommitAxis) =>
     ipcRenderer.invoke(CTRL.calCommit, axis) as Promise<CalResult<null>>,
   calReset: (idx: number) => ipcRenderer.invoke(CTRL.calReset, idx) as Promise<CalResult<null>>,
+  calCacheRead: () =>
+    ipcRenderer.invoke(CTRL.calCacheRead) as Promise<
+      CalResult<{ board?: CachedBoard; regressed: number[] }>
+    >,
+  calCacheStore: (axes: CalCacheEntry[]) =>
+    ipcRenderer.invoke(CTRL.calCacheStore, axes) as Promise<CalResult<null>>,
+  calCacheDrop: (idx: number) =>
+    ipcRenderer.invoke(CTRL.calCacheDrop, idx) as Promise<CalResult<null>>,
   calSessionClose: () => ipcRenderer.invoke(CTRL.calSessionClose) as Promise<CalResult<null>>
 }
 

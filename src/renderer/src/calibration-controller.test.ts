@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CAPTURE_CONFIG, midpoint } from '@shared/axis-capture'
 import type { CalRawSample, CalResult, CalSnapshot } from '@shared/ipc'
 import { CalibrationController, type CalibrationApi } from './calibration-controller'
+import type { CachedBoard } from '@shared/cal-cache'
+import type { CalCacheEntry } from '@shared/ipc'
 
 const C = DEFAULT_CAPTURE_CONFIG
 
@@ -28,6 +30,7 @@ const ok = <T>(value: T): CalResult<T> => ({ ok: true, value })
 function fakeDevice() {
   const stored: Record<number, { min: number; centre: number; max: number }> = {}
   const calls: string[] = []
+  let cached: CachedBoard | undefined
   const fail: { commit?: CalResult<null>; read?: CalResult<CalSnapshot>; reset?: CalResult<null> } =
     {}
 
@@ -59,9 +62,32 @@ function fakeDevice() {
     calSessionClose: async () => {
       calls.push('close')
       return ok(null)
+    },
+    // An in-memory stand-in for <userData>/calibration-cache.json, so what the controller keeps
+    // is observable rather than merely "a call was made".
+    calCacheRead: async () => ok({ board: cached, regressed: [] as number[] }),
+    calCacheStore: async (axes: CalCacheEntry[]) => {
+      calls.push('cache:store:' + axes.map((a) => a.idx).join(','))
+      cached = {
+        confirmedAt: 'T',
+        axes: {
+          ...cached?.axes,
+          ...Object.fromEntries(axes.map((a) => [a.idx, { ...a }]))
+        }
+      }
+      return ok(null)
+    },
+    calCacheDrop: async (idx: number) => {
+      calls.push('cache:drop:' + idx)
+      if (cached) {
+        const axes = { ...cached.axes }
+        delete axes[idx]
+        cached = { ...cached, axes }
+      }
+      return ok(null)
     }
   }
-  return { api, stored, calls, fail }
+  return { api, stored, calls, fail, cache: () => cached }
 }
 
 let clock = 0
@@ -293,6 +319,66 @@ describe('CalibrationController writing', () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect(c.snapshot().write).toBeUndefined()
     expect(c.snapshot().notice).toEqual({ kind: 'written', axes: [0, 1] })
+  })
+
+  it('caches what the device confirmed, including the rest position it cannot hold', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    c.setSelfCentring(false)
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(d.cache()!.axes[0]).toMatchObject({ min: 13000, max: 51000, selfCentring: false })
+    // The device has no axis-type field, so without this the three numbers would come back with
+    // their meaning lost — was the centre measured at rest, or derived as the midpoint?
+    expect(d.cache()!.axes[0]!.selfCentring).toBe(false)
+  })
+
+  it('remembers the rest position across a dialog close, since the device cannot hold it', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    c.setSelfCentring(false)
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    // A fresh controller, as if the app had been restarted.
+    const c2 = new CalibrationController(d.api, now)
+    await c2.open(0)
+    expect(c2.selfCentring(0), 'not silently back to the self-centring default').toBe(false)
+  })
+
+  it('caches nothing when the read-back disagrees with what was sent', async () => {
+    // Ordering, stated as a behaviour: the cache must record what the device confirmed, not what
+    // the client asked for. A commit that ACKs and then reads back differently is a failure, and
+    // caching it would preserve client optimism as though it were device state.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    d.fail.read = ok(snapshot({ 0: { min: 1, centre: 2, max: 3 } }))
+
+    await c.save()
+    expect(c.snapshot().failure, 'the write failed').toBeDefined()
+    expect(d.calls.filter((x) => x.startsWith('cache:store'))).toEqual([])
+    expect(d.cache()).toBeUndefined()
+  })
+
+  it('forgets an axis the user deletes, so it is not offered back', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(d.cache()!.axes[0]).toBeDefined()
+
+    await c.deleteAxis(0)
+    expect(d.cache()?.axes[0], 'a deliberate erase reaches the cache').toBeUndefined()
   })
 
   it('confirms a delete, which is otherwise invisible', async () => {

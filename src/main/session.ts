@@ -10,6 +10,7 @@ import {
   type CalCommitAxis,
   type CalHello,
   type CalRawSample,
+  type CalCacheEntry,
   type CalResult,
   type CalSnapshot,
   type DeviceStatus,
@@ -28,9 +29,18 @@ import {
   SIMGATEWAY_PID,
   SIMGATEWAY_VID
 } from './serial'
-import { CAL_NACK } from '@shared/calibration'
+import { CAL_NACK, CAL_AXIS_NONE } from '@shared/calibration'
 import { debugLog } from './debug'
 import { HidReader } from './hid'
+import { loadCalCache, saveCalCache } from './cal-cache'
+import {
+  boardFor,
+  dropAxis,
+  regressedAxes,
+  storeAxes,
+  type CachedAxis,
+  type CachedBoard
+} from '@shared/cal-cache'
 import { Recorder, ReplaySource, type ReplayInfo } from './replay'
 import { NODE_NAMES } from './reference/node-names.generated'
 import { NODE_FAULT_CODES } from './reference/node-status.generated'
@@ -537,6 +547,43 @@ export class Session {
       return { ok: true, value: snap }
     }
     return r
+  }
+
+  /**
+   * What the cache holds for the attached board, and which of its axes the device has lost.
+   *
+   * Regression is computed here rather than in the renderer because the serial lives here — the
+   * renderer never sees a board identity it could accidentally key on.
+   */
+  calCacheRead(): CalResult<{ board?: CachedBoard; regressed: number[] }> {
+    const cache = loadCalCache()
+    return {
+      ok: true,
+      value: {
+        board: boardFor(cache, this.calSerialNumber),
+        regressed: regressedAxes(cache, this.lastCal)
+      }
+    }
+  }
+
+  /** Record axes the device confirmed storing. A board with no serial is not cached at all. */
+  calCacheStore(axes: CalCacheEntry[]): CalResult<null> {
+    const serial = this.calSerialNumber
+    if (!serial || axes.length === 0) return { ok: true, value: null }
+    const entries: Record<number, CachedAxis> = {}
+    for (const a of axes) {
+      entries[a.idx] = { min: a.min, centre: a.centre, max: a.max, selfCentring: a.selfCentring }
+    }
+    saveCalCache(storeAxes(loadCalCache(), serial, entries, new Date().toISOString()))
+    return { ok: true, value: null }
+  }
+
+  /** Forget a deliberately deleted axis, or the whole board on the reset-all index. */
+  calCacheDrop(idx: number): CalResult<null> {
+    const serial = this.calSerialNumber
+    if (!serial) return { ok: true, value: null }
+    saveCalCache(dropAxis(loadCalCache(), serial, idx === CAL_AXIS_NONE ? undefined : idx))
+    return { ok: true, value: null }
   }
 
   calSessionOpen(axisIdx: number): Promise<CalResult<{ timeoutMs: number; axisIdx: number }>> {
