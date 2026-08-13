@@ -9,6 +9,7 @@ import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generat
 import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
 import { NODE_STATUS, NODE_HEALTH_FLAGS, NODE_FAULT_CODES } from './node-status.generated'
 import { NODE_NAMES } from './node-names.generated'
+import { CAL_PROTO, CAL_TYPES, CAL_NACK_REASONS, CAL_PAYLOAD_LEN } from './axis-cal.generated'
 import { ACFT_NAME } from './dcsbios-metadata'
 import {
   HFLAG_DEGRADED,
@@ -18,6 +19,7 @@ import {
   NODE_REQ_ADDR,
   SUPPORTED_NODE_PROTO
 } from '@shared/nodes'
+import * as cal from '@shared/calibration'
 
 describe('a4ec-controls.generated', () => {
   it('has outputs, each with a numeric address', () => {
@@ -105,5 +107,67 @@ describe('node-status.generated', () => {
     // an unknown/reserved id (parseNodeStatus passes any faultId through) is undefined, not a crash —
     // the Partial<Record> type forces callers to ?.-guard.
     expect(NODE_FAULT_CODES[0x99]).toBeUndefined()
+  })
+})
+
+// shared/calibration.ts restates these constants rather than importing them, because `src/shared`
+// is aliased everywhere and `src/main/reference` is not. That duplication is only safe because
+// these assertions are exhaustive in BOTH directions — a firmware bump that adds, removes or
+// renumbers anything has to fail here, not surface as a mis-framed packet on the wire.
+describe('axis-cal.generated', () => {
+  it('scalar contract matches the codec', () => {
+    expect(CAL_PROTO.version).toBe(cal.CAL_PROTO_VERSION)
+    expect(CAL_PROTO.axisSlots).toBe(cal.AXIS_CAL_SLOTS)
+    expect(CAL_PROTO.axisNone).toBe(cal.CAL_AXIS_NONE)
+    expect(CAL_PROTO.envelopeBytes).toBe(cal.CAL_ENVELOPE_BYTES)
+    expect(CAL_PROTO.maxPayload).toBe(cal.CAL_MAX_PAYLOAD)
+    expect([...CAL_PROTO.magic]).toEqual([...cal.CAL_MAGIC])
+  })
+
+  it('every message type agrees, in both directions', () => {
+    const generated = new Map(
+      Object.entries(CAL_TYPES).map(([code, info]) => [info!.name, Number(code)])
+    )
+    const codec = new Map(Object.entries(cal.CAL_TYPE))
+    // Same names on both sides — catches a type added or dropped firmware-side.
+    expect([...codec.keys()].sort()).toEqual([...generated.keys()].sort())
+    for (const [name, code] of codec) expect(generated.get(name), name).toBe(code)
+  })
+
+  it('every payload length agrees, for every type', () => {
+    for (const [name, code] of Object.entries(cal.CAL_TYPE)) {
+      expect(CAL_PAYLOAD_LEN[code], name).toBe(cal.CAL_PAYLOAD_LEN[code])
+    }
+    // No length in the codec that the firmware does not declare, and vice versa.
+    expect(
+      Object.keys(cal.CAL_PAYLOAD_LEN)
+        .map(Number)
+        .sort((a, b) => a - b)
+    ).toEqual(
+      Object.keys(CAL_PAYLOAD_LEN)
+        .map(Number)
+        .sort((a, b) => a - b)
+    )
+  })
+
+  it('every NACK reason agrees, in both directions', () => {
+    const generated = new Map(
+      Object.entries(CAL_NACK_REASONS).map(([code, info]) => [info!.name, Number(code)])
+    )
+    const codec = new Map(Object.entries(cal.CAL_NACK))
+    expect([...codec.keys()].sort()).toEqual([...generated.keys()].sort())
+    for (const [name, code] of codec) expect(generated.get(name), name).toBe(code)
+  })
+
+  it('marks device-originated types by the high bit', () => {
+    for (const [code, info] of Object.entries(CAL_TYPES)) {
+      expect(info!.fromDevice, info!.name).toBe(Number(code) >= 0x80)
+    }
+  })
+
+  it('COMMIT carries exactly one axis — 9 bytes, never a batch', () => {
+    // The batch form allowed a message to name the same axis twice and silently apply the last.
+    // If this length ever grows, encodeCommit() is wrong in kind, not merely short.
+    expect(CAL_PAYLOAD_LEN[cal.CAL_TYPE.COMMIT]).toBe(9)
   })
 })
