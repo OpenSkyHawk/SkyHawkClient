@@ -282,8 +282,14 @@ export function CalibrationDialog({
               </div>
             </div>
 
+            {/* Named as sensor-space on purpose. Everything from here down — the bar, the live
+                marker and the three cards — is where the axis physically sits, not what the sim
+                receives: `centre` maps to 0 signed by construction, so the card reading +282 and
+                DCS reading 0 are the same position in two different spaces. */}
             <div className="cd__barhead">
-              <span className="cd__label">Captured range</span>
+              <span className="cd__label">
+                Captured range <span className="cd__dim">· sensor</span>
+              </span>
               {cap?.phase === 'capturing' && !cap.awaitingMovement && (
                 <span className="cd__holding">
                   <span className="cd__holddot" />
