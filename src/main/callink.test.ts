@@ -228,6 +228,82 @@ describe('CalLink timeouts', () => {
     expect(written.slice(before).filter((b) => b[4] === CAL_TYPE.KEEPALIVE)).toHaveLength(0)
   })
 
+  it('keeps the export gate shut when SESSION_CLOSE is never answered', async () => {
+    // A timeout cannot tell "the device closed" from "the request never arrived". In the second
+    // case the gateway still holds an open session and keeps streaming RAW — so reopening the
+    // gate here would resume DCS export forwarding straight into it.
+    const { link, sent, reply } = rig()
+    const open = link.openSession(0)
+    reply(CAL_TYPE.SESSION_ACK, sent().seq, Uint8Array.of(0x30, 0x75, 0, 0, 0)) // 30000 ms
+    await open
+
+    const close = link.closeSession()
+    const failed = expect(close).rejects.toBeInstanceOf(CalTimeoutError)
+    await vi.advanceTimersByTimeAsync(2000) // reply timeout elapses
+    await failed
+    expect(link.exportGated, 'gate must stay shut while the outcome is unknown').toBe(true)
+    expect(link.inSession).toBe(true)
+
+    // ...and reopens only once the device's own idle expiry has certainly passed.
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(link.exportGated, 'still shut one tick before the device would expire').toBe(true)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(link.exportGated).toBe(false)
+    expect(link.inSession).toBe(false)
+  })
+
+  it('reopens the gate immediately when SESSION_CLOSE is acknowledged', async () => {
+    const { link, sent, reply } = rig()
+    const open = link.openSession(0)
+    reply(CAL_TYPE.SESSION_ACK, sent().seq, Uint8Array.of(0x30, 0x75, 0, 0, 0))
+    await open
+    const close = link.closeSession()
+    reply(CAL_TYPE.ACK, sent().seq, Uint8Array.of(CAL_TYPE.SESSION_CLOSE))
+    await close
+    expect(link.exportGated).toBe(false)
+    // No stray fallback left armed to fire 30 s later.
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(link.exportGated).toBe(false)
+  })
+
+  it('a fresh session supersedes a pending assumed-expiry', async () => {
+    const { link, sent, reply } = rig()
+    const open = link.openSession(0)
+    reply(CAL_TYPE.SESSION_ACK, sent().seq, Uint8Array.of(0x30, 0x75, 0, 0, 0))
+    await open
+    const close = link.closeSession()
+    const failed = expect(close).rejects.toBeInstanceOf(CalTimeoutError)
+    await vi.advanceTimersByTimeAsync(2000)
+    await failed
+
+    const reopen = link.openSession(1)
+    reply(CAL_TYPE.SESSION_ACK, sent().seq, Uint8Array.of(0x30, 0x75, 0, 0, 1))
+    await reopen
+    // The old fallback must not fire mid-session and silently unlatch the gate.
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(link.exportGated, 'a stale expiry must not tear down a live session').toBe(true)
+    expect(link.inSession).toBe(true)
+  })
+
+  it('port close cancels a pending assumed-expiry', async () => {
+    const { link, sent, reply } = rig()
+    const open = link.openSession(0)
+    reply(CAL_TYPE.SESSION_ACK, sent().seq, Uint8Array.of(0x30, 0x75, 0, 0, 0))
+    await open
+    const close = link.closeSession()
+    const failed = expect(close).rejects.toBeInstanceOf(CalTimeoutError)
+    await vi.advanceTimersByTimeAsync(2000)
+    await failed
+    link.close()
+    expect(link.exportGated).toBe(false)
+    expect(link.inSession).toBe(false)
+    // Assert the timer is actually gone, not merely that its effect is invisible. Letting it
+    // survive is close to harmless — openSession() cancels a stale expiry, and firing late only
+    // re-clears an already-cleared session — so a state-only assertion here passes either way
+    // and proves nothing about the cleanup it claims to test.
+    expect(vi.getTimerCount(), 'close() must leave no timers armed').toBe(0)
+  })
+
   it('fails everything in flight when the port closes', async () => {
     const { link } = rig()
     const p = link.getCal()

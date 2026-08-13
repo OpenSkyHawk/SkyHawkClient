@@ -89,6 +89,10 @@ export class CalLink {
   private session = false
   private keepalive?: ReturnType<typeof setInterval>
   private streamAxis = CAL_AXIS_NONE
+  /** Fallback timer that reopens the gate after a close we never got an answer to. */
+  private expiry?: ReturnType<typeof setTimeout>
+  /** The device's idle expiry, as it reported in SESSION_ACK. Default until it tells us. */
+  private deviceTimeoutMs = 30_000
 
   constructor(
     private readonly write: (data: Buffer) => void,
@@ -212,6 +216,10 @@ export class CalLink {
   async openSession(axisIdx: number): Promise<{ timeoutMs: number; axisIdx: number }> {
     const f = await this.request(CAL_TYPE.SESSION_OPEN, Uint8Array.of(axisIdx))
     const ack = decodeSessionAck(f.payload)
+    // A fresh session supersedes any pending assumed-expiry from a previous failed close.
+    if (this.expiry) clearTimeout(this.expiry)
+    this.expiry = undefined
+    if (ack.timeoutMs > 0) this.deviceTimeoutMs = ack.timeoutMs
     this.session = true
     this.streamAxis = ack.axisIdx
     this.startKeepalive()
@@ -252,11 +260,52 @@ export class CalLink {
     await this.send(seq, CAL_TYPE.RESET, encodeReset(seq, idx))
   }
 
+  /**
+   * Close the session, and only then reopen the export gate.
+   *
+   * The session flag is cleared on the ACK, never before it. Clearing it optimistically looks
+   * harmless — `pending` keeps the gate shut for the duration of the request — but the moment a
+   * timeout deletes that pending entry the gate opens, and a timeout is exactly the case where
+   * we cannot know whether the device closed. If the request never arrived, the gateway still
+   * holds an open session and is still streaming RAW while we resume forwarding DCS export into
+   * it: the collision the whole-session gate exists to prevent.
+   *
+   * So on failure the gate stays shut, and reopens only once the device's own idle expiry has
+   * certainly elapsed — a value the device itself told us in SESSION_ACK.
+   */
   async closeSession(): Promise<void> {
     this.stopKeepalive()
+    try {
+      await this.request(CAL_TYPE.SESSION_CLOSE)
+      this.clearSession()
+    } catch (err) {
+      this.assumeExpiryAfterFailedClose()
+      throw err
+    }
+  }
+
+  private clearSession(): void {
+    if (this.expiry) clearTimeout(this.expiry)
+    this.expiry = undefined
     this.session = false
     this.streamAxis = CAL_AXIS_NONE
-    await this.request(CAL_TYPE.SESSION_CLOSE)
+  }
+
+  /**
+   * Hold the gate shut until the gateway must have dropped the session on its own.
+   *
+   * Measured from now rather than from the last frame we sent, which is the conservative
+   * direction: the device's timer runs from the last frame it *accepted*, so ours can only
+   * expire later than its.
+   */
+  private assumeExpiryAfterFailedClose(): void {
+    if (this.expiry) clearTimeout(this.expiry)
+    this.expiry = setTimeout(() => {
+      this.expiry = undefined
+      this.session = false
+      this.streamAxis = CAL_AXIS_NONE
+      debugLog('cal.session', 'close unacknowledged; assuming device-side expiry, gate reopened')
+    }, this.deviceTimeoutMs)
   }
 
   private startKeepalive(): void {
@@ -282,8 +331,8 @@ export class CalLink {
    */
   close(): Buffer {
     this.stopKeepalive()
-    this.session = false
-    this.streamAxis = CAL_AXIS_NONE
+    // The port is gone, so the device cannot be mid-session with us either way.
+    this.clearSession()
     for (const [, p] of this.pending) {
       clearTimeout(p.timer)
       p.reject(new CalTimeoutError(p.type))
