@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import {
   CTRL,
   type AppConfig,
+  type CalCommitAxis,
   type CaptureState,
   type HidAvailability,
   type PushChannel,
@@ -61,6 +62,17 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
   ipcMain.handle(CTRL.nodesRefresh, () => session.requestNodes())
   ipcMain.handle(CTRL.serialMonitor, (_e, on: boolean) => session.setSerialMonitor(on))
+
+  // Axis calibration (#46). Every one returns a discriminated CalResult rather than throwing:
+  // an ipcRenderer.invoke rejection flattens to a plain Error, which would lose the
+  // timeout-vs-nack distinction the UI's failure messaging depends on.
+  ipcMain.handle(CTRL.calHello, () => session.calHello())
+  ipcMain.handle(CTRL.calRead, () => session.calRead())
+  ipcMain.handle(CTRL.calSessionOpen, (_e, axisIdx: number) => session.calSessionOpen(axisIdx))
+  ipcMain.handle(CTRL.calStreamSelect, (_e, axisIdx: number) => session.calStreamSelect(axisIdx))
+  ipcMain.handle(CTRL.calCommit, (_e, axis: CalCommitAxis) => session.calCommit(axis))
+  ipcMain.handle(CTRL.calReset, (_e, idx: number) => session.calReset(idx))
+  ipcMain.handle(CTRL.calSessionClose, () => session.calSessionClose())
 
   ipcMain.handle(CTRL.logExport, async (_e, text: string) => {
     const res = await dialog.showSaveDialog({

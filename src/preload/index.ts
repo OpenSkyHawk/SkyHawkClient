@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   CTRL,
   type AppConfig,
+  type CalCommitAxis,
+  type CalHello,
+  type CalResult,
+  type CalSnapshot,
   type CaptureState,
   type DebugDumpResult,
   type ExportResult,
@@ -35,7 +39,19 @@ const api: SkyhawkApi = {
   refreshNodes: () => ipcRenderer.invoke(CTRL.nodesRefresh) as Promise<void>,
   setSerialMonitor: (on: boolean) => ipcRenderer.invoke(CTRL.serialMonitor, on) as Promise<void>,
   dumpSerialPorts: () => ipcRenderer.invoke(CTRL.debugDumpPorts) as Promise<DebugDumpResult>,
-  revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>
+  revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>,
+  calHello: () => ipcRenderer.invoke(CTRL.calHello) as Promise<CalResult<CalHello>>,
+  calRead: () => ipcRenderer.invoke(CTRL.calRead) as Promise<CalResult<CalSnapshot>>,
+  calSessionOpen: (axisIdx: number) =>
+    ipcRenderer.invoke(CTRL.calSessionOpen, axisIdx) as Promise<
+      CalResult<{ timeoutMs: number; axisIdx: number }>
+    >,
+  calStreamSelect: (axisIdx: number) =>
+    ipcRenderer.invoke(CTRL.calStreamSelect, axisIdx) as Promise<CalResult<null>>,
+  calCommit: (axis: CalCommitAxis) =>
+    ipcRenderer.invoke(CTRL.calCommit, axis) as Promise<CalResult<null>>,
+  calReset: (idx: number) => ipcRenderer.invoke(CTRL.calReset, idx) as Promise<CalResult<null>>,
+  calSessionClose: () => ipcRenderer.invoke(CTRL.calSessionClose) as Promise<CalResult<null>>
 }
 
 contextBridge.exposeInMainWorld('skyhawk', api)

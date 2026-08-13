@@ -7,6 +7,11 @@ import { NODE_END_MSG, NODE_MSG, NodeRoster, nodeRosterRequest } from '@shared/n
 import {
   DEFAULT_CONFIG,
   type AppConfig,
+  type CalCommitAxis,
+  type CalHello,
+  type CalRawSample,
+  type CalResult,
+  type CalSnapshot,
   type DeviceStatus,
   type LogRow,
   type PushChannel,
@@ -15,7 +20,15 @@ import {
   type SerialFrame
 } from '@shared/ipc'
 import { createTransport, type Transport } from './net'
-import { SerialBridge, SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
+import { CalLink, CalNackError, CalTimeoutError } from './callink'
+import {
+  findSimGatewayPort,
+  listSerialPorts,
+  SerialBridge,
+  SIMGATEWAY_PID,
+  SIMGATEWAY_VID
+} from './serial'
+import { CAL_NACK } from '@shared/calibration'
 import { debugLog } from './debug'
 import { HidReader } from './hid'
 import { Recorder, ReplaySource, type ReplayInfo } from './replay'
@@ -50,6 +63,9 @@ export class Session {
   private logBuf: LogRow[] = []
   private serialMonitor = false
   private serialBuf: SerialFrame[] = []
+  private cal?: CalLink
+  private calRawBuf: CalRawSample[] = []
+  private calSerialNumber?: string
   private running = false
   private lastDevice: DeviceStatus = { state: 'no-device' }
   private lastErrKey = ''
@@ -101,7 +117,12 @@ export class Session {
         this.transport = t
         t.onExport((chunk) => {
           this.ingestExport(chunk)
-          this.serial?.write(chunk) // Bridge: forward export byte-for-byte to the SimGateway
+          // Bridge: forward export byte-for-byte to the SimGateway — unless a calibration
+          // exchange is in flight. The protocol's one rule is that the client stops relaying
+          // the export stream before ANY exchange, a 10 ms HELLO as much as a whole session:
+          // it frees the link and removes any chance of the gateway reading export binary as
+          // a calibration frame. Parsing for our own UI continues; only the forward pauses.
+          if (!this.cal?.exportGated) this.serial?.write(chunk)
         })
         t.onError((err) => {
           this.stats.error()
@@ -129,6 +150,7 @@ export class Session {
         setInterval(() => this.flushLog(), LOG_FLUSH_MS),
         setInterval(() => this.flushTelemetry(), TELEMETRY_MS),
         setInterval(() => this.flushSerial(), SERIAL_FLUSH_MS),
+        setInterval(() => this.flushCalRaw(), SERIAL_FLUSH_MS),
         setInterval(() => this.emit('stats:tick', this.stats.snapshot()), STATS_MS)
       ]
       // Bridge: poll the node roster so silent deaths get reconciled.
@@ -162,6 +184,13 @@ export class Session {
   private startBridgeDevices(): void {
     const s = new SerialBridge(this.config.autoReconnect)
     this.serial = s
+    // The calibration channel shares this port. It runs whenever the port is open, not only
+    // during a session: HELLO and GET_CAL are answered outside one, so there is no point at
+    // which it is safe to stop watching for frames.
+    this.cal = new CalLink(
+      (data) => s.write(data),
+      (sample) => this.calRawBuf.push({ t: Date.now(), ...sample })
+    )
     s.onData((chunk) => this.onSerialData(chunk))
     s.onMonitor((dir, chunk) => this.onSerialTraffic(dir, chunk))
     s.onOpen((path) => {
@@ -172,8 +201,12 @@ export class Session {
         pid: SIMGATEWAY_PID
       })
       this.requestNodes() // seed the roster as soon as the device is up
+      void this.seedCalibration() // badges, with no dialog open
     })
     s.onClose(() => {
+      // Fail anything in flight and release held bytes: a reconnect must not resume
+      // mid-candidate, and an awaiting caller would otherwise hang on a reply that cannot come.
+      this.cal?.close()
       this.stats.reconnect()
       this.setDevice({ state: 'reconnecting' })
     })
@@ -198,6 +231,9 @@ export class Session {
     this.replay?.stop()
     this.hid?.stop()
     this.hid = undefined
+    this.cal?.close()
+    this.cal = undefined
+    this.calRawBuf = []
     this.serial?.stop()
     this.serial = undefined
     this.transport?.stop()
@@ -269,11 +305,19 @@ export class Session {
 
   /** Panel commands arriving from the SimGateway serial: relay to DCS, log, count. */
   private onSerialData(chunk: Buffer): void {
-    this.transport?.send(chunk) // byte-for-byte relay to DCS:7778
-    this.stats.addOut(chunk.length)
-    this.recorder?.record('out', chunk)
+    // De-multiplex BEFORE anything else sees the chunk. Two reasons, and the first is the one
+    // that bites: this path relays to DCS's command socket, and during a session RAW arrives at
+    // up to ~250 frames/s — that binary has no business reaching DCS. Second, the gateway
+    // injects frames at arbitrary byte boundaries, so one can land mid-line; removing its bytes
+    // is exactly what rejoins the interrupted line for the assembler below.
+    const rest = this.cal ? this.cal.ingest(chunk) : chunk
+    if (rest.length === 0) return
+
+    this.transport?.send(rest) // byte-for-byte relay to DCS:7778
+    this.stats.addOut(rest.length)
+    this.recorder?.record('out', rest)
     const t = Date.now()
-    for (const line of this.cmdAssembler.push(chunk)) {
+    for (const line of this.cmdAssembler.push(rest)) {
       if (!line.trim()) continue
       const { identifier, arg } = parseCommand(line)
       // Node-status messages are tapped to the roster, not logged as panel commands.
@@ -319,6 +363,146 @@ export class Session {
       })
       this.emit('nodes:status', nodes)
     }
+  }
+
+  // ── axis calibration (#46) ─────────────────────────────────────────────────
+
+  /**
+   * Say hello and read stored calibration as soon as the port opens, so the HID tab can show
+   * per-axis badges without anyone opening the dialog. Both are answered outside a session.
+   *
+   * Failure here is not an error state: a gateway flashed with older firmware simply never
+   * answers, and everything else about the relay keeps working.
+   */
+  private async seedCalibration(): Promise<void> {
+    this.calSerialNumber = await this.gatewaySerialNumber()
+    const hello = await this.calHello()
+    if (!hello.ok) {
+      debugLog('cal.seed', `no calibration channel: ${hello.message}`)
+      return
+    }
+    const { proto, blobVersion, fw } = hello.value
+    debugLog('cal.hello', {
+      proto,
+      blobVersion,
+      fw: `${fw.major}.${fw.minor}.${fw.patch}`,
+      serial: this.calSerialNumber ?? null
+    })
+    const read = await this.calRead()
+    if (!read.ok) {
+      debugLog('cal.seed', `read failed: ${read.message}`)
+      return
+    }
+    // Masks, not endpoints: this is the line a bug report needs — which axes the sketch
+    // declares, and which of them the device considers calibrated.
+    debugLog('cal.data', {
+      present: read.value.presentMask.toString(2).padStart(8, '0'),
+      calibrated: read.value.calibratedMask.toString(2).padStart(8, '0')
+    })
+  }
+
+  /**
+   * USB serial of the attached gateway, for keying the restore cache in #46.
+   *
+   * From SerialPort.list(), not node-hid: node-hid is an optional dependency that may be absent
+   * entirely, and HidReader opens by VID/PID without exposing a serial. Confirmed on hardware —
+   * the board reports 50031327805E871C. Absent or empty means no restore may be offered, since
+   * guessing which board a cached calibration belongs to is the failure the key exists to stop.
+   */
+  private async gatewaySerialNumber(): Promise<string | undefined> {
+    try {
+      const path = await findSimGatewayPort()
+      if (!path) return undefined
+      const ports = await listSerialPorts()
+      const hit = ports.find((p) => p.path === path)
+      return hit?.serialNumber || undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Convert a CalLink rejection into the discriminated result the renderer can branch on. */
+  private async calRun<T>(fn: (link: CalLink) => Promise<T>): Promise<CalResult<T>> {
+    if (!this.cal) {
+      return { ok: false, kind: 'offline', message: 'SimGateway is not connected' }
+    }
+    try {
+      return { ok: true, value: await fn(this.cal) }
+    } catch (err) {
+      if (err instanceof CalTimeoutError) {
+        return { ok: false, kind: 'timeout', message: err.message }
+      }
+      if (err instanceof CalNackError) {
+        const name =
+          Object.entries(CAL_NACK).find(([, v]) => v === err.reason)?.[0] ??
+          `0x${err.reason.toString(16)}`
+        return {
+          ok: false,
+          kind: 'nack',
+          reason: err.reason,
+          reasonName: name,
+          detail: err.detail,
+          message: err.message
+        }
+      }
+      return { ok: false, kind: 'error', message: (err as Error).message }
+    }
+  }
+
+  calHello(): Promise<CalResult<CalHello>> {
+    return this.calRun((l) => l.hello())
+  }
+
+  /** Read stored calibration and push it to the renderer, so badges follow the device. */
+  async calRead(): Promise<CalResult<CalSnapshot>> {
+    const r = await this.calRun((l) => l.getCal())
+    if (r.ok) {
+      const snap: CalSnapshot = { ...r.value, serialNumber: this.calSerialNumber }
+      this.emit('cal:data', snap)
+      return { ok: true, value: snap }
+    }
+    return r
+  }
+
+  calSessionOpen(axisIdx: number): Promise<CalResult<{ timeoutMs: number; axisIdx: number }>> {
+    return this.calRun((l) => l.openSession(axisIdx))
+  }
+
+  calStreamSelect(axisIdx: number): Promise<CalResult<null>> {
+    return this.calRun(async (l) => {
+      await l.streamSelect(axisIdx)
+      return null
+    })
+  }
+
+  /**
+   * Write one axis. Resolving means the device acknowledged receipt, not that it stored the
+   * values — the caller re-reads with calRead() to learn what is actually on the device.
+   */
+  calCommit(axis: CalCommitAxis): Promise<CalResult<null>> {
+    return this.calRun(async (l) => {
+      await l.commit(axis)
+      return null
+    })
+  }
+
+  calReset(idx: number): Promise<CalResult<null>> {
+    return this.calRun(async (l) => {
+      await l.reset(idx)
+      return null
+    })
+  }
+
+  calSessionClose(): Promise<CalResult<null>> {
+    return this.calRun(async (l) => {
+      await l.closeSession()
+      return null
+    })
+  }
+
+  private flushCalRaw(): void {
+    if (this.calRawBuf.length === 0) return
+    this.emit('cal:raw', this.calRawBuf.splice(0, this.calRawBuf.length))
   }
 
   private setDevice(status: DeviceStatus): void {
