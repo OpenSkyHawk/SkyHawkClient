@@ -1,3 +1,5 @@
+import type { DeviceState } from '@shared/ipc'
+
 /**
  * How recently the device last said anything, as a colour.
  *
@@ -14,8 +16,19 @@
 export const FRESH_MS = 60 * 1000
 export const RECENT_MS = 5 * 60 * 1000
 
-export function freshness(relaying: boolean, ageMs: number) {
-  if (!relaying) return { cls: 'rate--down', label: 'no link' }
+/**
+ * States in which the device link is actually up.
+ *
+ * Keyed on the device rather than on whether the *relay* is running, which was the original
+ * mistake: pulling the USB cable leaves the relay running — it is trying to reconnect — so a
+ * `running` flag stays true while nothing can possibly arrive, and the card went on ageing
+ * through its bands to 'quiet'. Quiet and unplugged are opposite claims: one says the device has
+ * nothing to say, the other that it cannot say anything.
+ */
+const LINK_UP: ReadonlySet<DeviceState> = new Set<DeviceState>(['relaying', 'connected'])
+
+export function freshness(deviceState: DeviceState, ageMs: number) {
+  if (!LINK_UP.has(deviceState)) return { cls: 'rate--down', label: 'no link' }
   if (ageMs < FRESH_MS) return { cls: 'rate--live', label: 'live' }
   if (ageMs < RECENT_MS) return { cls: 'rate--idle', label: 'idle' }
   return { cls: 'rate--stale', label: 'quiet' }

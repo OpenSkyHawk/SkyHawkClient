@@ -98,7 +98,7 @@ export function Hid() {
   const availAxes = new Set(s.availAxes)
   const availHats = new Set(s.availHats)
   const availButtons = new Set(s.availButtons)
-  const fresh = freshness(s.relaying, s.hidAgeMs)
+  const fresh = freshness(s.deviceState, s.hidAgeMs)
 
   // Two different notions of "this axis exists", answering different questions:
   //   availAxes   — what HIDControls.h catalogues, i.e. what the report layout can carry
