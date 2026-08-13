@@ -24,7 +24,12 @@ const RECONNECT_MS = 2000
 interface NodeHidDevice {
   on(event: 'data', cb: (data: Buffer) => void): void
   on(event: 'error', cb: (err: Error) => void): void
-  close(): void
+  /**
+   * Asynchronous, and the promise matters: it resolves once node-hid has stopped its read thread
+   * and released the threadsafe function that thread calls into. Declaring this `void` is what let
+   * the teardown be fired and forgotten.
+   */
+  close(): Promise<void>
 }
 interface NodeHidModule {
   HIDAsync: { open(vid: number, pid: number): Promise<NodeHidDevice> }
@@ -99,9 +104,15 @@ export class HidReader {
   reopen(): void {
     if (this.stopped || this.unavailable || this.opening) return
     this.clearTimer()
-    this.closeDevice()
-    this.listeningSince = Date.now()
-    void this.open()
+    // Sequenced, not fired together: the old handle must be fully released before the next open,
+    // or the two overlap in node-hid's native layer. On Windows the serial port re-enumerates
+    // ahead of the HID interface, so this reopen frequently lands while the device is still
+    // settling — the open below may fail, and `retry()` is what covers that.
+    void this.closeDevice().then(() => {
+      if (this.stopped || this.unavailable) return
+      this.listeningSince = Date.now()
+      void this.open()
+    })
   }
 
   private async open(): Promise<void> {
@@ -131,7 +142,7 @@ export class HidReader {
     try {
       const dev = await mod.HIDAsync.open(SIMGATEWAY_VID, SIMGATEWAY_PID)
       if (this.stopped) {
-        dev.close()
+        await dev.close()
         return
       }
       this.device = dev
@@ -145,11 +156,22 @@ export class HidReader {
     }
   }
 
-  /** The handle died under us. Release it and start trying again. */
+  /**
+   * The handle died under us. Release it and start trying again.
+   *
+   * The release is deferred off this tick because this runs *inside* node-hid's own error
+   * callback: closing from within it frees the threadsafe function while the native read thread
+   * is still delivering through it, which aborts the process rather than throwing. Observed on
+   * Windows during a replug — one abort in three unplug cycles.
+   *
+   * The retry is chained after the close rather than scheduled beside it, so an open can never
+   * begin while the previous handle is still unwinding.
+   */
   private lost(err: Error): void {
     this.errorCb(err)
-    this.closeDevice()
-    this.retry()
+    setImmediate(() => {
+      void this.closeDevice().then(() => this.retry())
+    })
   }
 
   private retry(): void {
@@ -165,13 +187,23 @@ export class HidReader {
     this.timer = undefined
   }
 
-  private closeDevice(): void {
+  /**
+   * Release the handle and wait for node-hid to finish tearing it down.
+   *
+   * The wait is the point. `close()` returns a promise that settles once the native read thread
+   * has stopped; dropping it meant the next open could begin while that thread was still running
+   * against a threadsafe function the teardown had already freed. That is an abort inside node-hid
+   * (`Assertion failed: (func) != nullptr`), not an exception — nothing here can catch it.
+   */
+  private async closeDevice(): Promise<void> {
+    const dev = this.device
+    this.device = undefined
+    if (!dev) return
     try {
-      this.device?.close()
+      await dev.close()
     } catch {
       // Already gone with the cable; nothing to release.
     }
-    this.device = undefined
   }
 
   private onData(buf: Buffer): void {
@@ -210,6 +242,8 @@ export class HidReader {
   stop(): void {
     this.stopped = true
     this.clearTimer()
-    this.closeDevice()
+    // Not awaited — `stop()` is synchronous by interface. `stopped` already bars any further open,
+    // so the teardown has no reopen to race against.
+    void this.closeDevice()
   }
 }
