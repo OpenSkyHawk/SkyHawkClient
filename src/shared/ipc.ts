@@ -196,6 +196,14 @@ export interface RelayResult {
 export interface RelayStatus {
   running: boolean
   device: DeviceStatus
+  /**
+   * Last calibration the device confirmed, if the link is still up.
+   *
+   * Carried here because `cal:data` is only pushed when the port opens. A renderer reload
+   * creates a fresh store while the main-process session keeps running, so without this the
+   * badges would stay blank until the next reconnect — indefinitely, on a stable link.
+   */
+  cal?: CalSnapshot
 }
 
 export interface ExportResult {

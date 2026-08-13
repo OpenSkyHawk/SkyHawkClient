@@ -333,11 +333,17 @@ export const useStore = create<AppState>((set, get) => ({
 
     // Rehydrate from the live session: a dev reload resets the renderer but the
     // main-process session keeps running, so the UI must not assume "stopped".
-    void api
-      .getStatus()
-      .then((st) =>
-        set({ relaying: st.running, deviceState: st.device.state, devicePort: st.device.portPath })
-      )
+    void api.getStatus().then((st) =>
+      set({
+        relaying: st.running,
+        deviceState: st.device.state,
+        devicePort: st.device.portPath,
+        // cal:data is only pushed when the port opens. A renderer reload builds a fresh store
+        // while the main-process session keeps running, so without carrying the snapshot here
+        // the badges would stay blank until the next reconnect — forever, on a stable link.
+        cal: st.cal
+      })
+    )
 
     const unsubs = [
       api.on('hid:report', (h) =>
@@ -350,9 +356,14 @@ export const useStore = create<AppState>((set, get) => ({
       ),
       api.on('device:status', (d) => {
         set({ deviceState: d.state, devicePort: d.portPath })
-        // The device went away: drop the calibration snapshot rather than leave stale badges
-        // describing a board that is no longer attached.
-        if (d.state === 'no-device') set({ cal: undefined })
+        // Calibration describes the gateway currently attached, so it is only trustworthy while
+        // the link is up. `relaying` is the one state that means the serial port is open;
+        // everything else — reconnecting after a close, error, no-device — means the snapshot
+        // may describe a board that is gone. Clearing only on `no-device` would leave the old
+        // board's badges on screen through a reconnect, and if the next board runs firmware
+        // predating the calibration protocol it never sends `cal:data`, so they would never be
+        // corrected.
+        if (d.state !== 'relaying') set({ cal: undefined })
       }),
       api.on('cal:data', (c) => set({ cal: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
