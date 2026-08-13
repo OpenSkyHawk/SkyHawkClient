@@ -119,7 +119,10 @@ export function CalibrationDialog({
   const draft = s.drafts[s.axis]
   const stored = s.device?.axes[s.axis]
   const cap = s.capture
-  const writing = !!s.write
+  // 'done' is the held confirmation, not work in progress. Treating it as writing left the
+  // footer reading "Writing…" beside a strip saying the device had already confirmed the write,
+  // and kept Cancel and Delete disabled for three seconds after there was anything to wait for.
+  const writing = !!s.write && s.write.phase !== 'done'
   const invalid = controller.invalidAxis()
   const shown = draft ?? (stored?.calibrated ? stored : undefined)
   const travel = travelQuality(shown?.min, shown?.max)
