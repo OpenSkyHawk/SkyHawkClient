@@ -216,16 +216,14 @@ export function CalibrationDialog({
               >
                 <span className="cd__axisname">{AXIS_LABELS[a.idx]}</span>
                 <span className="cd__slot">Axis {a.idx}</span>
-                {/* One badge, three states — the same vocabulary the HID tab uses. EDIT outranks
-                    the stored state deliberately: an axis with an unwritten capture is neither
-                    CAL nor RAW to the user, it is unsaved work, and that is the thing they need
-                    to see before closing the dialog. */}
+                {/* The dot marks unwritten work; the badge reports what the device holds. Two
+                    marks rather than one, because they answer different questions — an EDIT
+                    badge replacing CAL/RAW hid the stored state behind the pending one. */}
+                <span className="cd__mark" title="Captured, not yet written">
+                  {s.drafts[a.idx] ? '●' : ''}
+                </span>
                 {s.switchingTo === a.idx ? (
                   <span className="cd__axisval">…</span>
-                ) : s.drafts[a.idx] ? (
-                  <span className="calbadge calbadge--edit" title="Captured, not yet written">
-                    EDIT
-                  </span>
                 ) : (
                   <span className={`calbadge${a.calibrated ? ' calbadge--on' : ''}`}>
                     {a.calibrated ? 'CAL' : 'RAW'}
