@@ -1,7 +1,11 @@
 // Reads the SimGateway HID interface in parallel with DCS (which keeps using it
-// as a joystick) and decodes the 34-byte report. node-hid is an optional, lazily
-// loaded dependency: if it is absent or the device is unplugged, HID simply stays
-// idle — the rest of the app is unaffected.
+// as a joystick) and decodes the 34-byte report.
+//
+// node-hid is an optional, lazily loaded dependency, and the two ways it can fail need opposite
+// treatment. **The module being absent is permanent** — it will not appear while the app runs, so
+// giving up is right. **The device being absent is not**: it comes back when the cable is
+// replugged, and treating that like a missing dependency left HID dead until the user stopped and
+// restarted the relay, while serial recovered on its own and made everything look healthy.
 import {
   decodeReport,
   HID_AXIS_COUNT,
@@ -11,6 +15,9 @@ import {
 } from '@shared/hid'
 import type { HidSnapshot } from '@shared/ipc'
 import { SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
+
+/** Matches the serial link's reconnect cadence — the same cable, coming back at the same time. */
+const RECONNECT_MS = 2000
 
 // Minimal structural types — we deliberately avoid a static node-hid import so
 // neither typecheck nor `npm ci` depends on the optional native module.
@@ -32,6 +39,18 @@ export class HidReader {
   private buttons: boolean[] = Array(HID_BUTTON_COUNT).fill(false)
   private hats: number[] = Array(HID_HAT_COUNT).fill(0)
   private lastReportAt = 0
+  private timer?: ReturnType<typeof setTimeout>
+  /** node-hid itself could not be loaded. Permanent — never retried. */
+  private unavailable = false
+  /**
+   * An open is in flight.
+   *
+   * The first serial open fires the same callback a reconnect does, so `reopen()` can arrive
+   * while `start()`'s open is still awaiting node-hid. Without this guard both would complete,
+   * the second handle would overwrite the first, and the orphan would go on emitting reports
+   * into a reader that no longer knows it exists.
+   */
+  private opening = false
   /**
    * When we began listening.
    *
@@ -69,12 +88,47 @@ export class HidReader {
     void this.open()
   }
 
+  /**
+   * Drop any handle and open again.
+   *
+   * Called when the serial port reopens, because both interfaces belong to the same physical
+   * device: a serial reconnect is proof the USB device re-enumerated, and the handle we hold is
+   * stale whether or not node-hid ever told us so. That matters because a disconnect does not
+   * reliably surface as an error event on every platform, so waiting to be told can wait forever.
+   */
+  reopen(): void {
+    if (this.stopped || this.unavailable || this.opening) return
+    this.clearTimer()
+    this.closeDevice()
+    this.listeningSince = Date.now()
+    void this.open()
+  }
+
   private async open(): Promise<void> {
+    if (this.opening) return
+    this.opening = true
+    try {
+      await this.openOnce()
+    } finally {
+      this.opening = false
+    }
+  }
+
+  private async openOnce(): Promise<void> {
+    let mod: NodeHidModule
     try {
       // Non-literal specifier: typecheck stays independent of the optional module,
       // and the bundler leaves it as a runtime require (resolved from node_modules).
       const spec = 'node-hid'
-      const mod = (await import(/* @vite-ignore */ spec)) as unknown as NodeHidModule
+      mod = (await import(/* @vite-ignore */ spec)) as unknown as NodeHidModule
+    } catch (err) {
+      // The optional dependency is not installed. Nothing will change that at runtime.
+      this.unavailable = true
+      this.errorCb(err as Error)
+      return
+    }
+
+    try {
       const dev = await mod.HIDAsync.open(SIMGATEWAY_VID, SIMGATEWAY_PID)
       if (this.stopped) {
         dev.close()
@@ -82,11 +136,42 @@ export class HidReader {
       }
       this.device = dev
       dev.on('data', (buf) => this.onData(buf))
-      dev.on('error', (err) => this.errorCb(err))
+      dev.on('error', (err) => this.lost(err))
     } catch (err) {
-      // node-hid missing, or no HID device present — stay idle.
+      // No device on this VID/PID yet. It may be plugged in later, or still settling after a
+      // replug, so keep trying rather than staying idle for the life of the session.
       this.errorCb(err as Error)
+      this.retry()
     }
+  }
+
+  /** The handle died under us. Release it and start trying again. */
+  private lost(err: Error): void {
+    this.errorCb(err)
+    this.closeDevice()
+    this.retry()
+  }
+
+  private retry(): void {
+    if (this.stopped || this.unavailable || this.timer) return
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      void this.open()
+    }, RECONNECT_MS)
+  }
+
+  private clearTimer(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
+  }
+
+  private closeDevice(): void {
+    try {
+      this.device?.close()
+    } catch {
+      // Already gone with the cable; nothing to release.
+    }
+    this.device = undefined
   }
 
   private onData(buf: Buffer): void {
@@ -124,7 +209,7 @@ export class HidReader {
 
   stop(): void {
     this.stopped = true
-    this.device?.close()
-    this.device = undefined
+    this.clearTimer()
+    this.closeDevice()
   }
 }

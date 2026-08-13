@@ -69,11 +69,15 @@ vi.mock('./hid', () => ({
     constructor() {
       ;(this.constructor as { last?: unknown }).last = this
     }
+    reopened = 0
     onError() {}
     onReport(cb: () => void) {
       this.cb = cb
     }
     start() {}
+    reopen() {
+      this.reopened++
+    }
     stop() {}
     sampleRate() {}
     /** Stand in for a report arriving from the device. */
@@ -194,5 +198,29 @@ describe('HID reporting latency', () => {
 
     session.stop()
     vi.useRealTimers()
+  })
+})
+
+describe('HID recovery after an unplug', () => {
+  it('reopens the HID handle when the serial port comes back', async () => {
+    // The bug this exists for: pulling the cable killed HID permanently while serial reconnected
+    // on its own, so the app looked healthy — link connected, DCS-BIOS traffic flowing — with the
+    // axes frozen on their last values. Only stopping and restarting the relay revived it,
+    // because that is the one path that constructs a new reader.
+    //
+    // The serial port reopening is the trigger rather than a node-hid error, because both
+    // interfaces are the same physical device and a disconnect does not reliably surface as an
+    // error event on every platform. Serial recovery is proven; being told is not.
+    const { session, serial } = bridgeSession()
+    const { HidReader } = (await import('./hid')) as unknown as {
+      HidReader: { last?: { reopened: number } }
+    }
+    const hid = HidReader.last!
+    expect(hid.reopened, 'nothing to reopen on the first open').toBe(0)
+
+    serial.openCb('/dev/fake') // the reconnect
+    expect(hid.reopened).toBe(1)
+
+    session.stop()
   })
 })
