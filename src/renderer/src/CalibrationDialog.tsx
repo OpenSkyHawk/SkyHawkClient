@@ -131,18 +131,10 @@ export function CalibrationDialog({
   const p = prompt(s, startRaw.current)
   const dirty = controller.dirtyAxes()
 
-  const steps = [
-    { n: '1', label: 'Full travel' },
-    ...(selfCentring ? [{ n: '2', label: 'Centre' }] : []),
-    { n: selfCentring ? '3' : '2', label: 'Review & write' }
-  ]
-  const stepIndex = !cap
-    ? draft
-      ? steps.length - 1
-      : 0
-    : cap.step === 'centre' && selfCentring
-      ? 1
-      : 0
+  // Centre is not a stage the user navigates to — it is captured inside the same sweep as the
+  // stops, and naming it as step 2 promised a separate thing to do that never arrives.
+  const steps = ['Full travel', 'Review & write']
+  const stepIndex = cap?.phase === 'capturing' ? 0 : 1
 
   /** A held "Captured" beat, so each point lands visibly before the prompt moves on. */
   const [beat, setBeat] = useState<{ p: Point; v: number } | null>(null)
@@ -191,27 +183,27 @@ export function CalibrationDialog({
           </button>
         </header>
 
-        <div className="cd__strip">
-          {steps.map((st, i) => (
-            <div key={st.n} className="cd__step">
-              <span
-                className={`cd__stepn${i === stepIndex ? ' is-now' : ''}${
-                  i < stepIndex ? ' is-done' : ''
-                }`}
-              >
-                {st.n}
-              </span>
-              <span className={`cd__steplabel${i === stepIndex ? ' is-now' : ''}`}>{st.label}</span>
-            </div>
-          ))}
-          <span className="cd__hint">
-            {cap
-              ? `${sweepsRemaining(cap)} sweep${sweepsRemaining(cap) === 1 ? '' : 's'} remaining`
-              : selfCentring
-                ? 'Three sweeps per axis — one is not enough to find the stops.'
-                : 'Three sweeps per axis. No rest position, so centre is the midpoint.'}
-          </span>
-        </div>
+        {(cap || draft) && (
+          <div className="cd__strip">
+            {steps.map((label, i) => (
+              <div key={label} className="cd__step">
+                <span
+                  className={`cd__stepn${i === stepIndex ? ' is-now' : ''}${
+                    i < stepIndex ? ' is-done' : ''
+                  }`}
+                >
+                  {i + 1}
+                </span>
+                <span className={`cd__steplabel${i === stepIndex ? ' is-now' : ''}`}>{label}</span>
+              </div>
+            ))}
+            <span className="cd__hint">
+              {cap?.phase === 'capturing'
+                ? `${sweepsRemaining(cap)} sweep${sweepsRemaining(cap) === 1 ? '' : 's'} remaining`
+                : 'Captured, not written — nothing reaches the device until you write.'}
+            </span>
+          </div>
+        )}
 
         <div className="cd__body">
           <div className="cd__list">
