@@ -28,7 +28,7 @@ import { format } from 'prettier'
 
 const PIN = {
   repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
-  commit: '19245eafe3ecdbfcbe3a9ab12bb60f8ceb10f748'
+  commit: 'bcdc1024a90ff98098c4db979a30da47c586f8ec'
 }
 
 const SRC = {
@@ -36,6 +36,8 @@ const SRC = {
   hidControls: 'Firmware/Libraries/HIDControls/HIDControls.h',
   nodeStatus: 'Firmware/Libraries/NodeStatus/NodeStatus.h',
   simGateway: 'Firmware/Libraries/SimGateway/SimGateway.cpp',
+  axisCal: 'Firmware/Libraries/SimGateway/AxisCal.h',
+  axisCalCpp: 'Firmware/Libraries/SimGateway/AxisCal.cpp',
   nodeIds: 'Firmware/NODE_IDS.md'
 }
 
@@ -84,37 +86,24 @@ function sparseFetch(paths: string[]): string {
   return dir
 }
 
-interface Sources {
-  controls: string
-  hidControls: string
-  nodeStatus: string
-  simGateway: string
-  nodeIds: string
-  cleanup: () => void
-}
+type Sources = { [K in keyof typeof SRC]: string } & { cleanup: () => void }
 
 function loadSources(): Sources {
   const local = localRoot()
+  const keys = Object.keys(SRC) as (keyof typeof SRC)[]
+  const collect = (read: (p: string) => string) =>
+    Object.fromEntries(keys.map((k) => [k, read(SRC[k])])) as Record<keyof typeof SRC, string>
+
   if (local) {
     console.log(`[sync] reading from local checkout: ${local}`)
-    const read = (p: string) => readFileSync(join(local, p), 'utf8')
     return {
-      controls: read(SRC.controls),
-      hidControls: read(SRC.hidControls),
-      nodeStatus: read(SRC.nodeStatus),
-      simGateway: read(SRC.simGateway),
-      nodeIds: read(SRC.nodeIds),
+      ...collect((p) => readFileSync(join(local, p), 'utf8')),
       cleanup: () => {}
     }
   }
   const dir = sparseFetch(Object.values(SRC))
-  const read = (p: string) => readFileSync(join(dir, p), 'utf8')
   return {
-    controls: read(SRC.controls),
-    hidControls: read(SRC.hidControls),
-    nodeStatus: read(SRC.nodeStatus),
-    simGateway: read(SRC.simGateway),
-    nodeIds: read(SRC.nodeIds),
+    ...collect((p) => readFileSync(join(dir, p), 'utf8')),
     cleanup: () => rmSync(dir, { recursive: true, force: true })
   }
 }
@@ -133,15 +122,22 @@ const hex = (n: number) => '0x' + n.toString(16)
 const q = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`
 
 /**
- * Parse a `enum class Name : type { A = 0x01,  // comment ... }` block into ordered entries.
+ * Parse an `enum [class] Name : type { A = 0x01,  // comment ... }` block into ordered entries.
  * Captures each `NAME = value` plus the trailing `//` comment (the human description).
+ *
+ * `class` is optional: NodeStatus.h uses scoped enums, AxisCal.h uses plain `enum CalType`.
+ * Comments are optional too — AxisCal.h documents the enum rather than each entry, so callers
+ * that need labels there derive them from the name via labelize().
  */
 function parseEnum(
   header: string,
-  enumName: string
+  enumName: string,
+  where: string
 ): { name: string; value: number; comment: string }[] {
-  const block = new RegExp(`enum class ${enumName}\\s*:\\s*\\w+\\s*\\{([\\s\\S]*?)\\}`).exec(header)
-  if (!block) throw new Error(`[sync] enum ${enumName} not found in NodeStatus.h`)
+  const block = new RegExp(
+    `enum\\s+(?:class\\s+)?${enumName}\\s*:\\s*\\w+\\s*\\{([\\s\\S]*?)\\}`
+  ).exec(header)
+  if (!block) throw new Error(`[sync] enum ${enumName} not found in ${where}`)
   const line = /^\s*([A-Z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)\s*,?\s*(?:\/\/\s*(.*?))?\s*$/gm
   const entries: { name: string; value: number; comment: string }[] = []
   let m: RegExpExecArray | null
@@ -466,8 +462,8 @@ function genNodeStatus(header: string): string {
   const msgName = str(/#define\s+NODE_STATUS_MSG_NAME\s+"([^"]+)"/, 'MSG_NAME')
   const endMsgName = str(/#define\s+NODE_STATUS_END_MSG_NAME\s+"([^"]+)"/, 'END_MSG_NAME')
 
-  const healthFlags = parseEnum(header, 'NodeHealthFlag')
-  const faultCodes = parseEnum(header, 'NodeFaultCode')
+  const healthFlags = parseEnum(header, 'NodeHealthFlag', 'NodeStatus.h')
+  const faultCodes = parseEnum(header, 'NodeFaultCode', 'NodeStatus.h')
 
   const flagEntries = healthFlags.map((e) => `  ${e.name}: ${hex(e.value)}`).join(',\n')
   const faultEntries = faultCodes
@@ -519,6 +515,171 @@ ${faultEntries}
   )
 }
 
+// ── axis-calibration wire contract (OpenSkyhawk#251) ─────────────────────────
+
+/** `constexpr <type> NAME = <value>;` — the scalar form AxisCal.h uses for its constants. */
+function constexprNum(header: string, name: string): number {
+  const m = new RegExp(`constexpr\\s+\\w+\\s+${name}\\s*=\\s*(0x[0-9A-Fa-f]+|\\d+)\\s*;`).exec(
+    header
+  )
+  if (!m) throw new Error(`[sync] constant ${name} not found in AxisCal.h`)
+  return Number(m[1])
+}
+
+/**
+ * Payload length per message type, from the `calLenValidForType` switch in AxisCal.cpp.
+ *
+ * It lives in the .cpp rather than the header, and as a fall-through switch: a run of
+ * `case CAL_T_X:` labels terminated by `return len == N;`. Parsed line by line — labels
+ * accumulate until a return assigns the length to all of them. `default: return false;`
+ * carries no length and is skipped, which is correct: an unknown type is not a frame.
+ *
+ * Every type must resolve. A type added firmware-side without a length therefore fails the
+ * sync rather than silently defaulting, which is the whole point of the LEN-fixed-by-TYPE rule.
+ */
+function parseLenTable(cpp: string, typeNames: string[]): Record<string, number> {
+  const fn = /bool\s+calLenValidForType\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(cpp)
+  if (!fn) throw new Error('[sync] calLenValidForType not found in AxisCal.cpp')
+
+  const out: Record<string, number> = {}
+  let pending: string[] = []
+  for (const line of fn[1]!.split('\n')) {
+    for (const c of line.matchAll(/case\s+(CAL_T_\w+)\s*:/g)) pending.push(c[1]!)
+    const r = /return\s+len\s*==\s*(\d+)\s*;/.exec(line)
+    if (!r) continue
+    for (const n of pending) out[n] = Number(r[1])
+    pending = []
+  }
+  if (pending.length) {
+    throw new Error(
+      `[sync] case labels with no length in calLenValidForType: ${pending.join(', ')}`
+    )
+  }
+  const missing = typeNames.filter((n) => !(n in out))
+  if (missing.length) {
+    throw new Error(
+      `[sync] no payload length for ${missing.join(', ')} — every CalType needs one legal length`
+    )
+  }
+  return out
+}
+
+function genAxisCal(header: string, cpp: string): string {
+  const types = parseEnum(header, 'CalType', 'AxisCal.h')
+  const nacks = parseEnum(header, 'CalNackReason', 'AxisCal.h')
+  const lens = parseLenTable(
+    cpp,
+    types.map((t) => t.name)
+  )
+
+  const magicM = /constexpr\s+uint8_t\s+CAL_FRAME_MAGIC\s*\[\s*4\s*\]\s*=\s*\{([^}]*)\}/.exec(
+    header
+  )
+  if (!magicM) throw new Error('[sync] CAL_FRAME_MAGIC not found in AxisCal.h')
+  const magic = magicM[1]!.split(',').map((b) => Number(b.trim()))
+  if (magic.length !== 4 || magic.some((b) => !Number.isInteger(b))) {
+    throw new Error(`[sync] CAL_FRAME_MAGIC is not four byte literals: ${magicM[1]}`)
+  }
+
+  // Firmware macro -> the name the protocol doc uses. CAL_T_HELLO is the C identifier;
+  // HELLO is what 03-uart-usb-hid-protocol.md calls it, and what labelize() can read.
+  const short = (n: string) => n.replace(/^CAL_T_/, '').replace(/^CAL_NACK_/, '')
+
+  const typeEntries = types
+    .map((t) => {
+      const s = short(t.name)
+      return `  ${hex(t.value)}: { name: ${q(s)}, macro: ${q(t.name)}, label: ${q(labelize(s))}, fromDevice: ${t.value >= 0x80}, payloadLen: ${lens[t.name]} }`
+    })
+    .join(',\n')
+
+  const nackEntries = nacks
+    .map((n) => {
+      const s = short(n.name)
+      return `  ${hex(n.value)}: { name: ${q(s)}, macro: ${q(n.name)}, label: ${q(labelize(s))} }`
+    })
+    .join(',\n')
+
+  const lenEntries = types.map((t) => `  ${hex(t.value)}: ${lens[t.name]}`).join(',\n')
+
+  return (
+    banner([
+      `${SRC.axisCal} (calibration wire contract)`,
+      `${SRC.axisCalCpp} (payload length table)`
+    ]) +
+    `
+/**
+ * SimGateway axis-calibration protocol constants. Wire contract:
+ * FirmwarePlan/03-uart-usb-hid-protocol.md § Calibration Protocol (USB CDC).
+ *
+ * The codec in shared/calibration.ts restates these so \`src/shared\` stays free of a
+ * \`src/main\` import; reference.test.ts asserts the two agree, so a firmware bump fails loudly.
+ */
+export const CAL_PROTO = {
+  /** Protocol version. HELLO_ACK carries this; gate on it, not on the firmware version. */
+  version: ${constexprNum(header, 'CAL_PROTO_VERSION')},
+  /** Stored-blob layout version, reported by HELLO_ACK as \`blobVersion\`. */
+  blobVersion: ${constexprNum(header, 'CAL_VERSION')},
+  /** HID report axis slots. Fixed by the descriptor, not by how many a cockpit populates. */
+  axisSlots: ${constexprNum(header, 'AXIS_CAL_SLOTS')},
+  /** Axis-selection sentinel: "all" for RESET, "none" for SESSION_OPEN / STREAM_SELECT. */
+  axisNone: ${hex(constexprNum(header, 'CAL_AXIS_NONE'))},
+  /** magic 4 + type 1 + seq 1 + len 2 + crc 2. */
+  envelopeBytes: ${constexprNum(header, 'CAL_ENVELOPE_BYTES')},
+  /** CAL_DATA, the largest legal payload — the bound on how much a receiver may buffer. */
+  maxPayload: ${constexprNum(header, 'CAL_MAX_PAYLOAD')},
+  /** Frame lead-in "\\xAA S K C". Not collision-proof outbound, which is why the CRC is mandatory. */
+  magic: [${magic.map(hex).join(', ')}]
+} as const
+
+export interface CalTypeInfo {
+  /** Name as the protocol doc writes it, e.g. \`SESSION_OPEN\`. */
+  name: string
+  /** The firmware identifier it came from, e.g. \`CAL_T_SESSION_OPEN\`. */
+  macro: string
+  label: string
+  /** High bit of the type byte set = device -> client. */
+  fromDevice: boolean
+  /** The single legal payload length for this type. */
+  payloadLen: number
+}
+
+/** Message types, keyed by wire type byte — from CalType (AxisCal.h). */
+export const CAL_TYPES: Partial<Record<number, CalTypeInfo>> = {
+${typeEntries}
+} as const
+
+export interface CalNackInfo {
+  name: string
+  macro: string
+  label: string
+}
+
+/**
+ * NACK reasons, keyed by wire reason byte — from CalNackReason (AxisCal.h).
+ *
+ * Partial: three of these cannot reach a client. BAD_CRC and BAD_LENGTH are rejected at the
+ * framing layer, where a failing candidate is not a frame at all and its bytes are relayed
+ * instead of answered; BAD_TYPE likewise, so the gateway's \`default:\` arm is unreachable from
+ * the wire. A protocol mismatch therefore surfaces as a timeout on HELLO, never as a NACK.
+ */
+export const CAL_NACK_REASONS: Partial<Record<number, CalNackInfo>> = {
+${nackEntries}
+} as const
+
+/**
+ * type byte -> its one legal payload length.
+ *
+ * Checked BEFORE the payload is buffered. LEN is read before the CRC can be verified, so on a
+ * false frame it is noise — a stray magic in DCS-BIOS text can decode a LEN near 65535, and a
+ * receiver that waits for that many bytes stalls its line assembly.
+ */
+export const CAL_PAYLOAD_LEN: Partial<Record<number, number>> = {
+${lenEntries}
+} as const
+`
+  )
+}
+
 // ── NODE_ID -> panel name registry ───────────────────────────────────────────
 
 function genNodeNames(md: string): string {
@@ -561,6 +722,7 @@ async function main(): Promise<void> {
     await writeGenerated('hid-report-layout.generated.ts', genHidReportLayout(s.simGateway))
     await writeGenerated('node-status.generated.ts', genNodeStatus(s.nodeStatus))
     await writeGenerated('node-names.generated.ts', genNodeNames(s.nodeIds))
+    await writeGenerated('axis-cal.generated.ts', genAxisCal(s.axisCal, s.axisCalCpp))
   } finally {
     s.cleanup()
   }
