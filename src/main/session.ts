@@ -41,6 +41,14 @@ type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => voi
 
 const LOG_FLUSH_MS = 33
 const TELEMETRY_MS = 200
+/**
+ * Shortest gap between HID pushes to the renderer.
+ *
+ * A press used to wait for the 200 ms telemetry tick, which is visible lag on a button and
+ * enough to lose a quick tap entirely. Reports now drive the push, capped here at roughly one
+ * frame so a fast axis sweep — the device can emit a few hundred a second — cannot flood IPC.
+ */
+const HID_PUSH_MS = 16
 const STATS_MS = 1000
 const NODES_REFRESH_MS = 5000
 const SERIAL_FLUSH_MS = 50
@@ -52,6 +60,8 @@ export class Session {
   private transport?: Transport
   private serial?: SerialBridge
   private hid?: HidReader
+  private hidPushedAt = 0
+  private hidPushTimer?: ReturnType<typeof setTimeout>
   private replay?: ReplaySource
   private recorder?: Recorder
   private recordPath?: string
@@ -158,7 +168,10 @@ export class Session {
         setInterval(() => this.flushTelemetry(), TELEMETRY_MS),
         setInterval(() => this.flushSerial(), SERIAL_FLUSH_MS),
         setInterval(() => this.flushCalRaw(), SERIAL_FLUSH_MS),
-        setInterval(() => this.emit('stats:tick', this.stats.snapshot()), STATS_MS)
+        setInterval(() => {
+          this.hid?.sampleRate()
+          this.emit('stats:tick', this.stats.snapshot())
+        }, STATS_MS)
       ]
       // Bridge: poll the node roster so silent deaths get reconciled.
       if (mode === 'bridge') {
@@ -232,6 +245,7 @@ export class Session {
     const h = new HidReader()
     this.hid = h
     h.onError(() => {})
+    h.onReport(() => this.pushHid())
     h.start()
   }
 
@@ -240,6 +254,8 @@ export class Session {
     for (const t of this.timers) clearInterval(t)
     this.timers = []
     this.replay?.stop()
+    if (this.hidPushTimer) clearTimeout(this.hidPushTimer)
+    this.hidPushTimer = undefined
     this.hid?.stop()
     this.hid = undefined
     this.cal?.close()
@@ -369,10 +385,38 @@ export class Session {
     this.emit('log:batch', batch)
   }
 
+  /**
+   * Push HID state, at most once per `HID_PUSH_MS`.
+   *
+   * Leading edge so a press shows immediately, trailing edge so the state that follows it is
+   * never the one left unsent — which is what stops a press-and-release inside one window from
+   * disappearing. Both halves are needed: leading alone loses the release, trailing alone adds
+   * the delay back.
+   */
+  private pushHid(): void {
+    if (!this.hid) return
+    const now = Date.now()
+    const since = now - this.hidPushedAt
+    if (since >= HID_PUSH_MS) {
+      this.hidPushedAt = now
+      this.emit('hid:report', this.hid.snapshot())
+      return
+    }
+    if (this.hidPushTimer) return
+    this.hidPushTimer = setTimeout(() => {
+      this.hidPushTimer = undefined
+      if (!this.hid) return
+      this.hidPushedAt = Date.now()
+      this.emit('hid:report', this.hid.snapshot())
+    }, HID_PUSH_MS - since)
+  }
+
   private flushTelemetry(): void {
     this.emit('telemetry:tick', this.decoder.telemetrySnapshot())
     const ac = this.decoder.aircraft()
     if (ac) this.emit('aircraft:changed', ac)
+    // Still emitted while nothing is arriving: a silent device is the normal resting state, and
+    // ageMs and the rate have to keep moving for the UI to say so.
     if (this.hid) this.emit('hid:report', this.hid.snapshot())
     if (this.roster.takeDirty()) {
       const nodes = this.roster.snapshot().map((n) => {

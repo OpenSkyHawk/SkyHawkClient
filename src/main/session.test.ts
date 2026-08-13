@@ -63,11 +63,26 @@ vi.mock('./serial', () => ({
 vi.mock('./net', () => ({ createTransport: () => new FakeTransport() }))
 vi.mock('./hid', () => ({
   HidReader: class {
+    static last: InstanceType<typeof this> | undefined
+    buttons: boolean[] = []
+    private cb: () => void = () => {}
+    constructor() {
+      ;(this.constructor as { last?: unknown }).last = this
+    }
     onError() {}
+    onReport(cb: () => void) {
+      this.cb = cb
+    }
     start() {}
     stop() {}
+    sampleRate() {}
+    /** Stand in for a report arriving from the device. */
+    fire(buttons: boolean[]) {
+      this.buttons = buttons
+      this.cb()
+    }
     snapshot() {
-      return { axes: [], buttons: [], hats: [], ageMs: 0, rateHz: 0 }
+      return { axes: [], buttons: this.buttons, hats: [], ageMs: 0, rateHz: 0 }
     }
   }
 }))
@@ -144,5 +159,40 @@ describe('Session de-mux boundary', () => {
     serial.closeCb()
     expect(Buffer.concat(transport.sent)).toEqual(before)
     session.stop()
+  })
+})
+
+describe('HID reporting latency', () => {
+  it('pushes a press as it arrives, and does not swallow the release behind it', async () => {
+    // Both halves of the throttle are load-bearing. Emitting only on the leading edge shows the
+    // press instantly but loses a release that lands inside the same window — a quick tap then
+    // reads as a stuck button. Emitting only on the trailing edge keeps every transition but
+    // puts the delay back on the press, which is what made this feel unresponsive against a
+    // reference HID tester in the first place.
+    vi.useFakeTimers()
+    const hidEvents: boolean[][] = []
+    const session = new Session((ch, payload) => {
+      if (ch === 'hid:report') hidEvents.push([...(payload as { buttons: boolean[] }).buttons])
+    })
+    session.setConfig({ sourceMode: 'bridge' })
+    session.start()
+
+    const { HidReader } = (await import('./hid')) as unknown as {
+      HidReader: { last?: { fire(b: boolean[]): void } }
+    }
+    const hid = HidReader.last!
+
+    hid.fire([true])
+    expect(hidEvents, 'the press is visible without waiting for a timer').toEqual([[true]])
+
+    // Released 5 ms later — well inside the throttle window, and far inside the 200 ms telemetry
+    // tick that used to be the only thing pushing HID state.
+    vi.advanceTimersByTime(5)
+    hid.fire([false])
+    vi.advanceTimersByTime(15)
+    expect(hidEvents.at(-1), 'the release still lands').toEqual([false])
+
+    session.stop()
+    vi.useRealTimers()
   })
 })

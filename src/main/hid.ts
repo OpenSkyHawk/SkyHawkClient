@@ -35,9 +35,23 @@ export class HidReader {
   private reportCount = 0
   private prevSnapAt = Date.now()
   private prevCount = 0
+  private rateHz = 0
+  private reportCb: () => void = () => {}
 
   onError(cb: (err: Error) => void): void {
     this.errorCb = cb
+  }
+
+  /**
+   * Called on every arriving report.
+   *
+   * The device sends only on change, so this fires exactly when something moved — which is the
+   * only moment the UI has anything new to show. Polling a snapshot on a timer instead adds the
+   * whole interval to the latency of every press, and drops any press-and-release that lands
+   * between two polls: a snapshot is a level, not an event.
+   */
+  onReport(cb: () => void): void {
+    this.reportCb = cb
   }
 
   start(): void {
@@ -73,16 +87,28 @@ export class HidReader {
     this.hats = hats
     this.lastReportAt = Date.now()
     this.reportCount++
+    this.reportCb()
   }
 
+  /**
+   * The current state. Free of side effects, so it can be called as often as reports arrive.
+   *
+   * The rate deliberately is not computed here. It was, and that silently tied its accuracy to
+   * how often the caller happened to ask: sampling every 16 ms turns one report into "60 Hz".
+   * `sampleRate()` owns the window instead.
+   */
   snapshot(): HidSnapshot {
+    const ageMs = this.lastReportAt ? Date.now() - this.lastReportAt : Number.MAX_SAFE_INTEGER
+    return { axes: this.axes, buttons: this.buttons, hats: this.hats, ageMs, rateHz: this.rateHz }
+  }
+
+  /** Close the reporting-rate window. Call on a fixed interval — the rate is per that window. */
+  sampleRate(): void {
     const now = Date.now()
     const dt = Math.max(0.001, (now - this.prevSnapAt) / 1000)
-    const rateHz = Math.round((this.reportCount - this.prevCount) / dt)
+    this.rateHz = Math.round((this.reportCount - this.prevCount) / dt)
     this.prevSnapAt = now
     this.prevCount = this.reportCount
-    const ageMs = this.lastReportAt ? now - this.lastReportAt : Number.MAX_SAFE_INTEGER
-    return { axes: this.axes, buttons: this.buttons, hats: this.hats, ageMs, rateHz }
   }
 
   stop(): void {
