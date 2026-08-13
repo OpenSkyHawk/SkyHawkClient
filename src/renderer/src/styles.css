@@ -876,6 +876,43 @@ body {
   flex: none;
 }
 
+/* Stored-calibration state per axis. Values taken from the design mock.
+   Absent entirely when the device has not told us — an axis with no badge is unknown,
+   not uncalibrated. Becomes a per-axis button once the dialog exists (#46 part 4);
+   the mock also carries a third amber EDIT state for a dirty axis, which only occurs
+   inside that dialog. */
+/* Reserved column, so rows align whether or not the axis carries a badge. */
+.axis__cal {
+  width: 42px;
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+}
+.calbadge {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #8595ad;
+  color: #8595ad;
+}
+.calbadge--on {
+  background: rgba(110, 231, 160, 0.1);
+  border-color: var(--green);
+  color: var(--green);
+}
+/* Uncalibrated count: gold when any axis needs attention, green when none do. */
+.panel-h .meta--warn {
+  color: var(--gold);
+}
+.panel-h .meta--ok {
+  color: var(--green);
+}
+
 .hats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

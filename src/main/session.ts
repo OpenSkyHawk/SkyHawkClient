@@ -66,6 +66,13 @@ export class Session {
   private cal?: CalLink
   private calRawBuf: CalRawSample[] = []
   private calSerialNumber?: string
+  /**
+   * Last snapshot the device confirmed, held so a renderer reload can rehydrate.
+   *
+   * Cleared whenever the link goes down, which is what stops it describing a board that is no
+   * longer attached — or, worse, a different one after a reconnect.
+   */
+  private lastCal?: CalSnapshot
   private running = false
   private lastDevice: DeviceStatus = { state: 'no-device' }
   private lastErrKey = ''
@@ -210,6 +217,7 @@ export class Session {
       // traffic — so they go on down the relay rather than being dropped here.
       const held = this.cal?.close()
       if (held?.length) this.relayFromDevice(held)
+      this.lastCal = undefined // the board it described may not be the one that comes back
       this.stats.reconnect()
       this.setDevice({ state: 'reconnecting' })
     })
@@ -237,6 +245,8 @@ export class Session {
     this.cal?.close()
     this.cal = undefined
     this.calRawBuf = []
+    this.lastCal = undefined
+    this.calSerialNumber = undefined
     this.serial?.stop()
     this.serial = undefined
     this.transport?.stop()
@@ -478,6 +488,7 @@ export class Session {
     const r = await this.calRun((l) => l.getCal())
     if (r.ok) {
       const snap: CalSnapshot = { ...r.value, serialNumber: this.calSerialNumber }
+      this.lastCal = snap
       this.emit('cal:data', snap)
       return { ok: true, value: snap }
     }
@@ -531,8 +542,8 @@ export class Session {
   }
 
   /** Snapshot so a (re)loaded renderer can rehydrate the running/relay state. */
-  status(): { running: boolean; device: DeviceStatus } {
-    return { running: this.running, device: this.lastDevice }
+  status(): { running: boolean; device: DeviceStatus; cal?: CalSnapshot } {
+    return { running: this.running, device: this.lastDevice, cal: this.lastCal }
   }
 
   /** Push a client diagnostic into the in-app log + the debug log file. */

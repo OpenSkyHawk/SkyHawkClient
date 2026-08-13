@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type {
   AircraftStatus,
   AppConfig,
+  CalSnapshot,
   DcsTransport,
   DeviceState,
   LogRow as IpcLogRow,
@@ -130,6 +131,15 @@ export interface AppState {
   availAxes: number[]
   availHats: number[]
   availButtons: number[]
+
+  /**
+   * Stored axis calibration, as last read back from the attached device.
+   *
+   * `undefined` means "not known" — no device, or a gateway whose firmware predates the
+   * calibration protocol and never answers. That is deliberately distinct from "uncalibrated":
+   * showing every axis as uncalibrated because we failed to ask would be a lie.
+   */
+  cal?: CalSnapshot
 
   log: LogRow[]
   private_logSeq: number
@@ -323,11 +333,17 @@ export const useStore = create<AppState>((set, get) => ({
 
     // Rehydrate from the live session: a dev reload resets the renderer but the
     // main-process session keeps running, so the UI must not assume "stopped".
-    void api
-      .getStatus()
-      .then((st) =>
-        set({ relaying: st.running, deviceState: st.device.state, devicePort: st.device.portPath })
-      )
+    void api.getStatus().then((st) =>
+      set({
+        relaying: st.running,
+        deviceState: st.device.state,
+        devicePort: st.device.portPath,
+        // cal:data is only pushed when the port opens. A renderer reload builds a fresh store
+        // while the main-process session keeps running, so without carrying the snapshot here
+        // the badges would stay blank until the next reconnect — forever, on a stable link.
+        cal: st.cal
+      })
+    )
 
     const unsubs = [
       api.on('hid:report', (h) =>
@@ -338,7 +354,18 @@ export const useStore = create<AppState>((set, get) => ({
           hidRate: h.rateHz
         })
       ),
-      api.on('device:status', (d) => set({ deviceState: d.state, devicePort: d.portPath })),
+      api.on('device:status', (d) => {
+        set({ deviceState: d.state, devicePort: d.portPath })
+        // Calibration describes the gateway currently attached, so it is only trustworthy while
+        // the link is up. `relaying` is the one state that means the serial port is open;
+        // everything else — reconnecting after a close, error, no-device — means the snapshot
+        // may describe a board that is gone. Clearing only on `no-device` would leave the old
+        // board's badges on screen through a reconnect, and if the next board runs firmware
+        // predating the calibration protocol it never sends `cal:data`, so they would never be
+        // corrected.
+        if (d.state !== 'relaying') set({ cal: undefined })
+      }),
+      api.on('cal:data', (c) => set({ cal: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:status', (n) => set({ nodes: n })),
       api.on('serial:traffic', (frames) => {
