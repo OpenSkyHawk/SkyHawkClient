@@ -72,6 +72,41 @@ export interface TelemetryReadout {
   unit: string
 }
 
+/**
+ * One RAW sample, timestamped **on arrival in main**.
+ *
+ * The timestamp is not optional bookkeeping. Samples are batched to the renderer, so wall-clock
+ * at render time says when the batch flushed, not when the axis moved — and the capture logic's
+ * dwell test is "the last received value has not changed for N ms". Reading the flush time would
+ * make dwell depend on IPC scheduling.
+ */
+export interface CalRawSample {
+  t: number
+  idx: number
+  /** Pre-transform sensor reading, unsigned 0–65535. */
+  raw: number
+  /** The same sample through the calibration the device currently holds — not a preview. */
+  cal: number
+}
+
+/** Stored calibration as last read back from the device. Drives the badges. */
+export interface CalSnapshot {
+  presentMask: number
+  calibratedMask: number
+  axes: {
+    idx: number
+    controlId: number
+    min: number
+    centre: number
+    max: number
+    deadzone: number
+    present: boolean
+    calibrated: boolean
+  }[]
+  /** USB serial of the board this came from; the restore cache is keyed by it. */
+  serialNumber?: string
+}
+
 // main -> renderer channel payloads
 export interface PushChannels {
   'device:status': DeviceStatus
@@ -82,6 +117,8 @@ export interface PushChannels {
   'telemetry:tick': TelemetryReadout[]
   'nodes:status': NodeStatus[]
   'serial:traffic': SerialFrame[]
+  'cal:data': CalSnapshot
+  'cal:raw': CalRawSample[]
 }
 
 export type PushChannel = keyof PushChannels
@@ -94,7 +131,9 @@ export const IPC = {
   hidReport: 'hid:report',
   telemetryTick: 'telemetry:tick',
   nodesStatus: 'nodes:status',
-  serialTraffic: 'serial:traffic'
+  serialTraffic: 'serial:traffic',
+  calData: 'cal:data',
+  calRaw: 'cal:raw'
 } as const
 
 // ── control (renderer -> main, invoke/response) ──────────────────────────────
@@ -188,6 +227,42 @@ export interface DebugDumpResult {
   count: number
 }
 
+/**
+ * Outcome of a calibration exchange.
+ *
+ * A discriminated result rather than a thrown error, because `ipcRenderer.invoke` flattens a
+ * rejection into a plain Error — which would collapse the one distinction the failure design
+ * depends on. A **timeout** and a **nack** need opposite messages: a timeout means no frame
+ * came back, so the connection is suspect and the outcome is genuinely unknown; a nack means
+ * the device answered and refused, so the connection is fine and the values are the problem.
+ *
+ * `timeout` deliberately does not imply "nothing was written". It cannot distinguish "never
+ * received" from "wrote it and the reply was lost", so callers re-read and report what the
+ * device says.
+ */
+export type CalFailure =
+  | { kind: 'timeout'; message: string }
+  | { kind: 'nack'; reason: number; reasonName: string; detail: number; message: string }
+  | { kind: 'offline'; message: string }
+  | { kind: 'error'; message: string }
+
+export type CalResult<T> = { ok: true; value: T } | ({ ok: false } & CalFailure)
+
+export interface CalHello {
+  proto: number
+  blobVersion: number
+  axisSlots: number
+  fw: { major: number; minor: number; patch: number }
+}
+
+export interface CalCommitAxis {
+  idx: number
+  /** Unsigned 0–65535, as stored. Convert from display units before calling. */
+  min: number
+  centre: number
+  max: number
+}
+
 export const CTRL = {
   configGet: 'config:get',
   configSet: 'config:set',
@@ -201,7 +276,14 @@ export const CTRL = {
   nodesRefresh: 'nodes:refresh',
   serialMonitor: 'serial:monitor',
   debugDumpPorts: 'debug:dump-ports',
-  debugReveal: 'debug:reveal'
+  debugReveal: 'debug:reveal',
+  calHello: 'cal:hello',
+  calRead: 'cal:read',
+  calSessionOpen: 'cal:session-open',
+  calStreamSelect: 'cal:stream-select',
+  calCommit: 'cal:commit',
+  calReset: 'cal:reset',
+  calSessionClose: 'cal:session-close'
 } as const
 
 /** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
@@ -220,4 +302,17 @@ export interface SkyhawkApi {
   setSerialMonitor(on: boolean): Promise<void>
   dumpSerialPorts(): Promise<DebugDumpResult>
   revealDebugLog(): Promise<void>
+
+  // ── axis calibration (#46) ────────────────────────────────────────────────
+  // hello/read are answered outside a session, so badges work with no dialog open.
+  calHello(): Promise<CalResult<CalHello>>
+  calRead(): Promise<CalResult<CalSnapshot>>
+  /** Opens a session and streams RAW for one axis. 0xFF streams none. */
+  calSessionOpen(axisIdx: number): Promise<CalResult<{ timeoutMs: number; axisIdx: number }>>
+  calStreamSelect(axisIdx: number): Promise<CalResult<null>>
+  /** Writes and persists exactly one axis. Acknowledged != stored; follow with calRead(). */
+  calCommit(axis: CalCommitAxis): Promise<CalResult<null>>
+  /** Deletes stored calibration for one axis, or all with 0xFF. Persists immediately. */
+  calReset(idx: number): Promise<CalResult<null>>
+  calSessionClose(): Promise<CalResult<null>>
 }
