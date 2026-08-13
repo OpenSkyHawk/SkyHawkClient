@@ -12,7 +12,15 @@ import {
   type CaptureResult,
   type CaptureState
 } from '@shared/axis-capture'
-import type { CalCommitAxis, CalFailure, CalRawSample, CalResult, CalSnapshot } from '@shared/ipc'
+import type {
+  CalCacheEntry,
+  CalCommitAxis,
+  CalFailure,
+  CalRawSample,
+  CalResult,
+  CalSnapshot
+} from '@shared/ipc'
+import type { CachedBoard } from '@shared/cal-cache'
 
 /** Only the calls this controller makes — narrower than SkyhawkApi, and trivial to fake. */
 export interface CalibrationApi {
@@ -22,6 +30,9 @@ export interface CalibrationApi {
   calCommit(axis: CalCommitAxis): Promise<CalResult<null>>
   calReset(idx: number): Promise<CalResult<null>>
   calSessionClose(): Promise<CalResult<null>>
+  calCacheRead(): Promise<CalResult<{ board?: CachedBoard; regressed: number[] }>>
+  calCacheStore(axes: CalCacheEntry[]): Promise<CalResult<null>>
+  calCacheDrop(idx: number): Promise<CalResult<null>>
 }
 
 /** Endpoints a user has captured or edited but not yet written. */
@@ -119,6 +130,17 @@ export interface CalibrationState {
    * as "nothing happened" rather than "done". Success needs to stay put long enough to be read.
    */
   notice?: { kind: 'written' | 'erased'; axes: number[] }
+  /**
+   * Axes the cache holds that the device has lost, and the copy itself.
+   *
+   * Present does not mean acted on. This is an *offer* — restoring automatically onto a board
+   * whose calibration went missing would be right most of the time and catastrophic the rest,
+   * because the one case that produces a missing calibration and a populated cache is also the
+   * case where the board might have been swapped. Wrong endpoints fail open and stay invisible.
+   */
+  restorable?: { board: CachedBoard; axes: number[] }
+  /** Whether the restore offer is expanded for review. Never restores without this. */
+  restoreOpen: boolean
   busy: boolean
 }
 
@@ -128,6 +150,7 @@ const emptyState = (): CalibrationState => ({
   drafts: {},
   restPosition: {},
   streaming: false,
+  restoreOpen: false,
   busy: false
 })
 
@@ -147,8 +170,29 @@ export class CalibrationController {
   constructor(
     private readonly api: CalibrationApi,
     /** Injected so tests can drive time; defaults to the wall clock. */
-    private readonly now: () => number = () => Date.now()
+    private readonly now: () => number = () => Date.now(),
+    /**
+     * Shortest time each write phase stays on screen.
+     *
+     * A COMMIT is a few tens of milliseconds and the read-back little more, so without a floor
+     * the per-axis messages — which name the axis being written — are gone before they can be
+     * read, and a multi-axis write looks like a single flash. This trades total time for
+     * legibility: each axis costs two phases, so a queue of N axes spends 2 × N × this padding.
+     *
+     * Tests pass 0. The delay is deliberately not part of what they assert, and paying it on
+     * every save would make the suite slow for nothing.
+     */
+    private readonly phaseMinMs: number = 700
   ) {}
+
+  /** Run something, then wait out whatever is left of the minimum display time. */
+  private async atLeast<T>(fn: () => Promise<T>): Promise<T> {
+    const started = this.now()
+    const result = await fn()
+    const left = this.phaseMinMs - (this.now() - started)
+    if (left > 0) await new Promise((r) => setTimeout(r, left))
+    return result
+  }
 
   subscribe(fn: (s: CalibrationState) => void): () => void {
     this.listeners.add(fn)
@@ -180,7 +224,22 @@ export class CalibrationController {
       this.set({ busy: false, failure: { ...r, axis } })
       return
     }
-    this.set({ busy: false, failure: undefined })
+    // The rest position is part of the calibration, but the device has no field for it — there is
+    // deliberately no axis type in the blob. So it comes back from the cache, or every axis would
+    // silently revert to the self-centring default and a throttle would be asked to release to a
+    // rest position it does not have.
+    const cache = await this.api.calCacheRead()
+    const restPosition = { ...this.state.restPosition }
+    let restorable: CalibrationState['restorable']
+    if (cache.ok && cache.value.board) {
+      for (const [key, a] of Object.entries(cache.value.board.axes)) {
+        restPosition[Number(key)] = a.selfCentring
+      }
+      if (cache.value.regressed.length > 0) {
+        restorable = { board: cache.value.board, axes: cache.value.regressed }
+      }
+    }
+    this.set({ busy: false, failure: undefined, restPosition, restorable })
     this.startTicking()
   }
 
@@ -239,6 +298,60 @@ export class CalibrationController {
     if (capture !== this.state.capture || live !== this.state.live) {
       this.advanceCapture(capture, { live, streaming: true })
     }
+  }
+
+  /**
+   * Recompute the offer from the cache and the device's latest report.
+   *
+   * Runs after every write, not only after a restore. An axis can leave the regressed set two
+   * ways — restored from the cache, or simply recalibrated by hand — and in both cases the device
+   * now holds it, so continuing to offer a copy invites the user to overwrite good data with
+   * older numbers.
+   */
+  private async refreshOffer(): Promise<void> {
+    const cache = await this.api.calCacheRead()
+    this.set({
+      restorable:
+        cache.ok && cache.value.board && cache.value.regressed.length
+          ? { board: cache.value.board, axes: cache.value.regressed }
+          : undefined
+    })
+  }
+
+  /** Show or hide the restore offer. Reviewing is deliberately a separate step from restoring. */
+  setRestoreOpen(restoreOpen: boolean): void {
+    this.set({ restoreOpen })
+  }
+
+  /**
+   * Write the cached copy back, for the axes the device has lost.
+   *
+   * Nothing new on the wire — this seeds drafts from the cache and runs the ordinary save, so it
+   * inherits the read-back verification, the failure paths, and the re-cache. A restore that
+   * half-lands is therefore reported the same way a half-landed save is.
+   *
+   * Only regressed axes are queued. An axis the device still holds is not replaced: the device's
+   * copy is the authority, and the cache exists to fill a gap, not to overrule one.
+   */
+  async restore(): Promise<void> {
+    const r = this.state.restorable
+    if (!r || this.state.write) return
+    // `restPosition` is not touched here: open() seeded it from this same cache entry, and
+    // restore() cannot run before open().
+    const drafts = { ...this.state.drafts }
+    for (const idx of r.axes) {
+      const a = r.board.axes[idx]
+      if (!a) continue
+      drafts[idx] = {
+        min: a.min,
+        centre: a.centre,
+        max: a.max,
+        selfCentring: a.selfCentring,
+        capturedCentre: a.selfCentring ? a.centre : undefined
+      }
+    }
+    this.set({ drafts, restoreOpen: false, failure: undefined })
+    await this.save()
   }
 
   /** Begin capturing the axis on screen, honouring its rest-position setting. */
@@ -377,7 +490,9 @@ export class CalibrationController {
       const d = this.state.drafts[idx]!
       this.set({ write: { phase: 'writing', queue, at, stored: [...stored] } })
 
-      const commit = await this.api.calCommit({ idx, min: d.min, centre: d.centre, max: d.max })
+      const commit = await this.atLeast(() =>
+        this.api.calCommit({ idx, min: d.min, centre: d.centre, max: d.max })
+      )
       if (!commit.ok) {
         await this.failWrite(commit, idx, stored)
         return
@@ -385,7 +500,7 @@ export class CalibrationController {
 
       // The ACK said "received". Only the read-back says "stored".
       this.set({ write: { phase: 'verifying', queue, at, stored: [...stored] } })
-      const read = await this.api.calRead()
+      const read = await this.atLeast(() => this.api.calRead())
       if (!read.ok) {
         await this.failWrite(read, idx, stored)
         return
@@ -410,11 +525,19 @@ export class CalibrationController {
       }
 
       stored.push(idx)
+      // The device has confirmed these exact values, so this is the moment they are worth
+      // keeping — after the read-back, never after the ACK. Reading them off `axis` rather than
+      // the draft is documentation, not logic: the guard above has already proven the two equal,
+      // so it records where the values are supposed to come from.
+      await this.api.calCacheStore([
+        { idx, min: axis.min, centre: axis.centre, max: axis.max, selfCentring: d.selfCentring }
+      ])
       const drafts = { ...this.state.drafts }
       delete drafts[idx]
       this.set({ device: read.value, drafts })
     }
 
+    await this.refreshOffer()
     this.set({
       write: { phase: 'done', queue, at: queue.length - 1, stored: [...stored] }
     })
@@ -432,7 +555,7 @@ export class CalibrationController {
    */
   private hold(then: () => void): void {
     this.clearHold()
-    this.holdTimer = setTimeout(then, 2200)
+    this.holdTimer = setTimeout(then, 3000)
   }
 
   private clearHold(): void {
@@ -485,6 +608,7 @@ export class CalibrationController {
       failure: { ...f, axis },
       storedBeforeFailure: landed ? [...stored, axis] : stored
     })
+    await this.refreshOffer()
   }
 
   /**
@@ -524,6 +648,9 @@ export class CalibrationController {
       })
       return
     }
+    // A deliberate erase has to reach the cache, or the client would turn round and offer to
+    // restore exactly what the user just deleted — a later read cannot tell the two apart.
+    await this.api.calCacheDrop(idx)
     const drafts = { ...this.state.drafts }
     delete drafts[idx]
     this.set({ busy: false, drafts, device: read.value })

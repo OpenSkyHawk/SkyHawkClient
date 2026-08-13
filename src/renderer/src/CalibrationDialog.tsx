@@ -119,7 +119,10 @@ export function CalibrationDialog({
   const draft = s.drafts[s.axis]
   const stored = s.device?.axes[s.axis]
   const cap = s.capture
-  const writing = !!s.write
+  // 'done' is the held confirmation, not work in progress. Treating it as writing left the
+  // footer reading "Writing…" beside a strip saying the device had already confirmed the write,
+  // and kept Cancel and Delete disabled for three seconds after there was anything to wait for.
+  const writing = !!s.write && s.write.phase !== 'done'
   const invalid = controller.invalidAxis()
   const shown = draft ?? (stored?.calibrated ? stored : undefined)
   const travel = travelQuality(shown?.min, shown?.max)
@@ -482,13 +485,69 @@ export function CalibrationDialog({
           </div>
         )}
 
+        {s.restorable && s.restoreOpen && !s.write && (
+          <div className="cd__restore">
+            <div className="cd__restorehead">
+              <span className="cd__restoretitle">Restore calibration to the device</span>
+              <span className="cd__restorewhen">
+                {s.restorable.board.confirmedAt
+                  ? `confirmed ${new Date(s.restorable.board.confirmedAt).toLocaleString()}`
+                  : 'confirmation time unknown'}
+              </span>
+            </div>
+            <div className="cd__restorerows">
+              {s.restorable.axes.map((idx) => {
+                const a = s.restorable!.board.axes[idx]!
+                return (
+                  <div key={idx} className="cd__restorerow">
+                    <span className="cd__restorename">{AXIS_LABELS[idx]}</span>
+                    <span className="cd__restorevals">
+                      {fmt(a.min)} … {fmt(a.centre)} … {fmt(a.max)}
+                    </span>
+                    <span className="cd__restorestate">
+                      {a.selfCentring ? 'centre measured' : 'centre from midpoint'}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="cd__restorefoot">
+              <span className="cd__restorenote">
+                min / centre / max per axis, for board{' '}
+                <code>{s.device?.serialNumber ?? 'unknown'}</code>. Only axes the device has lost
+                are written; anything it still holds is left alone.
+              </span>
+              <button className="cd__ghost" onClick={() => controller.setRestoreOpen(false)}>
+                Not now
+              </button>
+              <button
+                className="cd__primary cd__primary--sm"
+                onClick={() => void controller.restore()}
+              >
+                Restore {s.restorable.axes.length}{' '}
+                {s.restorable.axes.length === 1 ? 'axis' : 'axes'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {s.restorable && !s.restoreOpen && !s.write && (
+          <button className="cd__reoffer" onClick={() => controller.setRestoreOpen(true)}>
+            <span className="cd__reofferdot" />
+            {s.restorable.axes.length} {s.restorable.axes.length === 1 ? 'axis has' : 'axes have'} a
+            saved copy this device no longer holds — review
+          </button>
+        )}
+
         {s.notice && !s.write && (
           <div className={`cd__notice${s.notice.kind === 'erased' ? ' is-erased' : ''}`}>
             <span className="cd__noticeicon">{s.notice.kind === 'written' ? '✓' : '⌫'}</span>
             <span>
               {s.notice.axes.map((i) => AXIS_LABELS[i]).join(', ')}
               {s.notice.kind === 'written'
-                ? ' written to the device and read back. The axis now reports through this calibration.'
+                ? ` written to the device and read back. ${
+                    s.notice.axes.length === 1 ? 'The axis now reports' : 'They now report'
+                  } through this calibration.`
                 : ' calibration erased. The axis now passes through untransformed.'}
             </span>
           </div>
@@ -556,6 +615,7 @@ export function useCalibration(device?: CalSnapshot) {
   if (!ref.current && api) ref.current = new CalibrationController(api)
   const controller = ref.current
   const [open, setOpen] = useState(false)
+  const [offer, setOffer] = useState<{ confirmedAt: string; axes: number[] }>()
   const setCal = useStore((st) => st.set)
 
   useEffect(() => {
@@ -569,12 +629,33 @@ export function useCalibration(device?: CalSnapshot) {
 
   useEffect(() => controller?.deviceChanged(device), [controller, device])
 
+  // Checked whenever the device's report changes, and needs no session: GET_CAL already ran to
+  // drive the badges, and the cache is a local file. So the offer can appear on the HID tab with
+  // no dialog open — which is the point, since the user has no reason to open one for an axis
+  // they think is calibrated.
+  useEffect(() => {
+    let live = true
+    void api?.calCacheRead().then((r) => {
+      if (!live) return
+      setOffer(
+        r.ok && r.value.board && r.value.regressed.length
+          ? { confirmedAt: r.value.board.confirmedAt, axes: r.value.regressed }
+          : undefined
+      )
+    })
+    return () => {
+      live = false
+    }
+  }, [api, device])
+
   return {
     controller,
     open,
-    async start(axis: number) {
+    offer,
+    async start(axis: number, showRestore = false) {
       if (!controller) return
       await controller.open(axis, device)
+      controller.setRestoreOpen(showRestore)
       setOpen(true)
     },
     async close() {
@@ -583,6 +664,12 @@ export function useCalibration(device?: CalSnapshot) {
       setOpen(false)
       const r = await window.skyhawk?.calRead()
       if (r?.ok) setCal({ cal: r.value })
+      const c = await api?.calCacheRead()
+      setOffer(
+        c?.ok && c.value.board && c.value.regressed.length
+          ? { confirmedAt: c.value.board.confirmedAt, axes: c.value.regressed }
+          : undefined
+      )
     }
   }
 }

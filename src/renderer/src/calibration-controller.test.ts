@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CAPTURE_CONFIG, midpoint } from '@shared/axis-capture'
 import type { CalRawSample, CalResult, CalSnapshot } from '@shared/ipc'
 import { CalibrationController, type CalibrationApi } from './calibration-controller'
+import type { CachedBoard } from '@shared/cal-cache'
+import type { CalCacheEntry } from '@shared/ipc'
 
 const C = DEFAULT_CAPTURE_CONFIG
 
@@ -28,6 +30,7 @@ const ok = <T>(value: T): CalResult<T> => ({ ok: true, value })
 function fakeDevice() {
   const stored: Record<number, { min: number; centre: number; max: number }> = {}
   const calls: string[] = []
+  let cached: CachedBoard | undefined
   const fail: { commit?: CalResult<null>; read?: CalResult<CalSnapshot>; reset?: CalResult<null> } =
     {}
 
@@ -59,9 +62,48 @@ function fakeDevice() {
     calSessionClose: async () => {
       calls.push('close')
       return ok(null)
+    },
+    // An in-memory stand-in for <userData>/calibration-cache.json, so what the controller keeps
+    // is observable rather than merely "a call was made".
+    calCacheRead: async () => {
+      calls.push('cache:read')
+      const regressed = cached
+        ? Object.keys(cached.axes)
+            .map(Number)
+            .filter((i) => !stored[i])
+        : []
+      return ok({ board: cached, regressed })
+    },
+    calCacheStore: async (axes: CalCacheEntry[]) => {
+      calls.push('cache:store:' + axes.map((a) => a.idx).join(','))
+      cached = {
+        confirmedAt: 'T',
+        axes: {
+          ...cached?.axes,
+          ...Object.fromEntries(axes.map((a) => [a.idx, { ...a }]))
+        }
+      }
+      return ok(null)
+    },
+    calCacheDrop: async (idx: number) => {
+      calls.push('cache:drop:' + idx)
+      if (cached) {
+        const axes = { ...cached.axes }
+        delete axes[idx]
+        cached = { ...cached, axes }
+      }
+      return ok(null)
     }
   }
-  return { api, stored, calls, fail }
+  return {
+    api,
+    stored,
+    calls,
+    fail,
+    cache: () => cached,
+    /** Make the device lose a calibration the cache still holds — a reflash, or a bad CRC. */
+    loseFromDevice: (idx: number) => delete stored[idx]
+  }
 }
 
 let clock = 0
@@ -107,7 +149,7 @@ describe('CalibrationController', () => {
       detail: 9,
       message: 'refused'
     })
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(9)
     expect(c.snapshot().failure?.kind).toBe('nack')
     expect(c.snapshot().busy).toBe(false)
@@ -116,7 +158,7 @@ describe('CalibrationController', () => {
   it('ignores samples for an axis it is not showing', () => {
     // A frame can be in flight across a STREAM_SELECT; RAW carries idx so it can be discarded.
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     c.startCapture()
     c.ingest(samples(3, [50000, 50100]))
     expect(c.snapshot().live, 'another axis must not drive the readout').toBeUndefined()
@@ -125,7 +167,7 @@ describe('CalibrationController', () => {
 
   it('captures a full axis and banks it as a draft, writing nothing', async () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     c.startCapture()
     await sweep(c, 13000, 51000, 32000)
@@ -148,7 +190,7 @@ describe('CalibrationController', () => {
     // capture that had just finished. Here the clock advances without the interval firing, so
     // every commit lands on an arriving sample.
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     c.startCapture()
     await sweep(c, 13000, 51000, 32000)
@@ -172,7 +214,7 @@ describe('CalibrationController', () => {
     // streaming: every sample dropped on idx, so the readout and capture look dead. Worse, a
     // retry of the same axis would early-return as a no-op, with no way out.
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     d.api.calStreamSelect = async () => ({
       ok: false,
@@ -203,7 +245,7 @@ describe('CalibrationController', () => {
     // The ACK proves the device accepted the selection; a sample proves data is flowing. Kept
     // separate because the node emits only on change, so a steady axis may send nothing at all.
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     await c.selectAxis(1)
     expect(c.snapshot().streaming, 'accepted, but nothing has arrived yet').toBe(false)
@@ -222,7 +264,7 @@ describe('CalibrationController', () => {
     // midpoint that looks exactly as plausible as the rest position three sweeps had measured —
     // silently, and with no way to tell the difference.
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     c.startCapture()
     // An off-centre rest position on purpose: a rig that rests exactly at the midpoint would
@@ -242,7 +284,7 @@ describe('CalibrationController', () => {
 
   it('keeps drafts when switching axes', async () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     c.startCapture()
     for (let i = 0; i < 3; i++) await sweep(c, 13000, 51000, 32000)
@@ -271,7 +313,7 @@ describe('CalibrationController writing', () => {
 
   it('commits one axis at a time and verifies each by reading back', async () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
 
@@ -295,11 +337,330 @@ describe('CalibrationController writing', () => {
     expect(c.snapshot().notice).toEqual({ kind: 'written', axes: [0, 1] })
   })
 
+  it('caches what the device confirmed, including the rest position it cannot hold', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    c.setSelfCentring(false)
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(d.cache()!.axes[0]).toMatchObject({ min: 13000, max: 51000, selfCentring: false })
+    // The device has no axis-type field, so without this the three numbers would come back with
+    // their meaning lost — was the centre measured at rest, or derived as the midpoint?
+    expect(d.cache()!.axes[0]!.selfCentring).toBe(false)
+  })
+
+  it('remembers the rest position across a dialog close, since the device cannot hold it', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    c.setSelfCentring(false)
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    // A fresh controller, as if the app had been restarted.
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    expect(c2.selfCentring(0), 'not silently back to the self-centring default').toBe(false)
+  })
+
+  it('caches nothing when the read-back disagrees with what was sent', async () => {
+    // Ordering, stated as a behaviour: the cache must record what the device confirmed, not what
+    // the client asked for. A commit that ACKs and then reads back differently is a failure, and
+    // caching it would preserve client optimism as though it were device state.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    d.fail.read = ok(snapshot({ 0: { min: 1, centre: 2, max: 3 } }))
+
+    await c.save()
+    expect(c.snapshot().failure, 'the write failed').toBeDefined()
+    expect(d.calls.filter((x) => x.startsWith('cache:store'))).toEqual([])
+    expect(d.cache()).toBeUndefined()
+  })
+
+  it('forgets an axis the user deletes, so it is not offered back', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(d.cache()!.axes[0]).toBeDefined()
+
+    await c.deleteAxis(0)
+    expect(d.cache()?.axes[0], 'a deliberate erase reaches the cache').toBeUndefined()
+  })
+
+  it('offers a restore only for axes the device has lost', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    // Axis 0 vanishes from the device without being deleted — a reflash, or a failed CRC. Axis 1
+    // is untouched, and must not be offered: the device's own copy is the authority.
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    expect(c2.snapshot().restorable?.axes).toEqual([0])
+    expect(c2.snapshot().restoreOpen, 'reviewing is a separate, deliberate step').toBe(false)
+  })
+
+  it('restores by replaying a commit, and verifies it like any other write', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    c.setSelfCentring(false)
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    d.calls.length = 0
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+
+    // Nothing new on the wire — the ordinary write path, so the read-back verification comes free.
+    expect(d.calls.filter((x) => x.startsWith('commit') || x === 'read')).toEqual([
+      'commit:0',
+      'read'
+    ])
+    expect(d.stored[0]).toEqual({ min: 13000, centre: 32000, max: 51000 })
+    // The rest position comes back with the numbers, or their meaning is lost.
+    expect(c2.selfCentring(0)).toBe(false)
+  })
+
+  it('handles a whole-blob corruption, where every axis is lost at once', async () => {
+    // This is the failure part 5 exists for, and it is not the single-axis case. One CRC covers
+    // all eight axes, so a power loss inside the erase window invalidates the lot: _calLoad()
+    // rejects the blob and calls calBlobClear(), zeroing every entry. presentMask comes from the
+    // sketch's HIDAxis registrations rather than the blob, so the axes stay present and go
+    // uncalibrated together — and the offer has to cover all of them, in one write queue.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    d.loseFromDevice(1)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    expect(c2.snapshot().restorable?.axes).toEqual([0, 1])
+
+    d.calls.length = 0
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(d.calls.filter((x) => x.startsWith('commit') || x === 'read')).toEqual([
+      'commit:0',
+      'read',
+      'commit:1',
+      'read'
+    ])
+    expect(d.stored[0]).toEqual({ min: 13000, centre: 32000, max: 51000 })
+    expect(d.stored[1]).toEqual({ min: 14000, centre: 33000, max: 52000 })
+  })
+
+  it('holds each write phase on screen long enough to read', async () => {
+    // A COMMIT and its read-back are tens of milliseconds, so without a floor the per-axis
+    // messages — which name the axis being written — are gone before they can be read, and a
+    // two-axis write looks like one flash. Every other test passes 0 for this.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, () => clock, 700)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+
+    const seen: string[] = []
+    c.subscribe((st) => {
+      const tag = st.write ? `${st.write.phase}:${st.write.queue[st.write.at]}` : ''
+      if (tag && seen.at(-1) !== tag) seen.push(tag)
+    })
+
+    const saving = c.save()
+    // Drain every pending microtask without moving the clock: the fake device has now answered,
+    // so the only thing that can still be holding 'writing' on screen is the minimum display
+    // time. Without it, save() would already have run to completion here.
+    await vi.advanceTimersByTimeAsync(0)
+    expect(c.snapshot().write?.phase, 'the device answered, but the message stays up').toBe(
+      'writing'
+    )
+
+    clock += 700
+    await vi.advanceTimersByTimeAsync(700)
+    clock += 700
+    await vi.advanceTimersByTimeAsync(700)
+    await saving
+    expect(seen).toEqual(['writing:0', 'verifying:0', 'done:0'])
+  })
+
+  it('stops offering once the device holds the axes again', async () => {
+    // Found on the rig: the offer survived a successful restore, so the client went on inviting
+    // the user to write older numbers over the ones it had just confirmed.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    d.loseFromDevice(1)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    expect(c2.snapshot().restorable?.axes).toEqual([0, 1])
+
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(c2.snapshot().restorable, 'nothing left to offer').toBeUndefined()
+  })
+
+  it('stops offering an axis the user recalibrated by hand', async () => {
+    // The other way out of the regressed set. The device holds it either way, so an offer to
+    // write the older copy over it would be actively harmful rather than merely stale.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    d.loseFromDevice(1)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    withDrafts(c2, { 0: [11000, 30000, 49000] })
+    await c2.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(c2.snapshot().restorable?.axes, 'only the one still missing').toEqual([1])
+  })
+
+  it('reports a restore that half-lands, naming what did store', async () => {
+    // Multi-axis restore is the common shape after a corruption, so a failure part-way through
+    // is a real case rather than a contrived one. It must not read as "nothing was restored".
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    d.loseFromDevice(1)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    let commits = 0
+    const realCommit = d.api.calCommit
+    d.api.calCommit = async (a) => {
+      if (++commits === 2) return { ok: false, kind: 'timeout', message: 'no answer' }
+      return realCommit(a)
+    }
+
+    await c2.restore()
+    expect(c2.snapshot().failure?.kind).toBe('timeout')
+    expect(c2.snapshot().storedBeforeFailure, 'the first axis did land').toEqual([0])
+    expect(c2.dirtyAxes(), 'and the one that did not is still pending').toEqual([1])
+  })
+
+  it('can be dismissed and reopened, and closes itself once restored', async () => {
+    // "Not now" has to work, and the offer has to survive it: the device is still missing
+    // something, so dismissing is a deferral rather than an answer.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    c2.setRestoreOpen(true)
+    expect(c2.snapshot().restoreOpen).toBe(true)
+    c2.setRestoreOpen(false)
+    expect(c2.snapshot().restoreOpen, 'dismissible').toBe(false)
+    expect(c2.snapshot().restorable, 'but still on offer').toBeDefined()
+
+    c2.setRestoreOpen(true)
+    await c2.restore()
+    expect(c2.snapshot().restoreOpen, 'and closed once acted on').toBe(false)
+  })
+
+  it('re-caches a restored axis with its rest position intact', async () => {
+    // The restore writes the draft, and the draft is what gets cached again on confirmation. If
+    // it lost selfCentring on the way through, a second loss would restore numbers whose meaning
+    // had quietly changed.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    c.setSelfCentring(false)
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(d.cache()!.axes[0]).toMatchObject({ min: 13000, max: 51000, selfCentring: false })
+  })
+
+  it('leaves an axis the device still holds alone', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    d.loseFromDevice(0)
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    d.calls.length = 0
+    await c2.restore()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(d.calls.filter((x) => x.startsWith('commit'))).toEqual(['commit:0'])
+  })
+
+  it('does not offer a restore when the device still holds everything', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0)
+    withDrafts(c, { 0: [13000, 32000, 51000] })
+    await c.save()
+    await vi.advanceTimersByTimeAsync(3000)
+    await c.close()
+
+    const c2 = new CalibrationController(d.api, now, 0)
+    await c2.open(0)
+    expect(c2.snapshot().restorable).toBeUndefined()
+  })
+
   it('confirms a delete, which is otherwise invisible', async () => {
     // The dialog shows nothing after an erase — same numbers, one badge changed on another
     // screen. Without a word the user cannot tell a successful delete from a no-op.
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 32000, 51000] })
     await c.save()
@@ -312,7 +673,7 @@ describe('CalibrationController writing', () => {
 
   it('drives state from the read-back, not from what was sent', async () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 32000, 51000] })
     await c.save()
@@ -329,7 +690,7 @@ describe('CalibrationController writing', () => {
     // green badge on an axis the device knows nothing about.
     const d = fakeDevice()
     d.api.calCommit = async () => ok(null) // acknowledges, stores nothing
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 32000, 51000] })
     await c.save()
@@ -347,7 +708,7 @@ describe('CalibrationController writing', () => {
       detail: 1,
       message: 'endpoints out of order'
     }
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 1: [50000, 100, 200] })
     await c.save()
@@ -365,7 +726,7 @@ describe('CalibrationController writing', () => {
       d.stored[a.idx] = { min: a.min, centre: a.centre, max: a.max } // it DID land
       return { ok: false, kind: 'timeout', message: 'no reply within 2000 ms' }
     }
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 32000, 51000] })
     await c.save()
@@ -389,7 +750,7 @@ describe('CalibrationController writing', () => {
     const d = fakeDevice()
     d.stored[0] = { min: 20000, centre: 32000, max: 45000 } // an older calibration
     d.api.calCommit = async () => ({ ok: false, kind: 'timeout', message: 'no reply' })
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 32000, 51000] }) // wider, and different
 
@@ -405,7 +766,7 @@ describe('CalibrationController writing', () => {
   it('keeps the draft when a timed-out commit did NOT land', async () => {
     const d = fakeDevice()
     d.api.calCommit = async () => ({ ok: false, kind: 'timeout', message: 'no reply' })
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 32000, 51000] })
     await c.save()
@@ -418,7 +779,7 @@ describe('CalibrationController writing', () => {
     const real = d.api.calCommit
     d.api.calCommit = async (a) =>
       a.idx === 1 ? { ok: false, kind: 'timeout', message: 'no reply' } : real(a)
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 32000, 51000], 1: [14000, 33000, 52000] })
     await c.save()
@@ -429,7 +790,7 @@ describe('CalibrationController writing', () => {
 
   it('blocks a write that the device would refuse, naming which axis', () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     withDrafts(c, { 0: [13000, 32000, 51000], 2: [40000, 100, 200] })
     expect(c.invalidAxis()).toEqual({ axis: 2, reason: 'centre must fall between min and max' })
   })
@@ -439,7 +800,7 @@ describe('CalibrationController writing', () => {
     // first. Tying it to a draft meant the first capture on every axis ran the centre step
     // regardless, and the setting only became available once it was too late to matter.
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     expect(c.selfCentring(), 'defaults to capturing a rest position').toBe(true)
 
@@ -452,7 +813,7 @@ describe('CalibrationController writing', () => {
 
   it('a non-centring capture never asks for a release, and derives the midpoint', async () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     c.setSelfCentring(false)
     c.startCapture()
@@ -467,7 +828,7 @@ describe('CalibrationController writing', () => {
 
   it('remembers the choice per axis', async () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     c.setSelfCentring(false)
     await c.selectAxis(1)
@@ -477,7 +838,7 @@ describe('CalibrationController writing', () => {
 
   it('re-derives centre when an axis is marked non-centring', async () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     withDrafts(c, { 0: [13000, 20000, 51000] })
     c.setSelfCentring(false)
@@ -495,7 +856,7 @@ describe('CalibrationController delete', () => {
   it('deletes and confirms by reading back', async () => {
     const d = fakeDevice()
     d.stored[0] = { min: 13000, centre: 32000, max: 51000 }
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     await c.deleteAxis(0)
     expect(c.snapshot().device?.axes[0]?.calibrated).toBe(false)
@@ -506,7 +867,7 @@ describe('CalibrationController delete', () => {
     // same rule the write path follows.
     const d = fakeDevice()
     d.stored[0] = { min: 13000, centre: 32000, max: 51000 }
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     d.fail.read = { ok: false, kind: 'timeout', message: 'no reply' }
     await c.deleteAxis(0)
@@ -517,7 +878,7 @@ describe('CalibrationController delete', () => {
     const d = fakeDevice()
     d.stored[0] = { min: 13000, centre: 32000, max: 51000 }
     d.api.calReset = async () => ok(null) // acknowledges, erases nothing
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     await c.deleteAxis(0)
     expect(c.snapshot().failure?.message).toMatch(/still reports this axis as calibrated/)
@@ -537,7 +898,7 @@ describe('CalibrationController delete', () => {
       detail: 0xff,
       message: 'the flash write failed'
     }
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     await c.open(0)
     await c.deleteAxis(0)
     expect(c.snapshot().failure).toMatchObject({ reasonName: 'NO_STORAGE', axis: 0 })
@@ -550,7 +911,7 @@ describe('CalibrationController device identity', () => {
     // Endpoints are per-unit. Carrying one board's captures onto another would produce a
     // plausible-looking but wrong calibration, which fails open rather than closed.
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(c as any).state.drafts[0] = { min: 1, centre: 2, max: 3, selfCentring: true }
     c.deviceChanged({ ...snapshot({}), serialNumber: 'BOARD-B' })
@@ -559,7 +920,7 @@ describe('CalibrationController device identity', () => {
 
   it('keeps drafts when the same board reports again', () => {
     const d = fakeDevice()
-    const c = new CalibrationController(d.api, now)
+    const c = new CalibrationController(d.api, now, 0)
     c.deviceChanged(snapshot({}))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(c as any).state.drafts[0] = { min: 1, centre: 2, max: 3, selfCentring: true }
