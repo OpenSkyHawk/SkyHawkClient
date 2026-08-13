@@ -69,6 +69,18 @@ export interface CaptureConfig {
    * rather than protecting the numbers.
    */
   shortfallFraction: number
+  /**
+   * How far the axis must move within a step before any hold may commit.
+   *
+   * Without this the capture starts timing the moment it opens: the axis sits at rest, noise
+   * arrives, the value holds for a second, and the *rest position* is committed as the first
+   * stop — before the user has touched anything. The same then happens for the second stop.
+   *
+   * Sized well above the 387-count noise floor and the 300-count band, and well below any real
+   * travel: the bench axis spans ~37000 counts and #46 notes even a short-arc axis develops
+   * several thousand. It is a movement gate, not a travel measurement.
+   */
+  minTravelCounts: number
   /** Accepted sweeps needed before the axis is done. Rejected attempts do not count. */
   sweepsRequired: number
 }
@@ -78,6 +90,7 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   endpointHoldMs: 1000,
   centreStableMs: 5000,
   centreCapMs: 15000,
+  minTravelCounts: 2000,
   shortfallFraction: 0.15,
   sweepsRequired: 3
 }
@@ -149,6 +162,16 @@ export interface CaptureState {
   now: number
   /** When the current step began — the centre cap measures from here. */
   stepSince: number
+  /** First value seen in this step, and the furthest the axis has moved from it. */
+  stepFrom: number | null
+  movedBy: number
+  /**
+   * The hold has elapsed but the axis has not moved far enough this step to mean anything.
+   *
+   * Surfaced so the UI can say "move the axis" rather than showing a full progress bar that will
+   * never commit.
+   */
+  awaitingMovement: boolean
   /**
    * Samples gathered during the current centre step, timestamped for the capped-out fallback.
    *
@@ -211,7 +234,10 @@ export function beginCapture(
     centreSamples: [],
     interruptions: 0,
     corroborated: false,
-    awaitingConfirmation: false
+    awaitingConfirmation: false,
+    stepFrom: null,
+    movedBy: 0,
+    awaitingMovement: false
   }
 }
 
@@ -333,6 +359,9 @@ function finishSweep(s: CaptureState): CaptureState {
     interruptions: 0,
     corroborated: false,
     awaitingConfirmation: false,
+    stepFrom: null,
+    movedBy: 0,
+    awaitingMovement: false,
     rejection: undefined
   }
 }
@@ -348,7 +377,10 @@ function commitStep(s: CaptureState, value: number): CaptureState {
     stepSince: s.now,
     centreSamples: [],
     corroborated: false,
-    awaitingConfirmation: false
+    awaitingConfirmation: false,
+    stepFrom: null,
+    movedBy: 0,
+    awaitingMovement: false
   }
 
   if (s.step === 'stopA') return { ...next, step: 'stopB' }
@@ -380,7 +412,12 @@ export function tick(s: CaptureState, now: number): CaptureState {
   }
 
   if (next.ref !== null && now - next.refSince >= holdTarget(next)) {
-    // Elapsed time alone is not enough. An uncorroborated reference may be a spike whose
+    // A steady value proves nothing if the axis never went anywhere. Without this the capture
+    // commits wherever it happened to be sitting when the step opened.
+    if (next.movedBy < next.config.minTravelCounts) {
+      return { ...next, awaitingMovement: true }
+    }
+    // Elapsed time alone is not enough either. An uncorroborated reference may be a spike whose
     // return frame was dropped, and committing it would write a wrong endpoint to flash that
     // widest-wins then protects. Keep holding and let the UI explain why.
     if (!next.corroborated) return { ...next, awaitingConfirmation: true }
@@ -420,6 +457,13 @@ export function push(s: CaptureState, sample: CaptureSample): CaptureState {
   if (s.phase !== 'capturing') return { ...s, now: sample.t }
 
   let next: CaptureState = { ...s, now: sample.t }
+  const from = next.stepFrom ?? sample.raw
+  next = {
+    ...next,
+    stepFrom: from,
+    movedBy: Math.max(next.movedBy, Math.abs(sample.raw - from)),
+    awaitingMovement: false
+  }
   if (next.step === 'centre') {
     next = { ...next, centreSamples: [...next.centreSamples, { t: sample.t, raw: sample.raw }] }
   }
@@ -465,6 +509,9 @@ export function retrySweep(s: CaptureState, now: number): CaptureState {
     interruptions: 0,
     corroborated: false,
     awaitingConfirmation: false,
+    stepFrom: null,
+    movedBy: 0,
+    awaitingMovement: false,
     rejection: undefined
   }
 }

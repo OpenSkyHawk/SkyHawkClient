@@ -71,20 +71,22 @@ function samples(idx: number, values: number[], step = 200): CalRawSample[] {
   return values.map((raw, i) => ({ t: clock + i * step, idx, raw, cal: raw }))
 }
 
-/** Drive a full sweep on the controller the way a user's movements would. */
+/**
+ * Drive a full sweep the way a user's movements would — including the journey.
+ *
+ * The axis has to travel between points, not merely appear at them: a hold commits nothing
+ * unless the step registered real movement, which is what stops a resting axis being captured
+ * as a stop.
+ */
 async function sweep(c: CalibrationController, lo: number, hi: number, centre?: number) {
-  const hold = (v: number) => {
-    c.ingest(samples(0, [v, v + 150])) // the value, then the noise that confirms it
-    clock += C.endpointHoldMs + 200
-    vi.advanceTimersByTime(C.endpointHoldMs + 200)
+  const moveTo = (from: number, to: number, ms = C.endpointHoldMs + 200) => {
+    c.ingest(samples(0, [from, to, to + 150]))
+    clock += ms
+    vi.advanceTimersByTime(ms)
   }
-  hold(hi)
-  hold(lo)
-  if (centre !== undefined) {
-    c.ingest(samples(0, [centre, centre + 120]))
-    clock += C.centreStableMs + 200
-    vi.advanceTimersByTime(C.centreStableMs + 200)
-  }
+  moveTo(32000, hi)
+  moveTo(hi, lo)
+  if (centre !== undefined) moveTo(lo, centre, C.centreStableMs + 200)
   await Promise.resolve()
 }
 

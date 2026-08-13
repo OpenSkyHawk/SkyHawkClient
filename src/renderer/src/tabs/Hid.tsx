@@ -1,4 +1,5 @@
 import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
+import { CalibrationDialog, useCalibration } from '../CalibrationDialog'
 
 /**
  * Per-axis stored-calibration state.
@@ -17,21 +18,25 @@ type CalState = 'cal' | 'raw' | undefined
  * declared is not awaiting calibration, and badging it would both overstate the work outstanding
  * and contradict the uncalibrated count in the header.
  */
-function CalBadge({ state }: { state: CalState }) {
+function CalBadge({ state, onClick }: { state: CalState; onClick?: () => void }) {
   if (!state) return <span className="axis__cal" />
   const cal = state === 'cal'
   return (
     <span className="axis__cal">
-      <span
+      <button
         className={`calbadge${cal ? ' calbadge--on' : ''}`}
+        onClick={onClick}
+        disabled={!onClick}
         title={
-          cal
-            ? 'Calibrated — endpoints stored on the device'
-            : 'Uncalibrated — values pass through untransformed'
+          onClick
+            ? 'Calibrate this axis'
+            : cal
+              ? 'Calibrated — endpoints stored on the device'
+              : 'Uncalibrated — values pass through untransformed'
         }
       >
         {cal ? 'CAL' : 'RAW'}
-      </span>
+      </button>
     </span>
   )
 }
@@ -40,12 +45,14 @@ function Axis({
   label,
   raw,
   avail,
-  cal
+  cal,
+  onCalibrate
 }: {
   label: string
   raw: number
   avail: boolean
   cal: CalState
+  onCalibrate?: () => void
 }) {
   const pct = Math.max(-1, Math.min(1, raw / 32768)) // signed ±32768
   const fillW = Math.abs(pct) * 50 // % of half-track
@@ -58,7 +65,7 @@ function Axis({
         {avail && <span className="axis__fill" style={{ left: left + '%', width: fillW + '%' }} />}
       </div>
       <span className="axis__val">{avail ? raw : '—'}</span>
-      <CalBadge state={cal} />
+      <CalBadge state={cal} onClick={onCalibrate} />
     </div>
   )
 }
@@ -85,6 +92,7 @@ function Hat({ idx, dir, avail }: { idx: number; dir: number; avail: boolean }) 
 
 export function Hid() {
   const s = useStore()
+  const calib = useCalibration(s.cal)
   const lit = new Set(s.buttons)
   const availAxes = new Set(s.availAxes)
   const availHats = new Set(s.availHats)
@@ -112,6 +120,9 @@ export function Hid() {
 
   return (
     <div className="hid">
+      {calib.open && calib.controller && (
+        <CalibrationDialog controller={calib.controller} onClose={() => void calib.close()} />
+      )}
       <div className="card field">
         <div className="panel-h">
           <span className="section-h">Axes</span>
@@ -125,9 +136,26 @@ export function Hid() {
                 : 'all axes calibrated'}
             </span>
           )}
+          {present.length > 0 && calib.controller && (
+            <button
+              className="calbtn calbtn--primary"
+              onClick={() =>
+                void calib.start(present.find((a) => !a.calibrated)?.idx ?? present[0]!.idx)
+              }
+            >
+              Calibrate
+            </button>
+          )}
         </div>
         {s.axes.map((v, i) => (
-          <Axis key={i} label={AXIS_LABELS[i]!} raw={v} avail={axisLive(i)} cal={calState(i)} />
+          <Axis
+            key={i}
+            label={AXIS_LABELS[i]!}
+            raw={v}
+            avail={axisLive(i)}
+            cal={calState(i)}
+            onCalibrate={calState(i) ? () => void calib.start(i) : undefined}
+          />
         ))}
       </div>
 

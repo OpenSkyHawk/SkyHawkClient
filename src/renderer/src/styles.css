@@ -1210,3 +1210,420 @@ body {
   white-space: pre;
   overflow: hidden;
 }
+
+/* ── axis calibration dialog ──────────────────────────────────── */
+.calmodal {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 6, 12, 0.72);
+  padding: 24px;
+}
+.calmodal__sheet {
+  width: 880px;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid rgba(59, 139, 235, 0.22);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.calmodal__head,
+.calmodal__foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+}
+.calmodal__head {
+  border-bottom: 1px solid var(--line);
+}
+.calmodal__foot {
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.calmodal__head .calbtn {
+  margin-left: auto;
+}
+.calmodal__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.calmodal__body {
+  display: flex;
+  min-height: 0;
+}
+
+.calrail {
+  width: 190px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+.calrail__item {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--muted);
+  font-family: var(--disp);
+  font-size: 13px;
+  font-weight: 600;
+}
+.calrail__item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+}
+.calrail__item.is-on {
+  background: rgba(30, 143, 255, 0.1);
+  border-color: rgba(30, 143, 255, 0.3);
+  color: var(--text);
+}
+.calrail__item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.calrail__tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid;
+}
+.calrail__tag--cal {
+  color: var(--green);
+  border-color: var(--green);
+  background: rgba(110, 231, 160, 0.1);
+}
+.calrail__tag--raw {
+  color: #8595ad;
+  border-color: #8595ad;
+  background: rgba(255, 255, 255, 0.04);
+}
+.calrail__tag--edit {
+  color: var(--gold);
+  border-color: var(--gold);
+  background: rgba(244, 179, 33, 0.12);
+}
+
+.caldetail {
+  flex: 1;
+  min-width: 0;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.caldetail__live {
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+}
+.calnum__label {
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.calnum {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 22px;
+  color: var(--text);
+}
+
+.calbar {
+  position: relative;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.calbar__band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(30, 143, 255, 0.16);
+}
+.calbar__now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--blue);
+  box-shadow: 0 0 8px var(--blue);
+}
+
+.calstep__title {
+  font-family: var(--disp);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.calstep__detail {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.calprog {
+  margin-top: 10px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.calprog__fill {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+  transition: width 0.1s linear;
+}
+
+.calmeta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted-3);
+}
+.calopt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.calfail {
+  flex: 1 1 100%;
+  font-size: 12px;
+  color: #ffb4b4;
+  background: rgba(255, 122, 122, 0.08);
+  border: 1px solid rgba(255, 122, 122, 0.3);
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+.calfail b {
+  color: var(--red);
+}
+
+.calbtn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.calbtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.calbtn--primary {
+  background: rgba(30, 143, 255, 0.12);
+  border-color: rgba(30, 143, 255, 0.38);
+  color: #5cb0ff;
+}
+.calbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* dialog: readouts, steps, cards */
+.calhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+}
+.calhead__sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+}
+.calhead__travel {
+  margin-left: auto;
+  text-align: right;
+}
+.calnum--lg {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.calnum--blue {
+  color: #5cb0ff;
+}
+.calpct {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.calpct--ok {
+  color: var(--green);
+}
+.calpct--warn {
+  color: #ffb4b4;
+}
+
+.calbar__centre {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.4);
+}
+.calbar__scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--muted-3);
+}
+
+.calcards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.calcard {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(5, 10, 18, 0.6);
+  border: 1px solid var(--line);
+}
+.calcard .calnum {
+  font-size: 20px;
+}
+
+.calsteps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.calsteps__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted-3);
+  border: 1px solid transparent;
+}
+.calsteps__row.is-now {
+  color: var(--text);
+  background: rgba(30, 143, 255, 0.08);
+  border-color: rgba(30, 143, 255, 0.25);
+}
+.calsteps__row.is-done {
+  color: var(--muted);
+}
+.calsteps__row.is-flash {
+  background: rgba(110, 231, 160, 0.12);
+  border-color: rgba(110, 231, 160, 0.4);
+  color: var(--green);
+}
+.calsteps__mark {
+  width: 12px;
+  text-align: center;
+  color: var(--green);
+}
+.calsteps__row.is-now .calsteps__mark {
+  color: var(--blue);
+}
+.calsteps__label {
+  flex: 1;
+}
+.calsteps__val {
+  font-size: 11px;
+}
+.calsteps__prog {
+  width: 70px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+.calsteps__prog > span {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+  transition: width 0.1s linear;
+}
+
+.calwarn {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #f0d18a;
+  background: rgba(244, 179, 33, 0.07);
+  border: 1px solid rgba(244, 179, 33, 0.28);
+}
+.calrest {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.calseg {
+  display: flex;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+.calseg__btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.calseg__btn.is-on {
+  background: var(--blue);
+  color: #04121f;
+}
+.calseg__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.calactions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}

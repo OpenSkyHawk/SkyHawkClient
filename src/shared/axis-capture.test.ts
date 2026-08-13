@@ -15,34 +15,82 @@ import {
 const C = DEFAULT_CAPTURE_CONFIG
 
 /**
- * Feed a value and hold it long enough to commit, the way a user reaching a stop would.
+ * Move the axis from `from` to `to`, then hold there long enough to commit.
  *
- * Two samples, not one. A real hold is not silent: measured rest noise is 387 counts
- * peak-to-peak, comfortably over the node's 128-count emission threshold, so readings keep
- * arriving at roughly 1/s. The second sample is that noise, and it is what confirms the value
- * is a genuine hold rather than a lone reading whose successor was dropped.
+ * The journey matters, not just the destination. A hold proves nothing unless the axis actually
+ * travelled during that step — otherwise the capture commits wherever it happened to be sitting
+ * when the step opened, which is exactly the bug this models.
+ *
+ * Two samples at the destination, not one: a real hold is not silent. Measured rest noise is 387
+ * counts peak-to-peak, over the node's 128-count emission threshold, so readings keep arriving at
+ * roughly 1/s. The second is that noise, and it confirms the value is a genuine hold rather than
+ * a lone reading whose successor was dropped.
  */
-function holdAt(s: CaptureState, value: number, from: number, ms = C.endpointHoldMs + 1) {
-  let next = push(s, { t: from, raw: value })
-  next = push(next, { t: from + Math.min(300, ms - 1), raw: value + 150 }) // in-band noise
-  next = tick(next, from + ms)
-  return next
+function moveAndHold(
+  s: CaptureState,
+  from: number,
+  to: number,
+  hold = C.endpointHoldMs + 1
+): CaptureState {
+  let next = push(s, { t: s.now + 50, raw: from })
+  next = push(next, { t: next.now + 150, raw: to })
+  next = push(next, { t: next.now + 200, raw: to + 150 })
+  return tick(next, next.now + hold)
 }
 
-/** One complete sweep: a stop, the other stop, and — if asked for — a release. */
+/** One complete sweep: a stop, the other stop, and — if asked for — a release to rest. */
 function sweep(
   s: CaptureState,
-  { lo, hi, centre, t = s.now }: { lo: number; hi: number; centre?: number; t?: number }
+  { lo, hi, centre, park = 32000 }: { lo: number; hi: number; centre?: number; park?: number }
 ) {
-  let next = holdAt(s, hi, t + 100)
-  next = holdAt(next, lo, next.now + 100)
+  let next = moveAndHold(s, park, hi)
+  next = moveAndHold(next, hi, lo)
   if (centre !== undefined && next.step === 'centre') {
-    next = push(next, { t: next.now + 100, raw: centre })
-    next = push(next, { t: next.now + 400, raw: centre + 120 }) // in-band noise confirms it
-    next = tick(next, next.now + C.centreStableMs + 1)
+    next = moveAndHold(next, lo, centre, C.centreStableMs + 1)
   }
   return next
 }
+
+describe('the movement gate', () => {
+  it('will not commit a value the axis never moved to', () => {
+    // The bug this exists for: capture opens, the axis is sitting at rest, noise arrives, the
+    // value holds for a second — and the rest position gets committed as the first stop before
+    // the user has touched anything.
+    let s = beginCapture(0)
+    s = push(s, { t: 0, raw: 32000 })
+    s = push(s, { t: 200, raw: 32150 }) // noise, well under minTravelCounts
+    s = tick(s, C.endpointHoldMs + 1)
+    expect(s.current.stopA, 'sitting still must capture nothing').toBeUndefined()
+    expect(s.awaitingMovement, 'and the UI must be able to say why').toBe(true)
+  })
+
+  it('commits once the axis has actually travelled', () => {
+    let s = beginCapture(0)
+    s = push(s, { t: 0, raw: 32000 })
+    s = push(s, { t: 400, raw: 51000 }) // swept to a stop
+    s = push(s, { t: 600, raw: 51120 })
+    s = tick(s, 600 + C.endpointHoldMs + 1)
+    expect(s.current.stopA).toBe(51000)
+    expect(s.awaitingMovement).toBe(false)
+  })
+
+  it('requires movement again for each point, not once per sweep', () => {
+    // Otherwise the second stop would commit the moment the first one did, since the axis is
+    // already sitting somewhere that has "moved" relative to the start of the capture.
+    let s = beginCapture(0)
+    s = push(s, { t: 0, raw: 32000 })
+    s = push(s, { t: 400, raw: 51000 })
+    s = push(s, { t: 600, raw: 51120 })
+    s = tick(s, 600 + C.endpointHoldMs + 1)
+    expect(s.step).toBe('stopB')
+
+    // Still at the first stop, not moving. Must not commit stopB.
+    s = push(s, { t: 2000, raw: 51050 })
+    s = push(s, { t: 2200, raw: 51180 })
+    s = tick(s, 2200 + C.endpointHoldMs + 1)
+    expect(s.current.stopB, 'the axis has not gone anywhere new').toBeUndefined()
+  })
+})
 
 describe('the stability detector', () => {
   it('completes on wall clock, not on a sample count', () => {
@@ -50,10 +98,11 @@ describe('the stability detector', () => {
     // a trickle of noise readings, never a steady stream. Two samples and then silence must
     // complete the hold — the elapsed time does the work, not the count.
     let s = beginCapture(0)
-    s = push(s, { t: 0, raw: 50000 })
-    s = push(s, { t: 200, raw: 50150 })
+    s = push(s, { t: 0, raw: 32000 }) // where it started
+    s = push(s, { t: 100, raw: 50000 }) // swept to the stop — the hold clock starts here
+    s = push(s, { t: 300, raw: 50150 })
     expect(s.current.stopA, 'not yet — the hold time has not elapsed').toBeUndefined()
-    s = tick(s, C.endpointHoldMs + 1)
+    s = tick(s, 100 + C.endpointHoldMs + 1)
     expect(s.current.stopA, 'silence after confirmation must not stall the hold').toBe(50000)
   })
 
@@ -77,10 +126,11 @@ describe('the stability detector', () => {
 
   it('commits once a confirming sample finally arrives', () => {
     let s = beginCapture(0)
-    s = push(s, { t: 0, raw: 50000 })
-    s = tick(s, C.endpointHoldMs + 1)
+    s = push(s, { t: 0, raw: 32000 })
+    s = push(s, { t: 100, raw: 50000 })
+    s = tick(s, 100 + C.endpointHoldMs + 1)
     expect(s.awaitingConfirmation).toBe(true)
-    s = push(s, { t: C.endpointHoldMs + 200, raw: 50120 })
+    s = push(s, { t: 100 + C.endpointHoldMs + 200, raw: 50120 })
     expect(s.current.stopA, 'confirmation releases the already-elapsed hold').toBe(50000)
     expect(s.awaitingConfirmation).toBe(false)
   })
@@ -89,10 +139,15 @@ describe('the stability detector', () => {
     // Rest spread measured at 387 counts peak-to-peak, arriving ~1/s. If that restarted the
     // timer the hold would race the noise and sometimes never finish.
     let s = beginCapture(0)
-    s = push(s, { t: 0, raw: 50000 })
-    for (let i = 1; i <= 4; i++) s = push(s, { t: i * 250, raw: 50000 + (i % 2 ? 190 : -190) })
-    expect(s.interruptions).toBe(0)
-    s = tick(s, C.endpointHoldMs + 1)
+    s = push(s, { t: 0, raw: 32000 })
+    s = push(s, { t: 100, raw: 50000 }) // hold clock starts here
+    // The sweep itself counts as one — it interrupted whatever was being timed before. What
+    // must not add more is the noise that follows while the axis is held.
+    const afterSweep = s.interruptions
+    for (let i = 1; i <= 3; i++)
+      s = push(s, { t: 100 + i * 200, raw: 50000 + (i % 2 ? 190 : -190) })
+    expect(s.interruptions, 'in-band noise is not movement').toBe(afterSweep)
+    s = tick(s, 100 + C.endpointHoldMs + 1)
     expect(s.current.stopA, 'noise must not prevent a hold from completing').toBe(50000)
   })
 
@@ -133,23 +188,21 @@ describe('sweep flow', () => {
   it('does not care which stop is reached first', () => {
     const lowFirst = sweep(beginCapture(0), { lo: 13000, hi: 51000, centre: 32000 })
     let s = beginCapture(0)
-    s = holdAt(s, 13000, 100)
-    s = holdAt(s, 51000, s.now + 100)
-    s = push(s, { t: s.now + 100, raw: 32000 })
-    s = push(s, { t: s.now + 400, raw: 32120 })
-    s = tick(s, s.now + C.centreStableMs + 1)
+    s = moveAndHold(s, 32000, 13000)
+    s = moveAndHold(s, 13000, 51000)
+    s = moveAndHold(s, 51000, 32000, C.centreStableMs + 1)
     expect(s.accepted[0]).toEqual(lowFirst.accepted[0])
   })
 
   it('asks a self-centring axis to release, and a non-centring one not to', () => {
     let spring = beginCapture(0, true)
-    spring = holdAt(spring, 51000, 100)
-    spring = holdAt(spring, 13000, spring.now + 100)
+    spring = moveAndHold(spring, 32000, 51000)
+    spring = moveAndHold(spring, 51000, 13000)
     expect(spring.step, 'a rest position exists, so capture it').toBe('centre')
 
     let free = beginCapture(0, false)
-    free = holdAt(free, 51000, 100)
-    free = holdAt(free, 13000, free.now + 100)
+    free = moveAndHold(free, 32000, 51000)
+    free = moveAndHold(free, 51000, 13000)
     expect(free.accepted, 'no rest position, so the sweep is already done').toHaveLength(1)
     expect(free.accepted[0]!.centre).toBeUndefined()
   })
@@ -282,31 +335,48 @@ describe('reconciliation', () => {
   })
 
   it('always yields min < centre < max, which the device requires', () => {
+    // Exercised through reconcile rather than a captured flow, so the degenerate spans stay
+    // covered: an axis narrower than minTravelCounts cannot be captured at all, by design.
     for (const [lo, hi] of [
       [0, 65535],
       [13443, 50704],
       [30000, 30002],
       [1, 3]
     ]) {
-      let s = beginCapture(0, false)
-      for (let i = 0; i < 3; i++) s = sweep(s, { lo: lo!, hi: hi! })
-      const r = s.result!
+      const state = {
+        ...beginCapture(0, false),
+        accepted: [{ min: lo!, max: hi! }]
+      }
+      const r = reconcile(state)
       expect(r.min, `${lo}..${hi}`).toBeLessThan(r.centre)
       expect(r.centre, `${lo}..${hi}`).toBeLessThan(r.max)
     }
+  })
+
+  it('cannot capture an axis with less travel than the movement gate', () => {
+    // A deliberate consequence, recorded rather than discovered later: the gate is what stops a
+    // resting axis being committed, so an axis that never moves further than it is not
+    // distinguishable from one sitting still.
+    // Kept clear of the gate including the noise sample moveAndHold adds, so the test measures
+    // the gate rather than the helper.
+    let s = beginCapture(0, false)
+    s = moveAndHold(s, 32000, 32000 + C.minTravelCounts - 300)
+    expect(s.current.stopA).toBeUndefined()
+    expect(s.awaitingMovement).toBe(true)
   })
 })
 
 describe('centre capture', () => {
   it('finishes early once the value is stable', () => {
     let s = beginCapture(0, true)
-    s = holdAt(s, 51000, 100)
-    s = holdAt(s, 13000, s.now + 100)
+    s = moveAndHold(s, 32000, 51000)
+    s = moveAndHold(s, 51000, 13000)
     expect(s.step).toBe('centre')
     const t = s.now
-    s = push(s, { t: t + 50, raw: 32000 })
-    s = push(s, { t: t + 350, raw: 32130 }) // in-band noise confirms the rest position
-    s = tick(s, t + 350 + C.centreStableMs + 1)
+    s = push(s, { t: t + 50, raw: 13000 }) // released from the stop
+    s = push(s, { t: t + 150, raw: 32000 })
+    s = push(s, { t: t + 450, raw: 32130 }) // in-band noise confirms the rest position
+    s = tick(s, t + 450 + C.centreStableMs + 1)
     expect(s.accepted[0]!.centre, 'stable for 5 s is enough').toBe(32000)
   })
 
@@ -314,8 +384,8 @@ describe('centre capture', () => {
     // A stick that keeps twitching outside the band would otherwise never finish. Averaging the
     // window beats stranding the user mid-capture.
     let s = beginCapture(0, true)
-    s = holdAt(s, 51000, 100)
-    s = holdAt(s, 13000, s.now + 100)
+    s = moveAndHold(s, 32000, 51000)
+    s = moveAndHold(s, 51000, 13000)
     const t = s.now
     for (let i = 1; i <= 10; i++) {
       s = push(s, { t: t + i * 1000, raw: i % 2 ? 31000 : 33000 }) // never settles
@@ -335,8 +405,8 @@ describe('centre capture', () => {
     // The earlier test could not catch it: it alternated symmetrically about centre, so the
     // transit and the rest readings happened to average to the same number.
     let s = beginCapture(0, true)
-    s = holdAt(s, 51000, 100)
-    s = holdAt(s, 13000, s.now + 100) // last stop is the LOW end
+    s = moveAndHold(s, 32000, 51000)
+    s = moveAndHold(s, 51000, 13000) // last stop is the LOW end
     const t = s.now
 
     // One-directional climb away from that stop, then noisy rest near 32000 that never settles
