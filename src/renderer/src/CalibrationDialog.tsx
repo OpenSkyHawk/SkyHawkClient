@@ -214,13 +214,19 @@ export function CalibrationDialog({
                 onClick={() => void controller.selectAxis(a.idx)}
                 disabled={writing || s.switchingTo !== undefined}
               >
-                <span className={`cd__dot${a.calibrated ? ' is-cal' : ''}`} />
                 <span className="cd__axisname">{AXIS_LABELS[a.idx]}</span>
-                <span className="cd__slot">{a.idx}</span>
-                <span className="cd__mark">{s.drafts[a.idx] ? '●' : ''}</span>
-                <span className="cd__axisval">
-                  {s.switchingTo === a.idx ? '…' : a.calibrated ? 'cal' : 'raw'}
+                <span className="cd__slot">Axis {a.idx}</span>
+                <span className="cd__mark" title="Captured, not yet written">
+                  {s.drafts[a.idx] ? '●' : ''}
                 </span>
+                {/* The same badge the HID tab shows, so one vocabulary covers both screens. */}
+                {s.switchingTo === a.idx ? (
+                  <span className="cd__axisval">…</span>
+                ) : (
+                  <span className={`calbadge${a.calibrated ? ' calbadge--on' : ''}`}>
+                    {a.calibrated ? 'CAL' : 'RAW'}
+                  </span>
+                )}
               </button>
             ))}
             <div className="cd__note">

@@ -1410,16 +1410,6 @@ body {
   opacity: 0.55;
   cursor: default;
 }
-.cd__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #46566f;
-  flex: none;
-}
-.cd__dot.is-cal {
-  background: var(--green);
-}
 .cd__axisname {
   flex: 1;
   font-family: var(--disp);
@@ -1431,6 +1421,7 @@ body {
   font-family: var(--mono);
   font-size: 9px;
   color: #46566f;
+  white-space: nowrap;
 }
 .cd__mark {
   font-family: var(--mono);
