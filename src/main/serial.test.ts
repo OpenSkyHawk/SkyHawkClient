@@ -38,11 +38,22 @@ class FakePort {
   emit(ev: string, arg?: unknown) {
     this.handlers.get(ev)?.(arg)
   }
+  hasHandler(ev: string) {
+    return this.handlers.has(ev)
+  }
   open(cb: (err?: Error) => void) {
     this.openCb = cb
   }
-  close() {
+  /**
+   * The real `close` is asynchronous and calls back once the OS handle is actually released.
+   *
+   * Modelling that is the point: a double that released synchronously could not tell a reopen
+   * which waits for the handle from one which does not, and that is exactly the difference
+   * between recovering and failing with "Access denied" on Windows.
+   */
+  close(cb?: () => void) {
     this.isOpen = false
+    if (cb) setImmediate(cb)
   }
   destroy() {
     this.destroyed = true
@@ -80,7 +91,13 @@ describe('SerialBridge port lifetime', () => {
     expect(first.listeners).toBeGreaterThan(0)
 
     s.stop()
-    expect(first.listeners, 'listeners unbound').toBe(0)
+    // A no-op 'error' handler is deliberately left bound so a late error from the dying handle
+    // cannot reach a listener-less stream, which Node escalates to an uncaught exception. What
+    // must be gone are the handlers that drive the bridge.
+    expect(first.hasHandler('close'), 'close unbound').toBe(false)
+    expect(first.hasHandler('data'), 'data unbound').toBe(false)
+    expect(first.destroyed, 'not destroyed until the close completes').toBe(false)
+    await flush() // let the close call back, as the driver would
     expect(first.destroyed, 'and the handle released').toBe(true)
   })
 
@@ -104,7 +121,7 @@ describe('SerialBridge port lifetime', () => {
 
     expect(FakePort.built.length, 'a second port was built').toBe(2)
     expect(first.destroyed, 'and the first was released first').toBe(true)
-    expect(first.listeners, 'so its close can no longer schedule retries').toBe(0)
+    expect(first.hasHandler('close'), 'so its close can no longer schedule retries').toBe(false)
     s.stop()
   })
 
