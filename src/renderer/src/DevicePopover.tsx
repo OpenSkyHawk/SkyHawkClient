@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store'
 import { deviceView } from './device-view'
 
@@ -14,9 +14,7 @@ export function DevicePopover() {
   const connectDevice = useStore((s) => s.connectDevice)
   const disconnectDevice = useStore((s) => s.disconnectDevice)
   const set = useStore((s) => s.set)
-  const open = useStore((s) => s.devicePopover)
-  const setOpen = (v: boolean | ((o: boolean) => boolean)): void =>
-    set({ devicePopover: typeof v === 'function' ? v(useStore.getState().devicePopover) : v })
+  const [open, setOpen] = useState(false)
   const btn = useRef<HTMLButtonElement>(null)
 
   const dev = deviceView(deviceState, { port: devicePort, detail: deviceDetail, autoConnect })
@@ -30,12 +28,12 @@ export function DevicePopover() {
     if (!open) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
-      set({ devicePopover: false })
+      setOpen(false)
       btn.current?.focus()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, set])
+  }, [open])
 
   return (
     <span className="devpop-wrap">

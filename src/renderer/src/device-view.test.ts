@@ -6,6 +6,7 @@ import {
   relayTip,
   relayWaiting,
   startBlocked,
+  startBlockedCallout,
   startBlockedReason
 } from './device-view'
 
@@ -190,5 +191,9 @@ describe('startBlockedReason', () => {
   it('tells Replay it can also run undriven', () => {
     expect(startBlockedReason('bridge')).toBe('Connect the SimGateway to start the relay.')
     expect(startBlockedReason('replay')).toMatch(/turn Drive SimGateway off/)
+    expect(startBlockedCallout('bridge')).toBe(
+      "The SimGateway isn't connected, and the relay delivers to it. Connect first."
+    )
+    expect(startBlockedCallout('replay')).toMatch(/Connect first, or turn Drive off/)
   })
 })

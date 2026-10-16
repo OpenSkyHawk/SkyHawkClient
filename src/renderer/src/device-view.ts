@@ -223,3 +223,10 @@ export function startBlockedReason(mode: SourceMode): string {
     ? 'Connect the SimGateway to play the capture to it, or turn Drive SimGateway off.'
     : 'Connect the SimGateway to start the relay.'
 }
+
+/** Body of the callout a blocked Relay pill answers a click with. */
+export function startBlockedCallout(mode: SourceMode): string {
+  return mode === 'replay'
+    ? "The SimGateway isn't connected, and Drive SimGateway plays the capture to it. Connect first, or turn Drive off."
+    : "The SimGateway isn't connected, and the relay delivers to it. Connect first."
+}

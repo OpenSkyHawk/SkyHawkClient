@@ -103,8 +103,6 @@ export interface AppState {
   devicePort?: string
   /** Why the link is in `error` — e.g. another program holds the port. */
   deviceDetail?: string
-  /** The title-bar device popover; shared so a blocked Start can point the user at Connect. */
-  devicePopover: boolean
   aircraft: AircraftStatus
   nodes: NodeStatus[]
 
@@ -219,7 +217,6 @@ export const useStore = create<AppState>((set, get) => ({
   search: '',
 
   deviceState: 'no-device',
-  devicePopover: false,
   aircraft: { name: 'NONE', inferred: false, supported: true },
   nodes: [],
 
