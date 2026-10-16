@@ -41,6 +41,7 @@ const node = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEntr
   kind: 'panel',
   source: 'registry',
   availability: 'online',
+  seenOnline: true,
   status: status(nodeId),
   differs: false,
   ...over
@@ -210,11 +211,18 @@ describe('nodeFaultBoxes', () => {
 describe('pduFaultBoxes', () => {
   it('offline stands alone, and mentions the fuse only when its nodes dropped with it', () => {
     const v = view(pdu(6, 'Center', { availability: 'offline' }))
-    expect(pduFaultBoxes(v, false)).toEqual([
+    expect(pduFaultBoxes(v, undefined)).toEqual([
       { tone: 'err', title: 'Offline', text: 'no status or readings from this PDU.' }
     ])
-    expect(pduFaultBoxes(v, true)[0]!.text).toMatch(
-      /a blown 5 V fuse at the PDU looks like this\.$/
+    const o = { pduId: 6, nodeIds: [7], fedCount: 1, at: 1, neverSeen: false }
+    expect(pduFaultBoxes(v, o)[0]!.text).toMatch(/a blown 5 V fuse at the PDU looks like this\.$/)
+  })
+
+  it('a group missing since the link opened is not said to have dropped', () => {
+    const v = view(pdu(6, 'Center', { availability: 'offline', seenOnline: false }))
+    const o = { pduId: 6, nodeIds: [7], fedCount: 1, at: 1, neverSeen: true }
+    expect(pduFaultBoxes(v, o)[0]!.text).toBe(
+      'no status or readings from this PDU. Neither it nor its nodes have been seen since the link opened — not connected, or a blown 5 V fuse at the PDU.'
     )
   })
 
@@ -222,18 +230,18 @@ describe('pduFaultBoxes', () => {
     const had = view(pdu(3, 'Left', { readings: 'none', everHadReadings: true }))
     const never = view(pdu(3, 'Left', { readings: 'none', everHadReadings: false }))
     expect(
-      pduFaultBoxes(had, false)
+      pduFaultBoxes(had, undefined)
         .map((b) => b.text)
         .join()
     ).not.toMatch(/firmware/)
-    expect(pduFaultBoxes(never, false)[0]!.text).toMatch(/PanelBridge firmware may be too old/)
+    expect(pduFaultBoxes(never, undefined)[0]!.text).toMatch(/PanelBridge firmware may be too old/)
   })
 
   it('a raised flag names it and says what it means, as NodeStatus.h does', () => {
     const v = view(pdu(4, 'Right'), [
       telem(4, { flags5: RAIL_FLAG.UNDER_V, status: PDU_FLAG.TEMP_WARN })
     ])
-    expect(pduFaultBoxes(v, false)).toEqual([
+    expect(pduFaultBoxes(v, undefined)).toEqual([
       {
         tone: 'warn',
         title: '5V UNDER-V · TEMP WARN',
@@ -244,26 +252,32 @@ describe('pduFaultBoxes', () => {
 
   it('calibration state alone is not a fault', () => {
     const v = view(pdu(4, 'Right'), [telem(4, { status: PDU_FLAG.UNCAL_VDDA })])
-    expect(pduFaultBoxes(v, false)).toEqual([])
+    expect(pduFaultBoxes(v, undefined)).toEqual([])
   })
 
   // Review of #85: the PDU's own node fault was hidden behind "no readings" or a raised flag.
   it('bus-off shows even when the PDU has no readings', () => {
     const v = view(pdu(3, 'Left', { readings: 'none', status: status(3, { boff: true }) }))
-    expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual(['Bus-off', 'No readings received'])
+    expect(pduFaultBoxes(v, undefined).map((b) => b.title)).toEqual([
+      'Bus-off',
+      'No readings received'
+    ])
   })
 
   it('a degraded PDU keeps its fault label next to "no readings"', () => {
     const v = view(
       pdu(3, 'Left', { readings: 'none', status: status(3, { degraded: true, faultId: 7 }) })
     )
-    expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual(['Fault 7', 'No readings received'])
+    expect(pduFaultBoxes(v, undefined).map((b) => b.title)).toEqual([
+      'Fault 7',
+      'No readings received'
+    ])
   })
 
   it('a PDU with two node faults shows both before its flags', () => {
     const e = pdu(4, 'Right', { status: status(4, { degraded: true, faultId: 8, epvf: true }) })
     const v = view(e, [telem(4, { flags5: RAIL_FLAG.UNDER_V })])
-    expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual([
+    expect(pduFaultBoxes(v, undefined).map((b) => b.title)).toEqual([
       'Fault 8',
       'Error-passive',
       '5V UNDER-V'
@@ -275,7 +289,7 @@ describe('pduFaultBoxes', () => {
       status: status(4, { degraded: true, faultId: 8, faultLabel: 'Sensor fault' })
     })
     const v = view(e, [telem(4, { flags12: RAIL_FLAG.SENSOR_FAULT })])
-    expect(pduFaultBoxes(v, false).map((b) => [b.tone, b.title])).toEqual([
+    expect(pduFaultBoxes(v, undefined).map((b) => [b.tone, b.title])).toEqual([
       ['warn', 'Sensor fault'],
       ['warn', '12V SENSOR FAULT']
     ])

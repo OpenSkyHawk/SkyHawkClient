@@ -117,11 +117,26 @@ describe('NodeRoster', () => {
     const r = new NodeRoster()
     r.applyMessage(NODE_MSG, '01010000000000000080000000', 1000)
     r.applyMessage(NODE_MSG, '01000000000000000080000000', 5000) // live delta: offline
-    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, offlineAt: 5000, offlineVia: 'delta' })
+    expect(r.seenInfo().get(1)).toEqual({
+      firstSeenAt: 1000,
+      everPresent: true,
+      offlineAt: 5000,
+      offlineVia: 'delta'
+    })
     r.applyMessage(NODE_MSG, '01000000000000000080000000', 6000) // repeat keeps the first time
     expect(r.seenInfo().get(1)?.offlineAt).toBe(5000)
     r.applyMessage(NODE_MSG, '01010000000000000080000000', 7000)
-    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000 })
+    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, everPresent: true })
+  })
+
+  it('a node only ever listed absent was never present', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, '01000000000000000080000000', 1000)
+    expect(r.seenInfo().get(1)?.everPresent).toBeUndefined()
+    r.applyMessage(NODE_MSG, '01010000000000000080000000', 2000)
+    r.beginBurst(2999)
+    r.applyMessage(NODE_END_MSG, '1', 3000) // dropped by the roster: still was present once
+    expect(r.seenInfo().get(1)).toMatchObject({ everPresent: true, offlineVia: 'roster' })
   })
 
   it('an offline found by a roster reply is marked roster, and the first END is remembered', () => {

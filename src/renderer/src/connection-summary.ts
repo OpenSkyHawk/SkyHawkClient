@@ -59,7 +59,9 @@ export function nodesSummary(views: NodeView[], outages: PduOutage[]): NodesSumm
       const feed = e.pduId === null ? undefined : byId.get(e.pduId)
       meta.push(feed ? feed.name : 'no power zone')
     }
-    if (e.availability === 'offline' && e.offlineAt !== undefined) {
+    // A board never online since the link opened did not go offline at the roster's time.
+    if (e.availability === 'offline' && !e.seenOnline) meta.push('not seen this session')
+    else if (e.availability === 'offline' && e.offlineAt !== undefined) {
       meta.push(`offline since ${clock(e.offlineAt)}`)
     }
     return {

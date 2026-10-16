@@ -36,6 +36,8 @@ export interface NodeModelEntry {
   /** 'new' = in the roster but neither in the registry, adopted nor ignored. */
   source: 'registry' | 'adopted' | 'new'
   availability: NodeAvailability
+  /** Reported present at least once since the link opened. False for a board never connected. */
+  seenOnline: boolean
   /** While offline: when the client learned of it (the first complete roster for a never-seen node). */
   offlineAt?: number
   offlineVia?: 'delta' | 'roster'
@@ -59,6 +61,11 @@ export interface PduOutage {
   /** Fed nodes in total (excluding hidden / ignored), for "N of M". */
   fedCount: number
   at: number
+  /**
+   * Neither the PDU nor any node in the outage was online since the link opened: they have been
+   * missing from the start. Not connected and a fuse blown before the link opened look the same.
+   */
+  neverSeen: boolean
 }
 
 /** One ignored NODE_ID, as Settings › Ignored nodes lists it. */
@@ -156,6 +163,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
       kind,
       source,
       availability,
+      seenOnline: !!st?.present || !!seen?.everPresent,
       differs: m?.differs ?? false
     }
     if (availability === 'offline') {
@@ -229,7 +237,8 @@ export function pduOutages(nodes: NodeModelEntry[]): PduOutage[] {
         pduId: pdu.nodeId,
         nodeIds: hit.map((n) => n.nodeId),
         fedCount: fed.length,
-        at: pdu.offlineAt
+        at: pdu.offlineAt,
+        neverSeen: !pdu.seenOnline && hit.every((n) => !n.seenOnline)
       })
     }
   }

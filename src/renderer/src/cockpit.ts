@@ -196,10 +196,23 @@ export interface PlanLayout {
 /** Name without its console prefix (`Left_Fuel` → `Fuel`). */
 export const shortName = (name: string) => name.replace(/^(Left|Center|Right)_/, '')
 
+/**
+ * What a PDU outage means. A group missing since the link opened was never seen to drop: it may
+ * simply not be connected, so the hint does not say it lost power.
+ */
 export function outageHint(o: PduOutage): string {
   const n = o.nodeIds.length
-  const who = n === o.fedCount ? `All ${n} nodes` : `${n} of ${o.fedCount} nodes`
-  return `${who} on this PDU lost power together — a blown 5 V fuse at the PDU looks like this.`
+  const who =
+    n === o.fedCount
+      ? n === 1
+        ? 'The only node'
+        : `All ${n} nodes`
+      : `${n} of ${o.fedCount} nodes`
+  if (o.neverSeen) {
+    return `${who} on this PDU and the PDU itself have not been seen since the link opened — not connected, or a blown 5 V fuse at the PDU.`
+  }
+  const how = n === 1 ? 'lost power with it' : 'lost power together'
+  return `${who} on this PDU ${how} — a blown 5 V fuse at the PDU looks like this.`
 }
 
 /**

@@ -202,8 +202,10 @@ describe('PDU-offline grouping', () => {
     },
     ignored: []
   }
+  /** Was online, then dropped. */
   const off = (at: number, via: 'delta' | 'roster' = 'delta'): NodeSeen => ({
     firstSeenAt: 0,
+    everPresent: true,
     offlineAt: at,
     offlineVia: via
   })
@@ -225,7 +227,9 @@ describe('PDU-offline grouping', () => {
       ],
       [43]
     )
-    expect(m.outages).toEqual([{ pduId: 3, nodeIds: [41, 42], fedCount: 3, at: 10_000 }])
+    expect(m.outages).toEqual([
+      { pduId: 3, nodeIds: [41, 42], fedCount: 3, at: 10_000, neverSeen: false }
+    ])
   })
 
   it('half or fewer is not an outage, nor are drops outside the window', () => {
@@ -281,14 +285,26 @@ describe('PDU-offline grouping', () => {
     expect(m.outages[0]).toMatchObject({ pduId: 3, nodeIds: [41, 42, 43] })
   })
 
-  it('a PDU and its nodes all missing from the first roster group together', () => {
+  it('a PDU and its nodes all missing from the first roster group together, as never seen', () => {
     const m = buildNodeModel(input({ file, rosterCompleteAt: 2000 }))
     expect(m.outages.find((o) => o.pduId === 3)).toEqual({
       pduId: 3,
       nodeIds: [41, 42, 43],
       fedCount: 3,
-      at: 2000
+      at: 2000,
+      neverSeen: true
     })
+    expect(m.nodes.find((n) => n.nodeId === 3)?.seenOnline).toBe(false)
+  })
+
+  it('an outage is not never-seen when any board in it was online this session', () => {
+    const m = model([
+      [3, { firstSeenAt: 0, offlineAt: 10_000, offlineVia: 'delta' }],
+      [41, off(10_000)],
+      [42, { firstSeenAt: 0, offlineAt: 10_000, offlineVia: 'delta' }]
+    ])
+    expect(m.outages[0]).toMatchObject({ pduId: 3, nodeIds: [41, 42], neverSeen: false })
+    expect(m.nodes.filter((n) => n.seenOnline).map((n) => n.nodeId)).toEqual([41])
   })
 
   it('an online PDU is never an outage', () => {
