@@ -1,0 +1,88 @@
+// Settings text decisions (#67), pure so they are unit-tested: what each Cockpit / About row says.
+import type { NodeRegistryInfo } from '@shared/ipc'
+import type { NodeKind } from '@shared/node-mapping'
+import type { IgnoredNode, NodeModel } from '@shared/node-rules'
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+const kindLabel = (k: NodeKind | undefined) =>
+  k === 'pdu' ? 'PDU' : k === 'panel' ? 'Panel group' : 'Unknown kind'
+
+const pad = (n: number) => String(n).padStart(2, '0')
+/** Local YYYY-MM-DD. */
+const day = (t: number) => {
+  const d = new Date(t)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+const clock = (t: number) => {
+  const d = new Date(t)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** "Reset node mapping" row description. */
+export function resetRowDesc(differing: number): string {
+  return differing === 0
+    ? 'Every node matches NODE_IDS.md'
+    : `${plural(differing, 'node')} ${differing === 1 ? 'differs' : 'differ'} from NODE_IDS.md — return them to their registry name, console and PDU`
+}
+
+/** The confirm button: "Reset 3 nodes", "Reset 3 nodes + forget 1", "Forget 1 adopted node". */
+export function resetButtonLabel(nodes: number, forget: number): string {
+  if (nodes === 0) return `Forget ${plural(forget, 'adopted node')}`
+  const reset = `Reset ${plural(nodes, 'node')}`
+  return forget > 0 ? `${reset} + forget ${forget}` : reset
+}
+
+export interface IgnoredRow {
+  nodeId: number
+  label: string
+  desc: string
+}
+
+/** One Ignored nodes row. Last seen is this session only, and says so when it does not know. */
+export function ignoredRow(n: IgnoredNode, now = Date.now()): IgnoredRow {
+  const kind = kindLabel(n.kind)
+  const ignored = n.ignoredAt ? `ignored ${day(Date.parse(n.ignoredAt))}` : 'ignored earlier'
+  const seen =
+    n.lastSeen === 'now'
+      ? 'on the bus now'
+      : n.lastSeen === undefined
+        ? 'not seen this session'
+        : `offline since ${day(n.lastSeen) === day(now) ? clock(n.lastSeen) : day(n.lastSeen)}`
+  return {
+    nodeId: n.nodeId,
+    label: n.name ? `${n.name} · ${kind}` : kind,
+    desc: `${ignored} · ${seen}`
+  }
+}
+
+/** "NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, PanelBridge". */
+export function registrySummary(r: NodeRegistryInfo): string {
+  const pdus = r.nodes.filter((n) => n.kind === 'pdu').length
+  const panels = r.nodes.filter((n) => n.kind === 'panel').length
+  const parts = [plural(pdus, 'PDU'), plural(panels, 'panel group')]
+  if (r.nodes.some((n) => n.kind === 'bridge')) parts.push('PanelBridge')
+  const file = r.file.split('/').pop()
+  return `${file} · ${plural(r.nodes.length, 'node')}: ${parts.join(', ')}`
+}
+
+export type OnBus = { text: string; dot: 'on' | 'off' | '' }
+
+/**
+ * Registry list "On the bus" column. PanelBridge is the serial link itself; a CAN node is what
+ * the roster says — "—" before any roster, since that is no data rather than "absent".
+ */
+export function registryOnBus(
+  nodeId: number,
+  model: NodeModel | undefined,
+  linkUp: boolean
+): OnBus {
+  if (nodeId === 0)
+    return linkUp ? { text: 'serial link', dot: 'on' } : { text: 'no device', dot: '' }
+  if (model?.ignored.includes(nodeId)) return { text: 'ignored', dot: '' }
+  if (model?.hidden.includes(nodeId)) return { text: 'hidden', dot: '' }
+  const e = model?.nodes.find((n) => n.nodeId === nodeId)
+  if (e?.availability === 'online') return { text: 'yes', dot: 'on' }
+  if (e?.availability === 'offline') return { text: 'offline', dot: 'off' }
+  return { text: '—', dot: '' }
+}

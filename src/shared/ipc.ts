@@ -1,9 +1,10 @@
 // Typed IPC contract between the Electron main process and the renderer.
 // Channels are one-way main -> renderer pushes; control actions are renderer -> main.
 import type { CachedAxis, CachedBoard } from './cal-cache'
+import { DEFAULT_PSU, sanitizePsu, type PsuSetting } from './psu'
 import type { NodeStatus } from './nodes'
 import type { NodeTelemSnapshot } from './node-telem'
-import type { AdoptSpec, MappingPatch } from './node-mapping'
+import type { AdoptSpec, MappingPatch, NodeKind, ResetOptions, ResetPreview } from './node-mapping'
 import type { NodeModel } from './node-rules'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
@@ -214,6 +215,10 @@ export interface AppConfig {
   autoConnect: boolean
   replayDriveSerial: boolean // Replay mode: also write the replayed export to the SimGateway
   debugMode: boolean // write diagnostics (serial enumeration, device events) to a local log file
+  /** Show board-reported problems on the Overview tab (#65). Settings › Cockpit (#67). */
+  attentionBanner: boolean
+  /** Power supply limits for the Cockpit headroom (#63). Settings › Cockpit (#67). */
+  psu: PsuSetting
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -224,7 +229,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   listenPort: 5010,
   autoConnect: true,
   replayDriveSerial: false,
-  debugMode: false
+  debugMode: false,
+  attentionBanner: true,
+  psu: DEFAULT_PSU
 }
 
 const SOURCE_MODES: SourceMode[] = ['bridge', 'monitor', 'replay']
@@ -251,7 +258,10 @@ export function sanitizeConfig(raw: unknown): AppConfig {
       typeof r.replayDriveSerial === 'boolean'
         ? r.replayDriveSerial
         : DEFAULT_CONFIG.replayDriveSerial,
-    debugMode: typeof r.debugMode === 'boolean' ? r.debugMode : DEFAULT_CONFIG.debugMode
+    debugMode: typeof r.debugMode === 'boolean' ? r.debugMode : DEFAULT_CONFIG.debugMode,
+    attentionBanner:
+      typeof r.attentionBanner === 'boolean' ? r.attentionBanner : DEFAULT_CONFIG.attentionBanner,
+    psu: sanitizePsu(r.psu)
   }
 }
 
@@ -365,6 +375,8 @@ export const CTRL = {
   nodeMappingAdopt: 'node-mapping:adopt',
   nodeMappingForget: 'node-mapping:forget',
   nodeMappingReset: 'node-mapping:reset',
+  nodeMappingResetPreview: 'node-mapping:reset-preview',
+  nodeRegistry: 'nodes:registry',
   nodeMappingIgnore: 'node-mapping:ignore',
   nodeMappingHide: 'node-mapping:hide',
   serialMonitor: 'serial:monitor',
@@ -410,8 +422,15 @@ export interface SkyhawkApi {
   adoptNode(nodeId: number, spec: AdoptSpec): Promise<NodeMappingResult>
   /** Drop an adopted node (new again if it reports) or a registry node's overrides. */
   forgetNode(nodeId: number): Promise<NodeMappingResult>
-  /** Every registry node back to its defaults; adopted, ignored and hidden are kept. */
-  resetNodeMapping(): Promise<NodeMappingResult>
+  /**
+   * Every registry node back to its defaults; ignored and hidden are kept, and adopted nodes too
+   * unless `forgetAdopted`.
+   */
+  resetNodeMapping(opts?: ResetOptions): Promise<NodeMappingResult>
+  /** What resetNodeMapping would change, field by field — the review before a reset. */
+  previewNodeReset(): Promise<ResetPreview>
+  /** The bundled NODE_IDS registry (PanelBridge included) and the commit it came from. */
+  getNodeRegistry(): Promise<NodeRegistryInfo>
   /** Ignore permanently (true) or un-ignore (false). */
   ignoreNode(nodeId: number, on: boolean): Promise<NodeMappingResult>
   /** "Hidden until it reports again" on / off. Cleared automatically when the node reports. */
@@ -454,6 +473,15 @@ export interface SkyhawkApi {
    * and the client would offer to restore what was just deleted.
    */
   calCacheDrop(idx: number): Promise<CalResult<null>>
+}
+
+export interface NodeRegistryInfo {
+  /** Path in the firmware repo, e.g. Firmware/NODE_IDS.md. */
+  file: string
+  commit: string
+  /** The commit's date, YYYY-MM-DD. */
+  date: string
+  nodes: { nodeId: number; name: string; console: string; kind: NodeKind | 'bridge' }[]
 }
 
 export interface NodeSnapshot {

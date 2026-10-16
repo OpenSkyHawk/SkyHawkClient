@@ -86,7 +86,16 @@ function sparseFetch(paths: string[]): string {
   return dir
 }
 
-type Sources = { [K in keyof typeof SRC]: string } & { cleanup: () => void }
+/** Committer date (YYYY-MM-DD) of PIN.commit: the registry's "as of" date, deterministic. */
+function commitDate(cwd: string): string {
+  return execFileSync('git', ['show', '-s', '--format=%cs', PIN.commit], {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit']
+  }).trim()
+}
+
+type Sources = { [K in keyof typeof SRC]: string } & { commitDate: string; cleanup: () => void }
 
 function loadSources(): Sources {
   const local = localRoot()
@@ -98,12 +107,14 @@ function loadSources(): Sources {
     console.log(`[sync] reading from local checkout: ${local}`)
     return {
       ...collect((p) => readFileSync(join(local, p), 'utf8')),
+      commitDate: commitDate(local),
       cleanup: () => {}
     }
   }
   const dir = sparseFetch(Object.values(SRC))
   return {
     ...collect((p) => readFileSync(join(dir, p), 'utf8')),
+    commitDate: commitDate(dir),
     cleanup: () => rmSync(dir, { recursive: true, force: true })
   }
 }
@@ -738,7 +749,7 @@ ${lenEntries}
 
 // ── NODE_ID -> panel name registry ───────────────────────────────────────────
 
-function genNodeNames(md: string): string {
+function genNodeNames(md: string, date: string): string {
   const rows: { id: number; name: string; console: string }[] = []
   // table rows: | NODE_ID | Panel Group | Console | Status |
   const re = /^\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|/gm
@@ -756,6 +767,13 @@ function genNodeNames(md: string): string {
 /** CAN NODE_ID -> panel group name, from the firmware NODE_IDS.md registry. */
 export const NODE_NAMES: Record<number, { name: string; console: string }> = {
 ${entries.join(',\n')}
+}
+
+/** Where NODE_NAMES came from, shown in Settings › About. \`date\` is the commit's date. */
+export const NODE_REGISTRY_SOURCE = {
+  file: ${q(SRC.nodeIds)},
+  commit: ${q(PIN.commit)},
+  date: ${q(date)}
 }
 `
   )
@@ -777,7 +795,7 @@ async function main(): Promise<void> {
     await writeGenerated('hid-controls.generated.ts', genHidControls(s.hidControls))
     await writeGenerated('hid-report-layout.generated.ts', genHidReportLayout(s.simGateway))
     await writeGenerated('node-status.generated.ts', genNodeStatus(s.nodeStatus))
-    await writeGenerated('node-names.generated.ts', genNodeNames(s.nodeIds))
+    await writeGenerated('node-names.generated.ts', genNodeNames(s.nodeIds, s.commitDate))
     await writeGenerated('axis-cal.generated.ts', genAxisCal(s.axisCal, s.axisCalCpp))
   } finally {
     s.cleanup()

@@ -20,11 +20,21 @@ export interface NodeOverride {
   hidden?: boolean
 }
 
+/** What was known about a NODE_ID when it was ignored, for Settings › Ignored nodes. */
+export interface IgnoredInfo {
+  /** When it was ignored, ISO 8601. */
+  at: string
+  /** What it reported as at the time (a PDU sends `_NODE_TELEM`); absent if unknown. */
+  kind?: NodeKind
+}
+
 export interface NodeMappingFile {
   version: 1
   nodes: Record<number, NodeOverride>
   /** NODE_IDs the user ignored permanently (never "new"). */
   ignored: number[]
+  /** Per ignored NODE_ID; absent for ids ignored before this was recorded. */
+  ignoredMeta?: Record<number, IgnoredInfo>
 }
 
 /** Effective defaults for one registry node. */
@@ -105,6 +115,15 @@ function sanitizeOverride(raw: unknown): NodeOverride | undefined {
   return Object.keys(o).length ? o : undefined
 }
 
+function sanitizeIgnoredInfo(raw: unknown): IgnoredInfo | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const r = raw as Record<string, unknown>
+  if (typeof r.at !== 'string' || Number.isNaN(Date.parse(r.at))) return undefined
+  const info: IgnoredInfo = { at: r.at }
+  if (r.kind === 'pdu' || r.kind === 'panel') info.kind = r.kind
+  return info
+}
+
 /** Tolerant read: anything malformed is dropped field by field, never thrown. */
 export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
   if (!raw || typeof raw !== 'object') return { ...EMPTY_MAPPING, nodes: {}, ignored: [] }
@@ -120,7 +139,18 @@ export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
   const ignored = Array.isArray(r.ignored)
     ? [...new Set(r.ignored.filter(isNodeId))].sort((a, b) => a - b)
     : []
-  return { version: 1, nodes, ignored }
+  const file: NodeMappingFile = { version: 1, nodes, ignored }
+  // Kept only for ids still on the ignore list, so a stray entry cannot outlive its ignore.
+  const meta: Record<number, IgnoredInfo> = {}
+  const rawMeta = (
+    r.ignoredMeta && typeof r.ignoredMeta === 'object' ? r.ignoredMeta : {}
+  ) as Record<string, unknown>
+  for (const id of ignored) {
+    const info = sanitizeIgnoredInfo(rawMeta[id])
+    if (info) meta[id] = info
+  }
+  if (Object.keys(meta).length) file.ignoredMeta = meta
+  return file
 }
 
 /** An adopted node is a non-registry entry complete enough to place: name, console and kind. */
@@ -314,28 +344,121 @@ export function forgetNode(file: NodeMappingFile, nodeId: number): NodeMappingFi
   return withNode(file, nodeId, undefined)
 }
 
+export interface ResetOptions {
+  /** Also drop every adopted node: each is "new" again the next time it reports. */
+  forgetAdopted?: boolean
+}
+
 /**
  * Every registry node back to its defaults. Adopted nodes, the ignore list and hidden flags are
- * not registry overrides, so they stay.
+ * not registry overrides, so they stay — unless `forgetAdopted`, which drops every non-registry
+ * entry (adopted nodes and any stray flags on unknown ids). The ignore list always stays.
  */
 export function resetMapping(
   file: NodeMappingFile,
-  defaults: Map<number, NodeDefaults>
+  defaults: Map<number, NodeDefaults>,
+  opts: ResetOptions = {}
 ): NodeMappingFile {
-  if (differingCount(defaults, file) === 0) return file // nothing to reset: no write
+  if (
+    !isPlainObject(opts) ||
+    (opts.forgetAdopted !== undefined && typeof opts.forgetAdopted !== 'boolean')
+  ) {
+    throw new MappingError('Invalid reset request')
+  }
+  const forget = opts.forgetAdopted === true
+  const hasForeign = Object.keys(file.nodes).some((k) => !defaults.has(Number(k)))
+  if (differingCount(defaults, file) === 0 && !(forget && hasForeign)) return file // no write
   const nodes: Record<number, NodeOverride> = {}
   for (const [k, o] of Object.entries(file.nodes)) {
     const id = Number(k)
-    if (!defaults.has(id)) nodes[id] = o
-    else if (o.hidden) nodes[id] = { hidden: true }
+    if (!defaults.has(id)) {
+      if (!forget) nodes[id] = o
+    } else if (o.hidden) nodes[id] = { hidden: true }
   }
   return { ...file, nodes }
 }
 
+/** One field a reset would change, ready to show as `node · field  from → to`. */
+export interface ResetRow {
+  nodeId: number
+  /** The node's registry name (what it is called after the reset). */
+  node: string
+  field: 'name' | 'console' | 'power zone'
+  from: string
+  to: string
+}
+
+/** An adopted node "Also forget adopted nodes" would drop. */
+export interface AdoptedRow {
+  nodeId: number
+  name: string
+  console: string
+  /** Power zone as shown: the PDU's effective name, or '—'. */
+  zone: string
+}
+
+export interface ResetPreview {
+  rows: ResetRow[]
+  /** Registry nodes the reset changes; equals `differingCount`. */
+  nodeCount: number
+  adopted: AdoptedRow[]
+}
+
+/**
+ * What `resetMapping` would change, field by field. Counted from the file like `differingCount`,
+ * so an ignored registry node with overrides is listed too — Reset clears it as well.
+ */
+export function resetPreview(
+  defaults: Map<number, NodeDefaults>,
+  file: NodeMappingFile
+): ResetPreview {
+  const mapped = effectiveMapping(defaults, file)
+  const zoneName = (pduId: number | null | undefined): string =>
+    pduId == null ? '—' : (mapped.get(pduId)?.name ?? defaults.get(pduId)?.name ?? `Node ${pduId}`)
+  const rows: ResetRow[] = []
+  let nodeCount = 0
+  const adopted: AdoptedRow[] = []
+  const ids = Object.keys(file.nodes)
+    .map(Number)
+    .sort((a, b) => a - b)
+  for (const id of ids) {
+    const o = file.nodes[id]!
+    const d = defaults.get(id)
+    if (!d) {
+      const m = mapped.get(id)
+      if (m) adopted.push({ nodeId: id, name: m.name, console: m.console, zone: zoneName(m.pduId) })
+      continue
+    }
+    if (!hasOverride(o)) continue
+    nodeCount++
+    if (o.name !== undefined)
+      rows.push({ nodeId: id, node: d.name, field: 'name', from: o.name, to: d.name })
+    if (o.console !== undefined) {
+      rows.push({ nodeId: id, node: d.name, field: 'console', from: o.console, to: d.console })
+    }
+    if (o.pduId !== undefined) {
+      rows.push({
+        nodeId: id,
+        node: d.name,
+        field: 'power zone',
+        from: zoneName(o.pduId),
+        to: zoneName(d.pduId)
+      })
+    }
+  }
+  return { rows, nodeCount, adopted }
+}
+
 function unignore(file: NodeMappingFile, nodeId: number): NodeMappingFile {
-  return file.ignored.includes(nodeId)
-    ? { ...file, ignored: file.ignored.filter((id) => id !== nodeId) }
-    : file
+  if (!file.ignored.includes(nodeId)) return file
+  const next: NodeMappingFile = { ...file, ignored: file.ignored.filter((id) => id !== nodeId) }
+  if (file.ignoredMeta?.[nodeId]) {
+    const meta = { ...file.ignoredMeta }
+    delete meta[nodeId]
+    if (Object.keys(meta).length) next.ignoredMeta = meta
+    else delete next.ignoredMeta
+  }
+  return next
 }
 
 /** An on/off from the renderer must be a real boolean: 'no' or 'false' is truthy. */
@@ -343,13 +466,23 @@ function checkOnOff(on: unknown): void {
   if (typeof on !== 'boolean') throw new MappingError('Invalid on/off value')
 }
 
-/** Ignore permanently, or un-ignore. */
-export function setIgnored(file: NodeMappingFile, nodeId: number, on: boolean): NodeMappingFile {
+/** Ignore permanently, or un-ignore. `info` is recorded with a new ignore (main supplies it). */
+export function setIgnored(
+  file: NodeMappingFile,
+  nodeId: number,
+  on: boolean,
+  info?: IgnoredInfo
+): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
   checkOnOff(on)
   if (!on) return unignore(file, nodeId)
   if (file.ignored.includes(nodeId)) return file
-  return { ...file, ignored: [...file.ignored, nodeId].sort((a, b) => a - b) }
+  const next: NodeMappingFile = {
+    ...file,
+    ignored: [...file.ignored, nodeId].sort((a, b) => a - b)
+  }
+  if (info) next.ignoredMeta = { ...file.ignoredMeta, [nodeId]: info }
+  return next
 }
 
 function withoutHidden(file: NodeMappingFile, nodeId: number): NodeMappingFile {

@@ -9,6 +9,7 @@ import {
   MappingError,
   registryDefaults,
   resetMapping,
+  resetPreview,
   sanitizeNodeMapping,
   setHidden,
   setIgnored,
@@ -345,5 +346,93 @@ describe('differingCount matches what Reset changes', () => {
     }
     expect(differingCount(defaults, f)).toBe(0)
     expect(resetMapping(f, defaults)).toBe(f)
+  })
+})
+
+describe('ignore metadata', () => {
+  const at = '2026-10-12T10:00:00.000Z'
+
+  it('is recorded with a new ignore and dropped on un-ignore or adopt', () => {
+    const f = setIgnored(EMPTY_MAPPING, 47, true, { at, kind: 'panel' })
+    expect(f.ignoredMeta).toEqual({ 47: { at, kind: 'panel' } })
+    expect(setIgnored(f, 47, true, { at: '2027-01-01T00:00:00.000Z' })).toBe(f) // first ignore wins
+    expect(setIgnored(f, 47, false)).toEqual({ version: 1, nodes: {}, ignored: [] })
+    const g = adoptNode(f, defaults, 47, {
+      name: 'Trim',
+      console: 'Left',
+      pduId: null,
+      kind: 'panel'
+    })
+    expect(g.ignored).toEqual([])
+    expect(g.ignoredMeta).toBeUndefined()
+  })
+
+  it('sanitize keeps entries only for ignored ids with a real date', () => {
+    const f = sanitizeNodeMapping({
+      version: 1,
+      nodes: {},
+      ignored: [47, 52],
+      ignoredMeta: {
+        47: { at, kind: 'gadget' },
+        52: { at: 'yesterday' },
+        58: { at } // not ignored
+      }
+    })
+    expect(f.ignoredMeta).toEqual({ 47: { at } })
+    expect(sanitizeNodeMapping({ ignored: [47], ignoredMeta: 'x' })).not.toHaveProperty(
+      'ignoredMeta'
+    )
+  })
+})
+
+describe('reset preview and forgetting adopted nodes', () => {
+  const file: NodeMappingFile = {
+    version: 1,
+    nodes: {
+      1: { name: 'Arm', pduId: 3, hidden: true },
+      2: { console: 'Left' },
+      4: { name: 'PDU_R' }, // a PDU renamed: zones pointing at it show the new name
+      41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' },
+      55: { hidden: true } // stray flag on an unknown id
+    },
+    ignored: [2]
+  }
+
+  it('lists every changed field, ignored registry nodes included, with zones by name', () => {
+    const p = resetPreview(defaults, file)
+    expect(p.nodeCount).toBe(differingCount(defaults, file))
+    expect(p.rows).toEqual([
+      { nodeId: 1, node: 'Center_Armament', field: 'name', from: 'Arm', to: 'Center_Armament' },
+      {
+        nodeId: 1,
+        node: 'Center_Armament',
+        field: 'power zone',
+        from: 'PDU_Left',
+        to: 'PDU_Center'
+      },
+      { nodeId: 2, node: 'Right_Navigation', field: 'console', from: 'Left', to: 'Right' },
+      { nodeId: 4, node: 'PDU_Right', field: 'name', from: 'PDU_R', to: 'PDU_Right' }
+    ])
+    expect(p.adopted).toEqual([{ nodeId: 41, name: 'Trim', console: 'Left', zone: 'PDU_Left' }])
+    expect(resetPreview(defaults, EMPTY_MAPPING)).toEqual({ rows: [], nodeCount: 0, adopted: [] })
+  })
+
+  it('forgetAdopted also drops every non-registry entry; the ignore list stays', () => {
+    expect(resetMapping(file, defaults, { forgetAdopted: true })).toEqual({
+      version: 1,
+      nodes: { 1: { hidden: true } },
+      ignored: [2]
+    })
+    const adoptedOnly: NodeMappingFile = { version: 1, nodes: { 41: file.nodes[41]! }, ignored: [] }
+    expect(resetMapping(adoptedOnly, defaults)).toBe(adoptedOnly) // nothing to reset
+    expect(resetMapping(adoptedOnly, defaults, { forgetAdopted: true }).nodes).toEqual({})
+  })
+
+  it('refuses a malformed reset request', () => {
+    for (const bad of [null, 'yes', [], { forgetAdopted: 'yes' }]) {
+      expect(() => resetMapping(file, defaults, bad as never)).toThrow(
+        new MappingError('Invalid reset request')
+      )
+    }
   })
 })

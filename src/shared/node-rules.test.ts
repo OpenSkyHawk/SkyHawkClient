@@ -287,6 +287,34 @@ describe('differingCount', () => {
   })
 })
 
+describe('ignoredNodes', () => {
+  const file: NodeMappingFile = {
+    version: 1,
+    nodes: {},
+    ignored: [3, 47, 52, 58],
+    ignoredMeta: { 47: { at: '2026-10-12T10:00:00.000Z', kind: 'panel' } }
+  }
+
+  it('names registry ids, keeps the recorded kind, and says when each was ignored', () => {
+    const m = buildNodeModel(input({ file, telemetry: [telem(52)] }))
+    expect(m.ignored).toEqual([3, 47, 52, 58])
+    expect(m.ignoredNodes).toEqual([
+      { nodeId: 3, name: 'PDU_Left', kind: 'pdu' },
+      { nodeId: 47, kind: 'panel', ignoredAt: '2026-10-12T10:00:00.000Z' },
+      { nodeId: 52, kind: 'pdu' }, // sends _NODE_TELEM, so a PDU
+      { nodeId: 58 } // nothing known
+    ])
+  })
+
+  it('last seen is this session only: reporting now, offline since, or not seen', () => {
+    const seen = new Map<number, NodeSeen>([[52, { firstSeenAt: 1, offlineAt: 5000 }]])
+    const m = buildNodeModel(input({ file, roster: [st(47), st(52, false)], seen }))
+    const last = Object.fromEntries(m.ignoredNodes.map((n) => [n.nodeId, n.lastSeen]))
+    expect(last).toEqual({ 3: undefined, 47: 'now', 52: 5000, 58: undefined })
+    expect(m.nodes.map((n) => n.nodeId)).not.toContain(47) // still left out of the roster view
+  })
+})
+
 describe('cameOnline', () => {
   it('lists only nodes that were not present at the previous roster change', () => {
     expect(cameOnline(new Set(), [st(1), st(2, false)])).toEqual([1]) // first roster
