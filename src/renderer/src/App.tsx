@@ -47,8 +47,7 @@ export function App() {
   // Gold, still "Relaying", while running but not delivering end to end (#69).
   const waiting = relayWaiting({ mode: sourceMode, relaying, stream: relayStream, deviceState })
   const replayDriveSerial = useStore((s) => s.replayDriveSerial)
-  // Stopped, and the mode needs a board that is not there: Start would be refused. The click
-  // opens the device popover instead, where Connect is.
+  // Stopped, and the mode needs a board that is not there: Start would be refused.
   const blocked = !relaying && startBlocked({ mode: sourceMode, replayDriveSerial, deviceState })
   const relayTitle = relayTip({
     mode: sourceMode,
@@ -75,12 +74,10 @@ export function App() {
           <button
             className={`pill pill--btn${relaying ? ' pill--on' : ''}${waiting ? ' pill--wait' : ''}${blocked ? ' pill--blocked' : ''}`}
             aria-disabled={blocked}
-            onClick={() => (blocked ? set({ devicePopover: true }) : toggleRelay())}
-            title={
-              blocked
-                ? `${startBlockedReason(sourceMode)} Click to open the device link.`
-                : relayTitle
-            }
+            onClick={() => {
+              if (!blocked) toggleRelay()
+            }}
+            title={blocked ? startBlockedReason(sourceMode) : relayTitle}
           >
             <span className="pill__dot" />
             <span className="pill__txt">{relaying ? 'Relaying' : 'Stopped'}</span>
