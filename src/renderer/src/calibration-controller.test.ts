@@ -1117,6 +1117,54 @@ describe('CalibrationController serial link (#74)', () => {
     expect(d.calls.filter((x) => x.startsWith('commit'))).toEqual([])
   })
 
+  it('reads the cache on resume when the link dropped during the open handshake', async () => {
+    // The open fails without reaching the cache. Resuming without it would treat a throttle the
+    // cache knows as non-centring as self-centring, and a write would cache that over it.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await d.api.calCacheStore([
+      { idx: 0, min: 1000, centre: 30000, max: 60000, selfCentring: false }
+    ])
+    const realOpen = d.api.calSessionOpen
+    let answer!: (r: CalResult<{ timeoutMs: number; axisIdx: number }>) => void
+    d.api.calSessionOpen = () => new Promise((r) => (answer = r))
+
+    const opening = c.open(0, snapshot({}))
+    closeLink(c) // CalLink fails the pending SESSION_OPEN when the port closes
+    answer({ ok: false, kind: 'timeout', message: 'no reply' })
+    await opening
+    expect(c.snapshot().paused).toBe(true)
+    expect(c.snapshot().failure?.kind).toBe('timeout')
+
+    d.api.calSessionOpen = realOpen
+    d.calls.length = 0
+    await reopenLink(c)
+
+    expect(d.calls).toEqual(['open:0', 'cache:read'])
+    expect(c.selfCentring(0), 'the cached rest position applies').toBe(false)
+    expect(c.snapshot().failure, 'the reopen answers the failed open').toBeUndefined()
+    expect(c.snapshot().paused).toBe(false)
+  })
+
+  it('keeps a write failure on screen through a resume', async () => {
+    // Unlike a failed open, nothing about reconnecting answers it, and "stored before stopping"
+    // is still true.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(c as any).state.drafts[0] = { min: 1000, centre: 30000, max: 60000, selfCentring: true }
+    d.fail.commit = { ok: false, kind: 'timeout', message: 'no reply' }
+    await c.save()
+    expect(c.snapshot().failure?.kind).toBe('timeout')
+
+    closeLink(c)
+    await reopenLink(c)
+    expect(c.snapshot().paused).toBe(false)
+    expect(c.snapshot().failure?.kind).toBe('timeout')
+    expect(c.dirtyAxes(), 'and the unwritten draft is still there').toEqual([0])
+  })
+
   it('stays paused and says why when the session will not reopen', async () => {
     const d = fakeDevice()
     const c = new CalibrationController(d.api, now, 0)

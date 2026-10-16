@@ -180,8 +180,16 @@ export class CalibrationController {
   /** The serial link as last reported, kept outside `state` so it survives open() resetting it. */
   private linkUp = true
   private resuming = false
-  /** Opened while the link was down, so the cache was never read for this dialog. */
+  /**
+   * The cache has not been read for this dialog yet — opened while the link was down, the link
+   * dropped during the open handshake, or a different board came back. The next resume reads it.
+   */
   private seedOnResume = false
+  /**
+   * The failure a session open reported, kept by identity so a later successful reopen can take
+   * it down. Any other failure — a write, a delete — replaces the object and so is left showing.
+   */
+  private sessionFailure?: CalibrationState['failure']
 
   constructor(
     private readonly api: CalibrationApi,
@@ -240,14 +248,18 @@ export class CalibrationController {
       this.seedOnResume = true
       return
     }
-    this.seedOnResume = false
+    // Cleared only once the cache has actually been read: if the link drops during the
+    // handshake, the open fails and the resume that follows has to do the seeding instead.
+    this.seedOnResume = true
     this.set({ ...emptyState(), open: true, axis, device, busy: true })
     const r = await this.api.calSessionOpen(axis)
     if (!r.ok) {
-      this.set({ busy: false, failure: { ...r, axis } })
+      this.sessionFailure = { ...r, axis }
+      this.set({ busy: false, failure: this.sessionFailure })
       return
     }
     await this.seedFromCache()
+    this.seedOnResume = false
     this.set({ busy: false, failure: undefined })
     this.startTicking()
   }
@@ -760,7 +772,8 @@ export class CalibrationController {
     // Closed again while the reopen was in flight: the next report will retry.
     if (!this.linkUp || !this.state.open) return
     if (!r.ok) {
-      this.set({ failure: { ...r, axis } })
+      this.sessionFailure = { ...r, axis }
+      this.set({ failure: this.sessionFailure })
       return
     }
     if (this.seedOnResume) {
@@ -768,7 +781,11 @@ export class CalibrationController {
       await this.seedFromCache()
     }
     const c = this.state.capture
+    // A failed open or reopen is answered by this one succeeding; a failed write is not.
+    const stale = this.state.failure && this.state.failure === this.sessionFailure
+    this.sessionFailure = undefined
     this.set({
+      ...(stale ? { failure: undefined } : {}),
       paused: false,
       streaming: false,
       live: undefined,
