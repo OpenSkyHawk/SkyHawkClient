@@ -1,8 +1,22 @@
 // Scenario builders for component tests: main-side state at today's push level (skyhawk-mock.ts).
 // One place for them, on top of the shared node fixtures, so every component test describes the
 // world the same way. Each builder states its defaults; a test passes whatever differs.
+import { emptyCache } from '@shared/cal-cache'
+import {
+  appSettings,
+  buildConfigFile,
+  diffImport,
+  parseConfigFile,
+  type ConfigSnapshot
+} from '@shared/config-file'
 import { gatewayStatus, type GatewayStatus } from '@shared/gateway'
-import type { DeviceState, DeviceStatus } from '@shared/ipc'
+import {
+  DEFAULT_CONFIG,
+  type DeviceState,
+  type DeviceStatus,
+  type ImportPreview
+} from '@shared/ipc'
+import type { NodeDefaults } from '@shared/node-mapping'
 import type { NodeModel, NodeModelEntry, PduOutage } from '@shared/node-rules'
 import { NODE_KIND, type NodeStatus } from '@shared/nodes'
 import { modelNode, nodeModel, nodeStatus } from '../../test-fixtures/nodes'
@@ -113,3 +127,46 @@ export const model = (
   outages: PduOutage[] = [],
   over: Partial<NodeModel> = {}
 ): NodeModel => ({ ...nodeModel(nodes, outages), ...over })
+
+// ── config import (`openConfigImport`'s answer) ─────────────────────────────
+
+/** This computer's setup as main snapshots it: the default config, no mapping, no calibration. */
+export const setup = (over: Partial<ConfigSnapshot> = {}): ConfigSnapshot => ({
+  app: appSettings(DEFAULT_CONFIG),
+  nodeMapping: { version: 3, nodes: {} },
+  powerSupply: DEFAULT_CONFIG.psu,
+  calibration: emptyCache(),
+  ...over
+})
+
+/** An exported file's text holding `sections` as written (not sanitized: what's on disk). */
+export const configFileText = (
+  sections: Record<string, unknown>,
+  exportedAt = '2026-10-12T21:02:00.000Z',
+  client = '0.2.0'
+): string => JSON.stringify({ ...buildConfigFile(setup(), exportedAt, client), sections }, null, 2)
+
+/**
+ * The preview main answers `openConfigImport` with for `text` against `current`, built the way
+ * main's ConfigTransfer.preview builds it (parseConfigFile + diffImport); the token is fixed.
+ */
+export function importPreview(
+  text: string,
+  current: ConfigSnapshot = setup(),
+  defaults: Map<number, NodeDefaults> = new Map(),
+  fileName = 'skyhawk-config.json'
+): ImportPreview {
+  const parsed = parseConfigFile(text)
+  if (!parsed.ok) throw new Error(`importPreview: main would refuse this file: ${parsed.error}`)
+  const { config } = parsed
+  const sections = diffImport(defaults, current, config.sections)
+  return {
+    token: 'import-token-1',
+    fileName,
+    ...(config.exportedAt ? { exportedAt: config.exportedAt } : {}),
+    ...(config.client ? { client: config.client } : {}),
+    sections,
+    skipped: config.skipped,
+    identical: sections.every((s) => s.rows.length === 0)
+  }
+}
