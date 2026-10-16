@@ -170,10 +170,17 @@ export function effectiveMapping(
 
 /** How many registry nodes differ from their defaults — what "Reset all" would change. */
 export function differingCount(defaults: Map<number, NodeDefaults>, file: NodeMappingFile): number {
+  // Counted from the file, not effectiveMapping: an ignored registry node is left out of the
+  // effective mapping, but Reset still clears its overrides — and this must match what Reset does.
   let n = 0
-  for (const m of effectiveMapping(defaults, file).values()) if (m.differs) n++
+  for (const [k, o] of Object.entries(file.nodes)) {
+    if (defaults.has(Number(k)) && hasOverride(o)) n++
+  }
   return n
 }
+
+const hasOverride = (o: NodeOverride): boolean =>
+  o.name !== undefined || o.console !== undefined || o.pduId !== undefined
 
 export type MappingPatch = Partial<Pick<NodeOverride, 'name' | 'console' | 'pduId'>>
 export interface AdoptSpec {
@@ -217,6 +224,26 @@ function withNode(
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
+/**
+ * A power zone names the PDU feeding a node: a PDU has none, and a panel's must be a registry or
+ * adopted PDU that is not ignored — never itself or another panel. Checked on set only; a stored
+ * zone that later stops pointing at a PDU (a registry change) still loads, since rewriting user
+ * data on read is worse than one odd zone, and grouping only ever starts from a real PDU.
+ */
+function checkPowerZone(
+  file: NodeMappingFile,
+  defaults: Map<number, NodeDefaults>,
+  nodeId: number,
+  kind: NodeKind,
+  pduId: number | null | undefined
+): void {
+  if (pduId === undefined || pduId === null) return
+  if (kind === 'pdu') throw new MappingError('A PDU has no power zone')
+  if (pduId === nodeId || effectiveMapping(defaults, file).get(pduId)?.kind !== 'pdu') {
+    throw new MappingError('Power zone must be a PDU')
+  }
+}
+
 function checkPatch(p: MappingPatch): void {
   if (p.name !== undefined && !text(p.name)) throw new MappingError('Name cannot be empty')
   if (p.console !== undefined && !text(p.console)) throw new MappingError('Console cannot be empty')
@@ -241,6 +268,7 @@ export function setNodeMapping(
   const d = defaults.get(nodeId)
   const cur = file.nodes[nodeId]
   if (!d && !adopted(cur)) throw new MappingError(`Node ${nodeId} is not mapped — adopt it first`)
+  if ('pduId' in patch) checkPowerZone(file, defaults, nodeId, d ? d.kind : cur!.kind!, patch.pduId)
   const next: NodeOverride = { ...cur }
   for (const key of ['name', 'console', 'pduId'] as const) {
     if (!(key in patch)) continue
@@ -269,6 +297,8 @@ export function adoptNode(
   if (!console) throw new MappingError('Console cannot be empty')
   checkPatch(spec)
   if (spec.kind !== 'pdu' && spec.kind !== 'panel') throw new MappingError('Unknown node kind')
+  // A PDU's zone is forced to none below (the adopt form has a group label, not powered-by).
+  if (spec.kind === 'panel') checkPowerZone(file, defaults, nodeId, 'panel', spec.pduId)
   const o: NodeOverride = {
     name,
     console,
@@ -292,6 +322,7 @@ export function resetMapping(
   file: NodeMappingFile,
   defaults: Map<number, NodeDefaults>
 ): NodeMappingFile {
+  if (differingCount(defaults, file) === 0) return file // nothing to reset: no write
   const nodes: Record<number, NodeOverride> = {}
   for (const [k, o] of Object.entries(file.nodes)) {
     const id = Number(k)

@@ -280,3 +280,70 @@ describe('renderer input: on/off values and no-op changes', () => {
     expect(forgetNode(f, 1).nodes).toEqual({})
   })
 })
+
+describe('power zones', () => {
+  const trim: AdoptSpec = { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+  const withAux = adoptNode(EMPTY_MAPPING, defaults, 42, {
+    name: 'PDU_Aux',
+    console: 'Left',
+    pduId: null,
+    kind: 'pdu'
+  })
+
+  it('a PDU has no power zone', () => {
+    expect(() => setNodeMapping(EMPTY_MAPPING, defaults, 3, { pduId: 4 })).toThrow(
+      new MappingError('A PDU has no power zone')
+    )
+    expect(() => setNodeMapping(withAux, defaults, 42, { pduId: 3 })).toThrow(
+      new MappingError('A PDU has no power zone')
+    )
+    expect(setNodeMapping(EMPTY_MAPPING, defaults, 3, { pduId: null })).toBe(EMPTY_MAPPING)
+  })
+
+  it('a panel is zoned only to a registry or adopted PDU that is not ignored', () => {
+    const notPdu = new MappingError('Power zone must be a PDU')
+    const set = (f: NodeMappingFile, pduId: number) => () =>
+      setNodeMapping(f, defaults, 1, { pduId })
+    expect(set(EMPTY_MAPPING, 1)).toThrow(notPdu) // itself
+    expect(set(EMPTY_MAPPING, 2)).toThrow(notPdu) // another panel
+    expect(set(EMPTY_MAPPING, 42)).toThrow(notPdu) // not adopted
+    expect(set(setIgnored(EMPTY_MAPPING, 3, true), 3)).toThrow(notPdu) // ignored PDU
+    expect(set(EMPTY_MAPPING, 3)().nodes[1]).toEqual({ pduId: 3 }) // registry PDU
+    expect(set(withAux, 42)().nodes[1]).toEqual({ pduId: 42 }) // adopted PDU
+    expect(setNodeMapping(EMPTY_MAPPING, defaults, 1, { pduId: null }).nodes[1]).toEqual({
+      pduId: null
+    })
+  })
+
+  it('adopting a panel applies the same rule', () => {
+    const notPdu = new MappingError('Power zone must be a PDU')
+    expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, { ...trim, pduId: 41 })).toThrow(notPdu)
+    expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, { ...trim, pduId: 1 })).toThrow(notPdu)
+    expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, { ...trim, pduId: 42 })).toThrow(notPdu)
+    expect(adoptNode(withAux, defaults, 41, { ...trim, pduId: 42 }).nodes[41]?.pduId).toBe(42)
+    expect(adoptNode(EMPTY_MAPPING, defaults, 41, { ...trim, pduId: 5 }).nodes[41]?.pduId).toBe(5)
+  })
+})
+
+describe('differingCount matches what Reset changes', () => {
+  it('counts an ignored registry node with overrides, since Reset clears it', () => {
+    const f: NodeMappingFile = { version: 1, nodes: { 2: { name: 'Nav' } }, ignored: [2] }
+    expect(differingCount(defaults, f)).toBe(1)
+    const reset = resetMapping(f, defaults)
+    expect(reset.nodes).toEqual({})
+    expect(differingCount(defaults, reset)).toBe(0)
+  })
+
+  it('a reset with nothing to reset returns the same object (no write)', () => {
+    const f: NodeMappingFile = {
+      version: 1,
+      nodes: {
+        1: { hidden: true },
+        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+      },
+      ignored: [50]
+    }
+    expect(differingCount(defaults, f)).toBe(0)
+    expect(resetMapping(f, defaults)).toBe(f)
+  })
+})
