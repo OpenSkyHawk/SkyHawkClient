@@ -136,8 +136,11 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   const waiting = [...roster.values()]
     .filter((n) => n.present || !mapping.has(n.nodeId))
     .map((n) => n.nodeId)
-  // PDU pages are a report too: a registry or adopted PDU sending them is on the bus.
-  const sending = [...telem.keys()].filter((id) => mapping.has(id))
+  // PDU pages are a report too: a registry or adopted PDU sending them now is on the bus. Pages are
+  // kept (only marked stale), so one that stopped sending — dropped, or forgotten — is not.
+  const sending = [...telem.values()]
+    .filter((t) => mapping.get(t.nodeId)?.known || (mapping.has(t.nodeId) && hasFreshPduPage(t)))
+    .map((t) => t.nodeId)
   // The bridge's own row (node 0, v3) is this client's link, not a cockpit node.
   const ids = [...new Set([...known, ...waiting, ...sending])]
     .filter((id) => id !== BRIDGE_NODE_ID)

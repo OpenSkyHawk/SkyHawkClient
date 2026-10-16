@@ -407,6 +407,15 @@ describe('your cockpit (#93)', () => {
     expect(buildNodeModel(fresh({ telemetry: [telem(52)] })).nodes).toEqual([]) // unmapped: no
   })
 
+  it('a registry PDU whose pages went stale (dropped, or forgotten) is not on the bus (#93 re-review)', () => {
+    const stale = [telem(3, { stale: true })]
+    expect(buildNodeModel(fresh({ telemetry: stale, rosterCompleteAt: 0 })).nodes).toEqual([])
+    // In your cockpit it stays, as any board does.
+    const file: NodeMappingFile = { version: 2, nodes: { 3: { added: true } } }
+    const m = buildNodeModel(fresh({ file, telemetry: stale, rosterCompleteAt: 0 }))
+    expect(m.nodes.map((n) => [n.nodeId, n.source])).toEqual([[3, 'registry']])
+  })
+
   it('a board whose PDU is not in your cockpit keeps its zone (No power zone on the plan)', () => {
     const file: NodeMappingFile = { version: 2, nodes: { 2: { added: true } } }
     const m = buildNodeModel(fresh({ file, roster: [st(2)], rosterCompleteAt: 0 }))
