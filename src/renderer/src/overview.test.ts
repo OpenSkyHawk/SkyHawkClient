@@ -212,7 +212,8 @@ describe('newDevices', () => {
     expect(newDevices(views([node(1), fresh(0), fresh(41), newPdu(42)]), true)).toEqual({
       count: 1,
       panels: 0,
-      pdus: 1
+      pdus: 1,
+      registry: 0
     })
   })
 
@@ -225,7 +226,8 @@ describe('newDevices', () => {
     expect(newDevices(views([newPdu(42, { availability: 'offline' }), newPdu(44)]), true)).toEqual({
       count: 1,
       panels: 0,
-      pdus: 1
+      pdus: 1,
+      registry: 0
     })
   })
 
@@ -236,13 +238,35 @@ describe('newDevices', () => {
 
 describe('newDevicesText', () => {
   it('lists the reported kinds', () => {
-    expect(newDevicesText({ count: 1, panels: 0, pdus: 1 })).toEqual({
+    expect(newDevicesText({ count: 1, panels: 0, pdus: 1, registry: 0 })).toEqual({
       head: '1 new device on the bus',
       detail: '1 PDU, not in NODE_IDS.md.'
     })
-    expect(newDevicesText({ count: 3, panels: 1, pdus: 2 })).toEqual({
+    expect(newDevicesText({ count: 3, panels: 1, pdus: 2, registry: 0 })).toEqual({
       head: '3 new devices on the bus',
       detail: '1 panel group, 2 PDUs, not in NODE_IDS.md.'
+    })
+  })
+
+  it('a registry board waiting to be added is from NODE_IDS.md, not "not in" it (#93)', () => {
+    expect(newDevicesText({ count: 1, panels: 1, pdus: 0, registry: 1 }).detail).toBe(
+      '1 panel group from NODE_IDS.md, not added to your cockpit yet.'
+    )
+    expect(newDevicesText({ count: 3, panels: 2, pdus: 1, registry: 2 }).detail).toBe(
+      '2 panel groups, 1 PDU, not added to your cockpit yet — 2 from NODE_IDS.md.'
+    )
+  })
+
+  it('counts the registry boards among them', () => {
+    const reg = fresh(1, {
+      identified: 'panel',
+      registry: { name: 'Center_Armament', console: 'Center', pduId: 5 }
+    })
+    expect(newDevices(nodeViews(model([reg]), []), true)).toEqual({
+      count: 1,
+      panels: 1,
+      pdus: 0,
+      registry: 1
     })
   })
 })
