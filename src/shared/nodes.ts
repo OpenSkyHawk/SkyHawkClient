@@ -89,6 +89,12 @@ export function nodeRosterRequest(): Uint8Array {
   return encodeExportFrame(NODE_REQ_ADDR, 1)
 }
 
+/**
+ * How long after a roster request a `_NODE_STATUS` still counts as part of its reply. The bridge
+ * answers at once (a burst of lines at 250 kbaud); a second is generous.
+ */
+export const ROSTER_REPLY_MS = 1000
+
 /** When a node was first seen and, while it is offline, when and how it went offline. */
 export interface NodeSeen {
   firstSeenAt: number
@@ -112,7 +118,8 @@ export class NodeRoster {
   private nodes = new Map<number, NodeStatus>()
   private seen = new Map<number, NodeSeen>()
   private burst: NodeStatus[] = []
-  private burstOpen = false
+  /** When the pending roster request went out; cleared by its `_NODE_STATUS_END`. */
+  private burstAt?: number
   private completeAt?: number
   private dirty = false
 
@@ -120,15 +127,26 @@ export class NodeRoster {
     this.nodes.clear()
     this.seen.clear()
     this.burst = []
-    this.burstOpen = false
+    this.burstAt = undefined
     this.completeAt = undefined
     this.dirty = true
   }
 
   /** Call when a roster request is sent, so the reply burst is isolated from prior deltas. */
-  beginBurst(): void {
+  beginBurst(now = Date.now()): void {
     this.burst = []
-    this.burstOpen = true
+    this.burstAt = now
+  }
+
+  /**
+   * A status inside the reply window of a pending request is part of the roster reply. Bounded,
+   * so a bridge that never sends `_NODE_STATUS_END` cannot leave every later delta labelled as a
+   * late roster find (which would widen PDU-offline grouping for good).
+   */
+  private inReply(now: number): boolean {
+    return (
+      this.burstAt !== undefined && now >= this.burstAt && now - this.burstAt <= ROSTER_REPLY_MS
+    )
   }
 
   /** Feed one parsed DCS-BIOS command (name + remaining arg text). */
@@ -145,7 +163,7 @@ export class NodeRoster {
         this.seen.set(ns.nodeId, {
           firstSeenAt: seen.firstSeenAt,
           offlineAt: now,
-          offlineVia: this.burstOpen ? 'roster' : 'delta'
+          offlineVia: this.inReply(now) ? 'roster' : 'delta'
         })
       }
       this.dirty = true
@@ -160,7 +178,7 @@ export class NodeRoster {
         }
       }
       this.burst = []
-      this.burstOpen = false
+      this.burstAt = undefined
       this.completeAt ??= now
       this.dirty = true
     }

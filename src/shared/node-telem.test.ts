@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   displayCurrentMa,
+  hasFreshPduPage,
   NodeTelemStore,
   parseNodeTelem,
   PDU_FLAG,
@@ -182,5 +183,21 @@ describe('NodeTelemStore', () => {
     s.reset()
     expect(s.snapshot(0)).toEqual([])
     expect(s.takeChanged(0)).toBe(true)
+  })
+})
+
+describe('hasFreshPduPage', () => {
+  const unknown = parse('0a7f0102030405060a')
+  it('is true only for a fresh 12 V, 5 V or status page', () => {
+    const s = new NodeTelemStore()
+    s.apply(parse(telem(3, [0x02, 0, 0, 0, 0, 0, 0, 0])), 0)
+    expect(hasFreshPduPage(s.snapshot(TELEM_STALE_MS)[0]!)).toBe(true)
+    s.apply({ ...unknown, nodeId: 3 }, TELEM_STALE_MS + 5000) // a newer page type, fresh
+    const [n] = s.snapshot(TELEM_STALE_MS + 5000)
+    expect(n?.live).toBe(true)
+    expect(hasFreshPduPage(n!)).toBe(false) // the PDU page itself is stale
+    const other = new NodeTelemStore()
+    other.apply(unknown, 0)
+    expect(hasFreshPduPage(other.snapshot(0)[0]!)).toBe(false)
   })
 })

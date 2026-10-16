@@ -131,7 +131,7 @@ describe('NodeHub', () => {
 
     roster.applyMessage(NODE_MSG, '01010000000000000080000000', 100) // another node's delta
     h.flush(roster.takeDirty(), 100)
-    roster.beginBurst() // poll reply still lists node 2
+    roster.beginBurst(5000) // poll reply still lists node 2
     roster.applyMessage(NODE_MSG, node2(true), 5000)
     roster.applyMessage(NODE_END_MSG, '2', 5000)
     h.flush(roster.takeDirty(), 5000)

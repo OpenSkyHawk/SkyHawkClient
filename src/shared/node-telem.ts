@@ -129,6 +129,14 @@ export function parseNodeTelem(hex: string): NodeTelem | null {
   return { nodeId, kind: 'unknown', page, body: hex.slice(4).toLowerCase() }
 }
 
+/**
+ * The node has a fresh PDU page (12 V, 5 V or status). This, not `live`, decides PDU readings:
+ * `live` also counts pages this build does not know, which say nothing about the rails.
+ */
+export function hasFreshPduPage(t: NodeTelemSnapshot): boolean {
+  return [t.rail12V, t.rail5V, t.status].some((p) => p !== undefined && !p.stale)
+}
+
 /** A page as last received, with its age. A stale page keeps its last values for "last known". */
 export type TelemPageView<T extends TelemPageData> = T & { ageMs: number; stale: boolean }
 

@@ -33,13 +33,30 @@ const st = (nodeId: number, present = true): NodeStatus => ({
   degraded: false,
   faultId: 0
 })
-const telem = (nodeId: number, over: Partial<NodeTelemSnapshot> = {}): NodeTelemSnapshot => ({
-  nodeId,
-  isPdu: true,
-  other: [],
-  live: true,
-  ...over
-})
+/** A PDU with a fresh 12 V page; pass `stale: true` for one whose pages all went stale. */
+const telem = (
+  nodeId: number,
+  over: Partial<NodeTelemSnapshot> & { stale?: boolean } = {}
+): NodeTelemSnapshot => {
+  const { stale = false, ...rest } = over
+  return {
+    nodeId,
+    isPdu: true,
+    rail12V: {
+      kind: 'rail',
+      page: 1,
+      flags: 0,
+      vAvgMv: 12000,
+      vMinMv: 11900,
+      iAvgMa: 500,
+      ageMs: stale ? 20_000 : 0,
+      stale
+    },
+    other: [],
+    live: !stale,
+    ...rest
+  }
+}
 
 const input = (over: Partial<NodeModelInput>): NodeModelInput => ({
   roster: [],
@@ -122,7 +139,7 @@ describe('PDU readings', () => {
       everHadReadings: true
     })
     expect(
-      entry(input({ roster: [st(3)], telemetry: [telem(3, { live: false })] }), 3)
+      entry(input({ roster: [st(3)], telemetry: [telem(3, { stale: true })] }), 3)
     ).toMatchObject({
       readings: 'none',
       everHadReadings: true
@@ -131,6 +148,16 @@ describe('PDU readings', () => {
       readings: 'none',
       everHadReadings: false
     })
+  })
+
+  it('a fresh page of an unknown type does not count as PDU readings', () => {
+    const rail = { kind: 'rail', page: 1, flags: 0, vAvgMv: 0, vMinMv: 0, iAvgMa: 0 } as const
+    const t = telem(3, {
+      live: true,
+      rail12V: { ...rail, ageMs: 20_000, stale: true },
+      other: [{ kind: 'unknown', page: 0x7f, body: '', ageMs: 0, stale: false }]
+    })
+    expect(entry(input({ roster: [st(3)], telemetry: [t] }), 3)?.readings).toBe('none')
   })
 
   it('offline PDUs and panels carry no readings state', () => {

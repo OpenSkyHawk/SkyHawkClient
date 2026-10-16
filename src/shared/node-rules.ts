@@ -1,7 +1,7 @@
 // Node status rules (pure): combines the roster, telemetry and node mapping into the one picture
 // the UI shows — availability, new-node detection, PDU-offline grouping and PDU readings.
 import type { NodeSeen, NodeStatus } from './nodes'
-import type { NodeTelemSnapshot } from './node-telem'
+import { hasFreshPduPage, type NodeTelemSnapshot } from './node-telem'
 import {
   differingCount,
   effectiveMapping,
@@ -69,7 +69,11 @@ export interface NodeModel {
   ignored: number[]
   /** Hidden until they report again — left out of `nodes`. */
   hidden: number[]
-  /** The first complete roster since the session started has arrived. */
+  /**
+   * The first complete roster since the session started has arrived. Stays false when PanelBridge
+   * never ends a roster reply (node status not built into its firmware): registry nodes then stay
+   * 'unknown', since there is no roster to be missing from.
+   */
   rosterComplete: boolean
 }
 
@@ -131,7 +135,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     if (source === 'new' && seen) e.firstSeenAt = seen.firstSeenAt
     if (kind === 'pdu') {
       e.everHadReadings = t?.isPdu ?? false
-      if (availability === 'online') e.readings = t?.isPdu && t.live ? 'live' : 'none'
+      if (availability === 'online') e.readings = t && hasFreshPduPage(t) ? 'live' : 'none'
     }
     nodes.push(e)
   }
