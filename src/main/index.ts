@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   CTRL,
@@ -22,6 +22,19 @@ import { loadCalCache, saveCalCache } from './cal-cache'
 import { ConfigTransfer } from './config-transfer'
 import { debugLog, debugLogPath, setDebugEnabled } from './debug'
 import { listSerialPorts } from './serial'
+import { userDataOverride } from './user-data'
+
+// Before anything touches userData: dev worktrees get their own folder (#81).
+const userDataDir = userDataOverride({
+  isPackaged: app.isPackaged,
+  appPath: app.getAppPath(),
+  env: process.env,
+  cwd: process.cwd()
+})
+if (userDataDir) {
+  mkdirSync(userDataDir, { recursive: true }) // setPath throws on a missing folder
+  app.setPath('userData', userDataDir)
+}
 
 /** Report indices the firmware catalogues, derived from HIDControls.h. */
 function hidAvailability(): HidAvailability {
