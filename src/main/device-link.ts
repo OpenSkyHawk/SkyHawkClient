@@ -44,8 +44,6 @@ import {
 import { debugLog } from './debug'
 import { HidReader } from './hid'
 import { loadCalCache, saveCalCache } from './cal-cache'
-import { NODE_NAMES } from './reference/node-names.generated'
-import { NODE_FAULT_CODES } from './reference/node-status.generated'
 import { NodeHub } from './node-hub'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
@@ -409,21 +407,7 @@ export class DeviceLink {
     // ageMs and the rate have to keep moving for the UI to say so.
     if (this.hid) this.emit('hid:report', this.hid.snapshot())
     if (!isLinkUp(this.status.state)) return
-    const rosterChanged = this.roster.takeDirty()
-    if (rosterChanged) {
-      const nodes = this.roster.snapshot().map((n) => {
-        const fc = n.faultId ? NODE_FAULT_CODES[n.faultId] : undefined
-        return {
-          ...n,
-          name: NODE_NAMES[n.nodeId]?.name,
-          faultAbbr: fc?.abbr,
-          faultLabel: fc?.label,
-          faultDesc: fc?.description
-        }
-      })
-      this.emit('nodes:status', nodes)
-    }
-    this.nodes.flush(rosterChanged)
+    this.nodes.flush(this.roster.takeDirty())
   }
 
   /**

@@ -10,7 +10,6 @@ import type {
   LogRow as IpcLogRow,
   TelemetryReadout
 } from '@shared/ipc'
-import type { NodeStatus } from '@shared/nodes'
 import type { NodeModel } from '@shared/node-rules'
 import type { NodeTelemSnapshot } from '@shared/node-telem'
 import { DEFAULT_PSU, type PsuSetting } from '@shared/psu'
@@ -106,6 +105,8 @@ export interface AppState {
   /** Log tab sub-tab (#64): the DCS-BIOS stream, or the event log. */
   logView: LogView
   eventSource: EventSourceFilter
+  /** NODE_ID whose Cockpit side panel opens when the Cockpit tab next mounts (#66). */
+  cockpitOpen?: number
   problemsOnly: boolean
 
   // live link state
@@ -114,7 +115,6 @@ export interface AppState {
   /** Why the link is in `error` — e.g. another program holds the port. */
   deviceDetail?: string
   aircraft: AircraftStatus
-  nodes: NodeStatus[]
   /** Roster + telemetry + mapping, as main combines them (#61). Kept, dimmed, while the link is down. */
   nodeModel?: NodeModel
   nodeTelemetry: NodeTelemSnapshot[]
@@ -214,6 +214,8 @@ export interface AppState {
   exportEvents: () => Promise<string | undefined>
   /** Log › Events, with a source filter — the Cockpit's "View all in Log →". */
   showEvents: (source: EventSourceFilter) => void
+  /** The Cockpit tab with this node's side panel open — Connection's "›". */
+  openInCockpit: (nodeId: number) => void
   setSerialMonitor: (on: boolean) => void
   clearSerial: () => void
   refreshNodes: () => void
@@ -273,7 +275,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   deviceState: 'no-device',
   aircraft: { name: 'NONE', inferred: false, supported: true },
-  nodes: [],
   nodeTelemetry: [],
   nodesPeakW: 0,
 
@@ -414,6 +415,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   showEvents: (source) => set({ tab: 'log', logView: 'events', eventSource: source }),
 
+  openInCockpit: (nodeId) => set({ tab: 'cockpit', cockpitOpen: nodeId }),
+
   initBridge: () => {
     const api = window.skyhawk
     if (!api || bridgeSubscribed) return // outside Electron, or already subscribed
@@ -478,7 +481,6 @@ export const useStore = create<AppState>((set, get) => ({
       api.on('relay:state', (r) => set({ relaying: r.running, relayStream: r.stream })),
       api.on('cal:data', (c) => set({ cal: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
-      api.on('nodes:status', (n) => set({ nodes: n })),
       api.on('nodes:model', (m) => setNodes(m, get().nodeTelemetry)),
       api.on('nodes:telemetry', (t) => setNodes(get().nodeModel, t)),
       api.on('serial:traffic', (frames) => {

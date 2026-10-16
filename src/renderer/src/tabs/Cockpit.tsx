@@ -50,6 +50,14 @@ export function Cockpit() {
   const [focusPdu, setFocusPdu] = useState<number | null>(null)
   /** NODE_ID whose side panel is open: the node panel, or the PDU panel for a PDU. */
   const [open, setOpen] = useState<number | null>(null)
+  /** A node another tab asked to open here (Connection's "›"). */
+  const pendingOpen = useStore((s) => s.cockpitOpen)
+  const set = useStore((s) => s.set)
+  useEffect(() => {
+    if (pendingOpen === undefined) return
+    setOpen(pendingOpen)
+    set({ cockpitOpen: undefined })
+  }, [pendingOpen, set])
 
   const views = useMemo(() => (model ? nodeViews(model, telemetry) : []), [model, telemetry])
   const outages = useMemo(() => model?.outages ?? [], [model])

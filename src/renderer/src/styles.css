@@ -648,7 +648,7 @@ button.devind[aria-expanded='true'] {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
   gap: 20px;
-  align-items: start;
+  align-items: stretch;
 }
 .dev__head {
   display: flex;
@@ -1802,6 +1802,60 @@ button.devind[aria-expanded='true'] {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+/* nodes summary (#66): the card stretches to the bottom of the controls column */
+.ncard {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+.ncard__rows {
+  gap: 0;
+  margin-top: 6px;
+}
+/* a long name keeps its width; the meta wraps beside it when the window is narrow */
+.ncard__rows .node__id {
+  flex: none;
+}
+.ncard__rows .node__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ncard__foot {
+  margin-top: auto;
+  padding-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ncard__foot .hint {
+  margin-top: 0;
+}
+.nsum {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.nsum div {
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.nsum b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+}
+.nsum span {
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-2);
 }
 .nodes {
   display: flex;
