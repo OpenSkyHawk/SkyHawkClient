@@ -141,6 +141,9 @@ export class Session {
     this.stats.reset()
     this.lastErrKey = ''
     const mode = this.config.sourceMode
+    // A Bridge relay exists to reach the board, so starting one is also asking for the link.
+    // Only a released link: a link that is looking for the board, or retrying, already is.
+    if (mode === 'bridge' && this.link.deviceStatus().state === 'disconnected') this.link.connect()
 
     try {
       if (mode === 'replay') {

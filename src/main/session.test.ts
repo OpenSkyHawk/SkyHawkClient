@@ -531,6 +531,18 @@ describe('device link is independent of the relay (#69)', () => {
     session.shutdown()
   })
 
+  it('reconnects a released link when a Bridge relay starts, and only then', () => {
+    const { session, serial } = launched({ sourceMode: 'monitor' })
+    session.link.disconnect()
+    session.start() // Monitor never uses the board
+    expect(FakeSerial.last, 'Monitor leaves the port released').toBe(serial)
+    expect(session.status().device.state).toBe('disconnected')
+    session.setConfig({ sourceMode: 'bridge' }) // restarts the running relay as Bridge
+    expect(FakeSerial.last).not.toBe(serial)
+    expect(session.status().device.state).toBe('scanning')
+    session.shutdown()
+  })
+
   it('keeps the relay running through a device drop', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
     serial.openCb('/dev/fake')

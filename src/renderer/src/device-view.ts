@@ -160,3 +160,19 @@ export function relayTip(opts: {
       : ''
   return `DCS-BIOS stream · ${stream}${device} · ${opts.endpoint} — click to stop`
 }
+
+/**
+ * A running relay that is not delivering end to end — shown degraded rather than green. It keeps
+ * running and resumes on its own; this only stops the pill claiming data is flowing when it is not.
+ * Bridge also needs the device; Monitor and Replay never use it.
+ */
+export function relayWaiting(opts: {
+  mode: SourceMode
+  relaying: boolean
+  stream?: StreamState
+  deviceState: DeviceState
+}): boolean {
+  if (!opts.relaying) return false
+  if (opts.stream !== 'connected') return true
+  return opts.mode === 'bridge' && opts.deviceState !== 'connected'
+}

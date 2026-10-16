@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceState } from '@shared/ipc'
-import { deviceView, relayTip } from './device-view'
+import { deviceView, relayTip, relayWaiting } from './device-view'
 
 const STATES: DeviceState[] = [
   'connected',
@@ -102,5 +102,31 @@ describe('relayTip', () => {
     expect(relayTip(replay)).toBe('Replay · playing a4ec.json — click to stop')
     expect(relayTip({ ...replay, stream: 'ended' })).toBe('Replay · ended — click to stop')
     expect(relayTip({ ...replay, relaying: false })).toBe('Replay stopped — click to play')
+  })
+})
+
+describe('relayWaiting', () => {
+  const run = {
+    mode: 'bridge' as const,
+    relaying: true,
+    stream: 'connected' as const,
+    deviceState: 'connected' as const
+  }
+
+  it('is green only when the stream is up and, in Bridge, the device too', () => {
+    expect(relayWaiting(run)).toBe(false)
+    expect(relayWaiting({ ...run, deviceState: 'disconnected' })).toBe(true)
+    expect(relayWaiting({ ...run, deviceState: 'reconnecting' })).toBe(true)
+    expect(relayWaiting({ ...run, stream: 'reconnecting' })).toBe(true)
+    expect(relayWaiting({ ...run, stream: 'ended' })).toBe(true)
+  })
+
+  it('ignores the device outside Bridge', () => {
+    expect(relayWaiting({ ...run, mode: 'monitor', deviceState: 'no-device' })).toBe(false)
+    expect(relayWaiting({ ...run, mode: 'replay', deviceState: 'disconnected' })).toBe(false)
+  })
+
+  it('is never waiting while stopped', () => {
+    expect(relayWaiting({ ...run, relaying: false, stream: undefined })).toBe(false)
   })
 })
