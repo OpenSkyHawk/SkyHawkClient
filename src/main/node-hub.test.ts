@@ -156,6 +156,16 @@ describe('NodeHub', () => {
     expect(h.hide(2, true).ok).toBe(true)
   })
 
+  it('a non-boolean on/off is refused; a no-op change writes and pushes nothing', () => {
+    const { h, pushes } = hub()
+    expect(h.ignore(5, 'no' as never)).toEqual({ ok: false, error: 'Invalid on/off value' })
+    expect(h.forget(NaN)).toEqual({ ok: false, error: 'Not a NODE_ID: NaN' })
+    const forgot = h.forget(41) // nothing mapped
+    expect(forgot.ok).toBe(true)
+    expect(disk.saves).toBe(0)
+    expect(pushes).toEqual([])
+  })
+
   it('malformed renderer input resolves to { ok: false } instead of throwing', () => {
     const { h } = hub()
     expect(h.setMapping(1, null as never)).toEqual({ ok: false, error: 'Invalid mapping change' })

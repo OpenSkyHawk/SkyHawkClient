@@ -243,3 +243,40 @@ describe('reset / ignore / hidden', () => {
     expect(setHidden(stray, defaults, 41, false).nodes).toEqual({})
   })
 })
+
+describe('renderer input: on/off values and no-op changes', () => {
+  it('ignore and hide accept only a real boolean', () => {
+    for (const bad of ['no', 'false', 1, undefined, null]) {
+      const on = bad as unknown as boolean
+      expect(() => setIgnored(EMPTY_MAPPING, 41, on)).toThrow(
+        new MappingError('Invalid on/off value')
+      )
+      expect(() => setHidden(EMPTY_MAPPING, defaults, 2, on)).toThrow(
+        new MappingError('Invalid on/off value')
+      )
+    }
+    expect(setIgnored(EMPTY_MAPPING, 41, true).ignored).toEqual([41])
+    expect(setHidden(EMPTY_MAPPING, defaults, 2, true).nodes).toEqual({ 2: { hidden: true } })
+  })
+
+  it('forget checks the NODE_ID', () => {
+    for (const bad of [NaN, 0, 64, '3']) {
+      expect(() => forgetNode(EMPTY_MAPPING, bad as number)).toThrow(MappingError)
+    }
+  })
+
+  it('a change that changes nothing returns the same object (no write)', () => {
+    const f: NodeMappingFile = {
+      version: 1,
+      nodes: { 1: { name: 'Arm', hidden: true } },
+      ignored: [50]
+    }
+    expect(forgetNode(f, 41)).toBe(f)
+    expect(setHidden(f, defaults, 1, true)).toBe(f)
+    expect(setHidden(f, defaults, 2, false)).toBe(f)
+    expect(setIgnored(f, 50, true)).toBe(f)
+    expect(setIgnored(f, 41, false)).toBe(f)
+    expect(setNodeMapping(f, defaults, 1, { name: 'Arm' })).toBe(f)
+    expect(forgetNode(f, 1).nodes).toEqual({})
+  })
+})

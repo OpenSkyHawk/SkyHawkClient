@@ -172,14 +172,18 @@ export class NodeHub {
 
   /** Apply one mapping change, persist it, and push the new model straight away. */
   private update(fn: (f: NodeMappingFile) => NodeMappingFile): NodeMappingResult {
+    const before = this.mapping()
+    let next: NodeMappingFile
     try {
-      this.save(fn(this.mapping()))
+      next = fn(before)
+      this.save(next)
     } catch (err) {
       if (err instanceof MappingError || err instanceof MappingSaveError) {
         return { ok: false, error: err.message }
       }
       throw err
     }
-    return { ok: true, model: this.pushModel() }
+    // A no-op change (forget an unmapped id, hide a hidden node) writes and pushes nothing.
+    return { ok: true, model: next === before ? this.model(Date.now()) : this.pushModel() }
   }
 }

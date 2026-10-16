@@ -186,11 +186,23 @@ export interface AdoptSpec {
 /** Thrown for input the UI should have prevented; main turns it into an error result. */
 export class MappingError extends Error {}
 
+function sameOverride(a: NodeOverride, b: NodeOverride): boolean {
+  const ka = Object.keys(a) as (keyof NodeOverride)[]
+  return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k])
+}
+
+/**
+ * Set (or with an empty override, remove) one node's entry. Returns the SAME object when nothing
+ * changes, which is how callers skip a pointless write and push.
+ */
 function withNode(
   file: NodeMappingFile,
   nodeId: number,
   o: NodeOverride | undefined
 ): NodeMappingFile {
+  const cur = file.nodes[nodeId]
+  const remove = !o || !Object.keys(o).length
+  if (remove ? cur === undefined : cur !== undefined && sameOverride(cur, o)) return file
   const nodes = { ...file.nodes }
   if (o && Object.keys(o).length) nodes[nodeId] = o
   else delete nodes[nodeId]
@@ -268,6 +280,7 @@ export function adoptNode(
 
 /** Drop an adopted node (it is "new" again if it reports), or a registry node's overrides. */
 export function forgetNode(file: NodeMappingFile, nodeId: number): NodeMappingFile {
+  if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
   return withNode(file, nodeId, undefined)
 }
 
@@ -294,9 +307,15 @@ function unignore(file: NodeMappingFile, nodeId: number): NodeMappingFile {
     : file
 }
 
+/** An on/off from the renderer must be a real boolean: 'no' or 'false' is truthy. */
+function checkOnOff(on: unknown): void {
+  if (typeof on !== 'boolean') throw new MappingError('Invalid on/off value')
+}
+
 /** Ignore permanently, or un-ignore. */
 export function setIgnored(file: NodeMappingFile, nodeId: number, on: boolean): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
+  checkOnOff(on)
   if (!on) return unignore(file, nodeId)
   if (file.ignored.includes(nodeId)) return file
   return { ...file, ignored: [...file.ignored, nodeId].sort((a, b) => a - b) }
@@ -321,6 +340,7 @@ export function setHidden(
   on: boolean
 ): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
+  checkOnOff(on)
   if (!on) return withoutHidden(file, nodeId)
   if (!defaults.has(nodeId) && !adopted(file.nodes[nodeId])) {
     throw new MappingError(
