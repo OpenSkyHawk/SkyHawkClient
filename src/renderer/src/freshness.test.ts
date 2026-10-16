@@ -13,19 +13,29 @@ describe('report freshness', () => {
     }
   })
 
-  it('reserves red for the link being down, when nothing could arrive', () => {
-    // Every state that is not a live link, including the ones a pulled cable produces. The
-    // original version keyed on whether the *relay* was running, which stays true while it
+  it('reserves red for the board being absent, when nothing could arrive', () => {
+    // Every state in which the board is not found, including the ones a pulled cable produces.
+    // The original version keyed on whether the *relay* was running, which stays true while it
     // retries — so unplugging aged the card through its bands to 'quiet', claiming the device
     // had nothing to say when in fact it could not say anything.
-    for (const state of ['error', 'reconnecting', 'no-device', 'scanning'] as const) {
+    for (const state of ['reconnecting', 'no-device', 'scanning'] as const) {
       expect(freshness(state, 0).cls, state).toBe('rate--down')
       expect(freshness(state, 0).label, state).toBe('no link')
     }
-    // A report a moment ago does not soften it: the link is gone now.
-    expect(freshness('error', 1).cls).toBe('rate--down')
+    // A report a moment ago does not soften it: the board is gone now.
+    expect(freshness('reconnecting', 1).cls).toBe('rate--down')
     // And a live link is not red, however old the last report.
     expect(freshness('connected', Number.MAX_SAFE_INTEGER).cls).not.toBe('rate--down')
+  })
+
+  it('keeps the joystick live while the serial port is released or busy (#74)', () => {
+    // The HID interface is read alongside DCS and does not need the serial link. Disconnect,
+    // auto-connect off, and another tool holding the port all leave the board plugged in and
+    // the axes moving — red "no link" over them would say the opposite of what is on screen.
+    for (const state of ['disconnected', 'error'] as const) {
+      expect(freshness(state, 0).cls, state).toBe('rate--live')
+      expect(freshness(state, RECENT_MS).cls, state).toBe('rate--stale')
+    }
   })
 
   it('steps down through the bands as reports age', () => {

@@ -30,11 +30,12 @@ export type DeviceState =
   | 'disconnected'
 
 /**
- * Whether the device link is up. The single definition every consumer keys on — HID freshness,
- * calibration badges, the nodes card, the Cockpit tab (#63) — so none of them invents its own.
+ * Whether the device link is up. The single definition every consumer keys on — calibration,
+ * the nodes card, the Cockpit tab (#63) — so none of them invents its own.
  *
- * While it is down, link-scoped data (node model, telemetry, HID) is left at its last state and
- * should be shown dimmed; there is no separate "stale" signal.
+ * While it is down, link-scoped data (node model, telemetry) is left at its last state and
+ * should be shown dimmed; there is no separate "stale" signal. HID is not link-scoped: the
+ * joystick is read alongside DCS and keeps reporting with the serial port released (#74).
  */
 export function isLinkUp(state: DeviceState): boolean {
   return state === 'connected'
@@ -158,8 +159,9 @@ export interface CalSnapshot {
 // main -> renderer channel payloads
 //
 // Two scopes (#69). **Link-scoped** pushes flow whenever the device link is up, relaying or not:
-// device:status, hid:report, nodes:*, serial:traffic, cal:*. On link down they stop and the
-// renderer keeps the last state, dimmed via isLinkUp(). **Relay-scoped** pushes flow only while
+// device:status, nodes:*, serial:traffic, cal:*. On link down they stop and the renderer keeps
+// the last state, dimmed via isLinkUp(). hid:report is neither: the joystick is read for as long
+// as the app runs, serial port open or not. **Relay-scoped** pushes flow only while
 // relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries
 // both (panel commands and link errors are logged while stopped too).
 export interface PushChannels {

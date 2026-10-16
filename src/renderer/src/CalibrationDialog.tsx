@@ -131,7 +131,8 @@ export function CalibrationDialog({
   const startRaw = useRef<number | null>(null)
   if (!cap) startRaw.current = null
   else if (startRaw.current === null && s.live) startRaw.current = s.live.raw
-  const p = prompt(s, startRaw.current)
+  // A paused capture is frozen, so "push it to its stop" would ask for movement nothing records.
+  const p = s.paused ? null : prompt(s, startRaw.current)
   const dirty = controller.dirtyAxes()
 
   // Centre is not a stage the user navigates to — it is captured inside the same sweep as the
@@ -150,7 +151,7 @@ export function CalibrationDialog({
    * axis than the one the user was looking at.
    */
   const [armed, setArmed] = useState(false)
-  useEffect(() => setArmed(false), [s.axis])
+  useEffect(() => setArmed(false), [s.axis, s.paused])
   useEffect(() => {
     if (!armed) return
     const t = setTimeout(() => setArmed(false), 4000)
@@ -192,7 +193,13 @@ export function CalibrationDialog({
           <div className="cd__title">
             <div className="cd__h1">Axis Calibration · {AXIS_LABELS[s.axis]}</div>
             <div className="cd__h2">
-              SimGateway · <span className="cd__ok">connected</span> · signed ±32767
+              SimGateway ·{' '}
+              {s.paused ? (
+                <span className="cd__off">serial link closed</span>
+              ) : (
+                <span className="cd__ok">connected</span>
+              )}{' '}
+              · signed ±32767
             </div>
           </div>
           <span className="cd__pill">
@@ -365,14 +372,18 @@ export function CalibrationDialog({
 
             <div className="cd__actions">
               {cap?.phase === 'rejected' ? (
-                <button className="cd__primary" onClick={() => controller.retry()}>
+                <button
+                  className="cd__primary"
+                  onClick={() => controller.retry()}
+                  disabled={s.paused}
+                >
                   Redo that sweep
                 </button>
               ) : (
                 <button
                   className="cd__primary"
                   onClick={() => controller.startCapture()}
-                  disabled={writing || cap?.phase === 'capturing'}
+                  disabled={writing || cap?.phase === 'capturing' || s.paused}
                 >
                   {draft || stored?.calibrated ? 'Re-capture travel' : 'Start travel capture'}
                 </button>
@@ -487,7 +498,7 @@ export function CalibrationDialog({
           </div>
         )}
 
-        {s.restorable && s.restoreOpen && !s.write && (
+        {s.restorable && s.restoreOpen && !s.write && !s.paused && (
           <div className="cd__restore">
             <div className="cd__restorehead">
               <span className="cd__restoretitle">Restore calibration to the device</span>
@@ -533,7 +544,7 @@ export function CalibrationDialog({
           </div>
         )}
 
-        {s.restorable && !s.restoreOpen && !s.write && (
+        {s.restorable && !s.restoreOpen && !s.write && !s.paused && (
           <button className="cd__reoffer" onClick={() => controller.setRestoreOpen(true)}>
             <span className="cd__reofferdot" />
             {s.restorable.axes.length} {s.restorable.axes.length === 1 ? 'axis has' : 'axes have'} a
@@ -552,6 +563,16 @@ export function CalibrationDialog({
                   } through this calibration.`
                 : ' calibration erased. The axis now passes through untransformed.'}
             </span>
+          </div>
+        )}
+
+        {s.paused && (
+          <div className="cd__err">
+            <span className="cd__errbar" />
+            <div>
+              <b>Serial link closed</b> — calibration is paused; nothing more reaches the device.
+              Connect on the Connection tab to continue (captured sweeps are kept).
+            </div>
           </div>
         )}
 
@@ -582,6 +603,7 @@ export function CalibrationDialog({
           {stored?.calibrated && !writing && (
             <button
               className={`cd__ghost${armed ? ' cd__ghost--danger' : ''}`}
+              disabled={s.paused}
               onClick={() => {
                 if (!armed) {
                   setArmed(true)
@@ -600,7 +622,7 @@ export function CalibrationDialog({
           <button
             className="cd__primary cd__primary--sm"
             onClick={() => void controller.save()}
-            disabled={writing || !dirty.length || !!invalid}
+            disabled={writing || !dirty.length || !!invalid || s.paused}
           >
             {writing ? 'Writing…' : dirty.length ? `Write ${dirty.length} axis` : 'Write'}
           </button>
@@ -611,7 +633,7 @@ export function CalibrationDialog({
 }
 
 /** Owns the controller's lifetime and feeds it the RAW stream. */
-export function useCalibration(device?: CalSnapshot) {
+export function useCalibration(device: CalSnapshot | undefined, linkUp: boolean) {
   const api = window.skyhawk
   const ref = useRef<CalibrationController | null>(null)
   if (!ref.current && api) ref.current = new CalibrationController(api)
@@ -629,6 +651,10 @@ export function useCalibration(device?: CalSnapshot) {
     }
   }, [controller, api])
 
+  // Order matters: the link going down clears the store's snapshot in the same render, and the
+  // controller must already be paused when that empty snapshot arrives — otherwise it reads as a
+  // different board and the captured sweeps are thrown away.
+  useEffect(() => controller?.linkChanged(linkUp), [controller, linkUp])
   useEffect(() => controller?.deviceChanged(device), [controller, device])
 
   // Checked whenever the device's report changes, and needs no session: GET_CAL already ran to

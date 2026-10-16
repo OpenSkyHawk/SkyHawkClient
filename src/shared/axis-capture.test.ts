@@ -8,6 +8,7 @@ import {
   midpoint,
   push,
   reconcile,
+  restartSweep,
   retrySweep,
   sweepsRemaining,
   tick,
@@ -273,6 +274,25 @@ describe('accept and reject', () => {
     s = retrySweep(s, s.now)
     expect(s.phase).toBe('capturing')
     expect(s.step).toBe('stopA')
+    s = sweep(s, { lo: 13000, hi: 51000 })
+    expect(s.accepted).toHaveLength(2)
+  })
+
+  it('restarts an interrupted sweep from the first stop, keeping the accepted ones (#74)', () => {
+    // The serial link closed mid-sweep. Unlike retrySweep this applies to a capture that was not
+    // rejected — the half-finished sweep is simply untrustworthy across the gap.
+    let s = beginCapture(0, false)
+    s = sweep(s, { lo: 13000, hi: 51000 })
+    s = moveAndHold(s, 32000, 51000) // stopA of the second sweep committed
+    expect(s.current.stopA).toBe(51000)
+
+    s = restartSweep(s, s.now + 60_000)
+    expect(s.phase).toBe('capturing')
+    expect(s.step).toBe('stopA')
+    expect(s.current).toEqual({})
+    expect(s.accepted).toHaveLength(1)
+    expect(s.refSince, 'the hold clock starts again, not from before the outage').toBe(s.now)
+
     s = sweep(s, { lo: 13000, hi: 51000 })
     expect(s.accepted).toHaveLength(2)
   })

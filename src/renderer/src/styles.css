@@ -1556,6 +1556,9 @@ button.devind[aria-expanded='true'] {
 .cd__ok {
   color: var(--green);
 }
+.cd__off {
+  color: var(--red);
+}
 .cd__pill {
   display: flex;
   align-items: center;
@@ -2331,8 +2334,19 @@ button.devind[aria-expanded='true'] {
   font-weight: 600;
   white-space: nowrap;
 }
-.calbtn:hover {
+.calbtn:hover:not(:disabled) {
   background: rgba(30, 143, 255, 0.2);
+}
+.calbtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* #74 — the serial link is closed: the live view keeps going, calibration waits for it */
+.hid__calnote {
+  margin: 0 0 12px;
+}
+.hid__calnote b {
+  color: var(--text);
 }
 
 /* Armed delete. Red only in this state — the resting button is not the dangerous one. */
