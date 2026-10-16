@@ -2,25 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { gatewayStatus } from '@shared/gateway'
 import type { NodeStatus } from '@shared/nodes'
 import { gatewayView } from './gateway-view'
+import { nodeStatus } from '../../test-fixtures/nodes'
 
 const PORT = '/dev/cu.usbmodem1101'
 
-const node0 = (over: Partial<NodeStatus> = {}): NodeStatus => ({
-  nodeId: 0,
-  present: true,
-  boff: false,
-  epvf: false,
-  uptimeSec: 0,
-  rxCount: 0,
-  tec: 0,
-  rec: 0,
-  dieTempC: 42,
-  overheat: false,
-  degraded: false,
-  faultId: 0,
-  nodeKind: 3,
-  ...over
-})
+const node0 = (over: Partial<NodeStatus> = {}): NodeStatus =>
+  nodeStatus(0, { uptimeSec: 0, rxCount: 0, dieTempC: 42, nodeKind: 3, ...over })
 
 const view = (over: Partial<NodeStatus> = {}, notResponding = false, port?: string) =>
   gatewayView(gatewayStatus(node0(over), notResponding), true, port)

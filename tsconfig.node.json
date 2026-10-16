@@ -22,6 +22,7 @@
     "src/main",
     "src/preload",
     "src/shared",
+    "src/test-fixtures",
     "scripts",
     "electron.vite.config.ts",
     "vitest.config.mts"

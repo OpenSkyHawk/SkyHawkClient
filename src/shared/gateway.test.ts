@@ -2,23 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { GATEWAY_NO_ANSWER_MS, GatewayWatch, gatewayEvents, gatewayStatus } from './gateway'
 import { eventText, type LogEventInput } from './events'
 import type { NodeStatus } from './nodes'
+import { nodeStatus } from '../test-fixtures/nodes'
 
-const node0 = (over: Partial<NodeStatus> = {}): NodeStatus => ({
-  nodeId: 0,
-  present: true,
-  boff: false,
-  epvf: false,
-  uptimeSec: 100,
-  rxCount: 5,
-  tec: 0,
-  rec: 0,
-  dieTempC: 42,
-  overheat: false,
-  degraded: false,
-  faultId: 0,
-  nodeKind: 3,
-  ...over
-})
+const node0 = (over: Partial<NodeStatus> = {}): NodeStatus =>
+  nodeStatus(0, { rxCount: 5, dieTempC: 42, nodeKind: 3, ...over })
 
 const st = (over: Partial<NodeStatus> = {}, notResponding = false) =>
   gatewayStatus(node0(over), notResponding)! // a row always has a status

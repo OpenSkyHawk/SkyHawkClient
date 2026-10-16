@@ -10,6 +10,7 @@ import {
 import { EMPTY_MAPPING, registryDefaults, type NodeMappingFile } from './node-mapping'
 import type { NodeSeen, NodeStatus } from './nodes'
 import type { NodeTelemSnapshot } from './node-telem'
+import { nodeStatus } from '../test-fixtures/nodes'
 
 const defaults = registryDefaults({
   0: { name: 'PanelBridge', console: '—' },
@@ -20,21 +21,8 @@ const defaults = registryDefaults({
   5: { name: 'PDU_Center', console: 'Center' }
 })
 
-const st = (nodeId: number, present = true): NodeStatus => ({
-  nodeId,
-  present,
-  boff: false,
-  epvf: false,
-  uptimeSec: 0,
-  rxCount: 0,
-  tec: 0,
-  rec: 0,
-  dieTempC: null,
-  overheat: false,
-  degraded: false,
-  faultId: 0,
-  nodeKind: 0
-})
+const st = (nodeId: number, present = true): NodeStatus =>
+  nodeStatus(nodeId, { present, uptimeSec: 0, rxCount: 0, dieTempC: null })
 /** A PDU with a fresh 12 V page; pass `stale: true` for one whose pages all went stale. */
 const telem = (
   nodeId: number,

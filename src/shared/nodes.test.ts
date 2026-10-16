@@ -11,23 +11,10 @@ import {
   nodeFaultTag,
   type NodeStatus
 } from './nodes'
+import { nodeStatus } from '../test-fixtures/nodes'
 
-const node = (over: Partial<NodeStatus>): NodeStatus => ({
-  nodeId: 1,
-  present: true,
-  boff: false,
-  epvf: false,
-  uptimeSec: 0,
-  rxCount: 0,
-  tec: 0,
-  rec: 0,
-  dieTempC: 30,
-  overheat: false,
-  degraded: false,
-  faultId: 0,
-  nodeKind: 0,
-  ...over
-})
+const node = (over: Partial<NodeStatus>): NodeStatus =>
+  nodeStatus(1, { uptimeSec: 0, rxCount: 0, ...over })
 
 describe('parseNodeStatus', () => {
   it('decodes a v3 row (28 hex, nodeKind last)', () => {
