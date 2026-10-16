@@ -58,8 +58,10 @@ const withTemp = (label: string, n: NodeStatus): string =>
 
 /**
  * The Gateway's health from its own row (node 0) and the roster timeout. undefined = nothing to
- * say yet: it hasn't reported (or runs firmware before v3) and still answers. Worst first:
- * not responding, bus-off, overheat, error-passive, a fault code.
+ * say yet: nothing is judged before it reports. Bus-off and error-passive come from its CAN
+ * controller and are live in every row; overheat, the fault code and the temperature come from its
+ * own health frame (HEALTH_0, ~1/s; none with NODE_HEALTH_TELEM=0), which a row has only once its
+ * kind is set. Worst first: not responding, bus-off, overheat, error-passive, a fault code.
  */
 export function gatewayStatus(
   row: NodeStatus | undefined,
@@ -78,6 +80,7 @@ export function gatewayStatus(
     }
   }
   if (!row) return undefined
+  const health = row.nodeKind !== 0 // its health frame has arrived
   const sev = (f: Flag) => (f.severity === 'error' ? 'err' : 'warn') as 'err' | 'warn'
   if (row.boff) {
     const f = flag('boff')
@@ -92,7 +95,7 @@ export function gatewayStatus(
       }
     }
   }
-  if (row.overheat) {
+  if (health && row.overheat) {
     const f = flag('overheat')
     return {
       severity: sev(f),
@@ -110,7 +113,7 @@ export function gatewayStatus(
       note: `CAN errors high (TEC ${row.tec}): it still reaches the panels but may drop frames. Check the bus cabling and termination.`
     }
   }
-  if (row.degraded || row.faultId !== 0) {
+  if (health && (row.degraded || row.faultId !== 0)) {
     return {
       severity: sev(flag('degraded')),
       kind: 'fault',
@@ -118,6 +121,7 @@ export function gatewayStatus(
       note: FAULT_NOTE[row.faultId]
     }
   }
+  if (!health) return undefined
   return { severity: 'ok', kind: 'ok', label: withTemp('OK', row) }
 }
 

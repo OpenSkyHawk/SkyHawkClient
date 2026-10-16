@@ -36,6 +36,18 @@ describe('gatewayStatus — the one place the Gateway’s health is decided', ()
     expect(st({ dieTempC: null }).label).toBe('OK')
   })
 
+  it('judges nothing before its health frame (kind 0): no OK, no overheat or fault', () => {
+    expect(gatewayStatus(node0({ nodeKind: 0, dieTempC: null }), false)).toBeUndefined()
+    expect(
+      gatewayStatus(node0({ nodeKind: 0, overheat: true, degraded: true, faultId: 9 }), false)
+    ).toBeUndefined()
+  })
+
+  it('bus-off and error-passive are live in every row, health frame or not', () => {
+    expect(gatewayStatus(node0({ nodeKind: 0, boff: true }), false)?.kind).toBe('bus-off')
+    expect(gatewayStatus(node0({ nodeKind: 0, epvf: true }), false)?.kind).toBe('error-passive')
+  })
+
   it('applies no threshold: a hot die or high TEC without the flag is healthy', () => {
     expect(st({ dieTempC: 95, tec: 200 }).severity).toBe('ok')
   })
