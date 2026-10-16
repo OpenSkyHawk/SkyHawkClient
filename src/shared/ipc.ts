@@ -7,7 +7,7 @@ import type { NodeTelemSnapshot } from './node-telem'
 import type { AdoptSpec, MappingPatch, NodeKind, ResetOptions, ResetPreview } from './node-mapping'
 import type { NodeModel } from './node-rules'
 import type { LogEvent } from './events'
-import type { GatewayHealth } from './gateway'
+import type { GatewayStatus } from './gateway'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
 export type DcsTransport = 'loopback-multicast' | 'unicast-listen' | 'tcp-to-host'
@@ -51,10 +51,11 @@ export interface DeviceStatus {
   pid?: number
   detail?: string
   /**
-   * The Gateway's own health (#94), only while `connected`. Pushed on `device:status` when it
-   * changes; the link state itself is unchanged by it.
+   * The Gateway's own health (#94), only while `connected` and once there is something to say.
+   * Computed once in main (shared/gateway.ts) and only read by the UI. Pushed on `device:status`
+   * when it changes; the link state itself is unchanged by it.
    */
-  gateway?: GatewayHealth
+  gateway?: GatewayStatus
 }
 
 /**

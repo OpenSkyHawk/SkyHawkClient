@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  GATEWAY_NO_ANSWER_MS,
-  GatewayWatch,
-  gatewayFaultLabel,
-  gatewayProblem,
-  gatewayRow,
-  gatewayRowEvents,
-  type GatewayRow
-} from './gateway'
+import { GATEWAY_NO_ANSWER_MS, GatewayWatch, gatewayEvents, gatewayStatus } from './gateway'
 import { eventText, type LogEventInput } from './events'
 import type { NodeStatus } from './nodes'
 
@@ -28,96 +20,115 @@ const node0 = (over: Partial<NodeStatus> = {}): NodeStatus => ({
   ...over
 })
 
-const row = (over: Partial<NodeStatus> = {}): GatewayRow => gatewayRow(node0(over))
+const st = (over: Partial<NodeStatus> = {}, notResponding = false) =>
+  gatewayStatus(node0(over), notResponding)! // a row always has a status
 
 const short = (es: LogEventInput[]): string[] =>
   es.map((e) => `${e.name}: ${eventText(e)} [${e.severity}]`)
 
-describe('gatewayProblem — worst first, from its own flags only', () => {
-  it('is null when healthy, or before it reports', () => {
-    expect(gatewayProblem(undefined)).toBeNull()
-    expect(gatewayProblem({ notResponding: false })).toBeNull()
-    expect(gatewayProblem({ notResponding: false, row: row() })).toBeNull()
+describe('gatewayStatus — the one place the Gateway’s health is decided', () => {
+  it('nothing to say before it reports and while it answers', () => {
+    expect(gatewayStatus(undefined, false)).toBeUndefined()
   })
 
-  it('not responding and bus-off are errors', () => {
-    expect(gatewayProblem({ notResponding: true, row: row({ overheat: true }) })).toEqual({
-      kind: 'not-responding',
-      severity: 'error'
-    })
-    expect(
-      gatewayProblem({ notResponding: false, row: row({ boff: true, overheat: true }) })
-    ).toEqual({ kind: 'bus-off', severity: 'error' })
-  })
-
-  it('overheat > error-passive > fault code, all warnings', () => {
-    const p = (over: Partial<NodeStatus>) =>
-      gatewayProblem({ notResponding: false, row: row(over) })
-    expect(p({ overheat: true, epvf: true, faultId: 9 })).toEqual({
-      kind: 'overheat',
-      severity: 'warn'
-    })
-    expect(p({ epvf: true, faultId: 9 })).toEqual({ kind: 'error-passive', severity: 'warn' })
-    expect(p({ faultId: 9 })).toEqual({ kind: 'fault', severity: 'warn' })
-    expect(p({ degraded: true })).toEqual({ kind: 'fault', severity: 'warn' })
+  it('healthy, with its die temperature when it has one', () => {
+    expect(st()).toEqual({ severity: 'ok', kind: 'ok', label: 'OK · 42 °C' })
+    expect(st({ dieTempC: null }).label).toBe('OK')
   })
 
   it('applies no threshold: a hot die or high TEC without the flag is healthy', () => {
-    expect(
-      gatewayProblem({ notResponding: false, row: row({ dieTempC: 95, tec: 200 }) })
-    ).toBeNull()
-  })
-})
-
-describe('gatewayFaultLabel', () => {
-  it('uses the dictionary label, else the code, else Degraded', () => {
-    expect(gatewayFaultLabel(row({ faultId: 9, faultLabel: 'Duplicate NODE_ID' }))).toBe(
-      'Duplicate NODE_ID'
-    )
-    expect(gatewayFaultLabel(row({ faultId: 0x2a }))).toBe('Fault 42')
-    expect(gatewayFaultLabel(row({ degraded: true }))).toBe('Degraded')
-  })
-})
-
-describe('gatewayRowEvents', () => {
-  it('a healthy first report makes no row; problems already there do', () => {
-    expect(gatewayRowEvents(undefined, row(), 'r', 1)).toEqual([])
-    expect(
-      short(gatewayRowEvents(undefined, row({ overheat: true, dieTempC: 78 }), 'r', 1))
-    ).toEqual(['Gateway: overheat · 78 °C [warn]'])
+    expect(st({ dieTempC: 95, tec: 200 }).severity).toBe('ok')
   })
 
-  it('raised and cleared, like the node rows', () => {
-    const a = row()
-    const b = row({
-      boff: true,
-      epvf: true,
-      tec: 131,
-      degraded: true,
-      faultId: 9,
-      faultLabel: 'Duplicate NODE_ID'
+  it('warnings: overheat, error-passive, a fault code — each with its note', () => {
+    expect(st({ overheat: true, dieTempC: 78 })).toMatchObject({
+      severity: 'warn',
+      kind: 'overheat',
+      label: 'Overheat · 78 °C',
+      note: 'The Gateway raised its own temperature trip. Check the airflow around it.'
     })
-    expect(short(gatewayRowEvents(a, b, 'r', 1))).toEqual([
-      'Gateway: bus-off [error]',
-      'Gateway: error-passive · TEC 131 [warn]',
+    expect(st({ epvf: true, tec: 131 })).toMatchObject({
+      severity: 'warn',
+      kind: 'error-passive',
+      label: 'Error-passive'
+    })
+    expect(st({ epvf: true, tec: 131 }).note).toMatch(/TEC 131/)
+    const dup = st({ degraded: true, faultId: 9, faultLabel: 'Duplicate NODE_ID' })
+    expect(dup).toMatchObject({ severity: 'warn', kind: 'fault', label: 'Duplicate NODE_ID' })
+    expect(dup.note).toMatch(/uses NODE_ID 0, the Gateway’s own/)
+  })
+
+  it('a fault code it has no words for: the dictionary label, else the code; no note', () => {
+    expect(st({ degraded: true, faultId: 1, faultLabel: 'I2C peripheral' })).toEqual({
+      severity: 'warn',
+      kind: 'fault',
+      label: 'I2C peripheral',
+      note: undefined
+    })
+    expect(st({ faultId: 0x2a }).label).toBe('Fault 42')
+  })
+
+  it('errors carry the Overview alert; warnings never do', () => {
+    const b = st({ boff: true })
+    expect(b).toMatchObject({ severity: 'err', kind: 'bus-off', label: 'Bus-off' })
+    expect(b.alert?.head).toBe('The Gateway can’t reach your panels')
+    expect(st({ overheat: true }).alert).toBeUndefined()
+    const nr = gatewayStatus(undefined, true)!
+    expect(nr).toMatchObject({ severity: 'err', kind: 'not-responding', label: 'Not responding' })
+    expect(nr.note).toBe(
+      'No answer for 5 s while the port is open. Unplug its USB cable and plug it back in.'
+    )
+    expect(nr.alert?.head).toBe('Gateway not responding')
+  })
+
+  it('worst only: not responding > bus-off > overheat > error-passive > fault code', () => {
+    const all = { boff: true, overheat: true, epvf: true, faultId: 9 }
+    expect(st(all, true).kind).toBe('not-responding')
+    expect(st(all).kind).toBe('bus-off')
+    expect(st({ ...all, boff: false }).kind).toBe('overheat')
+    expect(st({ epvf: true, faultId: 9 }).kind).toBe('error-passive')
+  })
+})
+
+describe('gatewayEvents — rows read the status', () => {
+  const ev = (prev: Partial<NodeStatus> | null, next: Partial<NodeStatus> | null) =>
+    short(
+      gatewayEvents(
+        prev ? st(prev) : undefined,
+        next ? st(next) : undefined,
+        next ? node0(next) : undefined,
+        'r',
+        1
+      )
+    )
+
+  it('a healthy first report makes no row; a problem already there does', () => {
+    expect(ev(null, {})).toEqual([])
+    expect(ev(null, { overheat: true })).toEqual(['Gateway: overheat [warn]'])
+  })
+
+  it('raised and cleared, in the node rows’ words', () => {
+    expect(ev({}, { boff: true })).toEqual(['Gateway: bus-off [error]'])
+    expect(ev({ boff: true }, {})).toEqual(['Gateway: bus-off cleared [info]'])
+    expect(ev({}, { epvf: true, tec: 131 })).toEqual(['Gateway: error-passive · TEC 131 [warn]'])
+    expect(ev({}, { faultId: 9, faultLabel: 'Duplicate NODE_ID' })).toEqual([
       'Gateway: degraded · Duplicate NODE_ID [warn]'
     ])
-    expect(short(gatewayRowEvents(b, a, 'r', 2))).toEqual([
+  })
+
+  it('a temperature change is not news; a new fault code is', () => {
+    expect(ev({ overheat: true, dieTempC: 78 }, { overheat: true, dieTempC: 80 })).toEqual([])
+    expect(ev({ faultId: 5 }, { faultId: 9 })).toEqual(['Gateway: degraded · Fault 9 [warn]'])
+  })
+
+  it('a worse problem takes over silently; a milder one says the worse one cleared', () => {
+    expect(ev({ overheat: true }, { overheat: true, boff: true })).toEqual([
+      'Gateway: bus-off [error]'
+    ])
+    expect(ev({ overheat: true, boff: true }, { overheat: true })).toEqual([
       'Gateway: bus-off cleared [info]',
-      'Gateway: error-passive cleared [info]',
-      'Gateway: degraded cleared [info]'
+      'Gateway: overheat [warn]'
     ])
-  })
-
-  it('a different fault code is a new row', () => {
-    expect(short(gatewayRowEvents(row({ faultId: 5 }), row({ faultId: 9 }), 'r', 1))).toEqual([
-      'Gateway: degraded · Fault 9 [warn]'
-    ])
-  })
-
-  it('keeps the source line as raw', () => {
-    const [e] = gatewayRowEvents(undefined, row({ boff: true }), '_NODE_STATUS 00…', 7)
-    expect(e).toMatchObject({ t: 7, source: 'client', name: 'Gateway', raw: '_NODE_STATUS 00…' })
   })
 })
 
@@ -127,10 +138,10 @@ describe('GatewayWatch — not responding', () => {
     w.takeChanged()
     w.asked(1000)
     expect(w.tick(1000 + GATEWAY_NO_ANSWER_MS - 1)).toEqual([])
-    expect(w.health().notResponding).toBe(false)
+    expect(w.status()).toBeUndefined()
     const out = w.tick(1000 + GATEWAY_NO_ANSWER_MS)
     expect(short(out)).toEqual(['Gateway: not responding · no answer for 5 s [error]'])
-    expect(w.health().notResponding).toBe(true)
+    expect(w.status()?.kind).toBe('not-responding')
     expect(w.takeChanged()).toBe(true)
     // Said once, not on every tick.
     expect(w.tick(1000 + GATEWAY_NO_ANSWER_MS + 200)).toEqual([])
@@ -154,7 +165,15 @@ describe('GatewayWatch — not responding', () => {
     expect(short(w.answered('_NODE_STATUS_END', 26_000))).toEqual([
       'Gateway: responding again [info]'
     ])
-    expect(w.health().notResponding).toBe(false)
+    expect(w.status()).toBeUndefined()
+  })
+
+  it('answering with a problem: responding again, then the problem', () => {
+    const w = new GatewayWatch()
+    w.asked(0)
+    w.tick(GATEWAY_NO_ANSWER_MS)
+    const out = [...w.answered('r', 6000), ...w.report(node0({ boff: true }), 'r', 6000)]
+    expect(short(out)).toEqual(['Gateway: responding again [info]', 'Gateway: bus-off [error]'])
   })
 
   it('a calibration exchange pauses the clock but never ends "not responding"', () => {
@@ -165,7 +184,7 @@ describe('GatewayWatch — not responding', () => {
     w.asked(20_000)
     w.tick(20_000 + GATEWAY_NO_ANSWER_MS)
     w.tick(30_000, true)
-    expect(w.health().notResponding).toBe(true)
+    expect(w.status()?.kind).toBe('not-responding')
   })
 
   it('reset (port open / close) starts over', () => {
@@ -174,28 +193,29 @@ describe('GatewayWatch — not responding', () => {
     w.tick(GATEWAY_NO_ANSWER_MS)
     w.report(node0({ overheat: true }), 'r', 1)
     w.reset()
-    expect(w.health()).toEqual({ notResponding: false })
+    expect(w.status()).toBeUndefined()
     expect(w.tick(60_000)).toEqual([])
   })
 })
 
 describe('GatewayWatch — its own row', () => {
-  it('pushes only when what it reports changes (not uptime or rxCount)', () => {
+  it('pushes only when the status changes (not uptime or rxCount)', () => {
     const w = new GatewayWatch()
     w.takeChanged()
     expect(w.report(node0(), 'r', 1)).toEqual([])
     expect(w.takeChanged()).toBe(true)
-    expect(w.health().row).toMatchObject({ dieTempC: 42, boff: false })
+    expect(w.status()?.label).toBe('OK · 42 °C')
     w.report(node0({ uptimeSec: 999, rxCount: 77 }), 'r', 2)
     expect(w.takeChanged()).toBe(false)
     w.report(node0({ dieTempC: 43 }), 'r', 3)
     expect(w.takeChanged()).toBe(true)
   })
 
-  it('logs flags raised and cleared', () => {
+  it('logs problems raised and cleared, with the source line', () => {
     const w = new GatewayWatch()
     w.report(node0(), 'r', 1)
-    expect(short(w.report(node0({ boff: true }), 'r', 2))).toEqual(['Gateway: bus-off [error]'])
+    const [e] = w.report(node0({ boff: true }), '_NODE_STATUS 0001…', 2)
+    expect(e).toMatchObject({ t: 2, source: 'client', name: 'Gateway', raw: '_NODE_STATUS 0001…' })
     expect(short(w.report(node0(), 'r', 3))).toEqual(['Gateway: bus-off cleared [info]'])
   })
 })

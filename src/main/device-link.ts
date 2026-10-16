@@ -295,7 +295,7 @@ export class DeviceLink {
       portPath: path,
       vid: SIMGATEWAY_VID,
       pid: SIMGATEWAY_PID,
-      gateway: this.gateway.health()
+      gateway: this.gateway.status()
     })
     this.gateway.takeChanged() // just sent
     this.requestNodes() // seed the roster as soon as the device is up
@@ -458,7 +458,7 @@ export class DeviceLink {
     this.report(this.gateway.tick(Date.now(), this.exportGated))
     if (this.gateway.takeChanged()) {
       // Health rides on `device:status`, but it is not a change of link state: no onStatus.
-      this.status = { ...this.status, gateway: this.gateway.health() }
+      this.status = { ...this.status, gateway: this.gateway.status() }
       this.emit('device:status', this.status)
     }
   }

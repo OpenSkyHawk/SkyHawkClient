@@ -717,15 +717,16 @@ describe('Gateway health (#94)', () => {
       serial.openCb('/dev/fake')
       serial.dataCb(ascii(gatewayLine() + '_NODE_STATUS_END\n'))
       vi.advanceTimersByTime(250)
-      expect(session.status().device.gateway).toMatchObject({
-        notResponding: false,
-        row: { boff: false, dieTempC: 42 }
+      expect(session.status().device.gateway).toEqual({
+        severity: 'ok',
+        kind: 'ok',
+        label: 'OK · 42 °C'
       })
       serial.dataCb(ascii(gatewayLine(0x01))) // bus-off
       vi.advanceTimersByTime(250)
       expect(of('device:status').at(-1)).toMatchObject({
         state: 'connected',
-        gateway: { row: { boff: true } }
+        gateway: { severity: 'err', kind: 'bus-off', label: 'Bus-off' }
       })
       expect(rows(session)).toContain('client:Gateway: bus-off')
       // Still never a cockpit node.
@@ -743,15 +744,15 @@ describe('Gateway health (#94)', () => {
       const { session, serial } = launched()
       serial.openCb('/dev/fake') // seeds the first roster request
       vi.advanceTimersByTime(4800)
-      expect(session.status().device.gateway?.notResponding).toBe(false)
+      expect(session.status().device.gateway).toBeUndefined()
       vi.advanceTimersByTime(400)
       expect(session.status().device).toMatchObject({
         state: 'connected', // a Gateway problem, not a link state change
-        gateway: { notResponding: true }
+        gateway: { severity: 'err', kind: 'not-responding' }
       })
       serial.dataCb(ascii('_NODE_STATUS_END\n'))
       vi.advanceTimersByTime(250)
-      expect(session.status().device.gateway?.notResponding).toBe(false)
+      expect(session.status().device.gateway).toBeUndefined()
       expect(
         rows(session).filter((r) => r.startsWith('client:Gateway: ') && !r.includes('connected'))
       ).toEqual([
@@ -771,12 +772,12 @@ describe('Gateway health (#94)', () => {
       serial.openCb('/dev/fake')
       serial.dataCb(ascii(gatewayLine(0x02)))
       vi.advanceTimersByTime(250)
-      expect(session.status().device.gateway?.row?.epvf).toBe(true)
+      expect(session.status().device.gateway?.kind).toBe('error-passive')
       serial.closeCb()
       expect(session.status().device.gateway).toBeUndefined()
       vi.advanceTimersByTime(10_000) // no "not responding" while the port is closed
       serial.openCb('/dev/fake')
-      expect(session.status().device.gateway).toEqual({ notResponding: false })
+      expect(session.status().device.gateway).toBeUndefined()
       expect(rows(session).some((r) => r.includes('not responding'))).toBe(false)
       session.shutdown()
     } finally {

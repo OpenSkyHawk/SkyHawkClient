@@ -16,7 +16,7 @@ import { DEFAULT_PSU, type PsuSetting } from '@shared/psu'
 import { nodeViews, totalWatts } from './cockpit'
 import type { SerialFrame } from '@shared/ipc'
 import type { LogEvent } from '@shared/events'
-import type { GatewayHealth } from '@shared/gateway'
+import type { GatewayStatus } from '@shared/gateway'
 import { mergeEvents, restoreEvents, type EventSourceFilter, type LogView } from './log-view'
 
 export type TabId = 'overview' | 'connection' | 'cockpit' | 'log' | 'serial' | 'hid' | 'settings'
@@ -118,7 +118,7 @@ export interface AppState {
   /** Why the link is in `error` — e.g. another program holds the port. */
   deviceDetail?: string
   /** The Gateway's own health (#94); only while connected. */
-  deviceGateway?: GatewayHealth
+  deviceGateway?: GatewayStatus
   /** The title-bar Device popover is open — also opened by Overview's Details and Attention's cog (#94). */
   devicePopOpen: boolean
   aircraft: AircraftStatus
