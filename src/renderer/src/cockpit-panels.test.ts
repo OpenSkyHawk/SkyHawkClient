@@ -133,10 +133,14 @@ describe('boardActions', () => {
     expect(a.hide.disabled).toBe(false)
   })
 
-  it('never before the roster says offline', () => {
+  it('never before the roster says offline — and says so, not "online" (#93 review)', () => {
     const a = boardActions(node(1, { availability: 'unknown', status: undefined }))
     expect(a.forget.disabled).toBe(true)
     expect(a.hide.disabled).toBe(true)
+    expect(a.forget.tip).toBe(
+      'No roster yet — connect the SimGateway. Forget and Hide work once the board shows offline.'
+    )
+    expect(a.note).toBe(a.forget.tip)
   })
 
   it('Reset is for registry boards, greyed out at the defaults', () => {

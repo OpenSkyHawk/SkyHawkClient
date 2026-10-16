@@ -30,6 +30,9 @@ export interface BoardActions {
 
 const ONLINE_NOTE =
   'Online — it’s active on the bus, so it can’t be removed. Forget and Hide work once it’s offline.'
+/** No complete roster yet: whether it is on the bus is not known — not "online" (#93 review). */
+const NO_ROSTER_NOTE =
+  'No roster yet — connect the SimGateway. Forget and Hide work once the board shows offline.'
 
 /**
  * Same rules for a panel group and a PDU (#93). Hide and Forget only tidy the display, and a board
@@ -38,9 +41,10 @@ const ONLINE_NOTE =
  */
 export function boardActions(e: NodeModelEntry, fed = 0): BoardActions {
   const offline = e.availability === 'offline'
+  const why = e.availability === 'unknown' ? NO_ROSTER_NOTE : ONLINE_NOTE
   const off = (tip: string): BoardAction => ({
     disabled: !offline,
-    tip: offline ? tip : ONLINE_NOTE
+    tip: offline ? tip : why
   })
   const a: BoardActions = {
     forget: off(
@@ -53,7 +57,7 @@ export function boardActions(e: NodeModelEntry, fed = 0): BoardActions {
         ? 'Hide until it reports again; its boards keep the link'
         : 'Hide until it reports again'
     ),
-    note: ONLINE_NOTE
+    note: why
   }
   if (e.source === 'registry') {
     a.reset = e.differs
