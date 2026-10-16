@@ -9,7 +9,7 @@
 //   calibration  calibration-cache.json               sanitizeCache
 // Calibration only ever refills the client's copy. Writing a device is the HID tab's Review &
 // restore offer, never an import.
-import { DEFAULT_CONFIG, sanitizeConfig, type AppConfig } from './ipc'
+import { sanitizeConfig, type AppConfig } from './ipc'
 import { sanitizeCache, type CachedAxis, type CalCache } from './cal-cache'
 import {
   effectiveMapping,
@@ -344,6 +344,3 @@ export function applyToConfig(
     next = { ...next, psu: imported.powerSupply }
   return next
 }
-
-/** Every section DEFAULT_CONFIG knows, for a snapshot from defaults (tests, first run). */
-export const DEFAULT_APP_SETTINGS: AppSettings = appSettings(DEFAULT_CONFIG)

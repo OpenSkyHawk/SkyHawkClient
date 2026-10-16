@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { NodeModel, NodeModelEntry } from '@shared/node-rules'
+import type { NodeModelEntry } from '@shared/node-rules'
 import type { NodeStatus } from '@shared/nodes'
+import { modelNode, nodeModel as model, nodeStatus } from '../../test-fixtures/nodes'
 import { PDU_FLAG, RAIL_FLAG, TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
 import { lastSeenLabel, nodeViews } from './cockpit'
 import {
@@ -18,35 +19,11 @@ import {
   reportAge
 } from './cockpit-panels'
 
-const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
-  nodeId,
-  present: true,
-  boff: false,
-  epvf: false,
-  uptimeSec: 3725,
-  rxCount: 12345,
-  tec: 8,
-  rec: 1,
-  dieTempC: 33,
-  overheat: false,
-  degraded: false,
-  faultId: 0,
-  nodeKind: 0,
-  ...over
-})
+const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
+  nodeStatus(nodeId, { uptimeSec: 3725, rxCount: 12345, tec: 8, rec: 1, dieTempC: 33, ...over })
 
-const node = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEntry => ({
-  nodeId,
-  name: `Node_${nodeId}`,
-  console: 'Center',
-  pduId: null,
-  kind: 'panel',
-  source: 'registry',
-  availability: 'online',
-  status: status(nodeId),
-  differs: false,
-  ...over
-})
+const node = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEntry =>
+  modelNode(nodeId, { status: status(nodeId), ...over })
 
 const pdu = (nodeId: number, console: string, over: Partial<NodeModelEntry> = {}) =>
   node(nodeId, {
@@ -96,15 +73,6 @@ const telem = (
   },
   other: [],
   live: true
-})
-
-const model = (nodes: NodeModelEntry[]): NodeModel => ({
-  nodes,
-  outages: [],
-  differingCount: 0,
-  hidden: [],
-  hiddenNodes: [],
-  rosterComplete: true
 })
 
 const view = (e: NodeModelEntry, t: NodeTelemSnapshot[] = []) => nodeViews(model([e]), t)[0]!

@@ -14,23 +14,10 @@ import {
 } from './events'
 import { NODE_END_MSG, NODE_MSG, ROSTER_REPLY_MS, type NodeStatus } from './nodes'
 import { PDU_FLAG, RAIL_FLAG, type NodeTelem } from './node-telem'
+import { nodeStatus } from '../test-fixtures/nodes'
 
-const st = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
-  nodeId,
-  present: true,
-  boff: false,
-  epvf: false,
-  uptimeSec: 0,
-  rxCount: 0,
-  tec: 0,
-  rec: 0,
-  dieTempC: null,
-  overheat: false,
-  degraded: false,
-  faultId: 0,
-  nodeKind: 0,
-  ...over
-})
+const st = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
+  nodeStatus(nodeId, { uptimeSec: 0, rxCount: 0, dieTempC: null, ...over })
 
 const NAMES: Record<number, string> = { 2: 'Right_Navigation', 4: 'PDU_Right', 7: 'Left_Fuel' }
 const lookup = (): NodeLookup => ({

@@ -3,7 +3,6 @@ import {
   applyToConfig,
   buildConfigFile,
   CONFIG_FORMAT,
-  DEFAULT_APP_SETTINGS,
   diffImport,
   mergeCalibration,
   parseConfigFile,
@@ -14,6 +13,7 @@ import { DEFAULT_CONFIG } from './ipc'
 import { registryDefaults, type NodeMappingFile } from './node-mapping'
 import { DEFAULT_PSU } from './psu'
 import type { CalCache } from './cal-cache'
+import { DEFAULT_APP_SETTINGS } from '../test-fixtures/config'
 
 const defaults = registryDefaults({
   0: { name: 'PanelBridge', console: '—' },

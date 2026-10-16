@@ -1,39 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { NodeModel, NodeModelEntry, PduOutage } from '@shared/node-rules'
-import type { NodeStatus } from '@shared/nodes'
+import type { NodeModelEntry, PduOutage } from '@shared/node-rules'
+import {
+  modelNode as node,
+  nodeModel as model,
+  nodeStatus as status
+} from '../../test-fixtures/nodes'
 import { TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
 import { attentionItems, healthBand, nodeViews } from './cockpit'
 import { attentionSummary, cockpitTile, newDevices, newDevicesText, reportedKind } from './overview'
-
-const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
-  nodeId,
-  present: true,
-  boff: false,
-  epvf: false,
-  uptimeSec: 100,
-  rxCount: 10,
-  tec: 0,
-  rec: 0,
-  dieTempC: 30,
-  overheat: false,
-  degraded: false,
-  faultId: 0,
-  nodeKind: 0,
-  ...over
-})
-
-const node = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEntry => ({
-  nodeId,
-  name: `Node_${nodeId}`,
-  console: 'Center',
-  pduId: null,
-  kind: 'panel',
-  source: 'registry',
-  availability: 'online',
-  status: status(nodeId),
-  differs: false,
-  ...over
-})
 
 const pdu = (nodeId: number, over: Partial<NodeModelEntry> = {}) =>
   node(nodeId, {
@@ -66,15 +40,6 @@ const telem = (nodeId: number, i12: number, i5: number): NodeTelemSnapshot => ({
   rail5V: rail(TELEM_PAGE.PDU_RAIL_5V, 5000, i5),
   other: [],
   live: true
-})
-
-const model = (nodes: NodeModelEntry[], outages: PduOutage[] = []): NodeModel => ({
-  nodes,
-  outages,
-  differingCount: 0,
-  hidden: [],
-  hiddenNodes: [],
-  rosterComplete: true
 })
 
 const bandOf = (nodes: NodeModelEntry[], telemetry: NodeTelemSnapshot[] = []) =>
