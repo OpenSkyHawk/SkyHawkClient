@@ -16,6 +16,7 @@ import { DEFAULT_PSU, type PsuSetting } from '@shared/psu'
 import { nodeViews, totalWatts } from './cockpit'
 import type { SerialFrame } from '@shared/ipc'
 import type { LogEvent } from '@shared/events'
+import type { GatewayStatus } from '@shared/gateway'
 import { mergeEvents, restoreEvents, type EventSourceFilter, type LogView } from './log-view'
 
 export type TabId = 'overview' | 'connection' | 'cockpit' | 'log' | 'serial' | 'hid' | 'settings'
@@ -116,6 +117,10 @@ export interface AppState {
   devicePort?: string
   /** Why the link is in `error` — e.g. another program holds the port. */
   deviceDetail?: string
+  /** The Gateway's own health (#94); only while connected. */
+  deviceGateway?: GatewayStatus
+  /** The title-bar Device popover is open — also opened by Overview's Details and Attention's cog (#94). */
+  devicePopOpen: boolean
   aircraft: AircraftStatus
   /** Roster + telemetry + mapping, as main combines them (#61). Kept, dimmed, while the link is down. */
   nodeModel?: NodeModel
@@ -278,6 +283,7 @@ export const useStore = create<AppState>((set, get) => ({
   problemsOnly: false,
 
   deviceState: 'no-device',
+  devicePopOpen: false,
   aircraft: { name: 'NONE', inferred: false, supported: true },
   nodeTelemetry: [],
   nodesPeakW: 0,
@@ -448,6 +454,7 @@ export const useStore = create<AppState>((set, get) => ({
         deviceState: st.device.state,
         devicePort: st.device.portPath,
         deviceDetail: st.device.detail,
+        deviceGateway: st.device.gateway,
         // cal:data is only pushed when the port opens. A renderer reload builds a fresh store
         // while the main-process session keeps running, so without carrying the snapshot here
         // the badges would stay blank until the next reconnect — forever, on a stable link.
@@ -472,7 +479,12 @@ export const useStore = create<AppState>((set, get) => ({
       ),
       api.on('device:status', (d) => {
         const wasUp = isLinkUp(get().deviceState)
-        set({ deviceState: d.state, devicePort: d.portPath, deviceDetail: d.detail })
+        set({
+          deviceState: d.state,
+          devicePort: d.portPath,
+          deviceDetail: d.detail,
+          deviceGateway: d.gateway
+        })
         if (wasUp && !isLinkUp(d.state)) set({ linkDownAt: Date.now() })
         else if (isLinkUp(d.state)) set({ linkDownAt: undefined })
         // Calibration describes the gateway currently attached, so it is only trustworthy while

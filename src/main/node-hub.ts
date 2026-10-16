@@ -62,7 +62,7 @@ const FAULT_TEXT: Partial<Record<number, { label: string; description: string }>
   }
 }
 
-function withFaultInfo(n: NodeStatus): NodeStatus {
+export function withFaultInfo(n: NodeStatus): NodeStatus {
   const fc = n.faultId ? NODE_FAULT_CODES[n.faultId] : undefined
   const text = n.faultId ? FAULT_TEXT[n.faultId] : undefined
   return {

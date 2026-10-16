@@ -176,7 +176,7 @@ export class Session {
    */
   start(): RelayResult {
     if (exportToDevice(this.config) && !isLinkUp(this.link.deviceStatus().state)) {
-      return { ok: false, error: 'SimGateway is not connected' }
+      return { ok: false, error: 'Gateway is not connected' }
     }
     return this.run()
   }

@@ -93,7 +93,7 @@ export function adoptability(e: NodeModelEntry): Adoptability {
     case 'bridge':
       return {
         badge: 'BRIDGE',
-        note: 'It reports as a SimGateway / PanelBridge. A cockpit has one, on NODE_ID 0, so this one can’t be adopted. It stays in Attention as an issue while it’s on the bus.'
+        note: 'It reports as a Gateway. A cockpit has one, on NODE_ID 0, so this one can’t be adopted. It stays in Attention as an issue while it’s on the bus.'
       }
     case 'other':
       return {
@@ -126,7 +126,7 @@ function detectedAs(e: NodeModelEntry): string {
     case 'panel':
       return 'panel group (reported by the board)'
     case 'bridge':
-      return 'SimGateway / PanelBridge (reported by the board)'
+      return 'Gateway (reported by the board)'
     case 'other':
       return `unknown board type ${e.status?.nodeKind ?? ''} (reported by the board)`.trim()
     default:
@@ -275,7 +275,7 @@ export function strayNew(views: NodeView[], now: number): { strays: NodeView[]; 
 export function strayFlag(e: NodeModelEntry): string {
   const what =
     e.identified === 'bridge'
-      ? 'SECOND SIMGATEWAY'
+      ? 'SECOND GATEWAY'
       : e.identified
         ? 'UNKNOWN BOARD TYPE'
         : 'UNIDENTIFIED'

@@ -32,7 +32,7 @@ const ONLINE_NOTE =
   'Online — it’s active on the bus, so it can’t be removed. Forget and Hide work once it’s offline.'
 /** No complete roster yet: whether it is on the bus is not known — not "online" (#93 review). */
 const NO_ROSTER_NOTE =
-  'No roster yet — connect the SimGateway. Forget and Hide work once the board shows offline.'
+  'No roster yet — connect the Gateway. Forget and Hide work once the board shows offline.'
 
 /**
  * Same rules for a panel group and a PDU (#93). Hide and Forget only tidy the display, and a board
@@ -149,7 +149,7 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
       {
         tone: 'err',
         title: 'Offline',
-        text: 'missing from the PanelBridge roster — no heartbeat within its timeout.'
+        text: 'missing from the Gateway roster — no heartbeat within its timeout.'
       }
     ]
   }
@@ -245,7 +245,7 @@ export function pduFaultBoxes(v: NodeView, outage: boolean): FaultBox[] {
         'the PDU is online but no telemetry has arrived.' +
         (e.everHadReadings
           ? ''
-          : ' If it never had readings, the PanelBridge firmware may be too old to forward PDU telemetry.')
+          : ' If it never had readings, the Gateway firmware may be too old to forward PDU telemetry.')
     })
   }
   return out

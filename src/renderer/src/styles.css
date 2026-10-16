@@ -353,6 +353,61 @@ button.devind[aria-expanded='true'] {
 .devind--err .devind__dot {
   background: var(--red);
 }
+/* #94: the Gateway reports a problem but still works — gold, with a "!" before the dot (red "!"
+   is .devind--err: panel input can't reach DCS) */
+.devind--warn {
+  color: var(--gold);
+  border-color: rgba(244, 179, 33, 0.45);
+}
+.devind--warn .devind__dot {
+  background: var(--gold);
+}
+.devind .pill__sym {
+  margin-right: -2px;
+}
+/* #94: the Device popover's Health row */
+.gw {
+  margin-top: 10px;
+  padding-top: 10px;
+  margin-bottom: 14px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+}
+.gw__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.gw__k {
+  white-space: nowrap;
+  flex: none;
+  color: var(--muted);
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding-top: 2px;
+}
+.gw__v {
+  color: var(--text);
+  font-family: var(--mono);
+  text-align: right;
+  white-space: nowrap;
+}
+.gw__v.gw--warn {
+  color: var(--gold);
+}
+.gw__v.gw--err {
+  color: #ff9a9a;
+}
+.gw__note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
 .devnote a,
 .devnote__link {
   appearance: none;
@@ -1787,6 +1842,27 @@ button.devind[aria-expanded='true'] {
   margin-left: auto;
   color: var(--blue);
   white-space: nowrap;
+}
+/* #94: a serious Gateway fault, first in the Overview alert group */
+.err-banner {
+  margin: 18px 2px 0;
+  padding: 10px 16px;
+  border-radius: 11px;
+  background: rgba(255, 92, 92, 0.1);
+  border: 1px solid rgba(255, 92, 92, 0.45);
+  color: #ffb3b3;
+  font-size: 13px;
+  line-height: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.err-banner b {
+  color: #ffd0d0;
+}
+.err-banner__sym {
+  font-weight: 700;
+  color: var(--red);
 }
 
 /* HID controls the firmware doesn't catalogue yet — dimmed, not hidden */

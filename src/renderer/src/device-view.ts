@@ -14,7 +14,7 @@ export interface DeviceView {
   chip: string
   /** Tooltip on both. */
   tip: string
-  /** Detail line in the title-bar device popover. */
+  /** Detail line in the title-bar device popover; '' = none. */
   popMeta: string
   /** Serial port row of the device card. */
   portRow: string
@@ -42,19 +42,20 @@ export function deviceView(
   state: DeviceState,
   opts: { port?: string; detail?: string; autoConnect: boolean }
 ): DeviceView {
-  const port = opts.port ?? 'the SimGateway port'
+  const port = opts.port ?? 'the Gateway port'
   const disconnect = { label: 'Disconnect', action: 'disconnect' } as const
   const connect = { label: 'Connect', action: 'connect' } as const
-  const nodesDown =
-    'Connect the SimGateway to see node status — it is reported over the device link.'
+  const nodesDown = 'Connect the Gateway to see node status — it is reported over the device link.'
   switch (state) {
     case 'connected':
       return {
         cls: 'devind--on',
-        label: 'SimGateway',
+        label: 'Gateway',
         chip: 'Connected',
-        tip: `SimGateway connected · ${port}`,
-        popMeta: `${port}${opts.autoConnect ? ' · opened automatically' : ''}`,
+        tip: `Gateway connected · ${port}`,
+        // The popover shows the Gateway's health instead (#94); the port is in the tooltip and on
+        // the Connection tab.
+        popMeta: '',
         portRow: port,
         nodesHint: '',
         button: disconnect
@@ -64,10 +65,10 @@ export function deviceView(
         cls: 'devind--scan',
         label: 'Scanning',
         chip: 'Scanning…',
-        tip: 'Looking for the SimGateway…',
-        popMeta: 'Looking for the SimGateway…',
+        tip: 'Looking for the Gateway…',
+        popMeta: 'Looking for the Gateway…',
         portRow: 'scanning…',
-        nodesHint: 'Reconnecting to the SimGateway…',
+        nodesHint: 'Reconnecting to the Gateway…',
         button: { ...disconnect, disabled: true }
       }
     case 'reconnecting':
@@ -78,7 +79,7 @@ export function deviceView(
         tip: 'Link dropped — reopening the port (a relay keeps running)',
         popMeta: 'Link dropped — reopening the port. A running relay keeps going.',
         portRow: 'reconnecting…',
-        nodesHint: 'Reconnecting to the SimGateway…',
+        nodesHint: 'Reconnecting to the Gateway…',
         button: disconnect
       }
     case 'no-device':
@@ -86,7 +87,7 @@ export function deviceView(
         cls: '',
         label: 'No device',
         chip: 'No device',
-        tip: 'No SimGateway plugged in — it connects as soon as you plug it in',
+        tip: 'No Gateway plugged in — it connects as soon as you plug it in',
         popMeta: 'Nothing plugged in — it connects as soon as you plug it in.',
         portRow: 'waiting for the board…',
         nodesHint: nodesDown,
@@ -122,7 +123,7 @@ export function deviceView(
           ? `Port busy — another app has ${port} open. Close it, then Retry.`
           : `${port} would not open${opts.detail ? `: ${opts.detail}` : ''}. Retry, or replug the board.`,
         portRow: `${port} · ${busy ? 'busy' : 'error'}`,
-        nodesHint: "Can't open the SimGateway port — see the device card.",
+        nodesHint: "Can't open the Gateway port — see the device card.",
         button: { label: 'Retry', action: 'connect' },
         note: busy
           ? `${port} is open in another app (socat?). Close it, then Retry.`
@@ -162,7 +163,7 @@ export function relayTip(
   }
   if (!opts.relaying) return 'DCS-BIOS stream stopped — click to start'
   if (waitingForDevice(opts)) {
-    return `Relaying — waiting for the SimGateway (device link ${opts.deviceLabel.toLowerCase()}). Resumes when it connects — click to stop`
+    return `Relaying — waiting for the Gateway (device link ${opts.deviceLabel.toLowerCase()}). Resumes when it connects — click to stop`
   }
   if (waitingForDcs(opts)) {
     return `Relaying — waiting for DCS-BIOS (${opts.stream ?? 'connecting'}) · ${opts.endpoint} — click to stop`
@@ -175,7 +176,7 @@ export function relayTip(
  */
 export function relayNote(opts: RelayOpts): { text: string; info: boolean } | undefined {
   if (waitingForDevice(opts)) {
-    return { text: 'Relaying — waiting for the SimGateway. Resumes when it connects.', info: false }
+    return { text: 'Relaying — waiting for the Gateway. Resumes when it connects.', info: false }
   }
   if (waitingForDcs(opts)) {
     return {
@@ -220,13 +221,13 @@ export function relayWaiting(opts: RelayOpts): boolean {
 /** Why Start is unavailable, for the pill tooltip and the note under the Start button. */
 export function startBlockedReason(mode: SourceMode): string {
   return mode === 'replay'
-    ? 'Connect the SimGateway to play the capture to it, or turn Drive SimGateway off.'
-    : 'Connect the SimGateway to start the relay.'
+    ? 'Connect the Gateway to play the capture to it, or turn Drive Gateway off.'
+    : 'Connect the Gateway to start the relay.'
 }
 
 /** Body of the callout a blocked Relay pill answers a click with. */
 export function startBlockedCallout(mode: SourceMode): string {
   return mode === 'replay'
-    ? "The SimGateway isn't connected, and Drive SimGateway plays the capture to it. Connect first, or turn Drive off."
-    : "The SimGateway isn't connected, and the relay delivers to it. Connect first."
+    ? "The Gateway isn't connected, and Drive Gateway plays the capture to it. Connect first, or turn Drive off."
+    : "The Gateway isn't connected, and the relay delivers to it. Connect first."
 }

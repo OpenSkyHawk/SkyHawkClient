@@ -8,13 +8,16 @@
 // relayed, and stopping the relay tore the port down with it.
 import { LineAssembler, parseCommand } from '@shared/dcsbios'
 import {
+  BRIDGE_NODE_ID,
   NODE_END_MSG,
   NODE_MSG,
   NodeRoster,
   cleanNodeLine,
   isLegacyNodeStatus,
-  nodeRosterRequest
+  nodeRosterRequest,
+  parseNodeStatus
 } from '@shared/nodes'
+import { GatewayWatch } from '@shared/gateway'
 import { NODE_TELEM_MSG } from '@shared/node-telem'
 import type { LogEventInput } from '@shared/events'
 import {
@@ -51,7 +54,7 @@ import {
 import { debugLog } from './debug'
 import { HidReader } from './hid'
 import { loadCalCache, saveCalCache } from './cal-cache'
-import { NodeHub } from './node-hub'
+import { NodeHub, withFaultInfo } from './node-hub'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
@@ -93,6 +96,8 @@ export class DeviceLink {
   private legacyNodesWarned = false
   /** Node telemetry, mapping and the combined node model (#61). */
   readonly nodes: NodeHub
+  /** The Gateway's own health (#94): its node-0 row, and whether it still answers. */
+  private readonly gateway = new GatewayWatch()
   private serial?: SerialBridge
   private hid?: HidReader
   private hidPushedAt = 0
@@ -122,9 +127,11 @@ export class DeviceLink {
   private readonly eventCbs = new Set<(events: LogEventInput[]) => void>()
 
   constructor(private readonly emit: Emit) {
-    this.nodes = new NodeHub(emit, this.roster, (events) => {
-      for (const cb of this.eventCbs) cb(events)
-    })
+    this.nodes = new NodeHub(emit, this.roster, (events) => this.report(events))
+  }
+
+  private report(events: LogEventInput[]): void {
+    if (events.length) for (const cb of this.eventCbs) cb(events)
   }
 
   // ── events ─────────────────────────────────────────────────────────────────
@@ -271,6 +278,7 @@ export class DeviceLink {
     this.calSerialNumber = undefined
     this.serial?.stop()
     this.serial = undefined
+    this.gateway.reset()
   }
 
   private onOpen(path: string): void {
@@ -279,14 +287,17 @@ export class DeviceLink {
     // flags, last-seen times. Not on close: while unplugged the renderer shows the last state, dimmed.
     this.roster.reset()
     this.nodes.reset()
+    this.gateway.reset()
     this.legacyNodesWarned = false
     this.assembler = new LineAssembler() // a line cut by the unplug must not prefix the next one
     this.setStatus({
       state: 'connected',
       portPath: path,
       vid: SIMGATEWAY_VID,
-      pid: SIMGATEWAY_PID
+      pid: SIMGATEWAY_PID,
+      gateway: this.gateway.status()
     })
+    this.gateway.takeChanged() // just sent
     this.requestNodes() // seed the roster as soon as the device is up
     void this.readCalibrationState() // badges, with no dialog open
     // Same physical device, so the port reopening is proof it re-enumerated and any HID handle
@@ -334,6 +345,7 @@ export class DeviceLink {
   requestNodes(): void {
     if (!this.serial || !isLinkUp(this.status.state)) return
     this.roster.beginBurst() // isolate the reply burst so prior deltas don't block pruning
+    this.gateway.asked(Date.now())
     this.serial.write(Buffer.from(nodeRosterRequest()))
   }
 
@@ -378,7 +390,7 @@ export class DeviceLink {
         this.legacyNodesWarned = true
         this.raise(
           'NODES',
-          'PanelBridge sends node status v2; this client needs v3 — update the SimGateway firmware (OpenSkyhawk#344)'
+          'The Gateway sends node status v2; this client needs v3 — update the Gateway firmware (OpenSkyhawk#344)'
         )
       }
       let kind: DeviceLine['kind'] = 'command'
@@ -387,6 +399,7 @@ export class DeviceLink {
         debugLog('node', `${identifier} ${arg}`.trim())
         this.roster.applyMessage(identifier, arg, t)
         this.nodes.statusLine(identifier, line.trim(), t)
+        this.gatewayLine(identifier, arg, line.trim(), t)
         kind = 'node'
       } else if (identifier === NODE_TELEM_MSG) {
         // Node telemetry (~1/s per PDU) likewise: tapped, never logged as a panel command.
@@ -395,6 +408,17 @@ export class DeviceLink {
       }
       for (const cb of this.lineCbs) cb({ kind, identifier, arg, line: line.trim(), t })
     }
+  }
+
+  /**
+   * Any node-status line answers the roster request; the Gateway's own row (node 0) is its health.
+   * That row stays out of the cockpit model (node-rules); this is where it is shown instead (#94).
+   */
+  private gatewayLine(identifier: string, arg: string, raw: string, t: number): void {
+    this.report(this.gateway.answered(raw, t))
+    if (identifier !== NODE_MSG) return
+    const n = parseNodeStatus(arg.trim())
+    if (n?.nodeId === BRIDGE_NODE_ID) this.report(this.gateway.report(withFaultInfo(n), raw, t))
   }
 
   // ── renderer pushes ────────────────────────────────────────────────────────
@@ -431,6 +455,12 @@ export class DeviceLink {
     if (this.hid) this.emit('hid:report', this.hid.snapshot())
     if (!isLinkUp(this.status.state)) return
     this.nodes.flush(this.roster.takeDirty())
+    this.report(this.gateway.tick(Date.now(), this.exportGated))
+    if (this.gateway.takeChanged()) {
+      // Health rides on `device:status`, but it is not a change of link state: no onStatus.
+      this.status = { ...this.status, gateway: this.gateway.status() }
+      this.emit('device:status', this.status)
+    }
   }
 
   /**
@@ -524,7 +554,7 @@ export class DeviceLink {
   /** Convert a CalLink rejection into the discriminated result the renderer can branch on. */
   private async calRun<T>(fn: (link: CalLink) => Promise<T>): Promise<CalResult<T>> {
     if (!this.cal) {
-      return { ok: false, kind: 'offline', message: 'SimGateway is not connected' }
+      return { ok: false, kind: 'offline', message: 'Gateway is not connected' }
     }
     try {
       return { ok: true, value: await fn(this.cal) }

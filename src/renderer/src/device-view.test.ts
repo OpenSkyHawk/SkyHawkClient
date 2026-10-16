@@ -36,6 +36,13 @@ describe('deviceView', () => {
     expect(deviceView('no-device', { autoConnect: true }).portRow).toBe('waiting for the board…')
   })
 
+  it('names the board Gateway; connected, the popover drops the port line (#94)', () => {
+    const v = deviceView('connected', { port: '/dev/cu.x', autoConnect: true })
+    expect(v.label).toBe('Gateway')
+    expect(v.tip).toBe('Gateway connected · /dev/cu.x')
+    expect(v.popMeta).toBe('')
+  })
+
   it('offers Connect when released, Retry on error, Disconnect otherwise', () => {
     expect(deviceView('disconnected', { autoConnect: true }).button).toMatchObject({
       label: 'Connect',
@@ -85,7 +92,7 @@ describe('relayTip', () => {
     relaying: true,
     stream: 'connected' as const,
     deviceState: 'connected' as const,
-    deviceLabel: 'SimGateway',
+    deviceLabel: 'Gateway',
     endpoint: '127.0.0.1:7778'
   }
 
@@ -96,7 +103,7 @@ describe('relayTip', () => {
 
   it('says what a running relay is waiting for, the device first', () => {
     expect(relayTip({ ...base, deviceState: 'reconnecting', deviceLabel: 'Reconnecting' })).toBe(
-      'Relaying — waiting for the SimGateway (device link reconnecting). Resumes when it connects — click to stop'
+      'Relaying — waiting for the Gateway (device link reconnecting). Resumes when it connects — click to stop'
     )
     expect(relayTip({ ...base, stream: 'reconnecting' })).toBe(
       'Relaying — waiting for DCS-BIOS (reconnecting) · 127.0.0.1:7778 — click to stop'
@@ -158,7 +165,7 @@ describe('relayNote', () => {
 
   it('says what a running relay waits for', () => {
     expect(relayNote({ ...run, deviceState: 'no-device' })).toEqual({
-      text: 'Relaying — waiting for the SimGateway. Resumes when it connects.',
+      text: 'Relaying — waiting for the Gateway. Resumes when it connects.',
       info: false
     })
     expect(relayNote({ ...run, stream: 'error' })?.text).toBe(
@@ -189,10 +196,10 @@ describe('startBlocked', () => {
 
 describe('startBlockedReason', () => {
   it('tells Replay it can also run undriven', () => {
-    expect(startBlockedReason('bridge')).toBe('Connect the SimGateway to start the relay.')
-    expect(startBlockedReason('replay')).toMatch(/turn Drive SimGateway off/)
+    expect(startBlockedReason('bridge')).toBe('Connect the Gateway to start the relay.')
+    expect(startBlockedReason('replay')).toMatch(/turn Drive Gateway off/)
     expect(startBlockedCallout('bridge')).toBe(
-      "The SimGateway isn't connected, and the relay delivers to it. Connect first."
+      "The Gateway isn't connected, and the relay delivers to it. Connect first."
     )
     expect(startBlockedCallout('replay')).toMatch(/Connect first, or turn Drive off/)
   })

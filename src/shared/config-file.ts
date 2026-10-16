@@ -158,7 +158,7 @@ const APP_FIELDS: { key: keyof AppSettings; label: string; show?: (v: never) => 
   { key: 'commandPort', label: 'Command port' },
   { key: 'listenPort', label: 'Listen port' },
   { key: 'autoConnect', label: 'Connect automatically', show: onOff },
-  { key: 'replayDriveSerial', label: 'Replay drives the SimGateway', show: onOff },
+  { key: 'replayDriveSerial', label: 'Replay drives the Gateway', show: onOff },
   { key: 'debugMode', label: 'Debug logging', show: onOff },
   { key: 'attentionBanner', label: 'Attention banner', show: onOff }
 ]

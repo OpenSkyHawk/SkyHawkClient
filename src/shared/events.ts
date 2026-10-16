@@ -31,7 +31,7 @@ export interface LogEventInput {
   source: EventSource
   /** Node events about one node; absent for the roster summary and client events. */
   nodeId?: number
-  /** Node: its effective name. Client: `SERIAL`, `DCS`, `SimGateway` or `Relay`. */
+  /** Node: its effective name. Client: `SERIAL`, `DCS`, `Gateway` or `Relay`. */
   name: string
   severity: EventSeverity
   /** What happened, e.g. `5V UNDER-V raised`, `offline`, `connected`. */
@@ -71,9 +71,10 @@ export interface NodeLookup {
   inRegistry?(nodeId: number): boolean
 }
 
-type StatusFlag = 'boff' | 'epvf' | 'degraded' | 'overheat'
+export type StatusFlag = 'boff' | 'epvf' | 'degraded' | 'overheat'
 
-const STATUS_FLAGS: { key: StatusFlag; label: string; severity: EventSeverity }[] = [
+/** A node's own heartbeat / health flags, as every row and the Gateway (#94) name them. */
+export const STATUS_FLAGS: { key: StatusFlag; label: string; severity: EventSeverity }[] = [
   { key: 'boff', label: 'bus-off', severity: 'error' },
   { key: 'epvf', label: 'error-passive', severity: 'warn' },
   { key: 'degraded', label: 'degraded', severity: 'warn' },
@@ -109,7 +110,8 @@ function railReading(bit: number, p: PduRailPage): string {
   return volts(p.vAvgMv)
 }
 
-function faultLabel(n: NodeStatus): string {
+/** The fault-dictionary label, else `Fault N`. */
+export function faultLabel(n: Pick<NodeStatus, 'faultId' | 'faultLabel'>): string {
   return n.faultLabel ?? `Fault ${n.faultId}`
 }
 
@@ -309,7 +311,7 @@ export function deviceEvent(
   now: number
 ): LogEventInput | null {
   if (next.state === 'scanning' || next.state === last) return null
-  const base = { t: now, source: 'client' as const, name: 'SimGateway' }
+  const base = { t: now, source: 'client' as const, name: 'Gateway' }
   const raw = ['device:', next.state, next.portPath, next.detail].filter(Boolean).join(' ')
   switch (next.state) {
     case 'connected':

@@ -138,7 +138,7 @@ describe('boardActions', () => {
     expect(a.forget.disabled).toBe(true)
     expect(a.hide.disabled).toBe(true)
     expect(a.forget.tip).toBe(
-      'No roster yet — connect the SimGateway. Forget and Hide work once the board shows offline.'
+      'No roster yet — connect the Gateway. Forget and Hide work once the board shows offline.'
     )
     expect(a.note).toBe(a.forget.tip)
   })
@@ -192,7 +192,7 @@ describe('nodeFaultBoxes', () => {
       {
         tone: 'err',
         title: 'Offline',
-        text: 'missing from the PanelBridge roster — no heartbeat within its timeout.'
+        text: 'missing from the Gateway roster — no heartbeat within its timeout.'
       }
     ])
   })
@@ -274,7 +274,7 @@ describe('pduFaultBoxes', () => {
         .map((b) => b.text)
         .join()
     ).not.toMatch(/firmware/)
-    expect(pduFaultBoxes(never, false)[0]!.text).toMatch(/PanelBridge firmware may be too old/)
+    expect(pduFaultBoxes(never, false)[0]!.text).toMatch(/Gateway firmware may be too old/)
   })
 
   it('a raised flag names it and says what it means, as NodeStatus.h does', () => {

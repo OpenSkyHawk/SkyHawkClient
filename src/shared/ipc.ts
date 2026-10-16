@@ -7,12 +7,13 @@ import type { NodeTelemSnapshot } from './node-telem'
 import type { AdoptSpec, MappingPatch, NodeKind, ResetOptions, ResetPreview } from './node-mapping'
 import type { NodeModel } from './node-rules'
 import type { LogEvent } from './events'
+import type { GatewayStatus } from './gateway'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
 export type DcsTransport = 'loopback-multicast' | 'unicast-listen' | 'tcp-to-host'
 
 /**
- * State of the device link — the SimGateway serial port, and with it calibration, HID and the
+ * State of the device link — the Gateway's serial port, and with it calibration, HID and the
  * node roster. Independent of the relay (#69): the link is up whenever the board is plugged in,
  * relaying or not, so nothing here says whether DCS-BIOS is flowing. That is `RelayState`.
  *
@@ -49,6 +50,12 @@ export interface DeviceStatus {
   vid?: number
   pid?: number
   detail?: string
+  /**
+   * The Gateway's own health (#94), only while `connected` and once there is something to say.
+   * Computed once in main (shared/gateway.ts) and only read by the UI. Pushed on `device:status`
+   * when it changes; the link state itself is unchanged by it.
+   */
+  gateway?: GatewayStatus
 }
 
 /**

@@ -4,6 +4,7 @@ import type { NodeModel } from '@shared/node-rules'
 import { effectivePsuLimits, type PsuLimits } from '@shared/psu'
 import { useStore } from '../store'
 import { strayFlag, strayNew } from '../cockpit-adopt'
+import { gatewayView, type GatewayView } from '../gateway-view'
 import {
   ATTENTION_SHOWN,
   STAGE_W,
@@ -44,6 +45,9 @@ export function Cockpit() {
   const telemetry = useStore((s) => s.nodeTelemetry)
   const peakW = useStore((s) => s.nodesPeakW)
   const live = useStore((s) => isLinkUp(s.deviceState))
+  const deviceGateway = useStore((s) => s.deviceGateway)
+  /** The Gateway's own problem (#94): an Attention item, never a tile on the plan. */
+  const gateway = gatewayView(deviceGateway, live).attention
   const linkDownAt = useStore((s) => s.linkDownAt)
   const psu = useStore((s) => s.psu)
   const limits = useMemo(() => effectivePsuLimits(psu), [psu])
@@ -117,7 +121,7 @@ export function Cockpit() {
             <div className="nolink" role="status">
               <span className="node__dot" aria-hidden="true" />
               <span>
-                <b>No live node status</b> — connect the SimGateway.
+                <b>No live node status</b> — connect the Gateway.
                 {linkDownAt !== undefined && model?.nodes.length
                   ? ` Showing the last known state from ${hhmm(linkDownAt)}.`
                   : ''}
@@ -180,6 +184,8 @@ export function Cockpit() {
               model={model}
               live={live}
               items={items}
+              gateway={gateway}
+              onOpenGateway={() => set({ devicePopOpen: true })}
               onShowOutage={(pduId) => {
                 setQuery('')
                 setIssuesOnly(false)
@@ -582,21 +588,26 @@ function Attention(props: {
   model?: NodeModel
   live: boolean
   items: AttentionItem[]
+  /** The Gateway's own problem: first, and its cog opens the Device popover (#94). */
+  gateway?: GatewayView['attention']
+  onOpenGateway: () => void
   onShowOutage: (pduId: number) => void
   onShowAll: () => void
   onOpen: (nodeId: number) => void
   /** Open the Adopt dialog, on this NODE_ID when given. */
   onAdopt: (nodeId?: number) => void
 }) {
-  const { items, live } = props
+  const { items, live, gateway } = props
   const fresh = props.model ? newCount(props.model) : 0
-  const more = Math.max(0, items.length - ATTENTION_SHOWN)
+  const count = items.length + (gateway ? 1 : 0)
+  const shown = ATTENTION_SHOWN - (gateway ? 1 : 0)
+  const more = Math.max(0, count - ATTENTION_SHOWN)
   return (
     <div className="card field">
       <div className="panel-h">
         <span className="section-h">Attention</span>
         <span className="meta">
-          {items.length} item{items.length === 1 ? '' : 's'}
+          {count} item{count === 1 ? '' : 's'}
         </span>
       </div>
       {fresh > 0 && (
@@ -613,12 +624,30 @@ function Attention(props: {
         </div>
       )}
       {!live ? (
-        <div className="hint">No live node status — connect the SimGateway.</div>
-      ) : items.length === 0 ? (
+        <div className="hint">No live node status — connect the Gateway.</div>
+      ) : count === 0 ? (
         <div className="hint">Nothing needs attention.</div>
       ) : (
         <ul className="evt att">
-          {items.slice(0, ATTENTION_SHOWN).map((i) => (
+          {gateway && (
+            <li key="gateway">
+              <Dot state={gateway.state} />
+              <span className="att__t">
+                <b>Gateway</b>
+                <br />
+                <span>{gateway.flag}</span>
+              </span>
+              <button
+                className="cog"
+                title="Details"
+                aria-label="Gateway details"
+                onClick={props.onOpenGateway}
+              >
+                <CogIcon />
+              </button>
+            </li>
+          )}
+          {items.slice(0, shown).map((i) => (
             <li key={i.key}>
               <Dot state={i.state} />
               <span className="att__t">
