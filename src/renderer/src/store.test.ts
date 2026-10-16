@@ -244,7 +244,6 @@ describe('node state (#63)', () => {
         kind: 'pdu',
         source: 'registry',
         availability: 'online',
-        seenOnline: true,
         readings: 'live',
         differs: false
       }

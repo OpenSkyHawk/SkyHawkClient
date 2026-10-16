@@ -30,7 +30,6 @@ const node = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEntr
   kind: 'panel',
   source: 'registry',
   availability: 'online',
-  seenOnline: true,
   status: status(nodeId),
   differs: false,
   ...over
@@ -171,7 +170,7 @@ describe('attentionSummary', () => {
   })
 
   it('counts every node in a PDU outage and names it as the PDU plus its nodes', () => {
-    const o: PduOutage = { pduId: 6, nodeIds: [7, 8], fedCount: 2, at: 1, neverSeen: false }
+    const o: PduOutage = { pduId: 6, nodeIds: [7, 8], fedCount: 2, at: 1 }
     const nodes = [
       pdu(6, { availability: 'offline', readings: undefined }),
       node(7, { pduId: 6, availability: 'offline' }),

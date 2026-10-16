@@ -39,7 +39,6 @@ const fresh = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEnt
   kind: 'panel',
   source: 'new',
   availability: 'online',
-  seenOnline: true,
   status: status(nodeId),
   firstSeenAt: 1000,
   differs: false,

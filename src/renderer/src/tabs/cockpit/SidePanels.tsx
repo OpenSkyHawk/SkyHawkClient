@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { NodeMappingResult, NodeRegistryInfo } from '@shared/ipc'
-import type { PduOutage } from '@shared/node-rules'
 import { shortName, type NodeView } from '../../cockpit'
 import {
   CONSOLE_OPTIONS,
@@ -318,7 +317,7 @@ export function NodePanel(props: {
 export function PduPanel(props: {
   view: NodeView
   views: NodeView[]
-  outage: PduOutage | undefined
+  outage: boolean
   live: boolean
   onClose: () => void
 }) {

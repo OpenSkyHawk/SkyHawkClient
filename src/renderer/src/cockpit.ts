@@ -201,10 +201,6 @@ export interface PlanLayout {
 /** Name without its console prefix (`Left_Fuel` → `Fuel`). */
 export const shortName = (name: string) => name.replace(/^(Left|Center|Right)_/, '')
 
-/**
- * What a PDU outage means. Only nodes all seen online since the link opened are said to have lost
- * power; a node never seen may simply not be connected.
- */
 export function outageHint(o: PduOutage): string {
   const n = o.nodeIds.length
   const who =
@@ -213,10 +209,6 @@ export function outageHint(o: PduOutage): string {
         ? 'The only node'
         : `All ${n} nodes`
       : `${n} of ${o.fedCount} nodes`
-  if (o.neverSeen) {
-    const seen = n === 1 ? 'has not been seen online' : 'are offline, and not all were seen online'
-    return `${who} on this PDU ${seen} since the link opened — not connected, or a blown 5 V fuse at the PDU.`
-  }
   const how = n === 1 ? 'lost power with it' : 'lost power together'
   return `${who} on this PDU ${how} — a blown 5 V fuse at the PDU looks like this.`
 }

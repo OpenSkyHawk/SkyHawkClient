@@ -46,7 +46,6 @@ const node = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEntr
   kind: 'panel',
   source: 'registry',
   availability: 'online',
-  seenOnline: true,
   status: status(nodeId),
   differs: false,
   ...over
@@ -296,7 +295,7 @@ describe('planLayout', () => {
   })
 
   it('adds the outage hint under the dropped PDU', () => {
-    const o: PduOutage = { pduId: 6, nodeIds: [7], fedCount: 1, at: 1, neverSeen: false }
+    const o: PduOutage = { pduId: 6, nodeIds: [7], fedCount: 1, at: 1 }
     const l = planLayout(nodeViews(model(nodes, [o]), []), [o])
     const g = l.groups.find((x) => x.key === 'pdu-6')!
     expect(g.outage).toBe(o)
@@ -308,17 +307,17 @@ describe('planLayout', () => {
 
 describe('outageHint', () => {
   it('says "N of M" when only some fed nodes dropped', () => {
-    expect(outageHint({ pduId: 3, nodeIds: [1, 2, 3], fedCount: 4, at: 0, neverSeen: false })).toBe(
+    expect(outageHint({ pduId: 3, nodeIds: [1, 2, 3], fedCount: 4, at: 0 })).toBe(
       '3 of 4 nodes on this PDU lost power together — a blown 5 V fuse at the PDU looks like this.'
     )
   })
 
-  it('does not say nodes not all seen online since the link opened lost power', () => {
-    expect(outageHint({ pduId: 3, nodeIds: [1], fedCount: 1, at: 0, neverSeen: true })).toBe(
-      'The only node on this PDU has not been seen online since the link opened — not connected, or a blown 5 V fuse at the PDU.'
+  it('says "All N" when every fed node dropped, and "The only node" for one', () => {
+    expect(outageHint({ pduId: 3, nodeIds: [1, 2], fedCount: 2, at: 0 })).toBe(
+      'All 2 nodes on this PDU lost power together — a blown 5 V fuse at the PDU looks like this.'
     )
-    expect(outageHint({ pduId: 3, nodeIds: [1, 2, 3], fedCount: 3, at: 0, neverSeen: true })).toBe(
-      'All 3 nodes on this PDU are offline, and not all were seen online since the link opened — not connected, or a blown 5 V fuse at the PDU.'
+    expect(outageHint({ pduId: 3, nodeIds: [1], fedCount: 1, at: 0 })).toBe(
+      'The only node on this PDU lost power with it — a blown 5 V fuse at the PDU looks like this.'
     )
   })
 })
@@ -334,7 +333,7 @@ describe('attentionItems', () => {
       node(8, { pduId: 6, availability: 'offline' }),
       node(41, { source: 'new' })
     ]
-    const o: PduOutage = { pduId: 6, nodeIds: [7, 8], fedCount: 2, at: 1, neverSeen: false }
+    const o: PduOutage = { pduId: 6, nodeIds: [7, 8], fedCount: 2, at: 1 }
     const items = attentionItems(nodeViews(model(nodes, [o]), []), [o])
     expect(items.map((i) => [i.nodeId, i.flag])).toEqual([
       [6, 'OFFLINE · 2 nodes affected'],

@@ -31,7 +31,6 @@ const node = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEntr
   kind: 'panel',
   source: 'registry',
   availability: 'online',
-  seenOnline: true,
   status: status(nodeId),
   differs: false,
   ...over
@@ -153,21 +152,8 @@ describe('nodesSummary rows', () => {
     ])
   })
 
-  it('says "not seen this session" for a board never online since the link opened', () => {
-    const o: PduOutage = { pduId: 4, nodeIds: [2], fedCount: 1, at: T, neverSeen: true }
-    const never = { availability: 'offline' as const, offlineAt: T, seenOnline: false }
-    const s = summary(
-      [pdu(4, 'Right', never), node(2, { pduId: 4, ...never }), pdu(3, 'Left', never)],
-      [o]
-    )
-    expect(s.rows.map((r) => r.meta)).toEqual([
-      '#4 · 1 node affected · not seen this session',
-      '#3 · not seen this session'
-    ])
-  })
-
   it('folds a PDU outage into one row for the PDU', () => {
-    const o: PduOutage = { pduId: 6, nodeIds: [7, 8], fedCount: 2, at: T, neverSeen: false }
+    const o: PduOutage = { pduId: 6, nodeIds: [7, 8], fedCount: 2, at: T }
     const s = summary(
       [
         pdu(6, 'Center', { availability: 'offline', offlineAt: T }),

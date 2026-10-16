@@ -181,7 +181,7 @@ export function Cockpit() {
             key={openView.entry.nodeId}
             view={openView}
             views={views}
-            outage={outages.find((o) => o.pduId === openView.entry.nodeId)}
+            outage={outages.some((o) => o.pduId === openView.entry.nodeId)}
             live={live}
             onClose={() => setOpen(null)}
           />

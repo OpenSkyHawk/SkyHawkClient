@@ -2,7 +2,7 @@
 // node offers, what its fault box says, the rows each panel shows and the mapping patch Save
 // sends. Every value is something a board reported or the client computed, labelled as such.
 import type { MappingPatch } from '@shared/node-mapping'
-import type { NodeModelEntry, PduOutage } from '@shared/node-rules'
+import type { NodeModelEntry } from '@shared/node-rules'
 import { PDU_FLAG, RAIL_FLAG, displayCurrentMa, type PduRailPage } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
 import { pduAlertFlags, type NodeView } from './cockpit'
@@ -132,7 +132,7 @@ export function pduFlagMeanings(v: NodeView): string[] {
  * PDU's own node faults (the same as any node's) come first, then its rail / status flags, then
  * "no readings": each is a separate thing the board told us, so none hides another.
  */
-export function pduFaultBoxes(v: NodeView, outage: PduOutage | undefined): FaultBox[] {
+export function pduFaultBoxes(v: NodeView, outage: boolean): FaultBox[] {
   const e = v.entry
   if (e.availability === 'offline') {
     return [
@@ -141,11 +141,9 @@ export function pduFaultBoxes(v: NodeView, outage: PduOutage | undefined): Fault
         title: 'Offline',
         text:
           'no status or readings from this PDU.' +
-          (!outage
-            ? ''
-            : outage.neverSeen
-              ? ' Not all of its nodes have been seen online since the link opened — not connected, or a blown 5 V fuse at the PDU.'
-              : ' Its nodes dropped at the same time — a blown 5 V fuse at the PDU looks like this.')
+          (outage
+            ? ' Its nodes dropped at the same time — a blown 5 V fuse at the PDU looks like this.'
+            : '')
       }
     ]
   }
