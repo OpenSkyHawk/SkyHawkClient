@@ -207,6 +207,24 @@ export interface AppState {
   initBridge: () => (() => void) | void
 }
 
+/** The store fields an AppConfig sets — on load, and after a config import replaces it. */
+export function configState(cfg: AppConfig): Partial<AppState> {
+  const transport = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(
+    (k) => TRANSPORT_TO_IPC[k] === cfg.transport
+  )
+  return {
+    sourceMode: cfg.sourceMode,
+    transport: transport ?? 'tcp',
+    host: cfg.host,
+    port: String(cfg.commandPort),
+    autoConnect: cfg.autoConnect,
+    replayDriveSerial: cfg.replayDriveSerial,
+    debugMode: cfg.debugMode,
+    attentionBanner: cfg.attentionBanner,
+    psu: cfg.psu
+  }
+}
+
 function buildConfig(s: AppState): Partial<AppConfig> {
   return {
     sourceMode: s.sourceMode,
@@ -370,22 +388,7 @@ export const useStore = create<AppState>((set, get) => ({
     // Node pushes only fire on change, so a reloaded renderer asks for the current picture.
     void api.getNodes().then(({ model, telemetry }) => setNodes(model, telemetry))
 
-    void api.getConfig().then((cfg) => {
-      const transport = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(
-        (k) => TRANSPORT_TO_IPC[k] === cfg.transport
-      )
-      set({
-        sourceMode: cfg.sourceMode,
-        transport: transport ?? 'tcp',
-        host: cfg.host,
-        port: String(cfg.commandPort),
-        autoConnect: cfg.autoConnect,
-        replayDriveSerial: cfg.replayDriveSerial,
-        debugMode: cfg.debugMode,
-        attentionBanner: cfg.attentionBanner,
-        psu: cfg.psu
-      })
-    })
+    void api.getConfig().then((cfg) => set(configState(cfg)))
 
     // Rehydrate from the live session: a dev reload resets the renderer but the
     // main-process session keeps running, so the UI must not assume "stopped".

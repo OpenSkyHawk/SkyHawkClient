@@ -22,6 +22,7 @@ import {
   setNodeMapping,
   type AdoptSpec,
   type MappingPatch,
+  type NodeDefaults,
   type NodeKind,
   type NodeMappingFile,
   type ResetOptions,
@@ -113,6 +114,20 @@ export class NodeHub {
 
   forget(nodeId: number): NodeMappingResult {
     return this.update((f) => forgetNode(f, nodeId))
+  }
+
+  /** The stored mapping and the registry defaults it applies to — for config export / import. */
+  mappingFile(): NodeMappingFile {
+    return this.mapping()
+  }
+
+  registryDefaults(): Map<number, NodeDefaults> {
+    return this.defaults
+  }
+
+  /** Replace the whole mapping (config import). Same save path and read-only guard as any edit. */
+  replaceMapping(file: NodeMappingFile): NodeMappingResult {
+    return this.update(() => file)
   }
 
   resetAll(opts?: ResetOptions): NodeMappingResult {

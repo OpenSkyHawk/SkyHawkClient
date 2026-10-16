@@ -2,6 +2,7 @@
 // Channels are one-way main -> renderer pushes; control actions are renderer -> main.
 import type { CachedAxis, CachedBoard } from './cal-cache'
 import { DEFAULT_PSU, sanitizePsu, type PsuSetting } from './psu'
+import type { SectionDiff, SectionId } from './config-file'
 import type { NodeStatus } from './nodes'
 import type { NodeTelemSnapshot } from './node-telem'
 import type { AdoptSpec, MappingPatch, NodeKind, ResetOptions, ResetPreview } from './node-mapping'
@@ -362,6 +363,9 @@ export interface CalCommitAxis {
 export const CTRL = {
   configGet: 'config:get',
   configSet: 'config:set',
+  configExport: 'config:export',
+  configImportOpen: 'config:import-open',
+  configImportApply: 'config:import-apply',
   relayStart: 'relay:start',
   relayStop: 'relay:stop',
   relayStatus: 'relay:status',
@@ -401,6 +405,18 @@ export interface SkyhawkApi {
   on<C extends PushChannel>(channel: C, cb: (data: PushChannels[C]) => void): () => void
   getConfig(): Promise<AppConfig>
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
+
+  // ── configuration export / import (#67) ──────────────────────────────────
+  /** Save dialog, then write every section to one file. */
+  exportConfig(): Promise<ConfigExportResult>
+  /** Open dialog, then validate and preview; the file stays in main until applied. */
+  openConfigImport(): Promise<ConfigImportOpen>
+  /** Apply the picked sections of the previewed file, after an optional backup of the current setup. */
+  applyConfigImport(
+    token: string,
+    sections: SectionId[],
+    backup: boolean
+  ): Promise<ConfigImportApplyResult>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
   getStatus(): Promise<RelayStatus>
@@ -485,6 +501,35 @@ export interface NodeRegistryInfo {
   date: string
   nodes: { nodeId: number; name: string; console: string; kind: NodeKind | 'bridge' }[]
 }
+
+export interface ConfigExportResult {
+  /** Where it was written; absent when the dialog was cancelled or the write failed. */
+  path?: string
+  error?: string
+}
+
+export interface ImportPreview {
+  /** Names the file held in main for `applyConfigImport`. */
+  token: string
+  fileName: string
+  exportedAt?: string
+  client?: string
+  /** One per section the file has and this client knows; `rows` empty = no change. */
+  sections: SectionDiff[]
+  /** Sections from a newer client, left out. */
+  skipped: string[]
+  /** Every section matches the current setup: nothing to apply. */
+  identical: boolean
+}
+
+export type ConfigImportOpen =
+  | { status: 'canceled' }
+  | { status: 'error'; error: string }
+  | { status: 'ready'; preview: ImportPreview }
+
+export type ConfigImportApplyResult =
+  | { ok: true; applied: SectionId[]; backupPath?: string; config: AppConfig }
+  | { ok: false; error: string }
 
 export interface NodeSnapshot {
   model: NodeModel

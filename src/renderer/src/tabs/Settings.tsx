@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { AboutSection } from './settings/AboutSection'
 import { CockpitSection } from './settings/CockpitSection'
+import { ConfigurationSection } from './settings/ConfigurationSection'
 import { ConnectionSection } from './settings/ConnectionSection'
 import { DiagnosticsSection } from './settings/DiagnosticsSection'
 
-type SectionId = 'connection' | 'cockpit' | 'diag' | 'about'
+type SectionId = 'connection' | 'cockpit' | 'config' | 'diag' | 'about'
 
 const SECTIONS: { id: SectionId; label: string; sub: string }[] = [
   { id: 'connection', label: 'Connection', sub: 'DCS link, ports' },
   { id: 'cockpit', label: 'Cockpit', sub: 'PSU, mapping, alerts' },
+  { id: 'config', label: 'Configuration', sub: 'export / import' },
   { id: 'diag', label: 'Diagnostics', sub: 'logs' },
   { id: 'about', label: 'About', sub: 'version, registry' }
 ]
@@ -35,6 +37,7 @@ export function Settings() {
       <div className="sp">
         {section === 'connection' && <ConnectionSection />}
         {section === 'cockpit' && <CockpitSection />}
+        {section === 'config' && <ConfigurationSection />}
         {section === 'diag' && <DiagnosticsSection />}
         {section === 'about' && <AboutSection />}
       </div>
