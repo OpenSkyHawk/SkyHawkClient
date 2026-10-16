@@ -218,11 +218,19 @@ export class NodeHub {
 
   /**
    * Config import: the file's settings over the current mapping, keeping what this computer
-   * observed — each board's `added` and `lastSeen` (#93). Same save path and read-only guard as any
-   * edit.
+   * observed — each board's `added` and `lastSeen` — and never hiding a board on the bus (#93).
+   * Same save path and read-only guard as any edit.
    */
   importMapping(file: NodeMappingFile): NodeMappingResult {
-    return this.update((cur) => importMapping(cur, file))
+    return this.update((cur) => importMapping(cur, file, this.onlineIds()))
+  }
+
+  /** NODE_IDs present in the roster now (the bridge's own row excluded). */
+  onlineIds(): number[] {
+    return this.roster
+      .snapshot()
+      .filter((n) => n.present && n.nodeId !== BRIDGE_NODE_ID)
+      .map((n) => n.nodeId)
   }
 
   resetAll(opts?: ResetOptions): NodeMappingResult {

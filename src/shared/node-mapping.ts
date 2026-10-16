@@ -589,14 +589,18 @@ export function resetPreview(
  */
 export function importMapping(
   current: NodeMappingFile,
-  imported: NodeMappingFile
+  imported: NodeMappingFile,
+  /** Boards on the bus now: an import never hides one — Hide is for offline boards only. */
+  online: Iterable<number> = []
 ): NodeMappingFile {
+  const onBus = new Set(online)
   const nodes: Record<number, NodeOverride> = {}
   const ids = new Set([...Object.keys(current.nodes), ...Object.keys(imported.nodes)].map(Number))
   for (const id of [...ids].sort((a, b) => a - b)) {
     const { added: _added, lastSeen: _seen, ...set } = imported.nodes[id] ?? {}
     const cur = current.nodes[id]
     const o: NodeOverride = { ...set }
+    if (onBus.has(id)) delete o.hidden
     if (cur?.added) o.added = true
     if (cur?.lastSeen && (o.added || adopted(o))) o.lastSeen = cur.lastSeen
     if (Object.keys(o).length) nodes[id] = o

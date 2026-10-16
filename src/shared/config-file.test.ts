@@ -131,6 +131,18 @@ describe('parseConfigFile', () => {
 })
 
 describe('diffImport', () => {
+  it('the review matches the apply: no "hidden" row for a board on the bus (#93 re-review K)', () => {
+    const cur: ConfigSnapshot = {
+      ...current,
+      nodeMapping: { version: 3, nodes: { 2: { added: true } } }
+    }
+    const next = { nodeMapping: { version: 3 as const, nodes: { 2: { hidden: true } } } }
+    expect(diffImport(defaults, cur, next, [2])[0]!.rows).toEqual([])
+    expect(diffImport(defaults, cur, next, [])[0]!.rows).toEqual([
+      { k: 'Right_Navigation · hidden', from: 'no', to: 'yes' }
+    ])
+  })
+
   it('an import keeps each board’s observed state: nothing to review for it (#93)', () => {
     const seen = '2026-10-14T21:14:00.000Z'
     const cur: ConfigSnapshot = {

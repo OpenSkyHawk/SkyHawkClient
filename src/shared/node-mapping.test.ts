@@ -431,6 +431,18 @@ describe('importMapping (#93 review)', () => {
     })
   })
 
+  it('never hides a board on the bus (#93 re-review K): Hide is offline-only', () => {
+    const cur: NodeMappingFile = { version: 3, nodes: { 1: { added: true }, 2: { added: true } } }
+    const imported: NodeMappingFile = {
+      version: 3,
+      nodes: { 1: { hidden: true, name: 'Arm' }, 2: { hidden: true } }
+    }
+    expect(importMapping(cur, imported, [1]).nodes).toEqual({
+      1: { name: 'Arm', added: true }, // online: its other settings come in, not the hidden flag
+      2: { hidden: true, added: true } // offline: hidden as the file says
+    })
+  })
+
   it('an adopted board the file drops leaves, with nothing left behind', () => {
     const cur: NodeMappingFile = {
       version: 3,

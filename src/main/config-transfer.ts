@@ -37,6 +37,8 @@ export interface ConfigTransferDeps {
     registryDefaults(): Map<number, NodeDefaults>
     /** The imported settings over the current mapping; observed state (added, lastSeen) stays. */
     importMapping(file: NodeMappingFile): NodeMappingResult
+    /** NODE_IDs on the bus now — an import never hides one. */
+    onlineIds(): number[]
   }
   loadCalCache(): CalCache
   saveCalCache(cache: CalCache): void
@@ -93,7 +95,8 @@ export class ConfigTransfer {
     const sections = diffImport(
       this.deps.nodes.registryDefaults(),
       this.snapshot(),
-      config.sections
+      config.sections,
+      this.deps.nodes.onlineIds()
     )
     const token = randomUUID()
     this.pending = { token, config }

@@ -202,11 +202,13 @@ function diffPsu(cur: PsuSetting, next: PsuSetting): DiffRow[] {
 function diffNodes(
   defaults: Map<number, NodeDefaults>,
   cur: NodeMappingFile,
-  next: NodeMappingFile
+  next: NodeMappingFile,
+  online: number[]
 ): { rows: DiffRow[]; nodes: number } {
-  // What applying it would leave: the import keeps each board's observed state (#93).
+  // What applying it would leave: the import keeps each board's observed state and never hides a
+  // board on the bus (#93).
   const a = effectiveMapping(defaults, cur)
-  const b = effectiveMapping(defaults, importMapping(cur, next))
+  const b = effectiveMapping(defaults, importMapping(cur, next, online))
   const zone = (map: Map<number, MappedNode>, pduId: number | null) =>
     pduId === null ? '—' : (map.get(pduId)?.name ?? defaults.get(pduId)?.name ?? `Node ${pduId}`)
   const where = (map: Map<number, MappedNode>, m: MappedNode) =>
@@ -281,7 +283,9 @@ function diffCalibration(cur: CalCache, next: CalCache): { rows: DiffRow[]; boar
 export function diffImport(
   defaults: Map<number, NodeDefaults>,
   current: ConfigSnapshot,
-  imported: Partial<ConfigSnapshot>
+  imported: Partial<ConfigSnapshot>,
+  /** Boards on the bus now (the node mapping section never hides one). */
+  online: number[] = []
 ): SectionDiff[] {
   const out: SectionDiff[] = []
   for (const id of SECTION_IDS) {
@@ -295,7 +299,7 @@ export function diffImport(
       rows = diffPsu(current.powerSupply, imported.powerSupply!)
       summary = plural(rows.length, 'change')
     } else if (id === 'nodeMapping') {
-      const d = diffNodes(defaults, current.nodeMapping, imported.nodeMapping!)
+      const d = diffNodes(defaults, current.nodeMapping, imported.nodeMapping!, online)
       rows = d.rows
       summary = plural(d.nodes, 'node')
     } else {

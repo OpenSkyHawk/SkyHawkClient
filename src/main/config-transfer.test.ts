@@ -38,6 +38,7 @@ function transfer() {
     nodes: {
       mappingFile: () => state.mapping,
       registryDefaults: () => defaults,
+      onlineIds: () => [],
       importMapping: (f) => {
         if (state.mappingRefuses) return { ok: false, error: state.mappingRefuses }
         state.calls.push('mapping')

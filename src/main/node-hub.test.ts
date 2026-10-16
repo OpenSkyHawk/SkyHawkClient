@@ -274,6 +274,18 @@ describe('NodeHub', () => {
     expect(h.resetAll(null as never)).toEqual({ ok: false, error: 'Invalid reset request' })
   })
 
+  it('a config import never hides a board that is on the bus (#93 re-review K)', () => {
+    const { h, roster } = hub()
+    roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // node 1 online
+    h.flush(roster.takeDirty(), 0)
+    expect(h.onlineIds()).toEqual([1])
+    expect(
+      h.importMapping({ version: 3, nodes: { 1: { hidden: true }, 2: { hidden: true } } }).ok
+    ).toBe(true)
+    expect(disk.file.nodes[1]?.hidden).toBeUndefined()
+    expect(disk.file.nodes[2]?.hidden).toBe(true)
+  })
+
   it('a config import keeps what this computer observed: added and last seen (#93 review)', () => {
     disk.file = { version: 3, nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' } } }
     const { h } = hub()
