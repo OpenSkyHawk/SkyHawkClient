@@ -1,3 +1,4 @@
+import { isLinkUp } from '@shared/ipc'
 import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
 import { freshness } from '../freshness'
 import { CalibrationDialog, useCalibration } from '../CalibrationDialog'
@@ -93,7 +94,10 @@ function Hat({ idx, dir, avail }: { idx: number; dir: number; avail: boolean }) 
 
 export function Hid() {
   const s = useStore()
-  const calib = useCalibration(s.cal)
+  // The joystick is read alongside DCS and never needs the serial link; calibration does (#74).
+  // So the live view below ignores the link, and only calibration is gated on it.
+  const linkUp = isLinkUp(s.deviceState)
+  const calib = useCalibration(s.cal, linkUp)
   const lit = new Set(s.buttons)
   const availAxes = new Set(s.availAxes)
   const availHats = new Set(s.availHats)
@@ -125,7 +129,7 @@ export function Hid() {
       {calib.open && calib.controller && (
         <CalibrationDialog controller={calib.controller} onClose={() => void calib.close()} />
       )}
-      {calib.offer && present.length > 0 && (
+      {calib.offer && linkUp && present.length > 0 && (
         <div className="calrestore">
           <svg
             width="18"
@@ -165,9 +169,15 @@ export function Hid() {
                 : 'all axes calibrated'}
             </span>
           )}
-          {present.length > 0 && calib.controller && (
+          {(present.length > 0 || !linkUp) && calib.controller && (
             <button
               className="calbtn"
+              disabled={!linkUp}
+              title={
+                linkUp
+                  ? 'Calibrate an axis'
+                  : 'Calibration needs the serial link — Connect on the Connection tab'
+              }
               onClick={() =>
                 void calib.start(present.find((a) => !a.calibrated)?.idx ?? present[0]!.idx)
               }
@@ -186,6 +196,16 @@ export function Hid() {
             </button>
           )}
         </div>
+        {!linkUp && (
+          <div className="devnote hid__calnote">
+            Live axes, hats and buttons keep working — they come from the joystick, which never
+            needs the serial link. <b>Calibration needs the serial link</b>:{' '}
+            <button className="devnote__link" onClick={() => s.set({ tab: 'connection' })}>
+              Connect on the Connection tab
+            </button>
+            .
+          </div>
+        )}
         {s.axes.map((v, i) => (
           <Axis
             key={i}
