@@ -13,6 +13,7 @@ import { DEFAULT_CONFIG, sanitizeConfig, type AppConfig } from './ipc'
 import { sanitizeCache, type CachedAxis, type CalCache } from './cal-cache'
 import {
   effectiveMapping,
+  importMapping,
   sanitizeNodeMapping,
   type MappedNode,
   type NodeDefaults,
@@ -203,8 +204,9 @@ function diffNodes(
   cur: NodeMappingFile,
   next: NodeMappingFile
 ): { rows: DiffRow[]; nodes: number } {
+  // What applying it would leave: the import keeps each board's observed state (#93).
   const a = effectiveMapping(defaults, cur)
-  const b = effectiveMapping(defaults, next)
+  const b = effectiveMapping(defaults, importMapping(cur, next))
   const zone = (map: Map<number, MappedNode>, pduId: number | null) =>
     pduId === null ? '—' : (map.get(pduId)?.name ?? defaults.get(pduId)?.name ?? `Node ${pduId}`)
   const where = (map: Map<number, MappedNode>, m: MappedNode) =>
@@ -220,9 +222,10 @@ function diffNodes(
     const x = a.get(id)
     const y = b.get(id)
     if (!defaults.has(id)) {
-      // Adopted (or not) as a whole: name, console and power zone together.
+      // Adopted (or not) as a whole: name, console and power zone together — a board entering or
+      // leaving your cockpit.
       const show = (map: Map<number, MappedNode>, m?: MappedNode) =>
-        m ? `${m.name} · ${where(map, m)}` : 'not adopted'
+        m ? `${m.name} · ${where(map, m)}` : 'not in your cockpit'
       if (show(a, x) !== show(b, y)) push(`#${id}`, show(a, x), show(b, y))
       continue
     }

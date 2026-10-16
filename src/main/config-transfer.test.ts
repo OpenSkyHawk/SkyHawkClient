@@ -38,7 +38,7 @@ function transfer() {
     nodes: {
       mappingFile: () => state.mapping,
       registryDefaults: () => defaults,
-      replaceMapping: (f) => {
+      importMapping: (f) => {
         if (state.mappingRefuses) return { ok: false, error: state.mappingRefuses }
         state.calls.push('mapping')
         state.mapping = f

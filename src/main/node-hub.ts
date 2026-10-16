@@ -16,6 +16,7 @@ import {
   clearReportedHidden,
   effectiveMapping,
   forgetNode,
+  importMapping,
   MappingError,
   markSeen,
   registryDefaults,
@@ -215,9 +216,13 @@ export class NodeHub {
     return this.defaults
   }
 
-  /** Replace the whole mapping (config import). Same save path and read-only guard as any edit. */
-  replaceMapping(file: NodeMappingFile): NodeMappingResult {
-    return this.update(() => file)
+  /**
+   * Config import: the file's settings over the current mapping, keeping what this computer
+   * observed — each board's `added` and `lastSeen` (#93). Same save path and read-only guard as any
+   * edit.
+   */
+  importMapping(file: NodeMappingFile): NodeMappingResult {
+    return this.update((cur) => importMapping(cur, file))
   }
 
   resetAll(opts?: ResetOptions): NodeMappingResult {

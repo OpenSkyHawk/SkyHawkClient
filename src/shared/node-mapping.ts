@@ -118,7 +118,7 @@ export function registryDefaults(
   return out
 }
 
-function sanitizeOverride(raw: unknown): NodeOverride | undefined {
+function sanitizeOverride(raw: unknown, legacy: boolean): NodeOverride | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const r = raw as Record<string, unknown>
   const o: NodeOverride = {}
@@ -132,9 +132,10 @@ function sanitizeOverride(raw: unknown): NodeOverride | undefined {
   if (typeof r.lastSeen === 'string' && !Number.isNaN(Date.parse(r.lastSeen))) {
     o.lastSeen = r.lastSeen
   }
-  // Before the explicit marker (a v1 file, or an early v2 one) a board was in your cockpit by
-  // having been seen, placed, renamed or hidden: keep those boards in it.
-  if (r.added === true || (!o.kind && (o.lastSeen || o.hidden || hasOverride(o)))) o.added = true
+  if (r.added === true) o.added = true
+  // Before the explicit marker (a file that has none — v1, or an early v2) a board was in your
+  // cockpit by having been seen, placed, renamed or hidden: keep those boards in it.
+  else if (legacy && !o.kind && (o.lastSeen || o.hidden || hasOverride(o))) o.added = true
   return Object.keys(o).length ? o : undefined
 }
 
@@ -148,9 +149,11 @@ export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
   const r = raw as Record<string, unknown>
   const nodes: Record<number, NodeOverride> = {}
   if (r.nodes && typeof r.nodes === 'object') {
-    for (const [k, v] of Object.entries(r.nodes as Record<string, unknown>)) {
+    const raws = Object.entries(r.nodes as Record<string, unknown>)
+    const legacy = !raws.some(([, v]) => (v as { added?: unknown } | null)?.added === true)
+    for (const [k, v] of raws) {
       const id = Number(k)
-      const o = isNodeId(id) ? sanitizeOverride(v) : undefined
+      const o = isNodeId(id) ? sanitizeOverride(v, legacy) : undefined
       if (o) nodes[id] = o
     }
   }
@@ -559,6 +562,29 @@ export function resetPreview(
     }
   }
   return { rows, nodeCount, adopted }
+}
+
+/**
+ * A config import (#93): what you set — names, consoles, power zones, adopted boards, hidden flags —
+ * comes from the file; what this computer observed stays. Each board keeps its current `added`
+ * (registry boards in your cockpit) and `lastSeen`, so an import, which may come from another
+ * setup or an older export, never drops a board from your cockpit or forgets when it was seen.
+ */
+export function importMapping(
+  current: NodeMappingFile,
+  imported: NodeMappingFile
+): NodeMappingFile {
+  const nodes: Record<number, NodeOverride> = {}
+  const ids = new Set([...Object.keys(current.nodes), ...Object.keys(imported.nodes)].map(Number))
+  for (const id of [...ids].sort((a, b) => a - b)) {
+    const { added: _added, lastSeen: _seen, ...set } = imported.nodes[id] ?? {}
+    const cur = current.nodes[id]
+    const o: NodeOverride = { ...set }
+    if (cur?.added) o.added = true
+    if (cur?.lastSeen && (o.added || adopted(o))) o.lastSeen = cur.lastSeen
+    if (Object.keys(o).length) nodes[id] = o
+  }
+  return { version: 2, nodes }
 }
 
 /** An on/off from the renderer must be a real boolean: 'no' or 'false' is truthy. */

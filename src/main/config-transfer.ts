@@ -35,7 +35,8 @@ export interface ConfigTransferDeps {
   nodes: {
     mappingFile(): NodeMappingFile
     registryDefaults(): Map<number, NodeDefaults>
-    replaceMapping(file: NodeMappingFile): NodeMappingResult
+    /** The imported settings over the current mapping; observed state (added, lastSeen) stays. */
+    importMapping(file: NodeMappingFile): NodeMappingResult
   }
   loadCalCache(): CalCache
   saveCalCache(cache: CalCache): void
@@ -145,7 +146,7 @@ export class ConfigTransfer {
     }
 
     if (picked.has('nodeMapping')) {
-      const r = this.deps.nodes.replaceMapping(imported.nodeMapping!)
+      const r = this.deps.nodes.importMapping(imported.nodeMapping!)
       if (!r.ok) return { ok: false, error: `Nothing was changed: ${r.error}` }
     }
     if (picked.has('calibration')) {

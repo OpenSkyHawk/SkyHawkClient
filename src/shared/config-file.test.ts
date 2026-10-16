@@ -131,6 +131,30 @@ describe('parseConfigFile', () => {
 })
 
 describe('diffImport', () => {
+  it('an import keeps each board’s observed state: nothing to review for it (#93)', () => {
+    const seen = '2026-10-14T21:14:00.000Z'
+    const cur: ConfigSnapshot = {
+      ...current,
+      nodeMapping: { version: 2, nodes: { 2: { added: true, lastSeen: seen } } }
+    }
+    // An older export without the marker or last-seen: applying it keeps 2 in your cockpit.
+    const diff = diffImport(defaults, cur, { nodeMapping: { version: 2, nodes: {} } })
+    expect(diff).toEqual([
+      { id: 'nodeMapping', title: 'Node mapping', summary: '0 nodes', rows: [] }
+    ])
+    // An adopted board leaving your cockpit is listed.
+    const withTrim: ConfigSnapshot = {
+      ...cur,
+      nodeMapping: {
+        version: 2,
+        nodes: { 41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen } }
+      }
+    }
+    expect(
+      diffImport(defaults, withTrim, { nodeMapping: { version: 2, nodes: {} } })[0]!.rows
+    ).toEqual([{ k: '#41', from: 'Trim · Left · —', to: 'not in your cockpit' }])
+  })
+
   it('lists each change as key  from → to, per section', () => {
     const mapping: NodeMappingFile = {
       version: 2,
@@ -174,7 +198,7 @@ describe('diffImport', () => {
         rows: [
           { k: 'Center_Armament · power zone', from: 'PDU_Center', to: 'PDU_Left' },
           { k: 'Right_Navigation · name', from: 'Right_Navigation', to: 'Right_TACAN' },
-          { k: '#41', from: 'not adopted', to: 'Right_Oxygen · Right · PDU_Right' }
+          { k: '#41', from: 'not in your cockpit', to: 'Right_Oxygen · Right · PDU_Right' }
         ]
       },
       {

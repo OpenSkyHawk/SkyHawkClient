@@ -274,6 +274,13 @@ describe('NodeHub', () => {
     expect(h.resetAll(null as never)).toEqual({ ok: false, error: 'Invalid reset request' })
   })
 
+  it('a config import keeps what this computer observed: added and last seen (#93 review)', () => {
+    disk.file = { version: 2, nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' } } }
+    const { h } = hub()
+    expect(h.importMapping({ version: 2, nodes: { 2: { name: 'Nav_2' } } }).ok).toBe(true)
+    expect(disk.file.nodes).toEqual({ 2: { name: 'Nav_2', added: true, lastSeen: T0 } })
+  })
+
   it('serves the bundled registry with PanelBridge and its source commit', () => {
     const r = hub().h.registry()
     expect(r.nodes[0]).toEqual({ nodeId: 0, name: 'PanelBridge', console: '—', kind: 'bridge' })

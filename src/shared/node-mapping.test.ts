@@ -6,6 +6,7 @@ import {
   effectiveMapping,
   EMPTY_MAPPING,
   forgetNode,
+  importMapping,
   MappingError,
   markSeen,
   registryDefaults,
@@ -103,6 +104,14 @@ describe('sanitizeNodeMapping', () => {
     expect(sanitizeNodeMapping({ nodes: { 3: { added: true } } }).nodes).toEqual({
       3: { added: true }
     })
+  })
+
+  it('derives "added" only for a file that has no markers at all', () => {
+    const marked = sanitizeNodeMapping({
+      version: 2,
+      nodes: { 1: { added: true }, 2: { name: 'Nav' } }
+    })
+    expect(marked.nodes[2]).toEqual({ name: 'Nav' }) // a marked file is taken as it is
   })
 
   it('reads a v1 file as v2 and discards its ignore list (#93: Ignore never shipped)', () => {
@@ -364,6 +373,39 @@ describe('forget (#93)', () => {
     }
     expect(forgetNode(f, defaults, 42).nodes[41]?.pduId).toBe(42) // nothing says 42 is a PDU
     expect(forgetNode(f, defaults, 42, () => 'pdu').nodes[41]?.pduId).toBeNull()
+  })
+})
+
+describe('importMapping (#93 review)', () => {
+  const seen = '2026-10-14T21:14:00.000Z'
+  it('takes the settings from the file and keeps added / last-seen from this computer', () => {
+    const cur: NodeMappingFile = {
+      version: 2,
+      nodes: {
+        1: { added: true, lastSeen: seen, name: 'Arm' },
+        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen }
+      }
+    }
+    const imported: NodeMappingFile = {
+      version: 2,
+      nodes: {
+        1: { name: 'Armament', lastSeen: '2020-01-01T00:00:00.000Z' }, // older export
+        3: { added: true, lastSeen: seen }, // another setup's cockpit
+        41: { name: 'Trim_B', console: 'Left', pduId: null, kind: 'panel' }
+      }
+    }
+    expect(importMapping(cur, imported).nodes).toEqual({
+      1: { name: 'Armament', added: true, lastSeen: seen },
+      41: { name: 'Trim_B', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen }
+    })
+  })
+
+  it('an adopted board the file drops leaves, with nothing left behind', () => {
+    const cur: NodeMappingFile = {
+      version: 2,
+      nodes: { 41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen } }
+    }
+    expect(importMapping(cur, EMPTY_MAPPING).nodes).toEqual({})
   })
 })
 
