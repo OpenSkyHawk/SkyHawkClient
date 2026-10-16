@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { LogEvent } from '@shared/events'
 import {
   CTRL,
   type AppConfig,
@@ -53,6 +54,9 @@ const api: SkyhawkApi = {
   connectDevice: () => ipcRenderer.invoke(CTRL.deviceConnect) as Promise<void>,
   disconnectDevice: () => ipcRenderer.invoke(CTRL.deviceDisconnect) as Promise<void>,
   exportLog: (text: string) => ipcRenderer.invoke(CTRL.logExport, text) as Promise<ExportResult>,
+  getEvents: () => ipcRenderer.invoke(CTRL.eventsGet) as Promise<LogEvent[]>,
+  clearEvents: () => ipcRenderer.invoke(CTRL.eventsClear) as Promise<void>,
+  exportEvents: () => ipcRenderer.invoke(CTRL.eventsExport) as Promise<ExportResult>,
   toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<CaptureState>,
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
   getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CalSnapshot, NodeSnapshot, PushChannel, PushChannels, RelayStatus } from '@shared/ipc'
 import type { NodeModel } from '@shared/node-rules'
 import type { NodeTelemSnapshot } from '@shared/node-telem'
+import type { LogEvent } from '@shared/events'
 
 // The store talks to main through window.skyhawk. Only the calls initBridge() makes need to be
 // real here; the rest exist so subscription setup does not throw.
@@ -25,6 +26,8 @@ const EMPTY_MODEL: NodeModel = {
 let nodesSnap: NodeSnapshot = { model: EMPTY_MODEL, telemetry: [] }
 
 let startResult: { ok: boolean; error?: string } = { ok: true }
+let eventsSnap: LogEvent[] = []
+let eventsCleared = 0
 
 function fakeApi() {
   return {
@@ -34,6 +37,11 @@ function fakeApi() {
     },
     getStatus: () => Promise.resolve(status),
     getNodes: () => Promise.resolve(nodesSnap),
+    getEvents: () => Promise.resolve(eventsSnap),
+    clearEvents: () => {
+      eventsCleared++
+      return Promise.resolve()
+    },
     getConfig: () =>
       Promise.resolve({
         sourceMode: 'bridge',
@@ -308,5 +316,61 @@ describe('node state (#63)', () => {
     push('nodes:model', withNew)
     push('nodes:telemetry', [...telem(2417), { ...telem(2417)[0]!, nodeId: 42 }])
     expect(s.getState().nodesPeakW).toBeCloseTo(29, 0)
+  })
+})
+
+describe('event log (#64)', () => {
+  const ev = (id: number): LogEvent => ({
+    id,
+    t: id,
+    source: 'node',
+    name: 'PDU_Right',
+    severity: 'warn',
+    event: '5V UNDER-V raised',
+    raw: ''
+  })
+
+  beforeEach(() => {
+    status = { running: false, relay: { running: false }, device: { state: 'no-device' } }
+    eventsSnap = []
+    eventsCleared = 0
+  })
+
+  it('rehydrates the session events on a renderer reload, newest first', async () => {
+    eventsSnap = [ev(1), ev(2)]
+    const s = await freshStore()
+    expect(s.getState().events.map((e) => e.id)).toEqual([2, 1])
+  })
+
+  it('adds pushed events newest first', async () => {
+    const s = await freshStore()
+    push('events:batch', [ev(1), ev(2)])
+    push('events:batch', [ev(3)])
+    expect(s.getState().events.map((e) => e.id)).toEqual([3, 2, 1])
+  })
+
+  it('keeps recording while paused; the pause mark holds the view', async () => {
+    const s = await freshStore()
+    push('events:batch', [ev(1)])
+    s.getState().toggle('logPaused')
+    push('events:batch', [ev(2)])
+    expect(s.getState().events).toHaveLength(2)
+    expect(s.getState().eventsPauseMark).toBe(1)
+    s.getState().toggle('logPaused')
+    expect(s.getState().eventsPauseMark).toBeUndefined()
+  })
+
+  it('Clear empties the list here and in main', async () => {
+    const s = await freshStore()
+    push('events:batch', [ev(1)])
+    s.getState().clearEvents()
+    expect(s.getState().events).toEqual([])
+    expect(eventsCleared).toBe(1)
+  })
+
+  it('showEvents opens Log › Events with a source filter', async () => {
+    const s = await freshStore()
+    s.getState().showEvents('node')
+    expect(s.getState()).toMatchObject({ tab: 'log', logView: 'events', eventSource: 'node' })
   })
 })

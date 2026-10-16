@@ -16,6 +16,8 @@ import type { NodeTelemSnapshot } from '@shared/node-telem'
 import { DEFAULT_PSU, type PsuSetting } from '@shared/psu'
 import { nodeViews, totalWatts } from './cockpit'
 import type { SerialFrame } from '@shared/ipc'
+import type { LogEvent } from '@shared/events'
+import { mergeEvents, restoreEvents, type EventSourceFilter, type LogView } from './log-view'
 
 export type TabId = 'overview' | 'connection' | 'cockpit' | 'log' | 'serial' | 'hid' | 'settings'
 
@@ -29,7 +31,7 @@ export type DirFilter = 'all' | 'in' | 'out'
 export interface LogRow {
   id: number
   time: string
-  dir: 'in' | 'out' | 'sys'
+  dir: 'in' | 'out'
   name: string
   addrHex: string
   value: number | string
@@ -59,7 +61,7 @@ const pad3 = (n: number) => String(n).padStart(3, '0')
 const hex2 = (n: number) => (n & 0xff).toString(16).toUpperCase().padStart(2, '0')
 const hex4 = (n: number) => '0x' + (n & 0xffff).toString(16).toUpperCase().padStart(4, '0')
 
-function fmtTime(ms: number): string {
+export function fmtTime(ms: number): string {
   const d = new Date(ms)
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad3(d.getMilliseconds())}`
 }
@@ -101,6 +103,10 @@ export interface AppState {
   rawMode: boolean
   dirFilter: DirFilter
   search: string
+  /** Log tab sub-tab (#64): the DCS-BIOS stream, or the event log. */
+  logView: LogView
+  eventSource: EventSourceFilter
+  problemsOnly: boolean
 
   // live link state
   deviceState: DeviceState
@@ -166,6 +172,10 @@ export interface AppState {
 
   log: LogRow[]
   private_logSeq: number
+  /** The session's events (#64), newest first. Main holds the same list; Clear empties both. */
+  events: LogEvent[]
+  /** Set while paused: the newest event id the Events view still shows. */
+  eventsPauseMark?: number
 
   // raw serial monitor
   serialMonitor: boolean
@@ -198,7 +208,12 @@ export interface AppState {
   toggleCapture: () => void
   openReplay: () => void
   clearLog: () => void
-  exportLog: () => void
+  /** Resolves to where the file went; undefined when cancelled or empty. */
+  exportLog: () => Promise<string | undefined>
+  clearEvents: () => void
+  exportEvents: () => Promise<string | undefined>
+  /** Log › Events, with a source filter — the Cockpit's "View all in Log →". */
+  showEvents: (source: EventSourceFilter) => void
   setSerialMonitor: (on: boolean) => void
   clearSerial: () => void
   refreshNodes: () => void
@@ -252,6 +267,9 @@ export const useStore = create<AppState>((set, get) => ({
   rawMode: false,
   dirFilter: 'all',
   search: '',
+  logView: 'stream',
+  eventSource: 'all',
+  problemsOnly: false,
 
   deviceState: 'no-device',
   aircraft: { name: 'NONE', inferred: false, supported: true },
@@ -287,13 +305,21 @@ export const useStore = create<AppState>((set, get) => ({
 
   log: [],
   private_logSeq: 1000,
+  events: [],
 
   serialMonitor: false,
   serialLog: [],
   private_serialSeq: 0,
 
   set: (patch) => set(patch),
-  toggle: (key) => set((s) => ({ [key]: !s[key] }) as Partial<AppState>),
+  toggle: (key) =>
+    set((s) => {
+      const on = !s[key]
+      // Pausing holds the Events view where it is; events keep being recorded meanwhile.
+      if (key === 'logPaused')
+        return { logPaused: on, eventsPauseMark: on ? (s.events[0]?.id ?? 0) : undefined }
+      return { [key]: on } as Partial<AppState>
+    }),
 
   setConfigField: (patch) => {
     set(patch as Partial<AppState>)
@@ -364,17 +390,29 @@ export const useStore = create<AppState>((set, get) => ({
 
   clearSerial: () => set({ serialLog: [] }),
 
-  exportLog: () => {
+  exportLog: async () => {
     const rows = get().log
-    if (rows.length === 0) return
+    if (rows.length === 0) return undefined
     // oldest-first TSV
     const header = 'time\tdir\tcontrol\taddress\tvalue\traw'
     const body = [...rows]
       .reverse()
       .map((r) => [r.time, r.dir, r.name, r.addrHex, String(r.value), r.raw].join('\t'))
       .join('\n')
-    void window.skyhawk?.exportLog(`${header}\n${body}\n`)
+    return (await window.skyhawk?.exportLog(`${header}\n${body}\n`))?.path
   },
+
+  clearEvents: () => {
+    set({ events: [], eventsPauseMark: get().logPaused ? 0 : undefined })
+    void window.skyhawk?.clearEvents()
+  },
+
+  exportEvents: async () => {
+    if (get().events.length === 0) return undefined
+    return (await window.skyhawk?.exportEvents())?.path
+  },
+
+  showEvents: (source) => set({ tab: 'log', logView: 'events', eventSource: source }),
 
   initBridge: () => {
     const api = window.skyhawk
@@ -389,6 +427,9 @@ export const useStore = create<AppState>((set, get) => ({
     void api.getNodes().then(({ model, telemetry }) => setNodes(model, telemetry))
 
     void api.getConfig().then((cfg) => set(configState(cfg)))
+
+    // Events live in main for the whole app run; a reloaded renderer picks the list back up.
+    void api.getEvents().then((rows) => set({ events: restoreEvents(get().events, rows) }))
 
     // Rehydrate from the live session: a dev reload resets the renderer but the
     // main-process session keeps running, so the UI must not assume "stopped".
@@ -463,6 +504,7 @@ export const useStore = create<AppState>((set, get) => ({
           lastCmd: st.lastCommand ?? '—'
         })
       ),
+      api.on('events:batch', (rows) => set({ events: mergeEvents(get().events, rows) })),
       api.on('log:batch', (rows) => {
         const s = get()
         if (s.logPaused) return

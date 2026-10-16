@@ -9,9 +9,11 @@ import type {
 } from '@shared/ipc'
 import type { NodeRoster, NodeStatus } from '@shared/nodes'
 import { NodeTelemStore, parseNodeTelem } from '@shared/node-telem'
+import { NodeEventTracker, type LogEventInput } from '@shared/events'
 import {
   adoptNode,
   clearReportedHidden,
+  effectiveMapping,
   forgetNode,
   MappingError,
   registryDefaults,
@@ -21,6 +23,7 @@ import {
   setIgnored,
   setNodeMapping,
   type AdoptSpec,
+  type MappedNode,
   type MappingPatch,
   type NodeDefaults,
   type NodeKind,
@@ -58,10 +61,19 @@ export class NodeHub {
   private modelDirty = true
   /** Present NODE_IDs at the last roster change, to tell "came back" from "still listed". */
   private wasPresent = new Set<number>()
+  /** Node changes for the event log (#64), named by the mapping. */
+  private readonly events = new NodeEventTracker({
+    name: (id) => this.mapped().get(id)?.name ?? `Node ${id}`,
+    ignored: (id) => this.mapping().ignored.includes(id),
+    isNew: (id) => !this.mapped().has(id) && !this.mapping().ignored.includes(id)
+  })
+  private mappedFor?: NodeMappingFile
+  private mappedCache = new Map<number, MappedNode>()
 
   constructor(
     private readonly emit: Emit,
-    private readonly roster: NodeRoster
+    private readonly roster: NodeRoster,
+    private readonly onEvents: (events: LogEventInput[]) => void = () => {}
   ) {}
 
   /** Read lazily: the userData path is only safe to touch once the app is up. */
@@ -76,15 +88,38 @@ export class NodeHub {
   /** New session: telemetry and first-seen times start over; the mapping persists. */
   reset(): void {
     this.telem.reset()
+    this.events.reset()
     this.wasPresent.clear()
     this.telemPushedAt = 0
     this.modelDirty = true
   }
 
   /** One `_NODE_TELEM` argument. Malformed lines are dropped, like `_NODE_STATUS`. */
-  telemetry(arg: string, now = Date.now()): void {
+  telemetry(arg: string, now = Date.now(), line = ''): void {
     const t = parseNodeTelem(arg.trim())
-    if (t) this.telem.apply(t, now)
+    if (!t) return
+    this.telem.apply(t, now)
+    this.report(this.events.telemetry(t, line, now))
+  }
+
+  /** After a `_NODE_STATUS` / `_NODE_STATUS_END` line reached the roster: what it changed. */
+  statusLine(identifier: string, line: string, now = Date.now()): void {
+    const roster = this.roster.snapshot().map(withFaultInfo)
+    this.report(this.events.status(roster, identifier, line, now))
+  }
+
+  private report(events: LogEventInput[]): void {
+    if (events.length) this.onEvents(events)
+  }
+
+  /** The effective mapping, rebuilt only when the mapping file changes — names for every event. */
+  private mapped(): Map<number, MappedNode> {
+    const f = this.mapping()
+    if (this.mappedFor !== f) {
+      this.mappedCache = effectiveMapping(this.defaults, f)
+      this.mappedFor = f
+    }
+    return this.mappedCache
   }
 
   /** Session tick. Pushes telemetry at most once per NODE_TELEM_PUSH_MS, the model on change. */

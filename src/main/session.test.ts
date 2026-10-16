@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CAL_TYPE, buildFrame } from '@shared/calibration'
 import type { LogRow } from '@shared/ipc'
+import { eventText, type LogEvent } from '@shared/events'
 import type { NodeModel } from '@shared/node-rules'
 
 // Session pulls in electron (debug log path), the serial port, the DCS transport and node-hid.
@@ -50,6 +51,7 @@ class FakeTransport {
   sent: Buffer[] = []
   exportCb: (c: Buffer) => void = () => {}
   connectedCb: (c: boolean) => void = () => {}
+  errorCb: (e: Error) => void = () => {}
   constructor() {
     FakeTransport.last = this
   }
@@ -63,7 +65,9 @@ class FakeTransport {
   onExport(cb: (c: Buffer) => void) {
     this.exportCb = cb
   }
-  onError() {}
+  onError(cb: (e: Error) => void) {
+    this.errorCb = cb
+  }
   onConnected(cb: (c: boolean) => void) {
     this.connectedCb = cb
   }
@@ -305,6 +309,10 @@ describe('HID recovery after an unplug', () => {
 
 type Push = [string, unknown]
 
+/** A `_NODE_STATUS` line: present, no flags, die temp not yet seen. */
+const statusLine = (nodeId: number, present = true): string =>
+  `_NODE_STATUS ${nodeId.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000\n`
+
 /** A session with the link open (app launched), the relay not started, and a recorder of pushes. */
 function launched(config: Parameters<InstanceType<typeof Session>['setConfig']>[0] = {}) {
   const pushes: Push[] = []
@@ -449,8 +457,9 @@ describe('device link is independent of the relay (#69)', () => {
       vi.advanceTimersByTime(100)
       expect(session.status().device.state).toBe('no-device')
       expect(of('device:status'), 'a repeated not-found is not news').toHaveLength(2) // scanning, no-device
-      const logged = of('log:batch').flat() as LogRow[]
-      expect(logged.filter((r) => r.dir === 'sys')).toEqual([])
+      vi.advanceTimersByTime(100) // the event log flushes with the stream log
+      const events = of('events:batch').flat() as LogEvent[]
+      expect(events.filter((e) => e.severity === 'error')).toEqual([])
       session.shutdown()
     } finally {
       vi.useRealTimers()
@@ -678,6 +687,83 @@ describe('relay state (#69)', () => {
     expect(of('relay:state').at(-1)).toEqual({ running: false })
     expect(session.status().relay).toEqual({ running: false })
     expect(session.status().device.state, 'the device knows nothing of the relay').toBe('scanning')
+    session.shutdown()
+  })
+})
+
+describe('event log (#64)', () => {
+  beforeEach(() => {
+    FakeSerial.last = undefined
+    FakeTransport.last = undefined
+  })
+
+  const rows = (session: InstanceType<typeof Session>) =>
+    session.events.snapshot().map((e) => `${e.source}:${e.name}: ${eventText(e)}`)
+
+  it('moves link errors out of the stream log into client events', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial, of } = launched()
+      serial.errorCb(new Error('Access denied'))
+      vi.advanceTimersByTime(100)
+      expect(of('log:batch').flat()).toEqual([])
+      // One row: the device state "error" repeats what the SERIAL error says.
+      expect(rows(session)).toEqual(['client:SERIAL: serial port error · Access denied'])
+      expect((of('events:batch').flat() as LogEvent[]).map((e) => e.raw)).toEqual([
+        'SERIAL Error: Access denied'
+      ])
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('records the device link, the roster baseline and node changes with their source line', () => {
+    const { session, serial } = launched()
+    serial.openCb('/dev/fake')
+    serial.dataCb(Buffer.from(statusLine(1) + statusLine(2) + '_NODE_STATUS_END\n'))
+    serial.dataCb(Buffer.from(statusLine(2, false)))
+    serial.closeCb()
+    expect(rows(session)).toEqual([
+      'client:SimGateway: connected · /dev/fake',
+      'node:roster: 2 nodes online',
+      'node:Right_Navigation: offline · no heartbeat',
+      'client:SimGateway: reconnecting · link dropped'
+    ])
+    const offline = session.events.snapshot()[2]
+    expect(offline.nodeId).toBe(2)
+    expect(offline.raw).toBe(statusLine(2, false).trim())
+    session.shutdown()
+  })
+
+  it('a retry loop is one row per error, even with two loops interleaved', () => {
+    const { session, serial } = launched({ sourceMode: 'monitor' })
+    session.start()
+    const t = FakeTransport.last!
+    for (let i = 0; i < 3; i++) {
+      serial.errorCb(new Error('Cannot lock port'))
+      t.errorCb(new Error('connect ECONNREFUSED'))
+      t.connectedCb(false)
+    }
+    expect(rows(session).filter((r) => r.includes('error'))).toEqual([
+      'client:SERIAL: serial port error · Cannot lock port',
+      'client:DCS: link error · connect ECONNREFUSED'
+    ])
+    expect(rows(session).filter((r) => r.includes('reconnecting'))).toEqual([])
+    session.shutdown()
+  })
+
+  it('records relay start and stop', () => {
+    const { session, serial } = launched({ sourceMode: 'monitor' })
+    serial.openCb('/dev/fake')
+    session.start()
+    FakeTransport.last!.connectedCb(true)
+    session.stop()
+    expect(rows(session).slice(1)).toEqual([
+      'client:Relay: started · Monitor mode',
+      'client:DCS: link up · 127.0.0.1:7778',
+      'client:Relay: stopped'
+    ])
     session.shutdown()
   })
 })

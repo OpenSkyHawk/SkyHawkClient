@@ -6,11 +6,19 @@
 // The device link is not started or stopped here. It is up whenever the board is plugged in
 // (device-link.ts); a source mode only chooses where the stream comes from and whether it
 // reaches the device.
-import { DcsBiosProtocol } from '@shared/dcsbios'
+import { DcsBiosProtocol, EXPORT_MULTICAST_ADDR, EXPORT_PORT } from '@shared/dcsbios'
+import {
+  clientErrorEvent,
+  deviceEvent,
+  EventLog,
+  relayEvents,
+  type RelayContext
+} from '@shared/events'
 import {
   DEFAULT_CONFIG,
   isLinkUp,
   type AppConfig,
+  type DeviceState,
   type DeviceStatus,
   type LogRow,
   type PushChannel,
@@ -65,6 +73,17 @@ export function relayConfigChanged(prev: AppConfig, next: AppConfig): boolean {
   return RELAY_KEYS.some((k) => prev[k] !== next[k])
 }
 
+/** Where the stream comes from, for the relay's event-log rows. */
+export function relayContext(cfg: AppConfig): RelayContext {
+  const tcp = cfg.transport === 'tcp-to-host'
+  const endpoint = tcp
+    ? `${cfg.host}:${cfg.commandPort}`
+    : cfg.transport === 'loopback-multicast'
+      ? `${EXPORT_MULTICAST_ADDR}:${EXPORT_PORT}`
+      : `:${cfg.listenPort}`
+  return { mode: cfg.sourceMode, endpoint, tcp }
+}
+
 export class Session {
   /** The device link: serial, calibration, HID and nodes. Up independently of the relay. */
   readonly link: DeviceLink
@@ -77,9 +96,14 @@ export class Session {
   private decoder = new Decoder()
   private readonly stats = new Stats()
   private logBuf: LogRow[] = []
+  /** The event log (#64): node and client events, this app run only. */
+  readonly events = new EventLog()
+  /** Last device state the event log reported (scanning never is). */
+  private lastDevice?: DeviceState
   private running = false
   private relay: RelayState = { running: false }
-  private lastErrKey = ''
+  /** Last message per error tag: a retry loop repeating one failure is one row, not one per try. */
+  private lastErr = new Map<string, string>()
   private logTimer?: ReturnType<typeof setInterval>
   private timers: ReturnType<typeof setInterval>[] = []
 
@@ -97,8 +121,13 @@ export class Session {
       this.stats.error()
       this.logError(tag, message)
     })
+    this.link.onNodeEvents((events) => this.events.add(events))
     this.link.onStatus((s) => {
       if (s.state === 'reconnecting') this.stats.reconnect()
+      if (s.state === 'connected') this.lastErr.delete('SERIAL') // the next failure is news again
+      const e = deviceEvent(this.lastDevice, s, Date.now())
+      if (e) this.events.add([e])
+      if (s.state !== 'scanning') this.lastDevice = s.state
     })
   }
 
@@ -155,7 +184,7 @@ export class Session {
     this.decoder = new Decoder()
     this.parser.reset()
     this.stats.reset()
-    this.lastErrKey = ''
+    this.lastErr.delete('DCS') // a new relay reports its stream afresh
     const mode = this.config.sourceMode
 
     try {
@@ -272,6 +301,8 @@ export class Session {
   }
 
   private flushLog(): void {
+    const events = this.events.take()
+    if (events.length) this.emit('events:batch', events)
     if (this.logBuf.length === 0) return
     const batch = this.logBuf.splice(0, MAX_BATCH)
     this.emit('log:batch', batch)
@@ -284,6 +315,7 @@ export class Session {
   }
 
   private setRelay(relay: RelayState): void {
+    this.events.add(relayEvents(this.relay, relay, relayContext(this.config), Date.now()))
     this.relay = relay
     this.emit('relay:state', relay)
   }
@@ -294,12 +326,11 @@ export class Session {
     return { running: this.running, relay: this.relay, device, cal: this.link.calSnapshot() }
   }
 
-  /** Push a client diagnostic into the in-app log + the debug log file. */
+  /** Push a client diagnostic into the event log + the debug log file. */
   private logError(tag: string, msg: string): void {
     debugLog(`error.${tag}`, msg) // always reaches debug.log when debug mode is on
-    const key = `${tag}|${msg}`
-    if (key === this.lastErrKey) return // dedupe the in-app log only
-    this.lastErrKey = key
-    this.logBuf.push({ t: Date.now(), dir: 'sys', address: 0, name: tag, value: msg })
+    if (this.lastErr.get(tag) === msg) return // dedupe the event log only
+    this.lastErr.set(tag, msg)
+    this.events.add([clientErrorEvent(tag, msg, Date.now())])
   }
 }

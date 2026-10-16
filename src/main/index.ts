@@ -15,6 +15,7 @@ import {
   type ReplayLoad
 } from '@shared/ipc'
 import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/node-mapping'
+import { eventsToTsv } from '@shared/events'
 import { HID_CONTROLS, HID_ID } from './reference/hid-controls.generated'
 import { Session } from './session'
 import { loadConfig, saveConfig } from './settings'
@@ -183,6 +184,20 @@ function registerIpc(): void {
     })
     if (res.canceled || !res.filePath) return {}
     writeFileSync(res.filePath, text)
+    return { path: res.filePath }
+  })
+
+  ipcMain.handle(CTRL.eventsGet, () => session.events.snapshot())
+  ipcMain.handle(CTRL.eventsClear, () => session.events.clear())
+  ipcMain.handle(CTRL.eventsExport, async () => {
+    const rows = session.events.snapshot()
+    const res = await dialog.showSaveDialog({
+      title: 'Export events',
+      defaultPath: `skyhawk-events-${Date.now()}.tsv`,
+      filters: [{ name: 'Events', extensions: ['tsv', 'txt'] }]
+    })
+    if (res.canceled || !res.filePath) return {}
+    writeFileSync(res.filePath, eventsToTsv(rows))
     return { path: res.filePath }
   })
 

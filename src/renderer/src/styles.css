@@ -868,10 +868,56 @@ button.devind[aria-expanded='true'] {
 }
 
 /* ── log ──────────────────────────────────────────────────────── */
+/* Stream / Events sub-tabs (#64) over one log; the log fills the tab and its rows scroll. */
+.logview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.subtabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 22px;
+  height: 34px;
+  align-items: stretch;
+  flex: none;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-2);
+}
+.subtab {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  padding: 0 12px;
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #7d8ba5;
+  box-shadow: inset 0 -2px 0 transparent;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.subtab.on {
+  color: #fff;
+  box-shadow: inset 0 -2px 0 var(--blue-2);
+}
+.subtab__n {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted-3);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
 .log {
   display: flex;
   flex-direction: column;
-  height: 728px;
+  flex: 1;
+  min-height: 0;
 }
 .log__toolbar {
   display: flex;
@@ -1000,6 +1046,14 @@ button.devind[aria-expanded='true'] {
 .log__val {
   font-weight: 600;
   text-align: right;
+}
+/* Events: Time · severity symbol · Source · Event */
+.log--node .log__grid {
+  grid-template-columns: 130px 22px 240px 1fr;
+}
+.log--node .log__val,
+.log--node .log__head .right {
+  text-align: left;
 }
 .right {
   text-align: right;
