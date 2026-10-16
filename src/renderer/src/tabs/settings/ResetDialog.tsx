@@ -58,11 +58,13 @@ export function ResetDialog({ model, onClose }: { model?: NodeModel; onClose: ()
       <div className="im__sec">
         <div className="im__body">
           <div className="im__st">
-            Registry nodes
-            <span className="im__sum">{rowCount === 1 ? '1 change' : `${rowCount} changes`}</span>
+            Registry nodes that differ
+            {rowCount > 0 && (
+              <span className="im__sum">{rowCount === 1 ? '1 change' : `${rowCount} changes`}</span>
+            )}
           </div>
           {preview && rowCount === 0 && (
-            <div className="hint">Every registry node already matches NODE_IDS.md.</div>
+            <div className="hint">None — every registry node already matches NODE_IDS.md.</div>
           )}
           {preview?.rows.map((r) => (
             <div className="im__row" key={`${r.nodeId}-${r.field}`}>
