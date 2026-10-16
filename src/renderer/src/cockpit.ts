@@ -1,7 +1,12 @@
 // Cockpit tab (#63): the pure decisions behind the health band, the plan and Attention. Everything
 // here is computed from what main pushes (`nodes:model`, `nodes:telemetry`); the client applies no
 // thresholds — a warning is always a flag a board raised itself.
-import type { NodeModel, NodeModelEntry, PduOutage } from '@shared/node-rules'
+import {
+  isReportableNew,
+  type NodeModel,
+  type NodeModelEntry,
+  type PduOutage
+} from '@shared/node-rules'
 import {
   PDU_FLAG,
   RAIL_FLAG,
@@ -313,6 +318,11 @@ function railAlert(r: PduReadings): boolean {
 
 // ── Attention ───────────────────────────────────────────────────────────────
 
+/** "1 node affected" / "3 nodes affected" — a PDU outage, wherever it is shown. */
+export function affected(n: number): string {
+  return `${n} node${n === 1 ? '' : 's'} affected`
+}
+
 export interface AttentionItem {
   key: string
   nodeId: number
@@ -341,7 +351,7 @@ export function attentionItems(views: NodeView[], outages: PduOutage[]): Attenti
       nodeId: v.entry.nodeId,
       name: v.entry.name,
       state,
-      flag: outage ? `OFFLINE · ${outage.nodeIds.length} nodes affected` : (flag ?? ''),
+      flag: outage ? `OFFLINE · ${affected(outage.nodeIds.length)}` : (flag ?? ''),
       outage,
       rank: outage ? 0 : state === 'off' ? 1 : 2
     })
@@ -485,7 +495,10 @@ export function psuName(psu: PsuSetting): string {
   return psu.mode === 'preset' ? PSU_PRESETS[psu.preset].label : 'PSU'
 }
 
-/** Count of NODE_IDs waiting in "New on the bus". */
+/**
+ * "New on the bus · N": new NODE_IDs on the bus that have identified as a PDU or a panel group.
+ * One still identifying is not news yet (isReportableNew — the Overview and event log agree).
+ */
 export function newCount(model: NodeModel): number {
-  return model.nodes.filter((n) => n.source === 'new').length
+  return model.nodes.filter(isReportableNew).length
 }

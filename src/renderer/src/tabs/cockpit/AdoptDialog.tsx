@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { NodeMappingResult } from '@shared/ipc'
 import type { NodeView } from '../../cockpit'
 import {
+  adoptability,
   adoptEvidence,
   adoptQueue,
   adoptSpec,
@@ -90,9 +91,7 @@ export function AdoptDialog(props: { views: NodeView[]; onClose: () => void }) {
                   <div className="ad__in">
                     <span className="node__dot new" aria-hidden="true" />
                     NODE_ID {v.entry.nodeId}
-                    <span className={`kind ${v.entry.kind === 'pdu' ? 'kind--pdu' : 'kind--pg'}`}>
-                      {v.entry.kind === 'pdu' ? 'PDU' : 'PANEL GROUP'}
-                    </span>
+                    <Badge badge={adoptability(v.entry).badge} />
                   </div>
                   <div className="ad__im">{seenAgo(v.entry.firstSeenAt, Date.now())}</div>
                 </button>
@@ -130,7 +129,10 @@ function AdoptForm(props: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const ev = adoptEvidence(props.view)
-  const spec = adoptSpec(e.kind, { name, console: con, pduId })
+  // Only a node identified as a PDU or a panel group gets the form; anything else can be ignored.
+  const able = adoptability(e)
+  const kind = able.kind
+  const spec = kind ? adoptSpec(kind, { name, console: con, pduId }) : null
   const ident = identState(e.availability === 'online', props.dropped)
 
   const run = async (call: () => Promise<NodeMappingResult> | undefined) => {
@@ -161,69 +163,77 @@ function AdoptForm(props: {
             <b>{ev.registry}</b>
           </div>
         </div>
-        <label className="input-label" htmlFor="ad-name">
-          Name
-        </label>
-        <input
-          id="ad-name"
-          className="input"
-          placeholder={e.kind === 'pdu' ? 'e.g. PDU_Right_Aft' : 'e.g. Right_Oxygen'}
-          value={name}
-          onChange={(ev) => setName(ev.target.value)}
-        />
-        <div className="ad__row">
-          <div>
-            <label className="input-label" htmlFor="ad-console">
-              Console
-            </label>
-            <select
-              id="ad-console"
-              className="input"
-              value={con}
-              onChange={(ev) => {
-                setCon(ev.target.value)
-                setPduId('')
-              }}
-            >
-              <option value="">Choose…</option>
-              {CONSOLE_OPTIONS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+        {!kind ? (
+          <div className="ad__wait" role="status">
+            {able.note}
           </div>
-          {e.kind === 'panel' && (
-            <div>
-              <label className="input-label" htmlFor="ad-pdu">
-                Powered by
-              </label>
-              <select
-                id="ad-pdu"
-                className="input"
-                value={pduId === null ? 'none' : pduId}
-                disabled={!con}
-                onChange={(ev) =>
-                  setPduId(
-                    ev.target.value === ''
-                      ? ''
-                      : ev.target.value === 'none'
-                        ? null
-                        : Number(ev.target.value)
-                  )
-                }
-              >
-                <option value="">Choose…</option>
-                <option value="none">None</option>
-                {powerZoneOptions(props.views, con, null).map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+        ) : (
+          <>
+            <label className="input-label" htmlFor="ad-name">
+              Name
+            </label>
+            <input
+              id="ad-name"
+              className="input"
+              placeholder={kind === 'pdu' ? 'e.g. PDU_Right_Aft' : 'e.g. Right_Oxygen'}
+              value={name}
+              onChange={(ev) => setName(ev.target.value)}
+            />
+            <div className="ad__row">
+              <div>
+                <label className="input-label" htmlFor="ad-console">
+                  Console
+                </label>
+                <select
+                  id="ad-console"
+                  className="input"
+                  value={con}
+                  onChange={(ev) => {
+                    setCon(ev.target.value)
+                    setPduId('')
+                  }}
+                >
+                  <option value="">Choose…</option>
+                  {CONSOLE_OPTIONS.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {kind === 'panel' && (
+                <div>
+                  <label className="input-label" htmlFor="ad-pdu">
+                    Powered by
+                  </label>
+                  <select
+                    id="ad-pdu"
+                    className="input"
+                    value={pduId === null ? 'none' : pduId}
+                    disabled={!con}
+                    onChange={(ev) =>
+                      setPduId(
+                        ev.target.value === ''
+                          ? ''
+                          : ev.target.value === 'none'
+                            ? null
+                            : Number(ev.target.value)
+                      )
+                    }
+                  >
+                    <option value="">Choose…</option>
+                    <option value="none">None</option>
+                    {powerZoneOptions(props.views, con, null).map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
         <div className="ident" role="status">
           <Dot state={ident} />
           <span>
@@ -231,10 +241,12 @@ function AdoptForm(props: {
             drops off the bus and green when it’s back.
           </span>
         </div>
-        <div className="hint">
-          Saved on this computer. To make it permanent for everyone, add NODE_ID {id} to
-          NODE_IDS.md.
-        </div>
+        {kind && (
+          <div className="hint">
+            Saved on this computer. To make it permanent for everyone, add NODE_ID {id} to
+            NODE_IDS.md.
+          </div>
+        )}
         {error && <div className="set-err ad__err">{error}</div>}
       </div>
       <div className="ad__ft">
@@ -261,4 +273,16 @@ function AdoptForm(props: {
       </div>
     </>
   )
+}
+
+const BADGE_CLASS: Record<ReturnType<typeof adoptability>['badge'], string> = {
+  PDU: 'kind--pdu',
+  'PANEL GROUP': 'kind--pg',
+  IDENTIFYING: 'kind--wait',
+  BRIDGE: 'kind--no',
+  'UNKNOWN TYPE': 'kind--no'
+}
+
+function Badge({ badge }: { badge: ReturnType<typeof adoptability>['badge'] }) {
+  return <span className={`kind ${BADGE_CLASS[badge]}`}>{badge}</span>
 }

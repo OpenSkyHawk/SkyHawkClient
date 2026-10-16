@@ -4,7 +4,7 @@
 // `_NODE_TELEM`): the client never applies a threshold, so every alert here is a flag a board
 // raised itself.
 import type { DeviceStatus, RelayState, SourceMode } from './ipc'
-import { NODE_END_MSG, ROSTER_REPLY_MS, type NodeStatus } from './nodes'
+import { BRIDGE_NODE_ID, NODE_END_MSG, ROSTER_REPLY_MS, type NodeStatus } from './nodes'
 import {
   displayCurrentMa,
   PDU_FLAG,
@@ -150,6 +150,8 @@ export class NodeEventTracker {
       out.push(this.endBaseline('', now))
     }
     for (const n of roster) {
+      // The bridge's own row (node 0, v3) is this client's link: no events, not in the counts.
+      if (n.nodeId === BRIDGE_NODE_ID) continue
       const p = this.prev.get(n.nodeId)
       this.prev.set(n.nodeId, n)
       if (!this.lookup.ignored(n.nodeId)) out.push(...this.diff(p, n, raw, isEnd, now))

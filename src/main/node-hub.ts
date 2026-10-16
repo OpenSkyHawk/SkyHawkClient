@@ -7,7 +7,8 @@ import type {
   PushChannel,
   PushChannels
 } from '@shared/ipc'
-import type { NodeRoster, NodeStatus } from '@shared/nodes'
+import { BRIDGE_NODE_ID, type NodeRoster, type NodeStatus } from '@shared/nodes'
+import { isAdoptableKind, resolveKind, type NodeIdentity } from '@shared/node-kind'
 import { NodeTelemStore, parseNodeTelem } from '@shared/node-telem'
 import { NodeEventTracker, type LogEventInput } from '@shared/events'
 import {
@@ -48,9 +49,27 @@ type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => voi
 const NODE_TELEM_PUSH_MS = 1000
 
 /** Fault-dictionary enrichment: the abbr, label and description for the node's faultId. */
+/**
+ * Client wording where the generated text reads like firmware notes (the label comes from the enum
+ * name, the description from the header comment).
+ */
+const FAULT_TEXT: Partial<Record<number, { label: string; description: string }>> = {
+  0x09: {
+    label: 'Duplicate NODE_ID',
+    description:
+      'another board uses this NODE_ID, so the two are reported as one and this row mixes both'
+  }
+}
+
 function withFaultInfo(n: NodeStatus): NodeStatus {
   const fc = n.faultId ? NODE_FAULT_CODES[n.faultId] : undefined
-  return { ...n, faultAbbr: fc?.abbr, faultLabel: fc?.label, faultDesc: fc?.description }
+  const text = n.faultId ? FAULT_TEXT[n.faultId] : undefined
+  return {
+    ...n,
+    faultAbbr: fc?.abbr,
+    faultLabel: text?.label ?? fc?.label,
+    faultDesc: text?.description ?? fc?.description
+  }
 }
 
 export class NodeHub {
@@ -65,7 +84,13 @@ export class NodeHub {
   private readonly events = new NodeEventTracker({
     name: (id) => this.mapped().get(id)?.name ?? `Node ${id}`,
     ignored: (id) => this.mapping().ignored.includes(id),
-    isNew: (id) => !this.mapped().has(id) && !this.mapping().ignored.includes(id)
+    // "New on the bus" once a node has identified as something adoptable — not at first sight,
+    // and never for the bridge's own row (node 0, our link).
+    isNew: (id) =>
+      id !== BRIDGE_NODE_ID &&
+      !this.mapped().has(id) &&
+      !this.mapping().ignored.includes(id) &&
+      isAdoptableKind(this.kindOf(id))
   })
   private mappedFor?: NodeMappingFile
   private mappedCache = new Map<number, MappedNode>()
@@ -140,11 +165,11 @@ export class NodeHub {
   }
 
   setMapping(nodeId: number, patch: MappingPatch): NodeMappingResult {
-    return this.update((f) => setNodeMapping(f, this.defaults, nodeId, patch))
+    return this.update((f) => setNodeMapping(f, this.defaults, nodeId, patch, this.kindOf))
   }
 
   adopt(nodeId: number, spec: AdoptSpec): NodeMappingResult {
-    return this.update((f) => adoptNode(f, this.defaults, nodeId, spec))
+    return this.update((f) => adoptNode(f, this.defaults, nodeId, spec, this.kindOf))
   }
 
   forget(nodeId: number): NodeMappingResult {
@@ -182,14 +207,21 @@ export class NodeHub {
   }
 
   /**
-   * A node's kind only when something says so: the registry, an adoption, or `_NODE_TELEM` (only a
-   * PDU sends it). The model's 'panel' for a new node is a display default, not knowledge — stored,
-   * it would outrank telemetry that arrives later, and a PDU ignored early would stay a panel.
+   * What a node is, by the one resolver the model uses (node-kind.ts): its own announcement, then
+   * PDU telemetry, then the registry or an adoption. undefined = nothing solid yet — the model's
+   * 'panel' for a new node is a display default, never knowledge.
    */
+  private readonly kindOf = (nodeId: number, now = Date.now()): NodeIdentity | undefined =>
+    resolveKind({
+      reported: this.roster.snapshot().find((n) => n.nodeId === nodeId)?.nodeKind,
+      pduTelemetry: this.telem.snapshot(now).some((t) => t.nodeId === nodeId && t.isPdu),
+      stored: this.defaults.get(nodeId)?.kind ?? this.mapping().nodes[nodeId]?.kind
+    })
+
+  /** The kind Ignore records: only an adoptable one (a bridge or unknown kind records none). */
   private knownKind(nodeId: number, now: number): NodeKind | undefined {
-    const known = this.defaults.get(nodeId)?.kind ?? this.mapping().nodes[nodeId]?.kind
-    if (known) return known
-    return this.telem.snapshot(now).some((t) => t.nodeId === nodeId && t.isPdu) ? 'pdu' : undefined
+    const k = this.kindOf(nodeId, now)
+    return isAdoptableKind(k) ? k : undefined
   }
 
   /** The bundled NODE_IDS registry, PanelBridge included, and where it came from. */

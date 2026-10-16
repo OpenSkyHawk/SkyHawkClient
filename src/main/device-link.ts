@@ -7,7 +7,14 @@
 // together, there was no node status, PDU telemetry, HID or calibration unless DCS was being
 // relayed, and stopping the relay tore the port down with it.
 import { LineAssembler, parseCommand } from '@shared/dcsbios'
-import { NODE_END_MSG, NODE_MSG, NodeRoster, nodeRosterRequest } from '@shared/nodes'
+import {
+  NODE_END_MSG,
+  NODE_MSG,
+  NodeRoster,
+  cleanNodeLine,
+  isLegacyNodeStatus,
+  nodeRosterRequest
+} from '@shared/nodes'
 import { NODE_TELEM_MSG } from '@shared/node-telem'
 import type { LogEventInput } from '@shared/events'
 import {
@@ -82,6 +89,8 @@ function subscribe<T>(set: Set<T>, cb: T): Unsubscribe {
 
 export class DeviceLink {
   readonly roster = new NodeRoster()
+  /** A v2 (pre-#344) PanelBridge was reported this link: say it once, not on every row. */
+  private legacyNodesWarned = false
   /** Node telemetry, mapping and the combined node model (#61). */
   readonly nodes: NodeHub
   private serial?: SerialBridge
@@ -268,6 +277,7 @@ export class DeviceLink {
     // nodes, hidden flags. Not on close: while unplugged the renderer shows the last state, dimmed.
     this.roster.reset()
     this.nodes.reset()
+    this.legacyNodesWarned = false
     this.assembler = new LineAssembler() // a line cut by the unplug must not prefix the next one
     this.setStatus({
       state: 'connected',
@@ -355,9 +365,19 @@ export class DeviceLink {
     if (rest.length === 0) return
     for (const cb of this.bytesCbs) cb(rest)
     const t = Date.now()
-    for (const line of this.assembler.push(rest)) {
-      if (!line.trim()) continue
+    for (const raw of this.assembler.push(rest)) {
+      if (!raw.trim()) continue
+      // UART noise from a bridge reset can precede the first node-status row; cut it off.
+      const line = cleanNodeLine(raw)
       const { identifier, arg } = parseCommand(line)
+      if (identifier === NODE_MSG && !this.legacyNodesWarned && isLegacyNodeStatus(arg.trim())) {
+        // Every v2 row would be dropped as malformed, leaving the Cockpit silently empty.
+        this.legacyNodesWarned = true
+        this.raise(
+          'NODES',
+          'PanelBridge sends node status v2; this client needs v3 — update the SimGateway firmware (OpenSkyhawk#344)'
+        )
+      }
       let kind: DeviceLine['kind'] = 'command'
       // Node-status messages are tapped to the roster, not logged as panel commands.
       if (identifier === NODE_MSG || identifier === NODE_END_MSG) {

@@ -60,6 +60,13 @@ export function Cockpit() {
     setOpen(pendingOpen)
     set({ cockpitOpen: undefined })
   }, [pendingOpen, set])
+  /** The Overview's new-devices notice asked for the Adopt dialog. */
+  const pendingAdopt = useStore((s) => s.cockpitAdopt)
+  useEffect(() => {
+    if (!pendingAdopt) return
+    setAdopting(true)
+    set({ cockpitAdopt: undefined })
+  }, [pendingAdopt, set])
 
   const views = useMemo(() => (model ? nodeViews(model, telemetry) : []), [model, telemetry])
   const outages = useMemo(() => model?.outages ?? [], [model])

@@ -107,6 +107,8 @@ export interface AppState {
   eventSource: EventSourceFilter
   /** NODE_ID whose Cockpit side panel opens when the Cockpit tab next mounts (#66). */
   cockpitOpen?: number
+  /** The Cockpit's Adopt dialog opens when the Cockpit tab next mounts (#77). */
+  cockpitAdopt?: boolean
   problemsOnly: boolean
 
   // live link state
@@ -216,6 +218,8 @@ export interface AppState {
   showEvents: (source: EventSourceFilter) => void
   /** The Cockpit tab with this node's side panel open — Connection's "›". */
   openInCockpit: (nodeId: number) => void
+  /** The Cockpit tab with the Adopt dialog open — the Overview's new-devices notice. */
+  openAdopt: () => void
   setSerialMonitor: (on: boolean) => void
   clearSerial: () => void
   refreshNodes: () => void
@@ -416,6 +420,7 @@ export const useStore = create<AppState>((set, get) => ({
   showEvents: (source) => set({ tab: 'log', logView: 'events', eventSource: source }),
 
   openInCockpit: (nodeId) => set({ tab: 'cockpit', cockpitOpen: nodeId }),
+  openAdopt: () => set({ tab: 'cockpit', cockpitAdopt: true }),
 
   initBridge: () => {
     const api = window.skyhawk

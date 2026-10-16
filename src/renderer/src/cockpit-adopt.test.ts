@@ -5,6 +5,7 @@ import { TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
 import { nodeViews } from './cockpit'
 import {
   adoptEvidence,
+  adoptability,
   adoptQueue,
   adoptSpec,
   identState,
@@ -25,6 +26,7 @@ const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => (
   overheat: false,
   degraded: false,
   faultId: 0,
+  nodeKind: 0,
   ...over
 })
 
@@ -106,13 +108,21 @@ describe('seenAgo', () => {
 })
 
 describe('adoptEvidence', () => {
-  it('a panel group reports status only, healthy', () => {
-    const [v] = nodeViews(model([fresh(41)]), [])
+  it('a panel group it reported: status only, healthy', () => {
+    const [v] = nodeViews(
+      model([fresh(41, { identified: 'panel', status: status(41, { nodeKind: 1 }) })]),
+      []
+    )
     expect(adoptEvidence(v!)).toEqual({
-      detected: 'panel group',
+      detected: 'panel group (reported by the board)',
       reporting: 'status only · up 00:02:10 · healthy',
       registry: 'not in NODE_IDS.md'
     })
+  })
+
+  it('a node that has not reported its kind is "not known yet", never a panel group', () => {
+    const [v] = nodeViews(model([fresh(41)]), [])
+    expect(adoptEvidence(v!).detected).toBe('not known yet')
   })
 
   it('names the faults it reports', () => {
@@ -128,9 +138,9 @@ describe('adoptEvidence', () => {
   })
 
   it('a PDU shows its fresh telemetry; negative offset reads 0 A', () => {
-    const [v] = nodeViews(model([fresh(42, { kind: 'pdu' })]), [pduTelem(42)])
+    const [v] = nodeViews(model([fresh(42, { kind: 'pdu', identified: 'pdu' })]), [pduTelem(42)])
     expect(adoptEvidence(v!)).toMatchObject({
-      detected: 'PDU',
+      detected: 'PDU (PDU telemetry seen)',
       reporting: 'telemetry: 12 V 12.05 V · 0.02 A, 5 V 5.02 V · 0.00 A'
     })
   })
@@ -193,5 +203,34 @@ describe('nextSelection', () => {
   it('Later moves on and keeps it queued; past the end there is nothing', () => {
     expect(nextSelection(order, order, 41, 'later')).toBe(42)
     expect(nextSelection(order, order, 43, 'later')).toBeNull()
+  })
+})
+
+describe('adoptability', () => {
+  it('only a PDU or a panel group can be adopted', () => {
+    expect(adoptability(fresh(42, { identified: 'pdu' }))).toEqual({ kind: 'pdu', badge: 'PDU' })
+    expect(adoptability(fresh(41, { identified: 'panel' }))).toEqual({
+      kind: 'panel',
+      badge: 'PANEL GROUP'
+    })
+  })
+
+  it('still identifying: no kind, an "Identifying…" note', () => {
+    expect(adoptability(fresh(41))).toEqual({
+      badge: 'IDENTIFYING',
+      note: 'Identifying… waiting for the board to report its type.'
+    })
+  })
+
+  it('a bridge or a kind this client does not know: no kind, and says why', () => {
+    const bridge = adoptability(fresh(43, { identified: 'bridge' }))
+    expect(bridge).toMatchObject({ badge: 'BRIDGE' })
+    expect(bridge.kind).toBeUndefined()
+    expect(bridge.note).toMatch(/SimGateway \/ PanelBridge/)
+    const other = adoptability(
+      fresh(44, { identified: 'other', status: status(44, { nodeKind: 7 }) })
+    )
+    expect(other).toMatchObject({ badge: 'UNKNOWN TYPE' })
+    expect(other.note).toMatch(/doesn’t know \(7\)/)
   })
 })

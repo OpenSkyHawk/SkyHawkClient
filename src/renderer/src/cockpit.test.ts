@@ -4,6 +4,7 @@ import type { NodeStatus } from '@shared/nodes'
 import { PDU_FLAG, RAIL_FLAG, TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
 import {
   STATE_SYMBOL,
+  affected,
   attentionItems,
   consoleKey,
   fmtPct,
@@ -33,6 +34,7 @@ const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => (
   overheat: false,
   degraded: false,
   faultId: 0,
+  nodeKind: 0,
   ...over
 })
 
@@ -390,9 +392,18 @@ describe('healthBand', () => {
 })
 
 describe('newCount', () => {
-  it('counts the NODE_IDs waiting to be adopted', () => {
+  it('counts new NODE_IDs on the bus that identified as something adoptable', () => {
     expect(
-      newCount(model([node(1), node(41, { source: 'new' }), node(42, { source: 'new' })]))
+      newCount(
+        model([
+          node(1),
+          node(41, { source: 'new', identified: 'panel' }),
+          node(42, { source: 'new', identified: 'pdu' }),
+          node(43, { source: 'new' }), // still identifying: not news yet
+          node(44, { source: 'new', identified: 'bridge' }), // never adoptable
+          node(45, { source: 'new', identified: 'pdu', availability: 'offline' }) // left the bus
+        ])
+      )
     ).toBe(2)
   })
 })
@@ -434,5 +445,12 @@ describe('psuName', () => {
   it('names a preset by its model and a custom supply plainly', () => {
     expect(psuName({ mode: 'preset', preset: 'nx650', custom: {} })).toBe('NX650')
     expect(psuName({ mode: 'custom', preset: 'nx650', custom: { w: 500 } })).toBe('PSU')
+  })
+})
+
+describe('affected', () => {
+  it('reads "1 node affected", and the plural from 2', () => {
+    expect(affected(1)).toBe('1 node affected')
+    expect(affected(2)).toBe('2 nodes affected')
   })
 })

@@ -1,12 +1,18 @@
 // Cockpit Adopt dialog (#77): the pure decisions behind it — queue order, what each new NODE_ID
 // is seen doing, when the form is complete, the identify row and where the selection goes next.
 import type { AdoptSpec, NodeKind } from '@shared/node-mapping'
+import { reportedIdentity } from '@shared/node-kind'
+import type { NodeModelEntry } from '@shared/node-rules'
 import { displayCurrentMa } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
 import type { NodeView } from './cockpit'
 import { fmtUptime } from './store'
 
-/** New NODE_IDs, oldest first seen first, then by NODE_ID. Not-yet-seen times sort last. */
+/**
+ * New NODE_IDs, oldest first seen first, then by NODE_ID. Not-yet-seen times sort last. Every new
+ * node is listed — still identifying, or a kind that can't be adopted — so any of them can be
+ * ignored; only a PDU or a panel group can be adopted (adoptability()).
+ */
 export function adoptQueue(views: NodeView[]): NodeView[] {
   const at = (v: NodeView) => v.entry.firstSeenAt ?? Number.POSITIVE_INFINITY
   return views
@@ -24,11 +30,66 @@ export function seenAgo(firstSeenAt: number | undefined, now: number): string {
   return `first seen ${Math.floor(m / 60)} h ago`
 }
 
+export interface Adoptability {
+  /** Set only when it can be adopted: what it identified as. */
+  kind?: NodeKind
+  badge: 'PDU' | 'PANEL GROUP' | 'IDENTIFYING' | 'BRIDGE' | 'UNKNOWN TYPE'
+  /** Why it can't be adopted (yet), shown in place of the form. */
+  note?: string
+}
+
+/**
+ * Whether a new node can be adopted, by what it has identified as (entry.identified, the shared
+ * resolver). A whitelist: a PDU or a panel group can; still identifying, a bridge, or a kind this
+ * client doesn't know can only be ignored.
+ */
+export function adoptability(e: NodeModelEntry): Adoptability {
+  switch (e.identified) {
+    case 'pdu':
+      return { kind: 'pdu', badge: 'PDU' }
+    case 'panel':
+      return { kind: 'panel', badge: 'PANEL GROUP' }
+    case 'bridge':
+      return {
+        badge: 'BRIDGE',
+        note: 'It reports as a SimGateway / PanelBridge. A cockpit has one, on NODE_ID 0, so this one can’t be adopted.'
+      }
+    case 'other':
+      return {
+        badge: 'UNKNOWN TYPE',
+        note: `It reports a board type this client doesn’t know (${e.status?.nodeKind ?? '?'}), so it can’t be adopted. A newer client may know it.`
+      }
+    default:
+      return {
+        badge: 'IDENTIFYING',
+        note: 'Identifying… waiting for the board to report its type.'
+      }
+  }
+}
+
 export interface Evidence {
-  /** 'PDU' when it has sent PDU telemetry pages, else 'panel group'. */
-  detected: 'PDU' | 'panel group'
+  /** What it identified as, and from which signal; or that it hasn't yet. */
+  detected: string
   reporting: string
   registry: string
+}
+
+/** "Detected as": the kind and the signal it came from. */
+function detectedAs(e: NodeModelEntry): string {
+  const said = reportedIdentity(e.status?.nodeKind)
+  const how = said ? 'reported by the board' : 'PDU telemetry seen'
+  switch (e.identified) {
+    case 'pdu':
+      return `PDU (${how})`
+    case 'panel':
+      return 'panel group (reported by the board)'
+    case 'bridge':
+      return 'SimGateway / PanelBridge (reported by the board)'
+    case 'other':
+      return `unknown board type ${e.status?.nodeKind ?? ''} (reported by the board)`.trim()
+    default:
+      return 'not known yet'
+  }
 }
 
 const rail = (label: string, p?: { vAvgMv: number; iAvgMa: number }) =>
@@ -40,7 +101,7 @@ const rail = (label: string, p?: { vAvgMv: number; iAvgMa: number }) =>
 export function adoptEvidence(v: NodeView): Evidence {
   const e = v.entry
   const st = e.status
-  const detected = e.kind === 'pdu' ? 'PDU' : 'panel group'
+  const detected = detectedAs(e)
   const registry = 'not in NODE_IDS.md'
   if (e.availability !== 'online' || !st) {
     return { detected, reporting: 'not reporting right now', registry }

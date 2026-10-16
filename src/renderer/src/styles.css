@@ -3814,3 +3814,22 @@ select.input {
 .ad__pos {
   margin: 0;
 }
+/* not adoptable (yet): still identifying, or a kind that can't be adopted (#344) */
+.kind--wait {
+  color: var(--muted-2);
+  background: rgba(255, 255, 255, 0.06);
+}
+.kind--no {
+  color: #ff9a9a;
+  background: rgba(255, 122, 122, 0.12);
+}
+.ad__wait {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: rgba(30, 143, 255, 0.08);
+  border: 1px solid rgba(30, 143, 255, 0.3);
+  color: var(--blue-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
