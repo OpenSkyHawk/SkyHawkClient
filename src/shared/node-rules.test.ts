@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildNodeModel,
   cameOnline,
+  isReportableNew,
   PDU_GROUP_POLL_CATCH_MS,
   PDU_GROUP_WINDOW_MS,
   type NodeModelInput
@@ -31,7 +32,8 @@ const st = (nodeId: number, present = true): NodeStatus => ({
   dieTempC: null,
   overheat: false,
   degraded: false,
-  faultId: 0
+  faultId: 0,
+  nodeKind: 0
 })
 /** A PDU with a fresh 12 V page; pass `stale: true` for one whose pages all went stale. */
 const telem = (
@@ -346,5 +348,43 @@ describe('cameOnline', () => {
     expect(cameOnline(new Set([1]), [st(1), st(2)])).toEqual([2]) // 1 still present
     expect(cameOnline(new Set([1]), [st(1, false)])).toEqual([]) // gone
     expect(cameOnline(new Set(), [st(1)])).toEqual([1]) // back after being gone
+  })
+})
+
+describe('board kind (#344)', () => {
+  const kind = (id: number, k: number, present = true) => ({ ...st(id, present), nodeKind: k })
+
+  it("leaves out the bridge's own row (node 0): it is the link, not a cockpit node", () => {
+    const m = buildNodeModel(input({ roster: [kind(0, 3), st(1)], rosterCompleteAt: 0 }))
+    expect(m.nodes.map((n) => n.nodeId)).not.toContain(0)
+  })
+
+  it('identifies by what the node reports, then PDU telemetry, then the stored kind', () => {
+    const m = buildNodeModel(
+      input({ roster: [kind(41, 1), kind(42, 0), kind(2, 2)], telemetry: [telem(42)] })
+    )
+    const by = (id: number) => m.nodes.find((n) => n.nodeId === id)
+    expect(by(41)).toMatchObject({ identified: 'panel', kind: 'panel' })
+    expect(by(42)).toMatchObject({ identified: 'pdu', kind: 'pdu' }) // telemetry only
+    expect(by(2)).toMatchObject({ identified: 'pdu', kind: 'pdu', pduId: null }) // reports PDU
+    expect(by(3)).toMatchObject({ identified: 'pdu' }) // registry PDU, silent
+  })
+
+  it('a new node that has not reported its kind is not identified, and not news', () => {
+    const m = buildNodeModel(input({ roster: [kind(41, 0)], rosterCompleteAt: 0 }))
+    const n41 = m.nodes.find((n) => n.nodeId === 41)!
+    expect(n41.identified).toBeUndefined()
+    expect(n41.kind).toBe('panel') // the drawing default
+    expect(isReportableNew(n41)).toBe(false)
+  })
+
+  it('isReportableNew: new, on the bus, and identified as a PDU or a panel group', () => {
+    const m = buildNodeModel(
+      input({
+        roster: [kind(41, 1), kind(42, 2), kind(43, 3), kind(44, 1, false), kind(45, 0)],
+        rosterCompleteAt: 0
+      })
+    )
+    expect(m.nodes.filter(isReportableNew).map((n) => n.nodeId)).toEqual([41, 42])
   })
 })

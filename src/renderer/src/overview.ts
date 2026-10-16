@@ -1,7 +1,8 @@
 // Overview (#65): the pure decisions behind the Cockpit tile, the Attention banner and the
 // new-devices notice. All of it is read off the Cockpit's own picture (`healthBand`,
 // `attentionItems`); the client adds no thresholds of its own.
-import type { NodeModelEntry } from '@shared/node-rules'
+import { isAdoptableKind } from '@shared/node-kind'
+import { isReportableNew, type NodeModelEntry } from '@shared/node-rules'
 import type { AttentionItem, HealthBand, NodeView } from './cockpit'
 
 // ── Cockpit tile ────────────────────────────────────────────────────────────
@@ -87,12 +88,12 @@ export function attentionSummary(
 // ── New devices ─────────────────────────────────────────────────────────────
 
 /**
- * The kind a node has reported itself. Never inferred from its NODE_ID: today only PDU telemetry
- * pages say anything (a new node is 'pdu' only after it sent one); firmware #344 adds a reported
- * kind for panel groups too. null = not reported yet.
+ * The adoptable kind a node has identified as (node-kind.ts resolveKind: its own announcement, PDU
+ * telemetry, then what was stored). Never inferred from its NODE_ID. null = not identified yet, or a
+ * kind that can't be adopted (a bridge, or one this client doesn't know).
  */
 export function reportedKind(e: NodeModelEntry): 'pdu' | 'panel' | null {
-  return e.kind === 'pdu' && e.everHadReadings ? 'pdu' : null
+  return isAdoptableKind(e.identified) ? e.identified : null
 }
 
 export interface NewDevices {
@@ -108,9 +109,7 @@ export interface NewDevices {
  */
 export function newDevices(views: NodeView[], live: boolean): NewDevices | null {
   if (!live) return null
-  const kinds = views
-    .filter((v) => v.entry.source === 'new' && v.entry.availability === 'online')
-    .map((v) => reportedKind(v.entry))
+  const kinds = views.filter((v) => isReportableNew(v.entry)).map((v) => reportedKind(v.entry))
   const panels = kinds.filter((k) => k === 'panel').length
   const pdus = kinds.filter((k) => k === 'pdu').length
   return panels + pdus ? { count: panels + pdus, panels, pdus } : null

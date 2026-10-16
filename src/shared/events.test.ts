@@ -28,6 +28,7 @@ const st = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
   overheat: false,
   degraded: false,
   faultId: 0,
+  nodeKind: 0,
   ...over
 })
 
@@ -35,7 +36,8 @@ const NAMES: Record<number, string> = { 2: 'Right_Navigation', 4: 'PDU_Right', 7
 const lookup = (ignored: number[] = []): NodeLookup => ({
   name: (id) => NAMES[id] ?? `Node ${id}`,
   ignored: (id) => ignored.includes(id),
-  isNew: (id) => !(id in NAMES)
+  isNew: (id) => !(id in NAMES),
+  unmapped: (id) => !(id in NAMES)
 })
 
 /** Short form for assertions: `name: event · detail [severity]`. */

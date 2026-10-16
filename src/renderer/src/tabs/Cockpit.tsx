@@ -3,6 +3,7 @@ import { isLinkUp } from '@shared/ipc'
 import type { NodeModel } from '@shared/node-rules'
 import { effectivePsuLimits, type PsuLimits } from '@shared/psu'
 import { useStore } from '../store'
+import { unidentifiedNew } from '../cockpit-adopt'
 import {
   ATTENTION_SHOWN,
   STAGE_W,
@@ -25,6 +26,7 @@ import {
 } from '../cockpit'
 import { BoardEvents } from './cockpit/BoardEvents'
 import { Dot } from './cockpit/Dot'
+import { AdoptDialog } from './cockpit/AdoptDialog'
 import { NodePanel, PduPanel } from './cockpit/SidePanels'
 
 const RING_C = 289.03 // 2π × 46, the ring's circumference
@@ -50,6 +52,7 @@ export function Cockpit() {
   const [focusPdu, setFocusPdu] = useState<number | null>(null)
   /** NODE_ID whose side panel is open: the node panel, or the PDU panel for a PDU. */
   const [open, setOpen] = useState<number | null>(null)
+  const [adopting, setAdopting] = useState(false)
   /** A node another tab asked to open here (Connection's "›"). */
   const pendingOpen = useStore((s) => s.cockpitOpen)
   const set = useStore((s) => s.set)
@@ -58,6 +61,13 @@ export function Cockpit() {
     setOpen(pendingOpen)
     set({ cockpitOpen: undefined })
   }, [pendingOpen, set])
+  /** The Overview's new-devices notice asked for the Adopt dialog. */
+  const pendingAdopt = useStore((s) => s.cockpitAdopt)
+  useEffect(() => {
+    if (!pendingAdopt) return
+    setAdopting(true)
+    set({ cockpitAdopt: undefined })
+  }, [pendingAdopt, set])
 
   const views = useMemo(() => (model ? nodeViews(model, telemetry) : []), [model, telemetry])
   const outages = useMemo(() => model?.outages ?? [], [model])
@@ -147,6 +157,7 @@ export function Cockpit() {
           <div className="cv__side">
             <Attention
               model={model}
+              views={views}
               live={live}
               items={items}
               onShowOutage={(pduId) => {
@@ -156,12 +167,14 @@ export function Cockpit() {
               }}
               onShowAll={() => filter('', true)}
               onOpen={setOpen}
+              onAdopt={() => setAdopting(true)}
             />
             <BoardEvents />
           </div>
         </div>
       </div>
 
+      {adopting && <AdoptDialog views={views} onClose={() => setAdopting(false)} />}
       {openView &&
         (openView.entry.kind === 'pdu' ? (
           <PduPanel
@@ -537,15 +550,26 @@ function Group(props: {
 
 function Attention(props: {
   model?: NodeModel
+  views: NodeView[]
   live: boolean
   items: AttentionItem[]
   onShowOutage: (pduId: number) => void
   onShowAll: () => void
   onOpen: (nodeId: number) => void
+  onAdopt: () => void
 }) {
   const { items, live } = props
   const fresh = props.model ? newCount(props.model) : 0
   const more = Math.max(0, items.length - ATTENTION_SHOWN)
+  // New nodes that can't be adopted (still unknown after the wait, a bridge, an unknown type) are
+  // not news, but must stay reachable to be ignored: a quiet line when nothing adoptable waits.
+  const [now, setNow] = useState(() => Date.now())
+  const odd = useMemo(() => unidentifiedNew(props.views, now), [props.views, now])
+  useEffect(() => {
+    if (odd.nextAt === undefined) return
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, odd.nextAt - Date.now()) + 50)
+    return () => clearTimeout(t)
+  }, [odd.nextAt])
   return (
     <div className="card field">
       <div className="panel-h">
@@ -562,6 +586,24 @@ function Attention(props: {
             <br />
             <span>not linked yet</span>
           </div>
+          <button className="browse adopt-cta__btn" onClick={props.onAdopt}>
+            Adopt…
+          </button>
+        </div>
+      )}
+      {fresh === 0 && odd.count > 0 && (
+        <div className="adopt-cta adopt-cta--quiet">
+          <span className="node__dot" aria-hidden="true" />
+          <div>
+            <b>
+              {odd.count} unidentified device{odd.count === 1 ? '' : 's'} on the bus
+            </b>
+            <br />
+            <span>can’t be adopted yet</span>
+          </div>
+          <button className="toolbtn adopt-cta__btn" onClick={props.onAdopt}>
+            Review…
+          </button>
         </div>
       )}
       {!live ? (

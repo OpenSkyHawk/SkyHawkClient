@@ -1,6 +1,7 @@
 // Node status rules (pure): combines the roster, telemetry and node mapping into the one picture
 // the UI shows — availability, new-node detection, PDU-offline grouping and PDU readings.
-import type { NodeSeen, NodeStatus } from './nodes'
+import { BRIDGE_NODE_ID, type NodeSeen, type NodeStatus } from './nodes'
+import { isAdoptableKind, resolveKind, type NodeIdentity } from './node-kind'
 import { hasFreshPduPage, type NodeTelemSnapshot } from './node-telem'
 import {
   differingCount,
@@ -31,8 +32,15 @@ export interface NodeModelEntry {
   name: string
   /** null for a new node. */
   console: string | null
+  /** null for a PDU: a PDU is never fed by another one, whatever was stored. */
   pduId: number | null
+  /** For drawing: 'pdu' once identified as one, else 'panel'. Never stored, never a gate. */
   kind: NodeKind
+  /**
+   * What the node is, from the strongest signal (node-kind.ts resolveKind); undefined = not known
+   * yet. Adopt, the new-device counts and the event log key on this, never on `kind`.
+   */
+  identified?: NodeIdentity
   /** 'new' = in the roster but neither in the registry, adopted nor ignored. */
   source: 'registry' | 'adopted' | 'new'
   availability: NodeAvailability
@@ -121,8 +129,9 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   const roster = new Map(i.roster.map((n) => [n.nodeId, n]))
   const telem = new Map(i.telemetry.map((t) => [t.nodeId, t]))
   const complete = i.rosterCompleteAt !== undefined
+  // The bridge's own row (node 0, v3) is this client's link, not a cockpit node.
   const ids = [...new Set([...mapping.keys(), ...roster.keys()])]
-    .filter((id) => !ignored.has(id))
+    .filter((id) => !ignored.has(id) && id !== BRIDGE_NODE_ID)
     .sort((a, b) => a - b)
 
   const nodes: NodeModelEntry[] = []
@@ -139,7 +148,12 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     const seen = i.seen.get(nodeId)
     const t = telem.get(nodeId)
     const source = m ? m.source : 'new'
-    const kind: NodeKind = m ? m.kind : t?.isPdu ? 'pdu' : 'panel'
+    const identified = resolveKind({
+      reported: st?.nodeKind,
+      pduTelemetry: t?.isPdu,
+      stored: m?.kind
+    })
+    const kind: NodeKind = identified === 'pdu' ? 'pdu' : 'panel'
     // A mapped node missing from the first complete roster is offline — there is no "waiting".
     const availability: NodeAvailability = st
       ? st.present
@@ -152,7 +166,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
       nodeId,
       name: m?.name ?? `Node ${nodeId}`,
       console: m ? m.console : null,
-      pduId: m ? m.pduId : null,
+      pduId: m && kind !== 'pdu' ? m.pduId : null,
       kind,
       source,
       availability,
@@ -162,6 +176,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
       e.offlineAt = seen?.offlineAt ?? i.rosterCompleteAt
       e.offlineVia = seen?.offlineVia ?? 'roster'
     }
+    if (identified) e.identified = identified
     if (st) e.status = st
     if (source === 'new' && seen) e.firstSeenAt = seen.firstSeenAt
     if (kind === 'pdu') {
@@ -196,7 +211,12 @@ function ignoredNode(
   const e: IgnoredNode = { nodeId }
   const name = d?.name ?? o?.name
   if (name) e.name = name
-  const kind = meta?.kind ?? d?.kind ?? o?.kind ?? (t?.isPdu ? 'pdu' : undefined)
+  const known = resolveKind({
+    reported: st?.nodeKind,
+    pduTelemetry: t?.isPdu,
+    stored: d?.kind ?? o?.kind
+  })
+  const kind = meta?.kind ?? (isAdoptableKind(known) ? known : undefined)
   if (kind) e.kind = kind
   if (meta) e.ignoredAt = meta.at
   const offlineAt = i.seen.get(nodeId)?.offlineAt
@@ -243,4 +263,14 @@ export function pduOutages(nodes: NodeModelEntry[]): PduOutage[] {
  */
 export function cameOnline(previous: ReadonlySet<number>, roster: NodeStatus[]): number[] {
   return roster.filter((n) => n.present && !previous.has(n.nodeId)).map((n) => n.nodeId)
+}
+
+/**
+ * A new device worth telling the user about: not in the registry or adopted, on the bus now, and
+ * identified as something that can be adopted. Until then it is not news — not on the Cockpit
+ * count, the Overview notice or the event log. One predicate for every tab (node 0 is never in the
+ * model).
+ */
+export function isReportableNew(e: NodeModelEntry): boolean {
+  return e.source === 'new' && e.availability === 'online' && isAdoptableKind(e.identified)
 }

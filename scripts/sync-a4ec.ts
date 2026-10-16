@@ -28,7 +28,7 @@ import { format } from 'prettier'
 
 const PIN = {
   repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
-  commit: '22b6a87e73068ca2bfd964d067af1247771d5854'
+  commit: 'd29433ab149fcff1695e3d5eb07e2fab4211a603'
 }
 
 const SRC = {
@@ -493,6 +493,8 @@ function genNodeStatus(header: string): string {
 
   const healthFlags = parseEnum(header, 'NodeHealthFlag', 'NodeStatus.h')
   const faultCodes = parseEnum(header, 'NodeFaultCode', 'NodeStatus.h')
+  // HEALTH_n board kind (#344), forwarded as the last _NODE_STATUS field since proto v3.
+  const nodeKinds = parseEnum(header, 'NodeKind', 'NodeStatus.h')
 
   // _NODE_TELEM contract (#216): versioned separately from _NODE_STATUS.
   const telemProto = num(/#define\s+NODE_TELEM_PROTO_VERSION\s+(\d+)/, 'TELEM_PROTO_VERSION')
@@ -533,6 +535,14 @@ export const NODE_STATUS = {
 /** HEALTH_n \`flags\` bits — from NodeHealthFlag (NodeStatus.h). Decoder masks against these. */
 export const NODE_HEALTH_FLAGS = {
 ${flagEntries}
+} as const
+
+/**
+ * HEALTH_n \`nodeKind\` (byte 5, the last _NODE_STATUS field) — from NodeKind (NodeStatus.h).
+ * Announced by the board's firmware role, never derived from the NODE_ID. Append-only; 0 = unknown.
+ */
+export const NODE_KINDS = {
+${bits(nodeKinds)}
 } as const
 
 export interface NodeFaultInfo {

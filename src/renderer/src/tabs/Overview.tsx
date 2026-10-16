@@ -233,8 +233,8 @@ export function Overview() {
           <span>
             <b>{waitingText.head}</b> — {waitingText.detail}
           </span>
-          {/* #87 points this at the Adopt dialog once its open state lives in the store. */}
-          <button className="ib__link" onClick={() => s.set({ tab: 'cockpit' })}>
+          {/* Opens the Cockpit with its Adopt dialog showing (#77). */}
+          <button className="ib__link" onClick={() => s.openAdopt()}>
             Open Cockpit →
           </button>
         </div>

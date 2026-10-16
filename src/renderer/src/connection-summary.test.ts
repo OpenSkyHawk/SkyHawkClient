@@ -19,6 +19,7 @@ const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => (
   overheat: false,
   degraded: false,
   faultId: 0,
+  nodeKind: 0,
   ...over
 })
 
