@@ -8,7 +8,7 @@ const disk: {
   readOnly?: string
   fail?: boolean
 } = {
-  file: { version: 2, nodes: {} },
+  file: { version: 3, nodes: {} },
   saves: 0
 }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } })) // debug log path
@@ -30,7 +30,7 @@ const { NodeHub } = await import('./node-hub')
 const T0 = '1970-01-01T00:00:00.000Z'
 /** The registry boards added to your cockpit (#93): the setup most tests assume. */
 const added = (): NodeMappingFile => ({
-  version: 2,
+  version: 3,
   nodes: {
     1: { added: true },
     2: { added: true },
@@ -56,7 +56,7 @@ describe('NodeHub', () => {
   })
 
   it('a failed save is reported, and the change is not applied', () => {
-    disk.file = { version: 2, nodes: { 1: { added: true, lastSeen: T0 } } }
+    disk.file = { version: 3, nodes: { 1: { added: true, lastSeen: T0 } } }
     const { h, pushes } = hub()
     disk.fail = true
     expect(h.setMapping(1, { name: 'Armament' })).toEqual({
@@ -78,7 +78,7 @@ describe('NodeHub', () => {
   })
 
   it('a reporting board is un-hidden even when that save fails', () => {
-    disk.file = { version: 2, nodes: { 2: { hidden: true, added: true } } }
+    disk.file = { version: 3, nodes: { 2: { hidden: true, added: true } } }
     disk.fail = true
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '0201000000000000008000000000', 0)
@@ -88,7 +88,7 @@ describe('NodeHub', () => {
   })
 
   it('clears "hidden until it reports again" once the node reports, and saves it', () => {
-    disk.file = { version: 2, nodes: { 1: { added: true }, 2: { hidden: true, added: true } } }
+    disk.file = { version: 3, nodes: { 1: { added: true }, 2: { hidden: true, added: true } } }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '0101000000000000008000000000', 0) // node 1 present
     roster.applyMessage(NODE_END_MSG, '1', 0)
@@ -133,7 +133,7 @@ describe('NodeHub', () => {
   })
 
   it('a board not in your cockpit is never written until added or adopted (#93)', () => {
-    disk.file = { version: 2, nodes: {} }
+    disk.file = { version: 3, nodes: {} }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 0) // node 41
     roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // registry board 1
@@ -233,7 +233,7 @@ describe('NodeHub', () => {
 
   it('forgetting an offline PDU (#93) unlinks the boards it fed; resetBoard restores a default', () => {
     disk.file = {
-      version: 2,
+      version: 3,
       nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' }, 4: { added: true, lastSeen: T0 } }
     }
     const { h } = hub()
@@ -275,9 +275,9 @@ describe('NodeHub', () => {
   })
 
   it('a config import keeps what this computer observed: added and last seen (#93 review)', () => {
-    disk.file = { version: 2, nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' } } }
+    disk.file = { version: 3, nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' } } }
     const { h } = hub()
-    expect(h.importMapping({ version: 2, nodes: { 2: { name: 'Nav_2' } } }).ok).toBe(true)
+    expect(h.importMapping({ version: 3, nodes: { 2: { name: 'Nav_2' } } }).ok).toBe(true)
     expect(disk.file.nodes).toEqual({ 2: { name: 'Nav_2', added: true, lastSeen: T0 } })
   })
 
@@ -340,7 +340,7 @@ describe('board kind (#344)', () => {
   it('a board that reports PDU is one, whatever was stored: no power zone, and a zone for others', () => {
     // Adopted earlier as a panel group fed by PDU 3.
     disk.file = {
-      version: 2,
+      version: 3,
       nodes: { 1: { added: true }, 41: { name: 'Aft', console: 'Left', kind: 'panel', pduId: 3 } }
     }
     const { h, roster } = hub()
@@ -351,7 +351,7 @@ describe('board kind (#344)', () => {
   })
 
   it('a registry panel ID that reports PDU is a PDU; a registry PDU that says nothing stays one', () => {
-    disk.file = { version: 2, nodes: { 3: { added: true, lastSeen: T0 } } }
+    disk.file = { version: 3, nodes: { 3: { added: true, lastSeen: T0 } } }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(2, 0x02), 0) // Right_Navigation's ID, on a PDU
     expect(node(h, 2)).toMatchObject({ kind: 'pdu', identified: 'pdu' })
@@ -369,7 +369,7 @@ describe('board kind (#344)', () => {
   })
 
   it('a registry board is added only once it says it is a PDU or a panel group (#93 re-review C, G)', () => {
-    disk.file = { version: 2, nodes: {} }
+    disk.file = { version: 3, nodes: {} }
     const { h, roster } = hub()
     const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
     roster.applyMessage(NODE_MSG, row(1, 0x00), 0) // kind not reported yet

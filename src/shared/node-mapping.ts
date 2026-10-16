@@ -41,7 +41,7 @@ export interface NodeOverride {
 }
 
 export interface NodeMappingFile {
-  version: 2
+  version: 3
   nodes: Record<number, NodeOverride>
 }
 
@@ -74,11 +74,12 @@ export interface MappedNode {
 
 /**
  * File format this build writes. A file with a higher version came from a newer client.
- * v2 (#93): `added` and `lastSeen` per node; no ignore list.
+ * v3 (#93): `added` and `lastSeen` per node, read exactly as written; no ignore list. Older files
+ * (v1, and early v2 dev builds without the marker) are upgraded on read — see sanitizeNodeMapping.
  */
-export const NODE_MAPPING_VERSION = 2
+export const NODE_MAPPING_VERSION = 3
 
-export const EMPTY_MAPPING: NodeMappingFile = { version: 2, nodes: {} }
+export const EMPTY_MAPPING: NodeMappingFile = { version: 3, nodes: {} }
 
 const MAX_TEXT = 64
 
@@ -133,16 +134,17 @@ function sanitizeOverride(raw: unknown, legacy: boolean): NodeOverride | undefin
     o.lastSeen = r.lastSeen
   }
   if (r.added === true) o.added = true
-  // Before the explicit marker (a file that has none — v1, or an early v2) a board was in your
-  // cockpit by having been seen, placed, renamed or hidden: keep those boards in it.
+  // Before v3 a board was in your cockpit by having been seen, placed, renamed or hidden.
   else if (legacy && !o.kind && (o.lastSeen || o.hidden || hasOverride(o))) o.added = true
   return Object.keys(o).length ? o : undefined
 }
 
 /**
- * Tolerant read: anything malformed is dropped field by field, never thrown. A v1 file's ignore
- * list is dropped too: Ignore never shipped in a release and is gone (#93), so those boards show
- * again when they report, like any other.
+ * Tolerant read: anything malformed is dropped field by field, never thrown. Upgrading a file from
+ * before v3 (no version counts as old): its ignore list is dropped — Ignore never shipped and is
+ * gone (#93) — and a registry entry seen, placed, renamed or hidden is marked added, since that is
+ * how it was in your cockpit then. A v3 file is read as written: an entry without `added` (say,
+ * one a config import brought) never becomes added by a reload.
  */
 export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
   if (!raw || typeof raw !== 'object') return { ...EMPTY_MAPPING, nodes: {} }
@@ -150,14 +152,14 @@ export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
   const nodes: Record<number, NodeOverride> = {}
   if (r.nodes && typeof r.nodes === 'object') {
     const raws = Object.entries(r.nodes as Record<string, unknown>)
-    const legacy = !raws.some(([, v]) => (v as { added?: unknown } | null)?.added === true)
+    const legacy = typeof r.version !== 'number' || r.version < NODE_MAPPING_VERSION
     for (const [k, v] of raws) {
       const id = Number(k)
       const o = isNodeId(id) ? sanitizeOverride(v, legacy) : undefined
       if (o) nodes[id] = o
     }
   }
-  return { version: 2, nodes }
+  return { version: 3, nodes }
 }
 
 /** An adopted node is a non-registry entry complete enough to place: name, console and kind. */
@@ -592,7 +594,7 @@ export function importMapping(
     if (cur?.lastSeen && (o.added || adopted(o))) o.lastSeen = cur.lastSeen
     if (Object.keys(o).length) nodes[id] = o
   }
-  return { version: 2, nodes }
+  return { version: 3, nodes }
 }
 
 /** An on/off from the renderer must be a real boolean: 'no' or 'false' is truthy. */

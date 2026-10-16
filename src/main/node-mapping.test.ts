@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { NodeMappingFile } from '@shared/node-mapping'
+import { EMPTY_MAPPING, importMapping, type NodeMappingFile } from '@shared/node-mapping'
 
 const userData = vi.hoisted(() => ({ dir: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => userData.dir } }))
@@ -11,7 +11,7 @@ const { loadNodeMapping, saveNodeMapping, MappingSaveError } = await import('./n
 
 const file = (): string => join(userData.dir, 'node-mapping.json')
 const sample: NodeMappingFile = {
-  version: 2,
+  version: 3,
   nodes: {
     1: { name: 'Armament', lastSeen: '2026-10-14T21:14:00.000Z', added: true },
     41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
@@ -19,6 +19,16 @@ const sample: NodeMappingFile = {
 }
 
 describe('node-mapping.json', () => {
+  // #93 re-review E: a fresh computer imports a config — nothing is in its cockpit — then restarts.
+  it('a v3 file is read as written: an import never adds boards on the next load', () => {
+    const imported: NodeMappingFile = {
+      version: 3,
+      nodes: { 1: { name: 'Armament' }, 2: { hidden: true } } // no `added`: not in this cockpit
+    }
+    saveNodeMapping(importMapping(EMPTY_MAPPING, imported))
+    expect(loadNodeMapping().file).toEqual(imported) // after the restart: still not added
+  })
+
   beforeEach(() => {
     userData.dir = mkdtempSync(join(tmpdir(), 'skyhawk-mapping-'))
   })
@@ -28,7 +38,7 @@ describe('node-mapping.json', () => {
   })
 
   it('a missing file loads as an empty, writable mapping', () => {
-    expect(loadNodeMapping()).toEqual({ file: { version: 2, nodes: {} } })
+    expect(loadNodeMapping()).toEqual({ file: { version: 3, nodes: {} } })
   })
 
   it('round-trips, writing atomically (no temp file left behind)', () => {
@@ -39,7 +49,7 @@ describe('node-mapping.json', () => {
 
   it('moves a damaged file aside instead of letting the next save overwrite it', () => {
     writeFileSync(file(), '{"version":1,"nodes":{"1":{"name":"Arm')
-    expect(loadNodeMapping()).toEqual({ file: { version: 2, nodes: {} } })
+    expect(loadNodeMapping()).toEqual({ file: { version: 3, nodes: {} } })
     const bad = readdirSync(userData.dir).filter((f) => f.startsWith('node-mapping.json.bad-'))
     expect(bad).toHaveLength(1)
     expect(readFileSync(join(userData.dir, bad[0]!), 'utf8')).toContain('"Arm')
@@ -50,8 +60,8 @@ describe('node-mapping.json', () => {
     expect(loadNodeMapping()).toEqual({ file: sample })
   })
 
-  it("loads a newer client's file read-only, so it is never rewritten as v2", () => {
-    writeFileSync(file(), JSON.stringify({ ...sample, version: 3 }))
+  it("loads a newer client's file read-only, so it is never rewritten as v3", () => {
+    writeFileSync(file(), JSON.stringify({ ...sample, version: 4 }))
     expect(loadNodeMapping()).toEqual({
       file: sample,
       readOnly: 'node-mapping.json was written by a newer client'

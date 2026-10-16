@@ -86,7 +86,7 @@ vi.mock('./net', () => ({ createTransport: () => new FakeTransport() }))
 vi.mock('./node-mapping', () => ({
   // Center_Armament and Right_Navigation are in this cockpit (#93: added).
   loadNodeMapping: () => ({
-    file: { version: 2, nodes: { 1: { added: true }, 2: { added: true } } }
+    file: { version: 3, nodes: { 1: { added: true }, 2: { added: true } } }
   }),
   saveNodeMapping: () => {},
   MappingSaveError: class extends Error {}

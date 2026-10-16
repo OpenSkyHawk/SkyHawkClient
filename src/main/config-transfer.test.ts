@@ -65,7 +65,7 @@ function otherSetupFile(): string {
       host: '10.0.0.2',
       psu: { mode: 'custom', preset: 'nx650', custom: { a12: 40 } }
     },
-    mapping: { version: 2, nodes: { 1: { name: 'Arm' }, 52: { hidden: true } } },
+    mapping: { version: 3, nodes: { 1: { name: 'Arm' }, 52: { hidden: true } } },
     cache: {
       version: 1,
       boards: { A7: { confirmedAt: '2026-10-12T00:00:00Z', axes: { 0: axis(1, 2, 3) } } }
@@ -87,7 +87,7 @@ describe('ConfigTransfer', () => {
     dir = mkdtempSync(join(tmpdir(), 'skyhawk-transfer-'))
     state = {
       config: DEFAULT_CONFIG,
-      mapping: { version: 2, nodes: {} },
+      mapping: { version: 3, nodes: {} },
       cache: {
         version: 1,
         boards: { A7: { confirmedAt: '2026-10-14T00:00:00Z', axes: { 2: axis(4, 5, 6) } } }

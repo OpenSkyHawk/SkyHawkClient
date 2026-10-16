@@ -34,7 +34,7 @@ const cal = (boards: CalCache['boards']): CalCache => ({ version: 1, boards })
 
 const current: ConfigSnapshot = {
   app: DEFAULT_APP_SETTINGS,
-  nodeMapping: { version: 2, nodes: {} },
+  nodeMapping: { version: 3, nodes: {} },
   powerSupply: DEFAULT_PSU,
   calibration: cal({
     A7: { confirmedAt: '2026-10-01T00:00:00Z', axes: { 2: axis(120, 2000, 3980) } }
@@ -124,7 +124,7 @@ describe('parseConfigFile', () => {
     )
     expect(r.ok && r.config.sections).toEqual({
       app: { ...DEFAULT_APP_SETTINGS, debugMode: true }, // no psu inside the app section
-      nodeMapping: { version: 2, nodes: {} }, // a v1 ignore list is dropped (#93)
+      nodeMapping: { version: 3, nodes: {} }, // a v1 ignore list is dropped (#93)
       calibration: cal({}) // min < centre < max or nothing
     })
   })
@@ -135,10 +135,10 @@ describe('diffImport', () => {
     const seen = '2026-10-14T21:14:00.000Z'
     const cur: ConfigSnapshot = {
       ...current,
-      nodeMapping: { version: 2, nodes: { 2: { added: true, lastSeen: seen } } }
+      nodeMapping: { version: 3, nodes: { 2: { added: true, lastSeen: seen } } }
     }
     // An older export without the marker or last-seen: applying it keeps 2 in your cockpit.
-    const diff = diffImport(defaults, cur, { nodeMapping: { version: 2, nodes: {} } })
+    const diff = diffImport(defaults, cur, { nodeMapping: { version: 3, nodes: {} } })
     expect(diff).toEqual([
       { id: 'nodeMapping', title: 'Node mapping', summary: '0 nodes', rows: [] }
     ])
@@ -146,18 +146,18 @@ describe('diffImport', () => {
     const withTrim: ConfigSnapshot = {
       ...cur,
       nodeMapping: {
-        version: 2,
+        version: 3,
         nodes: { 41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen } }
       }
     }
     expect(
-      diffImport(defaults, withTrim, { nodeMapping: { version: 2, nodes: {} } })[0]!.rows
+      diffImport(defaults, withTrim, { nodeMapping: { version: 3, nodes: {} } })[0]!.rows
     ).toEqual([{ k: '#41', from: 'Trim · Left · —', to: 'not in your cockpit' }])
   })
 
   it('lists each change as key  from → to, per section', () => {
     const mapping: NodeMappingFile = {
-      version: 2,
+      version: 3,
       nodes: {
         1: { pduId: 3 },
         2: { name: 'Right_TACAN' },
