@@ -1,7 +1,10 @@
-import { fmtUptime, useStore, type SourceMode, type Transport } from '../store'
-import { nodeDotState, nodeFaultTag, nodeFaultTooltip } from '@shared/nodes'
+import { useMemo } from 'react'
+import { useStore, type SourceMode, type Transport } from '../store'
 import { isLinkUp } from '@shared/ipc'
+import { nodeViews } from '../cockpit'
+import { nodesSummary } from '../connection-summary'
 import { deviceView, relayNote, startBlocked, startBlockedReason } from '../device-view'
+import { Dot } from './cockpit/Dot'
 
 const REC_DOT = (
   <span
@@ -17,16 +20,27 @@ const REC_DOT = (
   />
 )
 
+/**
+ * Connected nodes (#66): counts and the nodes that need attention, most severe first — the same
+ * order as Cockpit › Attention. Healthy nodes are left to the Cockpit tab.
+ */
 function NodesCard() {
-  const nodes = useStore((x) => x.nodes)
+  const model = useStore((x) => x.nodeModel)
+  const telemetry = useStore((x) => x.nodeTelemetry)
   const deviceState = useStore((x) => x.deviceState)
   const autoConnect = useStore((x) => x.autoConnect)
   const refreshNodes = useStore((x) => x.refreshNodes)
+  const openInCockpit = useStore((x) => x.openInCockpit)
+  const set = useStore((x) => x.set)
   // Node status rides on the device link, which is up in every source mode (#69).
   const linkUp = isLinkUp(deviceState)
+  const sum = useMemo(
+    () => nodesSummary(model ? nodeViews(model, telemetry) : [], model?.outages ?? []),
+    [model, telemetry]
+  )
 
   return (
-    <div className="card field">
+    <div className="card field ncard">
       <div className="panel-h">
         <span className="section-h">Connected nodes</span>
         <button className="toolbtn" onClick={() => refreshNodes()} disabled={!linkUp}>
@@ -35,43 +49,71 @@ function NodesCard() {
       </div>
       {!linkUp ? (
         <div className="hint">{deviceView(deviceState, { autoConnect }).nodesHint}</div>
-      ) : nodes.length === 0 ? (
+      ) : sum.known === 0 ? (
         <div className="hint">No nodes reported. Power on a PanelGroup, or press Refresh.</div>
       ) : (
-        <div className="nodes">
-          {nodes.map((n) => (
-            <div className={`node${n.present ? '' : ' node--off'}`} key={n.nodeId}>
-              <span className={`node__dot ${nodeDotState(n)}`} />
-              <span className="node__id">{n.name ?? `Node ${n.nodeId}`}</span>
-              <span className="node__meta">
-                #{n.nodeId} · up {fmtUptime(n.uptimeSec)} · rx {n.rxCount}
-                {n.dieTempC != null && (
-                  <>
-                    {' · '}
-                    <span className={n.overheat ? 'node__temp node__temp--hot' : 'node__temp'}>
-                      {n.overheat && '🔥 '}~{n.dieTempC}°C
-                    </span>
-                  </>
-                )}
-              </span>
-              <span className="node__flags">
-                {!n.present && <b className="flag flag--err">OFFLINE</b>}
-                {n.boff && <b className="flag flag--err">BOFF</b>}
-                {n.degraded && (
-                  <b className="flag flag--warn" title={nodeFaultTooltip(n)}>
-                    {nodeFaultTag(n)}
-                  </b>
-                )}
-                {n.epvf && <b className="flag flag--warn">EPVF</b>}
-                {(n.tec > 0 || n.rec > 0) && (
-                  <span className="node__err">
-                    TEC {n.tec} / REC {n.rec}
-                  </span>
-                )}
-              </span>
+        <>
+          <div className="nsum">
+            <div>
+              <b style={{ color: 'var(--green)' }}>{sum.healthy}</b>
+              <span>healthy</span>
             </div>
-          ))}
-        </div>
+            <div>
+              <b style={{ color: 'var(--gold)' }}>{sum.warn}</b>
+              <span>warning</span>
+            </div>
+            <div>
+              <b style={{ color: 'var(--red)' }}>{sum.off}</b>
+              <span>offline</span>
+            </div>
+            <div title="Total W the client computes from the PDUs' rail readings">
+              <b>{sum.pdus}</b>
+              <span>PDUs · {sum.watts === null ? '—' : sum.watts.toFixed(1)} W</span>
+            </div>
+          </div>
+          {sum.rows.length === 0 ? (
+            <div className="hint">Nothing needs attention.</div>
+          ) : (
+            <div className="nodes ncard__rows">
+              {sum.rows.map((r) => (
+                <div className={`node${r.state === 'off' ? ' node--off' : ''}`} key={r.nodeId}>
+                  <Dot state={r.state} />
+                  <span className="node__id">{r.name}</span>
+                  <span className="node__meta">{r.meta}</span>
+                  <span className="node__flags">
+                    <b className={`flag flag--${r.tone}`}>{r.chip}</b>
+                    <button
+                      className="cog"
+                      title="Open in Cockpit"
+                      aria-label={`Open ${r.name} in Cockpit`}
+                      onClick={() => openInCockpit(r.nodeId)}
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="ncard__foot">
+            <span className="hint">{sum.footer}</span>
+            <button className="browse" onClick={() => set({ tab: 'cockpit' })}>
+              Open Cockpit →
+            </button>
+          </div>
+        </>
       )}
     </div>
   )

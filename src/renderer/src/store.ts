@@ -106,6 +106,8 @@ export interface AppState {
   /** Log tab sub-tab (#64): the DCS-BIOS stream, or the event log. */
   logView: LogView
   eventSource: EventSourceFilter
+  /** NODE_ID whose Cockpit side panel opens when the Cockpit tab next mounts (#66). */
+  cockpitOpen?: number
   problemsOnly: boolean
 
   // live link state
@@ -214,6 +216,8 @@ export interface AppState {
   exportEvents: () => Promise<string | undefined>
   /** Log › Events, with a source filter — the Cockpit's "View all in Log →". */
   showEvents: (source: EventSourceFilter) => void
+  /** The Cockpit tab with this node's side panel open — Connection's "›". */
+  openInCockpit: (nodeId: number) => void
   setSerialMonitor: (on: boolean) => void
   clearSerial: () => void
   refreshNodes: () => void
@@ -413,6 +417,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   showEvents: (source) => set({ tab: 'log', logView: 'events', eventSource: source }),
+
+  openInCockpit: (nodeId) => set({ tab: 'cockpit', cockpitOpen: nodeId }),
 
   initBridge: () => {
     const api = window.skyhawk
