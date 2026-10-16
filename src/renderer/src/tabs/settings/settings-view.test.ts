@@ -3,6 +3,9 @@ import type { NodeRegistryInfo } from '@shared/ipc'
 import type { NodeModel, NodeModelEntry } from '@shared/node-rules'
 import {
   ignoredRow,
+  importDoneText,
+  importRowKey,
+  importSubtitle,
   registryOnBus,
   registrySummary,
   resetButtonLabel,
@@ -88,5 +91,24 @@ describe('registry', () => {
       'hidden'
     ])
     expect(col(1, undefined).text).toBe('—')
+  })
+})
+
+describe('import texts', () => {
+  it('subtitle, row keys and the done line', () => {
+    const at = new Date(2026, 9, 12, 21, 2).toISOString()
+    expect(importSubtitle({ fileName: 'a.json', exportedAt: at, client: '0.2.0' })).toBe(
+      'a.json · exported 2026-10-12 21:02 · client v0.2.0'
+    )
+    expect(importSubtitle({ fileName: 'a.json', exportedAt: 'x' })).toBe('a.json')
+    const labels = ['Roll', 'Pitch', 'Throttle']
+    expect(importRowKey({ k: 'DCS host' }, labels, false)).toBe('DCS host')
+    expect(importRowKey({ k: 'Axis 2', axis: 2, board: 'A7' }, labels, false)).toBe('Throttle')
+    expect(importRowKey({ k: 'Axis 2', axis: 2, board: 'A7' }, labels, true)).toBe('Throttle · A7')
+    expect(importRowKey({ k: 'Axis 9', axis: 9 }, labels, false)).toBe('Axis 9')
+    expect(importDoneText(1)).toBe('Applied 1 section')
+    expect(importDoneText(3, '/u/backups/skyhawk-config-x.json')).toBe(
+      'Applied 3 sections · backup saved as skyhawk-config-x.json'
+    )
   })
 })

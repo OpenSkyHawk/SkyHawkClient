@@ -1623,6 +1623,27 @@ button.devind[aria-expanded='true'] {
   border-top: 1px solid var(--line);
   background: var(--panel-2);
 }
+/* import review: "Save a backup first" */
+.bk {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 0;
+}
+.bk .im__chk {
+  margin-top: 0;
+}
+.im__chk:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
 /* node registry list */
 .rg {
   display: grid;
