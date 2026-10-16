@@ -2,6 +2,9 @@
 // Channels are one-way main -> renderer pushes; control actions are renderer -> main.
 import type { CachedAxis, CachedBoard } from './cal-cache'
 import type { NodeStatus } from './nodes'
+import type { NodeTelemSnapshot } from './node-telem'
+import type { AdoptSpec, MappingPatch } from './node-mapping'
+import type { NodeModel } from './node-rules'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
 export type DcsTransport = 'loopback-multicast' | 'unicast-listen' | 'tcp-to-host'
@@ -123,6 +126,10 @@ export interface PushChannels {
   'hid:report': HidSnapshot
   'telemetry:tick': TelemetryReadout[]
   'nodes:status': NodeStatus[]
+  /** Latest PDU telemetry per node (#61). At most once a second, and only on change. */
+  'nodes:telemetry': NodeTelemSnapshot[]
+  /** Roster + telemetry + node mapping combined: what the Cockpit tab shows (#61, UI in #63). */
+  'nodes:model': NodeModel
   'serial:traffic': SerialFrame[]
   'cal:data': CalSnapshot
   'cal:raw': CalRawSample[]
@@ -138,6 +145,8 @@ export const IPC = {
   hidReport: 'hid:report',
   telemetryTick: 'telemetry:tick',
   nodesStatus: 'nodes:status',
+  nodesTelemetry: 'nodes:telemetry',
+  nodesModel: 'nodes:model',
   serialTraffic: 'serial:traffic',
   calData: 'cal:data',
   calRaw: 'cal:raw'
@@ -296,6 +305,13 @@ export const CTRL = {
   replayOpen: 'replay:open',
   hidAvailability: 'hid:availability',
   nodesRefresh: 'nodes:refresh',
+  nodesGet: 'nodes:get',
+  nodeMappingSet: 'node-mapping:set',
+  nodeMappingAdopt: 'node-mapping:adopt',
+  nodeMappingForget: 'node-mapping:forget',
+  nodeMappingReset: 'node-mapping:reset',
+  nodeMappingIgnore: 'node-mapping:ignore',
+  nodeMappingHide: 'node-mapping:hide',
   serialMonitor: 'serial:monitor',
   debugDumpPorts: 'debug:dump-ports',
   debugReveal: 'debug:reveal',
@@ -324,6 +340,23 @@ export interface SkyhawkApi {
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
   refreshNodes(): Promise<void>
+
+  // ── node data layer (#61) ─────────────────────────────────────────────────
+  // Every mapping change persists to node-mapping.json and also pushes `nodes:model`.
+  /** Current model + telemetry, for a renderer (re)load. */
+  getNodes(): Promise<NodeSnapshot>
+  /** Rename / move / re-zone a registry or adopted node. A value equal to its default is cleared. */
+  setNodeMapping(nodeId: number, patch: MappingPatch): Promise<NodeMappingResult>
+  /** Place a new NODE_ID (not in the registry); it stops being "new". */
+  adoptNode(nodeId: number, spec: AdoptSpec): Promise<NodeMappingResult>
+  /** Drop an adopted node (new again if it reports) or a registry node's overrides. */
+  forgetNode(nodeId: number): Promise<NodeMappingResult>
+  /** Every registry node back to its defaults; adopted, ignored and hidden are kept. */
+  resetNodeMapping(): Promise<NodeMappingResult>
+  /** Ignore permanently (true) or un-ignore (false). */
+  ignoreNode(nodeId: number, on: boolean): Promise<NodeMappingResult>
+  /** "Hidden until it reports again" on / off. Cleared automatically when the node reports. */
+  hideNode(nodeId: number, on: boolean): Promise<NodeMappingResult>
   setSerialMonitor(on: boolean): Promise<void>
   dumpSerialPorts(): Promise<DebugDumpResult>
   revealDebugLog(): Promise<void>
@@ -363,6 +396,14 @@ export interface SkyhawkApi {
    */
   calCacheDrop(idx: number): Promise<CalResult<null>>
 }
+
+export interface NodeSnapshot {
+  model: NodeModel
+  telemetry: NodeTelemSnapshot[]
+}
+
+/** A mapping change: the new model, or why the input was refused (nothing was written). */
+export type NodeMappingResult = { ok: true; model: NodeModel } | { ok: false; error: string }
 
 /** One axis on its way into the cache: the confirmed values plus the setting the device cannot hold. */
 export interface CalCacheEntry extends CachedAxis {

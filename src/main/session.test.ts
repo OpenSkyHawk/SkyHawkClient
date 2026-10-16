@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CAL_TYPE, buildFrame } from '@shared/calibration'
+import type { LogRow } from '@shared/ipc'
+import type { NodeModel } from '@shared/node-rules'
 
 // Session pulls in electron (debug log path), the serial port, the DCS transport and node-hid.
 // Only the seams matter here, so each is replaced with something a test can drive directly.
@@ -61,6 +63,11 @@ vi.mock('./serial', () => ({
   listSerialPorts: () => Promise.resolve([{ path: '/dev/fake', serialNumber: 'TESTSERIAL' }])
 }))
 vi.mock('./net', () => ({ createTransport: () => new FakeTransport() }))
+// Keep the node mapping off the real disk.
+vi.mock('./node-mapping', () => ({
+  loadNodeMapping: () => ({ version: 1, nodes: {}, ignored: [] }),
+  saveNodeMapping: () => {}
+}))
 vi.mock('./hid', () => ({
   HidReader: class {
     static last: InstanceType<typeof this> | undefined
@@ -163,6 +170,49 @@ describe('Session de-mux boundary', () => {
     serial.closeCb()
     expect(Buffer.concat(transport.sent)).toEqual(before)
     session.stop()
+  })
+})
+
+describe('node telemetry tap', () => {
+  it('feeds _NODE_TELEM to the node layer, not the command log, and still relays it', () => {
+    vi.useFakeTimers()
+    try {
+      const pushes: [string, unknown][] = []
+      const session = new Session((c, p) => pushes.push([c, p]))
+      session.setConfig({ sourceMode: 'bridge' })
+      session.start()
+      const serial = FakeSerial.last!
+      const transport = FakeTransport.last!
+      transport.sent.length = 0
+
+      const line = '_NODE_TELEM 030100022fae2ef4ff\n' // PDU_Left, 12 V rail
+      serial.dataCb(ascii(line))
+      expect(Buffer.concat(transport.sent)).toEqual(ascii(line)) // relay unchanged
+      vi.advanceTimersByTime(250)
+
+      const logged = pushes.filter(([c]) => c === 'log:batch').flatMap(([, p]) => p as LogRow[])
+      expect(logged.map((r) => r.name)).not.toContain('_NODE_TELEM')
+      const telem = pushes.filter(([c]) => c === 'nodes:telemetry')
+      expect(telem).toHaveLength(1)
+      expect(telem[0]![1]).toEqual([
+        expect.objectContaining({ nodeId: 3, isPdu: true, live: true })
+      ])
+      const model = pushes.filter(([c]) => c === 'nodes:model').at(-1)?.[1] as NodeModel
+      expect(model.nodes.find((n) => n.nodeId === 3)).toMatchObject({
+        name: 'PDU_Left',
+        kind: 'pdu'
+      })
+
+      // A second frame inside the same second waits for the throttle.
+      serial.dataCb(ascii(line))
+      vi.advanceTimersByTime(250)
+      expect(pushes.filter(([c]) => c === 'nodes:telemetry')).toHaveLength(1)
+      vi.advanceTimersByTime(1000)
+      expect(pushes.filter(([c]) => c === 'nodes:telemetry')).toHaveLength(2)
+      session.stop()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

@@ -121,7 +121,9 @@ export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
 }
 
 /** An adopted node is a non-registry entry complete enough to place: name, console and kind. */
-function adopted(o: NodeOverride | undefined): o is NodeOverride & { name: string; kind: NodeKind } {
+function adopted(
+  o: NodeOverride | undefined
+): o is NodeOverride & { name: string; kind: NodeKind } {
   return !!o?.name && !!o.kind
 }
 

@@ -30,7 +30,12 @@ const defaults = registryDefaults(REGISTRY)
 describe('registryDefaults', () => {
   it('leaves out PanelBridge and places each panel on its console PDU', () => {
     expect([...defaults.keys()]).toEqual([1, 2, 3, 4, 5])
-    expect(defaults.get(1)).toEqual({ name: 'Center_Armament', console: 'Center', kind: 'panel', pduId: 5 })
+    expect(defaults.get(1)).toEqual({
+      name: 'Center_Armament',
+      console: 'Center',
+      kind: 'panel',
+      pduId: 5
+    })
     expect(defaults.get(2)).toMatchObject({ kind: 'panel', pduId: 4 })
     expect(defaults.get(3)).toEqual({ name: 'PDU_Left', console: 'Left', kind: 'pdu', pduId: null })
   })
@@ -96,7 +101,11 @@ describe('effectiveMapping / setNodeMapping', () => {
   it('stores only differences, and a value set back to its default is removed', () => {
     let f = setNodeMapping(EMPTY_MAPPING, defaults, 1, { name: 'Armament', pduId: null })
     expect(f.nodes).toEqual({ 1: { name: 'Armament', pduId: null } })
-    expect(effectiveMapping(defaults, f).get(1)).toMatchObject({ name: 'Armament', pduId: null, differs: true })
+    expect(effectiveMapping(defaults, f).get(1)).toMatchObject({
+      name: 'Armament',
+      pduId: null,
+      differs: true
+    })
     expect(differingCount(defaults, f)).toBe(1)
     f = setNodeMapping(f, defaults, 1, { name: 'Center_Armament', pduId: 5 })
     expect(f.nodes).toEqual({})
@@ -119,7 +128,10 @@ describe('adopt / forget', () => {
       kind: 'panel'
     })
     expect(f.nodes[41]).toEqual({ name: 'Left_Trim', console: 'Left', pduId: 3, kind: 'panel' })
-    expect(effectiveMapping(defaults, f).get(41)).toMatchObject({ source: 'adopted', differs: false })
+    expect(effectiveMapping(defaults, f).get(41)).toMatchObject({
+      source: 'adopted',
+      differs: false
+    })
     f = setNodeMapping(f, defaults, 41, { name: 'Trim' })
     expect(f.nodes[41]?.name).toBe('Trim')
     expect(forgetNode(f, 41).nodes[41]).toBeUndefined()
@@ -127,7 +139,12 @@ describe('adopt / forget', () => {
 
   it('a PDU has no power zone, adopting un-ignores, and registry ids cannot be adopted', () => {
     const ignored = setIgnored(EMPTY_MAPPING, 42, true)
-    const f = adoptNode(ignored, defaults, 42, { name: 'PDU_Aux', console: 'Left', pduId: 3, kind: 'pdu' })
+    const f = adoptNode(ignored, defaults, 42, {
+      name: 'PDU_Aux',
+      console: 'Left',
+      pduId: 3,
+      kind: 'pdu'
+    })
     expect(f.nodes[42]?.pduId).toBeNull()
     expect(f.ignored).toEqual([])
     expect(() =>

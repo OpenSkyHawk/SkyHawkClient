@@ -38,7 +38,12 @@ describe('parseNodeTelem', () => {
 
   it('decodes a 5 V rail page', () => {
     const t = parse(telem(4, [0x02, 0, ...le(5012), ...le(4980), ...le(1830)]))
-    expect(t).toMatchObject({ kind: 'rail', page: TELEM_PAGE.PDU_RAIL_5V, vAvgMv: 5012, iAvgMa: 1830 })
+    expect(t).toMatchObject({
+      kind: 'rail',
+      page: TELEM_PAGE.PDU_RAIL_5V,
+      vAvgMv: 5012,
+      iAvgMa: 1830
+    })
   })
 
   it('decodes a status page with NTC temperature in 0.1 °C, including below zero', () => {

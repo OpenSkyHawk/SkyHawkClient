@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { buildNodeModel, PDU_GROUP_POLL_CATCH_MS, PDU_GROUP_WINDOW_MS, type NodeModelInput } from './node-rules'
+import {
+  buildNodeModel,
+  PDU_GROUP_POLL_CATCH_MS,
+  PDU_GROUP_WINDOW_MS,
+  type NodeModelInput
+} from './node-rules'
 import { EMPTY_MAPPING, registryDefaults, type NodeMappingFile } from './node-mapping'
 import type { NodeSeen, NodeStatus } from './nodes'
 import type { NodeTelemSnapshot } from './node-telem'
@@ -43,18 +48,25 @@ const input = (over: Partial<NodeModelInput>): NodeModelInput => ({
   file: EMPTY_MAPPING,
   ...over
 })
-const entry = (i: NodeModelInput, id: number) => buildNodeModel(i).nodes.find((n) => n.nodeId === id)
+const entry = (i: NodeModelInput, id: number) =>
+  buildNodeModel(i).nodes.find((n) => n.nodeId === id)
 
 describe('availability', () => {
   it('registry nodes are unknown until the first complete roster, then offline if missing', () => {
     expect(entry(input({}), 1)?.availability).toBe('unknown')
     const after = input({ roster: [st(2)], rosterCompleteAt: 500 })
-    expect(entry(after, 1)).toMatchObject({ availability: 'offline', offlineAt: 500, offlineVia: 'roster' })
+    expect(entry(after, 1)).toMatchObject({
+      availability: 'offline',
+      offlineAt: 500,
+      offlineVia: 'roster'
+    })
     expect(entry(after, 2)?.availability).toBe('online')
   })
 
   it('a node reported absent is offline with its own timing', () => {
-    const seen = new Map<number, NodeSeen>([[1, { firstSeenAt: 0, offlineAt: 900, offlineVia: 'delta' }]])
+    const seen = new Map<number, NodeSeen>([
+      [1, { firstSeenAt: 0, offlineAt: 900, offlineVia: 'delta' }]
+    ])
     expect(entry(input({ roster: [st(1, false)], seen }), 1)).toMatchObject({
       availability: 'offline',
       offlineAt: 900,
@@ -78,7 +90,13 @@ describe('new-node detection', () => {
       [42, { firstSeenAt: 1300 }]
     ])
     const i = input({ roster: [st(41), st(42)], seen, telemetry: [telem(42)] })
-    expect(entry(i, 41)).toMatchObject({ source: 'new', kind: 'panel', name: 'Node 41', console: null, firstSeenAt: 1234 })
+    expect(entry(i, 41)).toMatchObject({
+      source: 'new',
+      kind: 'panel',
+      name: 'Node 41',
+      console: null,
+      firstSeenAt: 1234
+    })
     expect(entry(i, 42)).toMatchObject({ source: 'new', kind: 'pdu', readings: 'live' })
   })
 
@@ -102,11 +120,16 @@ describe('PDU readings', () => {
       readings: 'live',
       everHadReadings: true
     })
-    expect(entry(input({ roster: [st(3)], telemetry: [telem(3, { live: false })] }), 3)).toMatchObject({
+    expect(
+      entry(input({ roster: [st(3)], telemetry: [telem(3, { live: false })] }), 3)
+    ).toMatchObject({
       readings: 'none',
       everHadReadings: true
     })
-    expect(entry(input({ roster: [st(3)] }), 3)).toMatchObject({ readings: 'none', everHadReadings: false })
+    expect(entry(input({ roster: [st(3)] }), 3)).toMatchObject({
+      readings: 'none',
+      everHadReadings: false
+    })
   })
 
   it('offline PDUs and panels carry no readings state', () => {
@@ -141,37 +164,57 @@ describe('PDU-offline grouping', () => {
     )
 
   it('PDU plus most of its nodes dropping inside the window is one outage', () => {
-    const m = model([
-      [3, off(10_000)],
-      [41, off(10_100)],
-      [42, off(10_000 - PDU_GROUP_WINDOW_MS)]
-    ], [43])
+    const m = model(
+      [
+        [3, off(10_000)],
+        [41, off(10_100)],
+        [42, off(10_000 - PDU_GROUP_WINDOW_MS)]
+      ],
+      [43]
+    )
     expect(m.outages).toEqual([{ pduId: 3, nodeIds: [41, 42], fedCount: 3, at: 10_000 }])
   })
 
   it('half or fewer is not an outage, nor are drops outside the window', () => {
-    expect(model([[3, off(10_000)], [41, off(10_000)]], [42, 43]).outages).toEqual([])
     expect(
-      model([
-        [3, off(10_000)],
-        [41, off(10_000 + PDU_GROUP_WINDOW_MS + 1)],
-        [42, off(10_000 + PDU_GROUP_WINDOW_MS + 1)]
-      ], [43]).outages
+      model(
+        [
+          [3, off(10_000)],
+          [41, off(10_000)]
+        ],
+        [42, 43]
+      ).outages
+    ).toEqual([])
+    expect(
+      model(
+        [
+          [3, off(10_000)],
+          [41, off(10_000 + PDU_GROUP_WINDOW_MS + 1)],
+          [42, off(10_000 + PDU_GROUP_WINDOW_MS + 1)]
+        ],
+        [43]
+      ).outages
     ).toEqual([])
   })
 
   it('counts a drop the next roster poll found, but not an earlier one', () => {
-    const late = model([
-      [3, off(10_000)],
-      [41, off(10_000 + PDU_GROUP_POLL_CATCH_MS, 'roster')],
-      [42, off(10_050)]
-    ], [43])
+    const late = model(
+      [
+        [3, off(10_000)],
+        [41, off(10_000 + PDU_GROUP_POLL_CATCH_MS, 'roster')],
+        [42, off(10_050)]
+      ],
+      [43]
+    )
     expect(late.outages[0]?.nodeIds).toEqual([41, 42])
-    const early = model([
-      [3, off(10_000)],
-      [41, off(10_000 - PDU_GROUP_WINDOW_MS - 1, 'roster')],
-      [42, off(10_050)]
-    ], [43])
+    const early = model(
+      [
+        [3, off(10_000)],
+        [41, off(10_000 - PDU_GROUP_WINDOW_MS - 1, 'roster')],
+        [42, off(10_050)]
+      ],
+      [43]
+    )
     expect(early.outages).toEqual([])
   })
 
@@ -187,11 +230,25 @@ describe('PDU-offline grouping', () => {
 
   it('a PDU and its nodes all missing from the first roster group together', () => {
     const m = buildNodeModel(input({ file, rosterCompleteAt: 2000 }))
-    expect(m.outages.find((o) => o.pduId === 3)).toEqual({ pduId: 3, nodeIds: [41, 42, 43], fedCount: 3, at: 2000 })
+    expect(m.outages.find((o) => o.pduId === 3)).toEqual({
+      pduId: 3,
+      nodeIds: [41, 42, 43],
+      fedCount: 3,
+      at: 2000
+    })
   })
 
   it('an online PDU is never an outage', () => {
-    expect(model([[41, off(0)], [42, off(0)], [43, off(0)]], [3]).outages).toEqual([])
+    expect(
+      model(
+        [
+          [41, off(0)],
+          [42, off(0)],
+          [43, off(0)]
+        ],
+        [3]
+      ).outages
+    ).toEqual([])
   })
 })
 
