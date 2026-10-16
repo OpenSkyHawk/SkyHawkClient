@@ -265,7 +265,14 @@ export const useStore = create<AppState>((set, get) => ({
       void window.skyhawk?.stopRelay()
       set({ relaying: false })
     } else {
-      void window.skyhawk?.setConfig(buildConfig(s)).then(() => window.skyhawk?.startRelay())
+      void window.skyhawk
+        ?.setConfig(buildConfig(s))
+        .then(() => window.skyhawk?.startRelay())
+        // Main refuses a Start it cannot honour (no board for a mode that needs one) and pushes
+        // no relay:state for it, so the optimistic flag has to be taken back here.
+        .then((r) => {
+          if (r && !r.ok) set({ relaying: false, relayStream: undefined })
+        })
       set({ relaying: true })
     }
   },

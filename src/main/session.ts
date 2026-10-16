@@ -9,6 +9,7 @@
 import { DcsBiosProtocol } from '@shared/dcsbios'
 import {
   DEFAULT_CONFIG,
+  isLinkUp,
   type AppConfig,
   type DeviceStatus,
   type LogRow,
@@ -35,7 +36,7 @@ const MAX_BATCH = 250
 type ForwardConfig = Pick<AppConfig, 'sourceMode' | 'replayDriveSerial'>
 
 /**
- * Whether the export stream is written to the SimGateway.
+ * Whether the export stream is written to the SimGateway — and so whether Start needs the board.
  *
  * Bridge always; Replay only with "Drive SimGateway"; Monitor never. Monitor has to say so
  * explicitly now that the port is open in every mode — before #69 it was read-only only because
@@ -127,23 +128,35 @@ export class Session {
       this.link.setAutoConnect(this.config.autoConnect)
     }
     if (this.running && relayConfigChanged(prev, this.config)) {
+      // A rebuild of a relay already running, not a new Start: it is not gated on the device,
+      // or editing a setting during a drop would end a relay that only Stop may end.
       this.stop()
-      this.start()
+      this.run()
     }
     return this.config
   }
 
-  /** Start relaying. Attaches the stream to the device link; never opens or closes the port. */
+  /**
+   * Start relaying. Attaches the stream to the device link; never opens or closes the port.
+   *
+   * Refused while a mode that delivers to the board has no board to deliver to: nothing can be
+   * relayed before the link is up. Once running, a drop does not end the relay — it waits, and
+   * resumes when the link returns.
+   */
   start(): RelayResult {
+    if (exportToDevice(this.config) && !isLinkUp(this.link.deviceStatus().state)) {
+      return { ok: false, error: 'SimGateway is not connected' }
+    }
+    return this.run()
+  }
+
+  private run(): RelayResult {
     if (this.running) this.stop()
     this.decoder = new Decoder()
     this.parser.reset()
     this.stats.reset()
     this.lastErrKey = ''
     const mode = this.config.sourceMode
-    // A Bridge relay exists to reach the board, so starting one is also asking for the link.
-    // Only a released link: a link that is looking for the board, or retrying, already is.
-    if (mode === 'bridge' && this.link.deviceStatus().state === 'disconnected') this.link.connect()
 
     try {
       if (mode === 'replay') {

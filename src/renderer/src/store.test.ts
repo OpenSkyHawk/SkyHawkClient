@@ -11,6 +11,8 @@ let status: RelayStatus = {
   device: { state: 'no-device' }
 }
 
+let startResult: { ok: boolean; error?: string } = { ok: true }
+
 function fakeApi() {
   return {
     on: (ch: PushChannel, cb: Listener) => {
@@ -29,7 +31,10 @@ function fakeApi() {
         replayDriveSerial: false,
         debugMode: false
       }),
-    getHidAvailability: () => Promise.resolve({ axes: [0, 1], hats: [], buttons: [] })
+    getHidAvailability: () => Promise.resolve({ axes: [0, 1], hats: [], buttons: [] }),
+    setConfig: (patch: unknown) => Promise.resolve(patch),
+    startRelay: () => Promise.resolve(startResult),
+    stopRelay: () => Promise.resolve({ ok: true })
   }
 }
 
@@ -176,5 +181,29 @@ describe('relay state (#69)', () => {
     const s = await freshStore()
     expect(s.getState().relaying).toBe(true)
     expect(s.getState().relayStream).toBe('connected')
+  })
+})
+
+describe('starting the relay (#69)', () => {
+  beforeEach(() => {
+    status = { running: false, relay: { running: false }, device: { state: 'no-device' } }
+  })
+
+  it('takes back the optimistic Relaying when main refuses the Start', async () => {
+    startResult = { ok: false, error: 'SimGateway is not connected' }
+    const s = await freshStore()
+    s.getState().toggleRelay()
+    expect(s.getState().relaying, 'optimistic until main answers').toBe(true)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(s.getState().relaying).toBe(false)
+    startResult = { ok: true }
+  })
+
+  it('keeps Relaying when main accepts', async () => {
+    startResult = { ok: true }
+    const s = await freshStore()
+    s.getState().toggleRelay()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(s.getState().relaying).toBe(true)
   })
 })

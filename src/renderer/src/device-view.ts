@@ -171,8 +171,7 @@ export function relayTip(
 }
 
 /**
- * The line under the Connection tab's Start / Stop button: what a running relay is waiting for,
- * or — stopped in Bridge with the link released — that starting it reconnects the board.
+ * The line under the Connection tab's Start / Stop button: what a running relay is waiting for.
  */
 export function relayNote(opts: RelayOpts): { text: string; info: boolean } | undefined {
   if (waitingForDevice(opts)) {
@@ -187,10 +186,21 @@ export function relayNote(opts: RelayOpts): { text: string; info: boolean } | un
   if (opts.relaying && opts.mode === 'replay' && opts.stream === 'ended') {
     return { text: 'Replay ended — Stop, or load another capture.', info: false }
   }
-  if (!opts.relaying && opts.mode === 'bridge' && opts.deviceState === 'disconnected') {
-    return { text: 'Starting the relay also reconnects the SimGateway.', info: true }
-  }
   return undefined
+}
+
+/**
+ * Start is refused while a mode that delivers to the board has no board to deliver to: Bridge, and
+ * Replay driving the SimGateway. Monitor and an undriven Replay never touch it. Mirrors main's
+ * check in Session.start(), which is the one that actually enforces it.
+ */
+export function startBlocked(opts: {
+  mode: SourceMode
+  replayDriveSerial: boolean
+  deviceState: DeviceState
+}): boolean {
+  const needsBoard = opts.mode === 'bridge' || (opts.mode === 'replay' && opts.replayDriveSerial)
+  return needsBoard && opts.deviceState !== 'connected'
 }
 
 /**

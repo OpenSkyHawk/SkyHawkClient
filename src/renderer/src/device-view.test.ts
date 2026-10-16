@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceState } from '@shared/ipc'
-import { deviceView, relayNote, relayTip, relayWaiting } from './device-view'
+import { deviceView, relayNote, relayTip, relayWaiting, startBlocked } from './device-view'
 
 const STATES: DeviceState[] = [
   'connected',
@@ -158,14 +158,23 @@ describe('relayNote', () => {
     )
     expect(relayNote({ ...run, mode: 'replay', stream: 'ended' })?.text).toMatch(/Replay ended/)
   })
+})
 
-  it('tells a stopped Bridge relay that Start reconnects a released link', () => {
-    expect(relayNote({ ...run, relaying: false, deviceState: 'disconnected' })).toEqual({
-      text: 'Starting the relay also reconnects the SimGateway.',
-      info: true
-    })
-    expect(
-      relayNote({ ...run, mode: 'monitor', relaying: false, deviceState: 'disconnected' })
-    ).toBeUndefined()
+describe('startBlocked', () => {
+  const at = (
+    mode: 'bridge' | 'monitor' | 'replay',
+    deviceState: DeviceState,
+    replayDriveSerial = false
+  ) => startBlocked({ mode, deviceState, replayDriveSerial })
+
+  it('needs the board in Bridge, and in Replay only when driving it', () => {
+    for (const s of STATES.filter((x) => x !== 'connected')) {
+      expect(at('bridge', s), s).toBe(true)
+      expect(at('replay', s, true), s).toBe(true)
+      expect(at('replay', s, false), s).toBe(false)
+      expect(at('monitor', s), s).toBe(false)
+    }
+    expect(at('bridge', 'connected')).toBe(false)
+    expect(at('replay', 'connected', true)).toBe(false)
   })
 })
