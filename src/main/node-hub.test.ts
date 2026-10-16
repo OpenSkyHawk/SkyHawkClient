@@ -335,3 +335,26 @@ describe('board kind (#344)', () => {
     expect(events.filter((e) => e.event === 'new on the bus')).toMatchObject([{ nodeId: 41 }])
   })
 })
+
+describe('bench capture, v3 firmware (2026-10-16)', () => {
+  it('reads the rig’s roster: the bridge row is the link, Center_Armament is online and degraded', () => {
+    const { h, roster } = hub()
+    // Verbatim from the bench rig (PanelBridge + one panel group on the latest firmware).
+    for (const line of [
+      '_NODE_STATUS 000100002D000000002E00000003',
+      '_NODE_STATUS 010100002C000000002702000101',
+      '_NODE_STATUS_END 2'
+    ]) {
+      const [id, arg = ''] = line.split(' ')
+      roster.applyMessage(id!, arg, 0)
+    }
+    const nodes = h.snapshot(0).model.nodes
+    expect(nodes.some((n) => n.nodeId === 0)).toBe(false)
+    expect(nodes.find((n) => n.nodeId === 1)).toMatchObject({
+      name: 'Center_Armament',
+      availability: 'online',
+      identified: 'panel',
+      status: { degraded: true, faultId: 1, faultLabel: 'I2C peripheral', nodeKind: 1 }
+    })
+  })
+})
