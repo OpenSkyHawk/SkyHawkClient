@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceState } from '@shared/ipc'
-import { deviceView, relayTip, relayWaiting } from './device-view'
+import { deviceView, relayNote, relayTip, relayWaiting } from './device-view'
 
 const STATES: DeviceState[] = [
   'connected',
@@ -86,9 +86,13 @@ describe('relayTip', () => {
     expect(relayTip({ ...base, relaying: false })).toBe('DCS-BIOS stream stopped — click to start')
   })
 
-  it('says the relay keeps running through a device drop in Bridge', () => {
-    const tip = relayTip({ ...base, deviceState: 'reconnecting', deviceLabel: 'Reconnecting' })
-    expect(tip).toContain('device link reconnecting, relay keeps running')
+  it('says what a running relay is waiting for, the device first', () => {
+    expect(relayTip({ ...base, deviceState: 'reconnecting', deviceLabel: 'Reconnecting' })).toBe(
+      'Relaying — waiting for the SimGateway (device link reconnecting). Resumes when it connects — click to stop'
+    )
+    expect(relayTip({ ...base, stream: 'reconnecting' })).toBe(
+      'Relaying — waiting for DCS-BIOS (reconnecting) · 127.0.0.1:7778 — click to stop'
+    )
   })
 
   it('leaves the device out in Monitor, which never uses it', () => {
@@ -128,5 +132,40 @@ describe('relayWaiting', () => {
 
   it('is never waiting while stopped', () => {
     expect(relayWaiting({ ...run, relaying: false, stream: undefined })).toBe(false)
+  })
+})
+
+describe('relayNote', () => {
+  const run = {
+    mode: 'bridge' as const,
+    relaying: true,
+    stream: 'connected' as const,
+    deviceState: 'connected' as const
+  }
+
+  it('is silent while delivering', () => {
+    expect(relayNote(run)).toBeUndefined()
+    expect(relayNote({ ...run, relaying: false, stream: undefined })).toBeUndefined()
+  })
+
+  it('says what a running relay waits for', () => {
+    expect(relayNote({ ...run, deviceState: 'no-device' })).toEqual({
+      text: 'Relaying — waiting for the SimGateway. Resumes when it connects.',
+      info: false
+    })
+    expect(relayNote({ ...run, stream: 'error' })?.text).toBe(
+      'Relaying — waiting for DCS-BIOS (error).'
+    )
+    expect(relayNote({ ...run, mode: 'replay', stream: 'ended' })?.text).toMatch(/Replay ended/)
+  })
+
+  it('tells a stopped Bridge relay that Start reconnects a released link', () => {
+    expect(relayNote({ ...run, relaying: false, deviceState: 'disconnected' })).toEqual({
+      text: 'Starting the relay also reconnects the SimGateway.',
+      info: true
+    })
+    expect(
+      relayNote({ ...run, mode: 'monitor', relaying: false, deviceState: 'disconnected' })
+    ).toBeUndefined()
   })
 })

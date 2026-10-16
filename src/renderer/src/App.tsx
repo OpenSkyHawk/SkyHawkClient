@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useStore, type TabId } from './store'
-import { deviceView, relayTip } from './device-view'
+import { deviceView, relayTip, relayWaiting } from './device-view'
 import { DevicePopover } from './DevicePopover'
 import { Overview } from './tabs/Overview'
 import { Connection } from './tabs/Connection'
@@ -44,6 +44,8 @@ export function App() {
       : transport === 'loop'
         ? '239.255.50.10:5010'
         : 'unicast listen'
+  // Gold, still "Relaying", while running but not delivering end to end (#69).
+  const waiting = relayWaiting({ mode: sourceMode, relaying, stream: relayStream, deviceState })
   const relayTitle = relayTip({
     mode: sourceMode,
     relaying,
@@ -67,7 +69,7 @@ export function App() {
           {/* The device link: automatic, and independent of the relay pill beside it (#69). */}
           <DevicePopover />
           <button
-            className={`pill pill--btn${relaying ? ' pill--on' : ''}`}
+            className={`pill pill--btn${relaying ? ' pill--on' : ''}${waiting ? ' pill--wait' : ''}`}
             onClick={() => toggleRelay()}
             title={relayTitle}
           >

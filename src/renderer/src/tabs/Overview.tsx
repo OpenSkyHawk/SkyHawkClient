@@ -88,7 +88,7 @@ export function Overview() {
           ? 'SimGateway · relaying'
           : 'SimGateway · stream stopped'
         : s.relaying
-          ? 'relay keeps running'
+          ? 'relay waiting — resumes when it connects'
           : 'stream stopped',
       color: LINK_COLOR[s.deviceState] ?? 'var(--muted)',
       open: true

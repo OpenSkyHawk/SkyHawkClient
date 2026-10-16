@@ -177,6 +177,31 @@ body {
 .pill--on .pill__txt {
   color: var(--green);
 }
+/* Running but not delivering end to end — still "Relaying", gold (#69). */
+.pill--wait {
+  background: rgba(244, 179, 33, 0.08);
+  border-color: rgba(244, 179, 33, 0.45);
+}
+.pill--wait .pill__dot {
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+}
+.pill--wait .pill__txt {
+  color: var(--gold);
+}
+.pill--wait.pill--btn:hover {
+  background: rgba(244, 179, 33, 0.16);
+}
+.waitnote {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--gold);
+  text-align: center;
+}
+.waitnote--info {
+  color: var(--muted-3);
+}
 
 /* ── device link indicator (#69): the automatic SimGateway link, separate from the relay pill ── */
 button.devind {

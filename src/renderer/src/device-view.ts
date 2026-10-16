@@ -132,19 +132,28 @@ export function deviceView(
   }
 }
 
-/**
- * Tooltip on the relay pill: where the DCS-BIOS stream stands. A relay keeps running through a
- * device drop, so while relaying with the link down it says so rather than looking broken.
- */
-export function relayTip(opts: {
+interface RelayOpts {
   mode: SourceMode
   relaying: boolean
   stream?: StreamState
   deviceState: DeviceState
-  deviceLabel: string
-  endpoint: string
-  replayFile?: string
-}): string {
+}
+
+/** Running, but Bridge has no device to deliver to. */
+const waitingForDevice = (o: RelayOpts): boolean =>
+  o.relaying && o.mode === 'bridge' && o.deviceState !== 'connected'
+
+/** Running, but the DCS-BIOS stream is not up. Replay has no DCS to wait for. */
+const waitingForDcs = (o: RelayOpts): boolean =>
+  o.relaying && o.mode !== 'replay' && o.stream !== 'connected'
+
+/**
+ * Tooltip on the relay pill: where the DCS-BIOS stream stands. A relay keeps running through a
+ * drop, so while it is waiting the tooltip says what for, rather than looking broken.
+ */
+export function relayTip(
+  opts: RelayOpts & { deviceLabel: string; endpoint: string; replayFile?: string }
+): string {
   if (opts.mode === 'replay') {
     if (!opts.relaying) return 'Replay stopped — click to play'
     if (opts.stream === 'ended') return 'Replay · ended — click to stop'
@@ -152,13 +161,36 @@ export function relayTip(opts: {
     return `Replay · playing${file ? ` ${file}` : ''} — click to stop`
   }
   if (!opts.relaying) return 'DCS-BIOS stream stopped — click to start'
-  const stream = opts.stream ?? 'connecting'
-  // Only Bridge carries the stream over the device; Monitor never touches it.
-  const device =
-    opts.mode === 'bridge' && opts.deviceState !== 'connected'
-      ? ` — device link ${opts.deviceLabel.toLowerCase()}, relay keeps running`
-      : ''
-  return `DCS-BIOS stream · ${stream}${device} · ${opts.endpoint} — click to stop`
+  if (waitingForDevice(opts)) {
+    return `Relaying — waiting for the SimGateway (device link ${opts.deviceLabel.toLowerCase()}). Resumes when it connects — click to stop`
+  }
+  if (waitingForDcs(opts)) {
+    return `Relaying — waiting for DCS-BIOS (${opts.stream ?? 'connecting'}) · ${opts.endpoint} — click to stop`
+  }
+  return `DCS-BIOS stream · connected · ${opts.endpoint} — click to stop`
+}
+
+/**
+ * The line under the Connection tab's Start / Stop button: what a running relay is waiting for,
+ * or — stopped in Bridge with the link released — that starting it reconnects the board.
+ */
+export function relayNote(opts: RelayOpts): { text: string; info: boolean } | undefined {
+  if (waitingForDevice(opts)) {
+    return { text: 'Relaying — waiting for the SimGateway. Resumes when it connects.', info: false }
+  }
+  if (waitingForDcs(opts)) {
+    return {
+      text: `Relaying — waiting for DCS-BIOS (${opts.stream ?? 'connecting'}).`,
+      info: false
+    }
+  }
+  if (opts.relaying && opts.mode === 'replay' && opts.stream === 'ended') {
+    return { text: 'Replay ended — Stop, or load another capture.', info: false }
+  }
+  if (!opts.relaying && opts.mode === 'bridge' && opts.deviceState === 'disconnected') {
+    return { text: 'Starting the relay also reconnects the SimGateway.', info: true }
+  }
+  return undefined
 }
 
 /**
@@ -166,13 +198,11 @@ export function relayTip(opts: {
  * running and resumes on its own; this only stops the pill claiming data is flowing when it is not.
  * Bridge also needs the device; Monitor and Replay never use it.
  */
-export function relayWaiting(opts: {
-  mode: SourceMode
-  relaying: boolean
-  stream?: StreamState
-  deviceState: DeviceState
-}): boolean {
+export function relayWaiting(opts: RelayOpts): boolean {
   if (!opts.relaying) return false
-  if (opts.stream !== 'connected') return true
-  return opts.mode === 'bridge' && opts.deviceState !== 'connected'
+  return (
+    waitingForDevice(opts) ||
+    waitingForDcs(opts) ||
+    (opts.mode === 'replay' && opts.stream === 'ended')
+  )
 }

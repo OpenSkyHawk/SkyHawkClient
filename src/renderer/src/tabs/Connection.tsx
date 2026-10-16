@@ -1,7 +1,7 @@
 import { fmtUptime, useStore, type SourceMode, type Transport } from '../store'
 import { nodeDotState, nodeFaultTag, nodeFaultTooltip } from '@shared/nodes'
 import { isLinkUp } from '@shared/ipc'
-import { deviceView } from '../device-view'
+import { deviceView, relayNote } from '../device-view'
 
 const REC_DOT = (
   <span
@@ -109,6 +109,12 @@ export function Connection() {
     port: s.devicePort,
     detail: s.deviceDetail,
     autoConnect: s.autoConnect
+  })
+  const note = relayNote({
+    mode: s.sourceMode,
+    relaying: s.relaying,
+    stream: s.relayStream,
+    deviceState: s.deviceState
   })
   const deviceRows = [
     { k: 'Identity', v: connected ? 'A-4E Skyhawk' : '— no device' },
@@ -313,12 +319,18 @@ export function Connection() {
           </div>
         )}
 
-        <button
-          className={`bigbtn${s.relaying ? ' bigbtn--stop' : ''}`}
-          onClick={() => toggleRelay()}
-        >
-          {s.relaying ? 'Stop relay' : 'Start relay'}
-        </button>
+        <div>
+          <button
+            className={`bigbtn${s.relaying ? ' bigbtn--stop' : ''}`}
+            style={{ width: '100%' }}
+            onClick={() => toggleRelay()}
+          >
+            {s.relaying ? 'Stop relay' : 'Start relay'}
+          </button>
+          {note && (
+            <div className={`waitnote${note.info ? ' waitnote--info' : ''}`}>{note.text}</div>
+          )}
+        </div>
       </div>
     </div>
   )
