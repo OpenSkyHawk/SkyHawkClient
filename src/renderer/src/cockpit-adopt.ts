@@ -7,7 +7,7 @@ import type { NodeModelEntry } from '@shared/node-rules'
 import { displayCurrentMa } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
 import type { NodeView } from './cockpit'
-import { consoleLabel } from './cockpit-panels'
+import { consoleLabel, powerZoneOptions } from './cockpit-panels'
 import { fmtUptime } from './store'
 
 /**
@@ -38,6 +38,27 @@ export function keptQueue(
     .filter((v) => !ids.has(v.entry.nodeId) && !done.has(v.entry.nodeId))
     .map((v): NodeView => ({ ...v, entry: { ...v.entry, availability: 'offline' } }))
   return adoptQueue([...live.filter((v) => !done.has(v.entry.nodeId)), ...gone])
+}
+
+/**
+ * The Adopt form's Powered by list (#93): the console's PDUs in your cockpit; the chosen one if it is
+ * in your cockpit on another console, marked "(other console)"; and — only when the chosen PDU is
+ * not in your cockpit at all — that PDU as `pending`, which the form marks "(not added)".
+ */
+export function adoptPduChoices(
+  views: NodeView[],
+  console: string,
+  pduId: number | null | '',
+  e: NodeModelEntry
+): { zones: { value: number; label: string }[]; pending?: string } {
+  const chosen = typeof pduId === 'number' ? pduId : null
+  const zones = powerZoneOptions(views, console, chosen)
+  if (chosen === null || zones.some((z) => z.value === chosen)) return { zones }
+  const waiting = views.find((v) => v.entry.nodeId === chosen)
+  const name =
+    waiting?.entry.name ??
+    ((e.registry?.pduId === chosen && e.registry.pduName) || `PDU #${chosen}`)
+  return { zones, pending: name }
 }
 
 /** "first seen 2 min ago" — this session's first sighting (it is not persisted). */

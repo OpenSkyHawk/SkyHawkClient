@@ -5,6 +5,7 @@ import { TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
 import { nodeViews } from './cockpit'
 import {
   adoptEvidence,
+  adoptPduChoices,
   adoptability,
   adoptQueue,
   adoptSpec,
@@ -235,6 +236,33 @@ describe('adoptability', () => {
     )
     expect(other).toMatchObject({ badge: 'UNKNOWN TYPE' })
     expect(other.note).toMatch(/doesn’t know \(7\)/)
+  })
+})
+
+describe('adoptPduChoices (#93 re-review J)', () => {
+  const pduIn = (id: number, console: string, name: string) =>
+    fresh(id, { source: 'registry', kind: 'pdu', identified: 'pdu', console, name })
+  const views = nodeViews(
+    model([pduIn(5, 'Center', 'PDU_Center'), pduIn(4, 'Right', 'PDU_Right')]),
+    []
+  )
+  const board = fresh(1, {
+    registry: { name: 'Center_Armament', console: 'Center', pduId: 3, pduName: 'PDU_Left' }
+  })
+
+  it('a PDU in your cockpit on another console is "(other console)", never "not added"', () => {
+    expect(adoptPduChoices(views, 'Center', 4, board)).toEqual({
+      zones: [
+        { value: 5, label: 'PDU_Center' },
+        { value: 4, label: 'PDU_Right (other console)' }
+      ]
+    })
+  })
+
+  it('only a PDU not in your cockpit at all is pending ("not added"), by its registry name', () => {
+    expect(adoptPduChoices(views, 'Center', 3, board).pending).toBe('PDU_Left')
+    expect(adoptPduChoices(views, 'Center', 5, board).pending).toBeUndefined()
+    expect(adoptPduChoices(views, 'Center', null, board).pending).toBeUndefined()
   })
 })
 

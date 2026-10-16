@@ -4,6 +4,7 @@ import type { NodeView } from '../../cockpit'
 import {
   adoptability,
   adoptEvidence,
+  adoptPduChoices,
   adoptQueue,
   adoptSpec,
   identState,
@@ -14,7 +15,7 @@ import {
   seenAgo,
   type AdoptForm as FormValues
 } from '../../cockpit-adopt'
-import { CONSOLE_OPTIONS, powerZoneOptions } from '../../cockpit-panels'
+import { CONSOLE_OPTIONS } from '../../cockpit-panels'
 import { useModalFocus } from '../../useModalFocus'
 import { Dot } from './Dot'
 
@@ -184,13 +185,10 @@ function AdoptForm(props: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const ev = adoptEvidence(props.view)
-  const zones = powerZoneOptions(props.views, con, null)
-  // #93: the PDU is explicit — a registry default PDU that isn't in your cockpit yet stays a
-  // choice, named as such, and the board moves under it once that PDU is added.
-  const pending =
-    typeof pduId === 'number' && !zones.some((z) => z.value === pduId)
-      ? pendingPduName(props.views, pduId, e)
-      : undefined
+  // #93: the PDU is explicit — one in your cockpit on another console is "(other console)"; a
+  // default PDU not in your cockpit yet stays a choice, "(not added)", and the board moves under it
+  // once that PDU is added.
+  const { zones, pending } = adoptPduChoices(props.views, con, pduId, e)
   const spec = kind ? adoptSpec(kind, { name, console: con, pduId }) : null
   const ident = identState(e.availability === 'online', props.dropped)
 
@@ -345,13 +343,6 @@ function AdoptForm(props: {
       </div>
     </>
   )
-}
-
-/** A PDU named by a power zone that isn't in your cockpit: waiting in New on the bus, or not seen. */
-function pendingPduName(views: NodeView[], pduId: number, e: NodeView['entry']): string {
-  const waiting = views.find((v) => v.entry.nodeId === pduId)
-  if (waiting) return waiting.entry.name
-  return (e.registry?.pduId === pduId && e.registry.pduName) || `PDU #${pduId}`
 }
 
 const BADGE_CLASS: Record<ReturnType<typeof adoptability>['badge'], string> = {
