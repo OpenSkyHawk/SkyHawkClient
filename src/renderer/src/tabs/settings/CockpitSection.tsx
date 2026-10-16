@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { NodeRegistryInfo } from '@shared/ipc'
 import { parsePsuLimit, PSU_PRESETS, type PsuLimits } from '@shared/psu'
 import { useStore } from '../../store'
 import { ResetDialog } from './ResetDialog'
 import { Row, SectionHead } from './Row'
-import { ignoredRow, resetRowDesc } from './settings-view'
+import { hiddenRow, ignoredRow, resetRowDesc } from './settings-view'
 import { useNodeModel } from './useNodeModel'
 
 type LimitKey = keyof PsuLimits
@@ -99,6 +100,83 @@ function PowerSupply() {
         {isPreset
           ? `${preset.name} — the project’s supply. Display only; no alerts.`
           : 'Enter what the PSU label says, as a positive number. A limit left empty shows plain totals on the Cockpit. Display only; no alerts.'}
+      </div>
+    </>
+  )
+}
+
+/**
+ * Nodes hidden from the Cockpit until they report again (#76). Un-hide brings one back now; a
+ * hidden node also leaves this list on its own when it reports.
+ */
+function HiddenNodes() {
+  const model = useNodeModel()
+  const [registry, setRegistry] = useState<NodeRegistryInfo>()
+  const [error, setError] = useState<string>()
+  const hidden = model?.hidden ?? []
+
+  useEffect(() => {
+    let live = true
+    void window.skyhawk?.getNodeRegistry().then((r) => {
+      if (live) setRegistry(r)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  const unhide = async (ids: number[]) => {
+    setError(undefined)
+    for (const id of ids) {
+      const r = await window.skyhawk?.hideNode(id, false)
+      if (r && !r.ok) return setError(r.error)
+    }
+  }
+
+  return (
+    <>
+      <div className="ig__head">
+        <span className="section-h">Hidden nodes</span>
+        <span className="ig__n">{hidden.length || ''}</span>
+        <button
+          className="toolbtn"
+          style={{ marginLeft: 'auto' }}
+          disabled={hidden.length === 0}
+          onClick={() => void unhide(hidden)}
+        >
+          Un-hide all
+        </button>
+      </div>
+      <div className="set-card">
+        {hidden.map((id) => {
+          const row = hiddenRow(id, registry)
+          return (
+            <div className="set-row ig" key={id}>
+              <div className="ig__id">#{id}</div>
+              <div style={{ flex: 1 }}>
+                <div className="set-row__label">{row.label}</div>
+                <div className="set-row__desc">{row.desc}</div>
+              </div>
+              <div>
+                <button className="browse" onClick={() => void unhide([id])}>
+                  Un-hide
+                </button>
+              </div>
+            </div>
+          )
+        })}
+        {hidden.length === 0 && (
+          <div className="set-row">
+            <div className="set-row__desc">
+              No hidden nodes. “Hide until it reports again” in a node’s Cockpit panel lists it
+              here.
+            </div>
+          </div>
+        )}
+      </div>
+      <div className={error ? 'set-err' : 'hint'} style={{ margin: '10px 2px 0' }}>
+        {error ??
+          'Hidden = a removed or replaced board, kept off the Cockpit until it reports again. Un-hide brings it back now.'}
       </div>
     </>
   )
@@ -200,6 +278,7 @@ export function CockpitSection() {
         </Row>
       </div>
       <PowerSupply />
+      <HiddenNodes />
       <IgnoredNodes />
       {resetOpen && <ResetDialog model={model} onClose={() => setResetOpen(false)} />}
     </>

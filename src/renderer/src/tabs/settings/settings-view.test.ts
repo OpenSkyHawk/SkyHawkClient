@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { NodeRegistryInfo } from '@shared/ipc'
 import type { NodeModel, NodeModelEntry } from '@shared/node-rules'
 import {
+  hiddenRow,
   ignoredRow,
   importDoneText,
   importRowKey,
@@ -110,5 +111,31 @@ describe('import texts', () => {
     expect(importDoneText(3, '/u/backups/skyhawk-config-x.json')).toBe(
       'Applied 3 sections · backup saved as skyhawk-config-x.json'
     )
+  })
+})
+
+describe('hiddenRow (#76)', () => {
+  const registry: NodeRegistryInfo = {
+    file: 'Firmware/NODE_IDS.md',
+    commit: 'abc',
+    date: '2026-10-01',
+    nodes: [{ nodeId: 2, name: 'Right_Navigation', console: 'Right', kind: 'panel' }]
+  }
+
+  it('names a registry node with its console', () => {
+    expect(hiddenRow(2, registry)).toEqual({
+      nodeId: 2,
+      label: 'Right_Navigation',
+      desc: 'Right console · returns when it reports again'
+    })
+  })
+
+  it('an adopted node is not in the registry, and neither is anything before it loads', () => {
+    expect(hiddenRow(41, registry)).toEqual({
+      nodeId: 41,
+      label: 'Node 41',
+      desc: 'returns when it reports again'
+    })
+    expect(hiddenRow(2).label).toBe('Node 2')
   })
 })
