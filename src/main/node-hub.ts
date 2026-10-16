@@ -86,6 +86,7 @@ export class NodeHub {
     ignored: (id) => this.mapping().ignored.includes(id),
     // "New on the bus" once a node has identified as something adoptable — not at first sight,
     // and never for the bridge's own row (node 0, our link).
+    unmapped: (id) => !this.mapped().has(id),
     isNew: (id) =>
       id !== BRIDGE_NODE_ID &&
       !this.mapped().has(id) &&

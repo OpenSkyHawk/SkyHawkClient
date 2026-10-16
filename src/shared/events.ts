@@ -65,8 +65,10 @@ export interface NodeLookup {
   name(nodeId: number): string
   /** Ignored ids get no events at all. */
   ignored(nodeId: number): boolean
-  /** Neither in the registry nor adopted. */
+  /** Neither in the registry nor adopted, and identified as something adoptable: news. */
   isNew(nodeId: number): boolean
+  /** Neither in the registry nor adopted, whatever it has identified as. */
+  unmapped(nodeId: number): boolean
 }
 
 type StatusFlag = 'boff' | 'epvf' | 'degraded' | 'overheat'
@@ -242,9 +244,12 @@ export class NodeEventTracker {
       ev('error', 'offline', isEnd ? 'missing from roster' : 'no heartbeat')
     } else if (n.present && !wasPresent) {
       // A first sighting the baseline counts in its summary row, or that just made its "new" row,
-      // needs no "online" too. A new node seen in an earlier port session does: it has no other row.
+      // needs no "online" too; nor does an unmapped node not yet announced — it gets one "new on
+      // the bus" row once it identifies (#344). A new node seen in an earlier port session does:
+      // it has no other row.
       const first = p === undefined
-      if (!first || !(this.baseline || emittedNew)) ev('info', 'online')
+      const unannounced = this.lookup.unmapped(id) && !this.newSeen.has(id)
+      if (!first || !(this.baseline || emittedNew || unannounced)) ev('info', 'online')
     }
     return this.flagsFrom(wasPresent ? p : undefined, n, ev, out)
   }

@@ -327,6 +327,16 @@ describe('board kind (#344)', () => {
     expect(events.filter((e) => e.nodeId === 0)).toEqual([])
   })
 
+  it('a node that appears after the baseline writes one row: "new on the bus" once identified', () => {
+    const { h, roster, events, status } = withEvents()
+    status(1, 0x01, 0)
+    roster.applyMessage(NODE_END_MSG, '1', 0)
+    h.statusLine(NODE_END_MSG, '_NODE_STATUS_END 1', 0) // baseline closed
+    status(41, 0x00, 2000) // first sight, kind not reported yet
+    status(41, 0x01, 3000) // ~1 s later: panel group
+    expect(events.filter((e) => e.nodeId === 41).map((e) => e.event)).toEqual(['new on the bus'])
+  })
+
   it('"new on the bus" is logged when the node identifies, not when it is first seen', () => {
     const { events, status } = withEvents()
     status(41, 0x00, 0)
