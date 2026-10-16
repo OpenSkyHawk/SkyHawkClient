@@ -61,12 +61,30 @@ export interface PduOutage {
   at: number
 }
 
+/** One ignored NODE_ID, as Settings › Ignored nodes lists it. */
+export interface IgnoredNode {
+  nodeId: number
+  /** Registry or adopted name, when the id has one. */
+  name?: string
+  /** Recorded when ignored, else what it is known as now; absent when nothing says. */
+  kind?: NodeKind
+  /** When it was ignored (ISO 8601); absent for ids ignored before this was recorded. */
+  ignoredAt?: string
+  /**
+   * This session only (not persisted): 'now' while reporting, else when the client learned it was
+   * offline; absent when the bridge has not listed it since the session started.
+   */
+  lastSeen?: 'now' | number
+}
+
 export interface NodeModel {
   nodes: NodeModelEntry[]
   outages: PduOutage[]
   /** Registry nodes that differ from their defaults (what "Reset all" changes). */
   differingCount: number
   ignored: number[]
+  /** The same ids with what Settings shows for each. */
+  ignoredNodes: IgnoredNode[]
   /** Hidden until they report again — left out of `nodes`. */
   hidden: number[]
   /**
@@ -145,12 +163,34 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     outages: pduOutages(nodes),
     differingCount: differingCount(i.defaults, i.file),
     ignored: [...i.file.ignored],
+    ignoredNodes: i.file.ignored.map((id) => ignoredNode(i, id, roster.get(id), telem.get(id))),
     hidden,
     rosterComplete: complete
   }
 }
 
 /** Did `n` drop together with `pdu`? Both must be offline with a known time. */
+function ignoredNode(
+  i: NodeModelInput,
+  nodeId: number,
+  st: NodeStatus | undefined,
+  t: NodeTelemSnapshot | undefined
+): IgnoredNode {
+  const meta = i.file.ignoredMeta?.[nodeId]
+  const d = i.defaults.get(nodeId)
+  const o = i.file.nodes[nodeId]
+  const e: IgnoredNode = { nodeId }
+  const name = d?.name ?? o?.name
+  if (name) e.name = name
+  const kind = meta?.kind ?? d?.kind ?? o?.kind ?? (t?.isPdu ? 'pdu' : undefined)
+  if (kind) e.kind = kind
+  if (meta) e.ignoredAt = meta.at
+  const offlineAt = i.seen.get(nodeId)?.offlineAt
+  if (st?.present) e.lastSeen = 'now'
+  else if (offlineAt !== undefined) e.lastSeen = offlineAt
+  return e
+}
+
 export function droppedTogether(n: NodeModelEntry, pdu: NodeModelEntry): boolean {
   if (n.offlineAt === undefined || pdu.offlineAt === undefined) return false
   const d = n.offlineAt - pdu.offlineAt

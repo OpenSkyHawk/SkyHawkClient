@@ -12,7 +12,7 @@ import {
   type PushChannels,
   type ReplayLoad
 } from '@shared/ipc'
-import type { AdoptSpec, MappingPatch } from '@shared/node-mapping'
+import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/node-mapping'
 import { HID_CONTROLS, HID_ID } from './reference/hid-controls.generated'
 import { Session } from './session'
 import { loadConfig, saveConfig } from './settings'
@@ -73,7 +73,11 @@ function registerIpc(): void {
     session.link.nodes.adopt(id, spec)
   )
   ipcMain.handle(CTRL.nodeMappingForget, (_e, id: number) => session.link.nodes.forget(id))
-  ipcMain.handle(CTRL.nodeMappingReset, () => session.link.nodes.resetAll())
+  ipcMain.handle(CTRL.nodeMappingReset, (_e, opts?: ResetOptions) =>
+    session.link.nodes.resetAll(opts)
+  )
+  ipcMain.handle(CTRL.nodeMappingResetPreview, () => session.link.nodes.previewReset())
+  ipcMain.handle(CTRL.nodeRegistry, () => session.link.nodes.registry())
   ipcMain.handle(CTRL.nodeMappingIgnore, (_e, id: number, on: boolean) =>
     session.link.nodes.ignore(id, on)
   )

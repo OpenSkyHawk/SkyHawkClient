@@ -1,108 +1,43 @@
-import type { ReactNode } from 'react'
-import { useStore } from '../store'
+import { useState } from 'react'
+import { AboutSection } from './settings/AboutSection'
+import { CockpitSection } from './settings/CockpitSection'
+import { ConnectionSection } from './settings/ConnectionSection'
+import { DiagnosticsSection } from './settings/DiagnosticsSection'
 
-function Row({ k, sub, children }: { k: string; sub: string; children: ReactNode }) {
-  return (
-    <div className="set-row">
-      <div>
-        <div className="set-row__label">{k}</div>
-        <div className="set-row__desc">{sub}</div>
-      </div>
-      <div>{children}</div>
-    </div>
-  )
-}
+type SectionId = 'connection' | 'cockpit' | 'diag' | 'about'
 
+const SECTIONS: { id: SectionId; label: string; sub: string }[] = [
+  { id: 'connection', label: 'Connection', sub: 'DCS link, ports' },
+  { id: 'cockpit', label: 'Cockpit', sub: 'PSU, mapping, alerts' },
+  { id: 'diag', label: 'Diagnostics', sub: 'logs' },
+  { id: 'about', label: 'About', sub: 'version, registry' }
+]
+
+/** Settings: sections on the left (a row below 820 px), the picked one on the right. */
 export function Settings() {
-  const s = useStore()
-  const setConfigField = useStore((x) => x.setConfigField)
-  const toggleCapture = useStore((x) => x.toggleCapture)
-  const dumpSerialPorts = useStore((x) => x.dumpSerialPorts)
-  const revealDebugLog = useStore((x) => x.revealDebugLog)
+  const [section, setSection] = useState<SectionId>('connection')
 
   return (
-    <div className="settings">
-      <div className="set-card">
-        <Row k="Source mode" sub="How telemetry reaches the client">
-          <span className="set-row__value" style={{ textTransform: 'capitalize' }}>
-            {s.sourceMode}
-          </span>
-        </Row>
-        <Row k="DCS host" sub="Target for the bidirectional TCP link">
-          <input
-            className="input"
-            style={{ width: 160 }}
-            value={s.host}
-            onChange={(e) => setConfigField({ host: e.target.value })}
-          />
-        </Row>
-        <Row k="Command port" sub="DCS-BIOS import / command sink">
-          <input
-            className="input"
-            style={{ width: 100 }}
-            value={s.port}
-            onChange={(e) => setConfigField({ port: e.target.value })}
-          />
-        </Row>
-        <Row
-          k="Connect automatically"
-          sub="Open the SimGateway on launch and whenever it is plugged in, and recover after a drop. Turn off to leave the port to socat / connect-serial-port.cmd."
-        >
+    <div className="sv">
+      <nav className="sn" aria-label="Settings sections">
+        {SECTIONS.map((x) => (
           <button
-            className={`toggle${s.autoConnect ? ' on' : ''}`}
-            onClick={() => setConfigField({ autoConnect: !s.autoConnect })}
-            aria-pressed={s.autoConnect}
+            key={x.id}
+            className={`sn__i${section === x.id ? ' on' : ''}`}
+            aria-current={section === x.id ? 'page' : undefined}
+            onClick={() => setSection(x.id)}
           >
-            <span />
+            <span className="sn__l">{x.label}</span>
+            <span className="sn__s">{x.sub}</span>
           </button>
-        </Row>
-        <Row
-          k="Record session"
-          sub={
-            s.recording
-              ? `Recording${s.recordEvents != null ? ` · ${s.recordEvents} events` : ''}…`
-              : 'Capture the DCS-BIOS stream to a file for replay'
-          }
-        >
-          <button
-            className={`browse${s.recording ? ' browse--rec' : ''}`}
-            onClick={() => toggleCapture()}
-          >
-            {s.recording ? '■ Stop' : '● Record'}
-          </button>
-        </Row>
+        ))}
+      </nav>
+      <div className="sp">
+        {section === 'connection' && <ConnectionSection />}
+        {section === 'cockpit' && <CockpitSection />}
+        {section === 'diag' && <DiagnosticsSection />}
+        {section === 'about' && <AboutSection />}
       </div>
-
-      <div className="set-card" style={{ marginTop: 14 }}>
-        <Row k="Debug logging" sub="Write serial enumeration + device events to a local log file">
-          <button
-            className={`toggle${s.debugMode ? ' on' : ''}`}
-            onClick={() => setConfigField({ debugMode: !s.debugMode })}
-            aria-pressed={s.debugMode}
-          >
-            <span />
-          </button>
-        </Row>
-        <Row
-          k="Dump serial ports"
-          sub={
-            s.debugDump
-              ? `Wrote ${s.debugDump.count} port(s) → ${s.debugDump.path}`
-              : 'Write every detected serial port (all USB fields) to the log'
-          }
-        >
-          <button className="browse" onClick={() => dumpSerialPorts()}>
-            Dump
-          </button>
-        </Row>
-        <Row k="Debug log file" sub="Reveal the log in your file manager">
-          <button className="browse" onClick={() => revealDebugLog()}>
-            Reveal
-          </button>
-        </Row>
-      </div>
-
-      <div className="set-foot">OpenSkyhawk Client · com.openskyhawk.client · GPL-2.0-only</div>
     </div>
   )
 }

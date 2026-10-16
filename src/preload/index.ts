@@ -12,6 +12,7 @@ import {
   type ExportResult,
   type HidAvailability,
   type NodeMappingResult,
+  type NodeRegistryInfo,
   type NodeSnapshot,
   type PushChannel,
   type PushChannels,
@@ -21,6 +22,7 @@ import {
   type SkyhawkApi
 } from '@shared/ipc'
 import type { CachedBoard } from '@shared/cal-cache'
+import type { ResetPreview } from '@shared/node-mapping'
 
 // Typed bridge: main -> renderer push subscriptions + renderer -> main control.
 const api: SkyhawkApi = {
@@ -50,7 +52,10 @@ const api: SkyhawkApi = {
     ipcRenderer.invoke(CTRL.nodeMappingAdopt, nodeId, spec) as Promise<NodeMappingResult>,
   forgetNode: (nodeId) =>
     ipcRenderer.invoke(CTRL.nodeMappingForget, nodeId) as Promise<NodeMappingResult>,
-  resetNodeMapping: () => ipcRenderer.invoke(CTRL.nodeMappingReset) as Promise<NodeMappingResult>,
+  resetNodeMapping: (opts) =>
+    ipcRenderer.invoke(CTRL.nodeMappingReset, opts) as Promise<NodeMappingResult>,
+  previewNodeReset: () => ipcRenderer.invoke(CTRL.nodeMappingResetPreview) as Promise<ResetPreview>,
+  getNodeRegistry: () => ipcRenderer.invoke(CTRL.nodeRegistry) as Promise<NodeRegistryInfo>,
   ignoreNode: (nodeId, on) =>
     ipcRenderer.invoke(CTRL.nodeMappingIgnore, nodeId, on) as Promise<NodeMappingResult>,
   hideNode: (nodeId, on) =>

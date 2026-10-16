@@ -173,6 +173,53 @@ describe('NodeHub', () => {
     expect(disk.saves).toBe(0)
   })
 
+  it('ignoring records when and what the node reported as; un-ignoring forgets it', () => {
+    const { h, roster } = hub()
+    roster.applyMessage(NODE_MSG, '2F010000000000000080000000', 0) // node 47 reports
+    h.telemetry('2F0100E02E182EBC02', 0) // ... and sends PDU pages
+    expect(h.ignore(47, true, 1000).ok).toBe(true)
+    expect(disk.file.ignoredMeta).toEqual({ 47: { at: '1970-01-01T00:00:01.000Z', kind: 'pdu' } })
+    expect(h.snapshot().model.ignoredNodes).toMatchObject([{ nodeId: 47, kind: 'pdu' }])
+    h.ignore(47, false)
+    expect(disk.file).toEqual({ version: 1, nodes: {}, ignored: [] })
+  })
+
+  it('stores a kind only when known, so an early-ignored PDU is not kept as a panel', () => {
+    const { h, roster } = hub()
+    roster.applyMessage(NODE_MSG, '2F010000000000000080000000', 0) // node 47: status only
+    h.ignore(47, true, 1000)
+    expect(disk.file.ignoredMeta?.[47]).toEqual({ at: '1970-01-01T00:00:01.000Z' }) // no guess
+    expect(h.snapshot(1000).model.ignoredNodes[0]).not.toHaveProperty('kind')
+    h.telemetry('2F0100E02E182EBC02', 2000) // ... then its first PDU page
+    expect(h.snapshot(2000).model.ignoredNodes[0]?.kind).toBe('pdu')
+
+    h.ignore(3, true, 3000) // registry PDU, never reported
+    h.adopt(41, { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' })
+    h.ignore(41, true, 3000) // adopted panel
+    expect(disk.file.ignoredMeta?.[3]?.kind).toBe('pdu')
+    expect(disk.file.ignoredMeta?.[41]?.kind).toBe('panel')
+  })
+
+  it('reset can also forget adopted nodes, and previews what it changes', () => {
+    const { h } = hub()
+    h.setMapping(1, { name: 'Armament' })
+    h.adopt(41, { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' })
+    expect(h.previewReset()).toMatchObject({ nodeCount: 1, adopted: [{ nodeId: 41 }] })
+    expect(h.resetAll().ok).toBe(true)
+    expect(Object.keys(disk.file.nodes)).toEqual(['41'])
+    expect(h.resetAll({ forgetAdopted: true }).ok).toBe(true)
+    expect(disk.file.nodes).toEqual({})
+    expect(h.resetAll(null as never)).toEqual({ ok: false, error: 'Invalid reset request' })
+  })
+
+  it('serves the bundled registry with PanelBridge and its source commit', () => {
+    const r = hub().h.registry()
+    expect(r.nodes[0]).toEqual({ nodeId: 0, name: 'PanelBridge', console: '—', kind: 'bridge' })
+    expect(r.nodes.find((n) => n.nodeId === 3)?.kind).toBe('pdu')
+    expect(r.commit).toMatch(/^[0-9a-f]{40}$/)
+    expect(r.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
   it('accepts a telemetry line with padding or a trailing CR (Windows-style ending)', () => {
     const { h } = hub()
     h.telemetry(' 030100E02E182EBC02\r', 0)
