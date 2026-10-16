@@ -151,7 +151,12 @@ module.exports = {
   options: {
     doNotFollow: { path: ['node_modules'] },
     exclude: {
-      path: ['\\.test\\.tsx?$', '^src/test-fixtures/', '^src/renderer/test/']
+      path: [
+        '\\.test\\.tsx?$',
+        '^src/test-fixtures/',
+        '^src/renderer/test/',
+        '^src/main/test-harness/'
+      ]
     },
     // Type-only imports count: today's model <-> contract cycles are type cycles.
     tsPreCompilationDeps: true,
