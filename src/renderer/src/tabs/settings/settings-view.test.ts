@@ -6,6 +6,7 @@ import {
   importDoneText,
   importRowKey,
   importSubtitle,
+  registryName,
   registryOnBus,
   registrySummary,
   resetButtonLabel,
@@ -41,6 +42,11 @@ const REG: NodeRegistryInfo = {
 describe('registry', () => {
   it('summarises the bundled registry', () => {
     expect(registrySummary(REG)).toBe('NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, Gateway')
+  })
+
+  it('names the bridge row Gateway, whatever NODE_IDS.md calls it (#94)', () => {
+    expect(REG.nodes.map(registryName)[0]).toBe('Gateway')
+    expect(REG.nodes.slice(1).map(registryName)).toEqual(REG.nodes.slice(1).map((n) => n.name))
   })
 
   it('"On the bus" comes from the link and the roster, and says when there is no data', () => {

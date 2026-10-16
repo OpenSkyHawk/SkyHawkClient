@@ -3,7 +3,7 @@ import { isLinkUp, type NodeRegistryInfo } from '@shared/ipc'
 import { useStore } from '../../store'
 import { Dialog } from './Dialog'
 import { Row, SectionHead } from './Row'
-import { registryOnBus, registrySummary } from './settings-view'
+import { registryName, registryOnBus, registrySummary } from './settings-view'
 import { useNodeModel } from './useNodeModel'
 
 function RegistryDialog({ reg, onClose }: { reg: NodeRegistryInfo; onClose: () => void }) {
@@ -35,7 +35,7 @@ function RegistryDialog({ reg, onClose }: { reg: NodeRegistryInfo; onClose: () =
         return (
           <div className="rg" key={n.nodeId}>
             <span className="rg__id">#{n.nodeId}</span>
-            <span>{n.name}</span>
+            <span>{registryName(n)}</span>
             <span className="rg__c">{n.console}</span>
             <span>
               {bus.text !== '—' && (

@@ -50,12 +50,21 @@ export function hiddenRow(n: HiddenNode): ListRow {
   }
 }
 
+/**
+ * A registry row's name as the client shows it: the bridge row is the Gateway (#94), whatever
+ * NODE_IDS.md calls it (the firmware name, PanelBridge).
+ */
+export function registryName(n: NodeRegistryInfo['nodes'][number]): string {
+  return n.kind === 'bridge' ? 'Gateway' : n.name
+}
+
 /** "NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, Gateway". */
 export function registrySummary(r: NodeRegistryInfo): string {
   const pdus = r.nodes.filter((n) => n.kind === 'pdu').length
   const panels = r.nodes.filter((n) => n.kind === 'panel').length
   const parts = [plural(pdus, 'PDU'), plural(panels, 'panel group')]
-  if (r.nodes.some((n) => n.kind === 'bridge')) parts.push('Gateway')
+  const bridge = r.nodes.find((n) => n.kind === 'bridge')
+  if (bridge) parts.push(registryName(bridge))
   const file = r.file.split('/').pop()
   return `${file} · ${plural(r.nodes.length, 'node')}: ${parts.join(', ')}`
 }
