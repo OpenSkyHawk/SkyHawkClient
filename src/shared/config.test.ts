@@ -15,7 +15,7 @@ describe('sanitizeConfig', () => {
       host: '192.168.1.10',
       commandPort: 7778,
       listenPort: 5010,
-      autoReconnect: false,
+      autoConnect: false,
       replayDriveSerial: true,
       debugMode: true
     })
@@ -25,10 +25,18 @@ describe('sanitizeConfig', () => {
       host: '192.168.1.10',
       commandPort: 7778,
       listenPort: 5010,
-      autoReconnect: false,
+      autoConnect: false,
       replayDriveSerial: true,
       debugMode: true
     })
+  })
+
+  it('connects automatically unless explicitly told not to, ignoring the old autoReconnect', () => {
+    // autoReconnect governed a link that only existed while relaying. Carrying a saved `false`
+    // over would silently stop the board connecting on launch, which is not what it meant.
+    expect(sanitizeConfig({ autoReconnect: false }).autoConnect).toBe(true)
+    expect(sanitizeConfig({ autoConnect: false }).autoConnect).toBe(false)
+    expect(sanitizeConfig({ autoConnect: 'no' }).autoConnect).toBe(true)
   })
 
   it('coerces bad enum / port back to defaults', () => {

@@ -61,36 +61,44 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
   ipcMain.handle(CTRL.relayStatus, () => session.status())
+  ipcMain.handle(CTRL.deviceConnect, () => session.link.connect())
+  ipcMain.handle(CTRL.deviceDisconnect, () => session.link.disconnect())
   ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
-  ipcMain.handle(CTRL.nodesRefresh, () => session.requestNodes())
-  ipcMain.handle(CTRL.nodesGet, () => session.nodes.snapshot())
+  ipcMain.handle(CTRL.nodesRefresh, () => session.link.requestNodes())
+  ipcMain.handle(CTRL.nodesGet, () => session.link.nodes.snapshot())
   ipcMain.handle(CTRL.nodeMappingSet, (_e, id: number, patch: MappingPatch) =>
-    session.nodes.setMapping(id, patch)
+    session.link.nodes.setMapping(id, patch)
   )
   ipcMain.handle(CTRL.nodeMappingAdopt, (_e, id: number, spec: AdoptSpec) =>
-    session.nodes.adopt(id, spec)
+    session.link.nodes.adopt(id, spec)
   )
-  ipcMain.handle(CTRL.nodeMappingForget, (_e, id: number) => session.nodes.forget(id))
-  ipcMain.handle(CTRL.nodeMappingReset, () => session.nodes.resetAll())
+  ipcMain.handle(CTRL.nodeMappingForget, (_e, id: number) => session.link.nodes.forget(id))
+  ipcMain.handle(CTRL.nodeMappingReset, () => session.link.nodes.resetAll())
   ipcMain.handle(CTRL.nodeMappingIgnore, (_e, id: number, on: boolean) =>
-    session.nodes.ignore(id, on)
+    session.link.nodes.ignore(id, on)
   )
-  ipcMain.handle(CTRL.nodeMappingHide, (_e, id: number, on: boolean) => session.nodes.hide(id, on))
-  ipcMain.handle(CTRL.serialMonitor, (_e, on: boolean) => session.setSerialMonitor(on))
+  ipcMain.handle(CTRL.nodeMappingHide, (_e, id: number, on: boolean) =>
+    session.link.nodes.hide(id, on)
+  )
+  ipcMain.handle(CTRL.serialMonitor, (_e, on: boolean) => session.link.setSerialMonitor(on))
 
   // Axis calibration (#46). Every one returns a discriminated CalResult rather than throwing:
   // an ipcRenderer.invoke rejection flattens to a plain Error, which would lose the
   // timeout-vs-nack distinction the UI's failure messaging depends on.
-  ipcMain.handle(CTRL.calHello, () => session.calHello())
-  ipcMain.handle(CTRL.calRead, () => session.calRead())
-  ipcMain.handle(CTRL.calSessionOpen, (_e, axisIdx: number) => session.calSessionOpen(axisIdx))
-  ipcMain.handle(CTRL.calStreamSelect, (_e, axisIdx: number) => session.calStreamSelect(axisIdx))
-  ipcMain.handle(CTRL.calCommit, (_e, axis: CalCommitAxis) => session.calCommit(axis))
-  ipcMain.handle(CTRL.calReset, (_e, idx: number) => session.calReset(idx))
-  ipcMain.handle(CTRL.calCacheRead, () => session.calCacheRead())
-  ipcMain.handle(CTRL.calCacheStore, (_e, axes: CalCacheEntry[]) => session.calCacheStore(axes))
-  ipcMain.handle(CTRL.calCacheDrop, (_e, idx: number) => session.calCacheDrop(idx))
-  ipcMain.handle(CTRL.calSessionClose, () => session.calSessionClose())
+  ipcMain.handle(CTRL.calHello, () => session.link.calHello())
+  ipcMain.handle(CTRL.calRead, () => session.link.calRead())
+  ipcMain.handle(CTRL.calSessionOpen, (_e, axisIdx: number) => session.link.calSessionOpen(axisIdx))
+  ipcMain.handle(CTRL.calStreamSelect, (_e, axisIdx: number) =>
+    session.link.calStreamSelect(axisIdx)
+  )
+  ipcMain.handle(CTRL.calCommit, (_e, axis: CalCommitAxis) => session.link.calCommit(axis))
+  ipcMain.handle(CTRL.calReset, (_e, idx: number) => session.link.calReset(idx))
+  ipcMain.handle(CTRL.calCacheRead, () => session.link.calCacheRead())
+  ipcMain.handle(CTRL.calCacheStore, (_e, axes: CalCacheEntry[]) =>
+    session.link.calCacheStore(axes)
+  )
+  ipcMain.handle(CTRL.calCacheDrop, (_e, idx: number) => session.link.calCacheDrop(idx))
+  ipcMain.handle(CTRL.calSessionClose, () => session.link.calSessionClose())
 
   ipcMain.handle(CTRL.logExport, async (_e, text: string) => {
     const res = await dialog.showSaveDialog({
@@ -184,6 +192,7 @@ app.whenReady().then(() => {
   setDebugEnabled(cfg.debugMode)
   registerIpc()
   createWindow()
+  session.open() // the device link is up from launch, relaying or not (#69)
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -193,3 +202,6 @@ app.on('window-all-closed', () => {
   session.stop()
   if (process.platform !== 'darwin') app.quit()
 })
+
+// Releases the port: the link otherwise holds it for as long as the app runs.
+app.on('will-quit', () => session.shutdown())

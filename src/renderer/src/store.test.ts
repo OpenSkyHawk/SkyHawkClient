@@ -5,7 +5,11 @@ import type { CalSnapshot, PushChannel, PushChannels, RelayStatus } from '@share
 // real here; the rest exist so subscription setup does not throw.
 type Listener = (data: unknown) => void
 const listeners = new Map<string, Listener[]>()
-let status: RelayStatus = { running: false, device: { state: 'no-device' } }
+let status: RelayStatus = {
+  running: false,
+  relay: { running: false },
+  device: { state: 'no-device' }
+}
 
 function fakeApi() {
   return {
@@ -21,7 +25,7 @@ function fakeApi() {
         host: '127.0.0.1',
         commandPort: 7778,
         listenPort: 5010,
-        autoReconnect: true,
+        autoConnect: true,
         replayDriveSerial: false,
         debugMode: false
       }),
@@ -71,7 +75,7 @@ async function freshStore() {
 
 describe('calibration state lifecycle', () => {
   beforeEach(() => {
-    status = { running: false, device: { state: 'no-device' } }
+    status = { running: false, relay: { running: false }, device: { state: 'no-device' } }
   })
 
   it('starts with no snapshot, which is not the same as uncalibrated', async () => {
@@ -100,23 +104,24 @@ describe('calibration state lifecycle', () => {
     // in session status the badges would stay blank indefinitely on a stable link.
     status = {
       running: true,
-      device: { state: 'relaying', portPath: '/dev/fake' },
+      relay: { running: true, stream: 'connected' },
+      device: { state: 'connected', portPath: '/dev/fake' },
       cal: snapshot(0b01)
     }
     const s = await freshStore()
     expect(s.getState().cal?.calibratedMask, 'reload must recover the badges').toBe(0b01)
-    expect(s.getState().deviceState).toBe('relaying')
+    expect(s.getState().deviceState).toBe('connected')
   })
 
   it('rehydrates nothing when the link is down', async () => {
-    status = { running: false, device: { state: 'no-device' } }
+    status = { running: false, relay: { running: false }, device: { state: 'no-device' } }
     const s = await freshStore()
     expect(s.getState().cal).toBeUndefined()
   })
 
   // Clearing only on `no-device` would leave the previous board's badges on screen through a
   // reconnect -- and permanently, if the next board runs firmware that never sends cal:data.
-  for (const state of ['reconnecting', 'error', 'no-device', 'scanning'] as const) {
+  for (const state of ['reconnecting', 'error', 'no-device', 'scanning', 'disconnected'] as const) {
     it(`drops the snapshot when the device goes ${state}`, async () => {
       const s = await freshStore()
       push('cal:data', snapshot(0b01))
@@ -129,7 +134,7 @@ describe('calibration state lifecycle', () => {
   it('keeps the snapshot while the link stays up', async () => {
     const s = await freshStore()
     push('cal:data', snapshot(0b01))
-    push('device:status', { state: 'relaying', portPath: '/dev/fake' })
+    push('device:status', { state: 'connected', portPath: '/dev/fake' })
     expect(s.getState().cal?.calibratedMask).toBe(0b01)
   })
 
@@ -138,9 +143,38 @@ describe('calibration state lifecycle', () => {
     push('cal:data', snapshot(0b11, 'BOARD-A'))
     push('device:status', { state: 'reconnecting' })
     expect(s.getState().cal).toBeUndefined()
-    push('device:status', { state: 'relaying' })
+    push('device:status', { state: 'connected' })
     push('cal:data', snapshot(0b00, 'BOARD-B'))
     expect(s.getState().cal?.serialNumber).toBe('BOARD-B')
     expect(s.getState().cal?.calibratedMask).toBe(0b00)
+  })
+})
+
+describe('relay state (#69)', () => {
+  beforeEach(() => {
+    status = { running: false, relay: { running: false }, device: { state: 'no-device' } }
+  })
+
+  it('follows relay:state, separately from the device', async () => {
+    const s = await freshStore()
+    push('relay:state', { running: true, stream: 'reconnecting' })
+    expect(s.getState().relaying).toBe(true)
+    expect(s.getState().relayStream).toBe('reconnecting')
+    push('device:status', { state: 'connected', portPath: '/dev/fake' })
+    push('relay:state', { running: false })
+    expect(s.getState().relaying).toBe(false)
+    expect(s.getState().relayStream).toBeUndefined()
+    expect(s.getState().deviceState, 'stopping the relay leaves the link up').toBe('connected')
+  })
+
+  it('rehydrates the stream state on a reload', async () => {
+    status = {
+      running: true,
+      relay: { running: true, stream: 'connected' },
+      device: { state: 'connected', portPath: '/dev/fake' }
+    }
+    const s = await freshStore()
+    expect(s.getState().relaying).toBe(true)
+    expect(s.getState().relayStream).toBe('connected')
   })
 })

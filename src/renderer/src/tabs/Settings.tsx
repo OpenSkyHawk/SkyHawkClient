@@ -46,9 +46,9 @@ export function Settings() {
         </Row>
         <Row k="Auto-reconnect" sub="Re-open the serial port on unplug">
           <button
-            className={`toggle${s.autoReconnect ? ' on' : ''}`}
-            onClick={() => setConfigField({ autoReconnect: !s.autoReconnect })}
-            aria-pressed={s.autoReconnect}
+            className={`toggle${s.autoConnect ? ' on' : ''}`}
+            onClick={() => setConfigField({ autoConnect: !s.autoConnect })}
+            aria-pressed={s.autoConnect}
           >
             <span />
           </button>

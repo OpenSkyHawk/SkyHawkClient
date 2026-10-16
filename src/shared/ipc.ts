@@ -9,19 +9,57 @@ import type { NodeModel } from './node-rules'
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
 export type DcsTransport = 'loopback-multicast' | 'unicast-listen' | 'tcp-to-host'
 
+/**
+ * State of the device link — the SimGateway serial port, and with it calibration, HID and the
+ * node roster. Independent of the relay (#69): the link is up whenever the board is plugged in,
+ * relaying or not, so nothing here says whether DCS-BIOS is flowing. That is `RelayState`.
+ *
+ * - `no-device`    nothing enumerated; still looking
+ * - `scanning`     looking for the board / opening the port
+ * - `connected`    port open — the one state in which the link is up
+ * - `reconnecting` the port dropped; briefly, until the board is found again or found gone
+ * - `error`        the port is there but would not open (e.g. held by another program); retrying
+ * - `disconnected` closed on purpose: Disconnect pressed, or "connect automatically" is off
+ */
 export type DeviceState =
+  | 'no-device'
   | 'scanning'
   | 'connected'
-  | 'relaying'
-  | 'error'
   | 'reconnecting'
-  | 'no-device'
+  | 'error'
+  | 'disconnected'
+
+/**
+ * Whether the device link is up. The single definition every consumer keys on — HID freshness,
+ * calibration badges, the nodes card, the Cockpit tab (#63) — so none of them invents its own.
+ *
+ * While it is down, link-scoped data (node model, telemetry, HID) is left at its last state and
+ * should be shown dimmed; there is no separate "stale" signal.
+ */
+export function isLinkUp(state: DeviceState): boolean {
+  return state === 'connected'
+}
 
 export interface DeviceStatus {
   state: DeviceState
   portPath?: string
   vid?: number
   pid?: number
+  detail?: string
+}
+
+/**
+ * Where the DCS-BIOS stream stands while relaying. TCP connects and can drop; UDP has nothing to
+ * connect, so it is `connected` once the socket is bound; Replay is `connected` while playing and
+ * `ended` when the capture runs out.
+ */
+export type StreamState = 'connecting' | 'connected' | 'reconnecting' | 'error' | 'ended'
+
+/** The relay layer (#69): the one on/off, separate from the device link. */
+export interface RelayState {
+  running: boolean
+  /** Absent while stopped. */
+  stream?: StreamState
   detail?: string
 }
 
@@ -118,8 +156,15 @@ export interface CalSnapshot {
 }
 
 // main -> renderer channel payloads
+//
+// Two scopes (#69). **Link-scoped** pushes flow whenever the device link is up, relaying or not:
+// device:status, hid:report, nodes:*, serial:traffic, cal:*. On link down they stop and the
+// renderer keeps the last state, dimmed via isLinkUp(). **Relay-scoped** pushes flow only while
+// relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries
+// both (panel commands and link errors are logged while stopped too).
 export interface PushChannels {
   'device:status': DeviceStatus
+  'relay:state': RelayState
   'aircraft:changed': AircraftStatus
   'stats:tick': StatsSnapshot
   'log:batch': LogRow[]
@@ -139,6 +184,7 @@ export type PushChannel = keyof PushChannels
 
 export const IPC = {
   deviceStatus: 'device:status',
+  relayState: 'relay:state',
   aircraftChanged: 'aircraft:changed',
   statsTick: 'stats:tick',
   logBatch: 'log:batch',
@@ -160,7 +206,12 @@ export interface AppConfig {
   host: string
   commandPort: number
   listenPort: number // unicast-listen bind port
-  autoReconnect: boolean
+  /**
+   * Open the SimGateway on launch and on plug-in, and reopen it after a drop (#69). Off: the
+   * client never takes the port on its own — for anyone sharing it with socat or similar — and
+   * the link opens only on an explicit connect.
+   */
+  autoConnect: boolean
   replayDriveSerial: boolean // Replay mode: also write the replayed export to the SimGateway
   debugMode: boolean // write diagnostics (serial enumeration, device events) to a local log file
 }
@@ -171,7 +222,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   host: '127.0.0.1',
   commandPort: 7778,
   listenPort: 5010,
-  autoReconnect: true,
+  autoConnect: true,
   replayDriveSerial: false,
   debugMode: false
 }
@@ -193,8 +244,9 @@ export function sanitizeConfig(raw: unknown): AppConfig {
     host: typeof r.host === 'string' && r.host ? r.host : DEFAULT_CONFIG.host,
     commandPort: num(r.commandPort, DEFAULT_CONFIG.commandPort),
     listenPort: num(r.listenPort, DEFAULT_CONFIG.listenPort),
-    autoReconnect:
-      typeof r.autoReconnect === 'boolean' ? r.autoReconnect : DEFAULT_CONFIG.autoReconnect,
+    // The old `autoReconnect` is not carried over: it governed reopen-after-drop for a link that
+    // only existed while relaying, and connecting by default is the intended behaviour now.
+    autoConnect: typeof r.autoConnect === 'boolean' ? r.autoConnect : DEFAULT_CONFIG.autoConnect,
     replayDriveSerial:
       typeof r.replayDriveSerial === 'boolean'
         ? r.replayDriveSerial
@@ -211,6 +263,7 @@ export interface RelayResult {
 /** Live session state so a freshly (re)loaded renderer can rehydrate. */
 export interface RelayStatus {
   running: boolean
+  relay: RelayState
   device: DeviceStatus
   /**
    * Last calibration the device confirmed, if the link is still up.
@@ -300,6 +353,8 @@ export const CTRL = {
   relayStart: 'relay:start',
   relayStop: 'relay:stop',
   relayStatus: 'relay:status',
+  deviceConnect: 'device:connect',
+  deviceDisconnect: 'device:disconnect',
   logExport: 'log:export',
   captureToggle: 'capture:toggle',
   replayOpen: 'replay:open',
@@ -335,6 +390,10 @@ export interface SkyhawkApi {
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
   getStatus(): Promise<RelayStatus>
+  /** Open the device link now, whatever "connect automatically" says. */
+  connectDevice(): Promise<void>
+  /** Close the device link and keep it closed — through a replug — until connectDevice(). */
+  disconnectDevice(): Promise<void>
   exportLog(text: string): Promise<ExportResult>
   toggleCapture(): Promise<CaptureState>
   openReplay(): Promise<ReplayLoad>

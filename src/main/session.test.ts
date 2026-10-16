@@ -14,6 +14,8 @@ class FakeSerial {
   dataCb: (c: Buffer) => void = () => {}
   closeCb: () => void = () => {}
   openCb: (p: string) => void = () => {}
+  errorCb: (e: Error) => void = () => {}
+  stopped = false
   constructor() {
     FakeSerial.last = this
   }
@@ -21,7 +23,9 @@ class FakeSerial {
     this.dataCb = cb
   }
   onMonitor() {}
-  onError() {}
+  onError(cb: (e: Error) => void) {
+    this.errorCb = cb
+  }
   onOpen(cb: (p: string) => void) {
     this.openCb = cb
   }
@@ -29,7 +33,9 @@ class FakeSerial {
     this.closeCb = cb
   }
   start() {}
-  stop() {}
+  stop() {
+    this.stopped = true
+  }
   write(d: Buffer) {
     this.written.push(d)
   }
@@ -42,21 +48,30 @@ class FakeSerial {
 class FakeTransport {
   static last?: FakeTransport
   sent: Buffer[] = []
+  exportCb: (c: Buffer) => void = () => {}
+  connectedCb: (c: boolean) => void = () => {}
   constructor() {
     FakeTransport.last = this
   }
   start() {}
-  stop() {}
+  stop() {
+    this.connectedCb(false) // as the real UDP transport does
+  }
   send(d: Buffer) {
     this.sent.push(d)
   }
-  onExport() {}
+  onExport(cb: (c: Buffer) => void) {
+    this.exportCb = cb
+  }
   onError() {}
-  onConnected() {}
+  onConnected(cb: (c: boolean) => void) {
+    this.connectedCb = cb
+  }
 }
 
 vi.mock('./serial', () => ({
   SerialBridge: FakeSerial,
+  PortNotFoundError: class extends Error {},
   SIMGATEWAY_VID: 0x2e8a,
   SIMGATEWAY_PID: 0x4134,
   findSimGatewayPort: () => Promise.resolve('/dev/fake'),
@@ -86,7 +101,10 @@ vi.mock('./hid', () => ({
     reopen() {
       this.reopened++
     }
-    stop() {}
+    stopped = false
+    stop() {
+      this.stopped = true
+    }
     sampleRate() {}
     /** Stand in for a report arriving from the device. */
     fire(buttons: boolean[]) {
@@ -99,13 +117,17 @@ vi.mock('./hid', () => ({
   }
 }))
 
-const { Session } = await import('./session')
+const { Session, deviceToDcs, exportToDevice, relayConfigChanged } = await import('./session')
+const { PortNotFoundError } = await import('./serial')
+const { nodeRosterRequest } = await import('@shared/nodes')
+const { DEFAULT_CONFIG } = await import('@shared/ipc')
 
 const ascii = (s: string) => Buffer.from(s, 'ascii')
 
 function bridgeSession() {
   const session = new Session(() => {})
   session.setConfig({ sourceMode: 'bridge' })
+  session.open()
   session.start()
   const serial = FakeSerial.last!
   const transport = FakeTransport.last!
@@ -123,7 +145,7 @@ describe('Session de-mux boundary', () => {
     const { session, serial, transport } = bridgeSession()
     serial.dataCb(ascii('MASTER_ARM 1\n'))
     expect(Buffer.concat(transport.sent)).toEqual(ascii('MASTER_ARM 1\n'))
-    session.stop()
+    session.shutdown()
   })
 
   it('keeps calibration frames out of the DCS command socket', () => {
@@ -132,7 +154,7 @@ describe('Session de-mux boundary', () => {
     serial.dataCb(Buffer.concat([ascii('ARM 1\n'), frame, ascii('FLAPS 0\n')]))
     // The frame is consumed; the text either side rejoins.
     expect(Buffer.concat(transport.sent)).toEqual(ascii('ARM 1\nFLAPS 0\n'))
-    session.stop()
+    session.shutdown()
   })
 
   it('forwards bytes the de-mux was still holding when the port closes', () => {
@@ -151,7 +173,7 @@ describe('Session de-mux boundary', () => {
       Buffer.concat(transport.sent),
       'the held candidate belongs to the DCS stream, not the bin'
     ).toEqual(Buffer.concat([ascii('LANDING 1\n'), Buffer.from([0xaa, 0x53])]))
-    session.stop()
+    session.shutdown()
   })
 
   it('does not re-feed flushed bytes through the de-mux', () => {
@@ -161,7 +183,7 @@ describe('Session de-mux boundary', () => {
     serial.dataCb(Buffer.from([0xaa, 0x53, 0x4b]))
     serial.closeCb()
     expect(Buffer.concat(transport.sent)).toEqual(Buffer.from([0xaa, 0x53, 0x4b]))
-    session.stop()
+    session.shutdown()
   })
 
   it('emits nothing extra when the de-mux was holding nothing', () => {
@@ -170,7 +192,7 @@ describe('Session de-mux boundary', () => {
     const before = Buffer.concat(transport.sent)
     serial.closeCb()
     expect(Buffer.concat(transport.sent)).toEqual(before)
-    session.stop()
+    session.shutdown()
   })
 })
 
@@ -181,8 +203,10 @@ describe('node telemetry tap', () => {
       const pushes: [string, unknown][] = []
       const session = new Session((c, p) => pushes.push([c, p]))
       session.setConfig({ sourceMode: 'bridge' })
+      session.open()
       session.start()
       const serial = FakeSerial.last!
+      serial.openCb('/dev/fake') // node pushes flow only while the link is up
       const transport = FakeTransport.last!
       transport.sent.length = 0
 
@@ -211,7 +235,7 @@ describe('node telemetry tap', () => {
       expect(pushes.filter(([c]) => c === 'nodes:telemetry')).toHaveLength(1)
       vi.advanceTimersByTime(1000)
       expect(pushes.filter(([c]) => c === 'nodes:telemetry')).toHaveLength(2)
-      session.stop()
+      session.shutdown()
     } finally {
       vi.useRealTimers()
     }
@@ -231,6 +255,7 @@ describe('HID reporting latency', () => {
       if (ch === 'hid:report') hidEvents.push([...(payload as { buttons: boolean[] }).buttons])
     })
     session.setConfig({ sourceMode: 'bridge' })
+    session.open()
     session.start()
 
     const { HidReader } = (await import('./hid')) as unknown as {
@@ -248,7 +273,7 @@ describe('HID reporting latency', () => {
     vi.advanceTimersByTime(15)
     expect(hidEvents.at(-1), 'the release still lands').toEqual([false])
 
-    session.stop()
+    session.shutdown()
     vi.useRealTimers()
   })
 })
@@ -273,6 +298,313 @@ describe('HID recovery after an unplug', () => {
     serial.openCb('/dev/fake') // the reconnect
     expect(hid.reopened).toBe(1)
 
+    session.shutdown()
+  })
+})
+
+type Push = [string, unknown]
+
+/** A session with the link open (app launched), the relay not started, and a recorder of pushes. */
+function launched(config: Parameters<InstanceType<typeof Session>['setConfig']>[0] = {}) {
+  const pushes: Push[] = []
+  const session = new Session((c, p) => pushes.push([c, p]))
+  session.setConfig(config)
+  session.open()
+  const serial = FakeSerial.last!
+  const of = (channel: string) => pushes.filter(([c]) => c === channel).map(([, p]) => p)
+  return { session, serial, pushes, of }
+}
+
+const HID = async () =>
+  ((await import('./hid')) as unknown as { HidReader: { last?: { stopped: boolean } } }).HidReader
+    .last!
+
+describe('device link is independent of the relay (#69)', () => {
+  beforeEach(() => {
+    FakeSerial.last = undefined
+    FakeTransport.last = undefined
+  })
+
+  it('opens on launch with no relay started', () => {
+    const { session, serial, of } = launched()
+    expect(serial, 'the port is opened without start()').toBeDefined()
+    expect(session.status().device.state).toBe('scanning')
+    serial.openCb('/dev/fake')
+    expect(session.status().device).toMatchObject({ state: 'connected', portPath: '/dev/fake' })
+    expect(session.status().running).toBe(false)
+    expect(of('device:status').at(-1)).toMatchObject({ state: 'connected' })
+    session.shutdown()
+  })
+
+  it('does not open the port on launch when auto-connect is off', () => {
+    const { session, serial } = launched({ autoConnect: false })
+    expect(serial).toBeUndefined()
+    expect(session.status().device.state).toBe('disconnected')
+    session.link.connect() // the explicit Connect still works
+    expect(FakeSerial.last).toBeDefined()
+    session.shutdown()
+  })
+
+  it('leaves serial, HID and calibration up when the relay stops', async () => {
+    const { session, serial } = launched({ sourceMode: 'bridge' })
+    serial.openCb('/dev/fake')
+    session.start()
     session.stop()
+    expect(serial.stopped).toBe(false)
+    expect((await HID()).stopped).toBe(false)
+    expect(session.status().device.state).toBe('connected')
+    // CalLink is still attached: an exchange is attempted rather than refused as offline.
+    const hello = session.link.calHello()
+    session.shutdown() // fails the in-flight exchange
+    const r = await hello
+    expect(r.ok ? 'ok' : r.kind).not.toBe('offline')
+  })
+
+  it('polls the node roster while the relay is stopped', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial } = launched()
+      serial.openCb('/dev/fake')
+      serial.written.length = 0
+      vi.advanceTimersByTime(5000)
+      expect(serial.written).toContainEqual(Buffer.from(nodeRosterRequest()))
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not write the roster request while the link is down', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial } = launched()
+      vi.advanceTimersByTime(5000)
+      expect(serial.written).toEqual([])
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps node pushes flowing after the relay stops (#71 finding 17)', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial, of } = launched({ sourceMode: 'bridge' })
+      serial.openCb('/dev/fake')
+      session.start()
+      session.stop()
+      serial.dataCb(ascii('_NODE_TELEM 030100E02E182EBC02\n'))
+      vi.advanceTimersByTime(250)
+      expect(of('nodes:telemetry')).toHaveLength(1)
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops node pushes while unplugged, without clearing them', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial, of } = launched()
+      serial.openCb('/dev/fake')
+      vi.advanceTimersByTime(250)
+      const models = of('nodes:model').length
+      const telem = of('nodes:telemetry').length
+      serial.closeCb()
+      serial.dataCb(ascii('_NODE_TELEM 030100E02E182EBC02\n')) // a late chunk
+      vi.advanceTimersByTime(2000)
+      expect(of('nodes:model'), 'no empty model pushed on close').toHaveLength(models)
+      expect(of('nodes:telemetry')).toHaveLength(telem)
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resets node state on link open, not on relay start (#71 finding 6)', () => {
+    const { session, serial } = launched({ sourceMode: 'bridge' })
+    const roster = vi.spyOn(session.link.roster, 'reset')
+    const nodes = vi.spyOn(session.link.nodes, 'reset')
+    serial.openCb('/dev/fake')
+    expect(roster).toHaveBeenCalledTimes(1)
+    expect(nodes).toHaveBeenCalledTimes(1)
+    session.start()
+    session.stop()
+    session.start()
+    expect(roster, 'relay Start must not wipe the roster').toHaveBeenCalledTimes(1)
+    expect(nodes, 'relay Start must not wipe the node model').toHaveBeenCalledTimes(1)
+    serial.openCb('/dev/fake') // the reconnect
+    expect(roster).toHaveBeenCalledTimes(2)
+    expect(nodes).toHaveBeenCalledTimes(2)
+    session.shutdown()
+  })
+
+  it('reports an absent board as no-device, not as an error', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial, of } = launched()
+      serial.errorCb(new PortNotFoundError())
+      serial.errorCb(new PortNotFoundError())
+      vi.advanceTimersByTime(100)
+      expect(session.status().device.state).toBe('no-device')
+      expect(of('device:status'), 'a repeated not-found is not news').toHaveLength(2) // scanning, no-device
+      const logged = of('log:batch').flat() as LogRow[]
+      expect(logged.filter((r) => r.dir === 'sys')).toEqual([])
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports a port that will not open as an error', () => {
+    const { session, serial } = launched()
+    serial.errorCb(new Error('Access denied'))
+    expect(session.status().device).toMatchObject({ state: 'error', detail: 'Access denied' })
+    session.shutdown()
+  })
+
+  it('reconnects after a drop, and stays down after one when auto-connect is off', () => {
+    const on = launched()
+    on.serial.openCb('/dev/fake')
+    on.serial.closeCb()
+    expect(on.session.status().device.state).toBe('reconnecting')
+    expect(on.serial.stopped).toBe(false)
+    on.session.shutdown()
+
+    const off = launched()
+    off.serial.openCb('/dev/fake')
+    off.session.setConfig({ autoConnect: false }) // an open link is left alone
+    expect(off.session.status().device.state).toBe('connected')
+    off.serial.closeCb()
+    expect(off.session.status().device.state).toBe('disconnected')
+    expect(off.serial.stopped, 'the port is released, not retried').toBe(true)
+    off.session.shutdown()
+  })
+
+  it('connects again when auto-connect is turned back on', () => {
+    const { session } = launched({ autoConnect: false })
+    expect(FakeSerial.last).toBeUndefined()
+    session.setConfig({ autoConnect: true })
+    expect(FakeSerial.last).toBeDefined()
+    expect(session.status().device.state).toBe('scanning')
+    session.shutdown()
+  })
+
+  it('disconnect releases the port until connect, whatever auto-connect says', async () => {
+    const { session, serial } = launched()
+    serial.openCb('/dev/fake')
+    session.link.disconnect()
+    expect(serial.stopped).toBe(true)
+    expect((await HID()).stopped).toBe(true)
+    expect(session.status().device.state).toBe('disconnected')
+    session.link.connect()
+    expect(FakeSerial.last).not.toBe(serial)
+    expect(session.status().device.state).toBe('scanning')
+    session.shutdown()
+  })
+
+  it('keeps the relay running through a device drop', () => {
+    const { session, serial } = launched({ sourceMode: 'bridge' })
+    serial.openCb('/dev/fake')
+    session.start()
+    serial.closeCb()
+    expect(session.status().running, 'only Stop relay ends the relay').toBe(true)
+    session.shutdown()
+  })
+})
+
+describe('relay forwarding by source mode (#69)', () => {
+  beforeEach(() => {
+    FakeSerial.last = undefined
+    FakeTransport.last = undefined
+  })
+
+  it('Monitor is read-only even though the port is open', () => {
+    const { session, serial } = launched({ sourceMode: 'monitor' })
+    serial.openCb('/dev/fake')
+    session.start()
+    const transport = FakeTransport.last!
+    serial.written.length = 0
+    transport.exportCb(Buffer.from([0x55, 0x55, 0x55, 0x55]))
+    expect(serial.written, 'no export reaches the device').toEqual([])
+    serial.dataCb(ascii('MASTER_ARM 1\n'))
+    expect(transport.sent, 'no panel command reaches DCS').toEqual([])
+    session.shutdown()
+  })
+
+  it('Bridge forwards both ways while relaying', () => {
+    const { session, serial } = launched({ sourceMode: 'bridge' })
+    serial.openCb('/dev/fake')
+    session.start()
+    const transport = FakeTransport.last!
+    serial.written.length = 0
+    transport.exportCb(Buffer.from([0x55, 0x55]))
+    expect(Buffer.concat(serial.written)).toEqual(Buffer.from([0x55, 0x55]))
+    serial.dataCb(ascii('MASTER_ARM 1\n'))
+    expect(Buffer.concat(transport.sent)).toEqual(ascii('MASTER_ARM 1\n'))
+    session.shutdown()
+  })
+
+  it('logs panel commands while stopped, without sending them anywhere', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial, of } = launched({ sourceMode: 'bridge' })
+      serial.openCb('/dev/fake')
+      serial.dataCb(ascii('MASTER_ARM 1\n'))
+      vi.advanceTimersByTime(50)
+      const logged = of('log:batch').flat() as LogRow[]
+      expect(logged).toContainEqual(expect.objectContaining({ name: 'MASTER_ARM', value: '1' }))
+      expect(FakeTransport.last).toBeUndefined()
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('writes export to the device in Bridge, and in Replay only when driving it', () => {
+    const cfg = (sourceMode: 'bridge' | 'monitor' | 'replay', replayDriveSerial = false) => ({
+      sourceMode,
+      replayDriveSerial
+    })
+    expect(exportToDevice(cfg('bridge'))).toBe(true)
+    expect(exportToDevice(cfg('monitor', true))).toBe(false)
+    expect(exportToDevice(cfg('replay'))).toBe(false)
+    expect(exportToDevice(cfg('replay', true))).toBe(true)
+    expect(deviceToDcs(cfg('bridge'), true)).toBe(true)
+    expect(deviceToDcs(cfg('bridge'), false)).toBe(false)
+    expect(deviceToDcs(cfg('monitor'), true)).toBe(false)
+    expect(deviceToDcs(cfg('replay', true), true)).toBe(false)
+  })
+
+  it('restarts a running relay only for settings the relay is built from', () => {
+    const base = { ...DEFAULT_CONFIG }
+    expect(relayConfigChanged(base, { ...base, host: '10.0.0.2' })).toBe(true)
+    expect(relayConfigChanged(base, { ...base, sourceMode: 'bridge' })).toBe(true)
+    expect(relayConfigChanged(base, { ...base, autoConnect: false })).toBe(false)
+    expect(relayConfigChanged(base, { ...base, debugMode: true })).toBe(false)
+
+    const { session } = launched()
+    session.start()
+    const first = FakeTransport.last
+    session.setConfig({ autoConnect: false })
+    expect(FakeTransport.last, 'toggling auto-connect must not restart the relay').toBe(first)
+    session.shutdown()
+  })
+})
+
+describe('relay state (#69)', () => {
+  it('reports the stream separately from the device', () => {
+    const { session, of } = launched({ sourceMode: 'bridge' })
+    session.start()
+    expect(of('relay:state').at(-1)).toEqual({ running: true, stream: 'connecting' })
+    FakeTransport.last!.connectedCb(true)
+    expect(of('relay:state').at(-1)).toEqual({ running: true, stream: 'connected' })
+    FakeTransport.last!.connectedCb(false)
+    expect(of('relay:state').at(-1)).toEqual({ running: true, stream: 'reconnecting' })
+    session.stop()
+    expect(of('relay:state').at(-1)).toEqual({ running: false })
+    expect(session.status().relay).toEqual({ running: false })
+    expect(session.status().device.state, 'the device knows nothing of the relay').toBe('scanning')
+    session.shutdown()
   })
 })

@@ -1,4 +1,5 @@
 import { useStore, fmtBytes, fmtUptime } from '../store'
+import { isLinkUp } from '@shared/ipc'
 import logo from '../assets/logo.png'
 
 const C = 289.03 // 2·π·46
@@ -58,7 +59,7 @@ export function Overview() {
   const linkSub =
     s.transport === 'tcp' ? `${s.host}:${s.port} · remote` : '239.255.50.10:5010 · local'
 
-  const connected = s.deviceState === 'connected' || s.deviceState === 'relaying'
+  const connected = isLinkUp(s.deviceState)
   const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
   const acftSub = s.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
 

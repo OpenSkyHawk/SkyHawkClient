@@ -1,10 +1,12 @@
 import { create } from 'zustand'
+import { isLinkUp } from '@shared/ipc'
 import type {
   AircraftStatus,
   AppConfig,
   CalSnapshot,
   DcsTransport,
   DeviceState,
+  StreamState,
   LogRow as IpcLogRow,
   TelemetryReadout
 } from '@shared/ipc'
@@ -86,8 +88,10 @@ export interface AppState {
   transport: Transport
   host: string
   port: string
-  autoReconnect: boolean
+  autoConnect: boolean
   relaying: boolean
+  /** Where the DCS-BIOS stream stands while relaying; undefined when stopped. */
+  relayStream?: StreamState
   logPaused: boolean
   autoscroll: boolean
   rawMode: boolean
@@ -161,7 +165,7 @@ export interface AppState {
         | 'transport'
         | 'host'
         | 'port'
-        | 'autoReconnect'
+        | 'autoConnect'
         | 'replayDriveSerial'
         | 'debugMode'
       >
@@ -186,7 +190,7 @@ function buildConfig(s: AppState): Partial<AppConfig> {
     transport: TRANSPORT_TO_IPC[s.transport],
     host: s.host,
     commandPort: Number(s.port) || 7778,
-    autoReconnect: s.autoReconnect,
+    autoConnect: s.autoConnect,
     replayDriveSerial: s.replayDriveSerial,
     debugMode: s.debugMode
   }
@@ -198,7 +202,7 @@ export const useStore = create<AppState>((set, get) => ({
   transport: 'tcp',
   host: '127.0.0.1',
   port: '7778',
-  autoReconnect: true,
+  autoConnect: true,
   relaying: false,
   logPaused: false,
   autoscroll: true,
@@ -328,7 +332,7 @@ export const useStore = create<AppState>((set, get) => ({
         transport: transport ?? 'tcp',
         host: cfg.host,
         port: String(cfg.commandPort),
-        autoReconnect: cfg.autoReconnect,
+        autoConnect: cfg.autoConnect,
         replayDriveSerial: cfg.replayDriveSerial,
         debugMode: cfg.debugMode
       })
@@ -339,6 +343,7 @@ export const useStore = create<AppState>((set, get) => ({
     void api.getStatus().then((st) =>
       set({
         relaying: st.running,
+        relayStream: st.relay.stream,
         deviceState: st.device.state,
         devicePort: st.device.portPath,
         // cal:data is only pushed when the port opens. A renderer reload builds a fresh store
@@ -361,14 +366,14 @@ export const useStore = create<AppState>((set, get) => ({
       api.on('device:status', (d) => {
         set({ deviceState: d.state, devicePort: d.portPath })
         // Calibration describes the gateway currently attached, so it is only trustworthy while
-        // the link is up. `relaying` is the one state that means the serial port is open;
-        // everything else — reconnecting after a close, error, no-device — means the snapshot
-        // may describe a board that is gone. Clearing only on `no-device` would leave the old
-        // board's badges on screen through a reconnect, and if the next board runs firmware
-        // predating the calibration protocol it never sends `cal:data`, so they would never be
-        // corrected.
-        if (d.state !== 'relaying') set({ cal: undefined })
+        // the link is up. Everything else — reconnecting after a close, error, no-device,
+        // disconnected — means the snapshot may describe a board that is gone. Clearing only on
+        // `no-device` would leave the old board's badges on screen through a reconnect, and if
+        // the next board runs firmware predating the calibration protocol it never sends
+        // `cal:data`, so they would never be corrected.
+        if (!isLinkUp(d.state)) set({ cal: undefined })
       }),
+      api.on('relay:state', (r) => set({ relaying: r.running, relayStream: r.stream })),
       api.on('cal:data', (c) => set({ cal: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:status', (n) => set({ nodes: n })),
