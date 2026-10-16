@@ -164,12 +164,27 @@ export function prefill(e: NodeModelEntry, kind: NodeKind): AdoptForm {
   return { name: r.name, console: r.console, pduId: kind === 'pdu' ? null : r.pduId }
 }
 
-/** Registry boards waiting to be added with their defaults — "Add all N from NODE_IDS.md". */
-export function registrySpecs(queue: NodeView[]): { nodeId: number; spec: AdoptSpec }[] {
+/**
+ * "Add all N panel groups from NODE_IDS.md" (#93): the waiting registry panel groups. PDUs are added
+ * one by one. A board whose form you changed is added as its form says (None included — that is a
+ * choice); an untouched one with its defaults, keeping its default PDU only if that PDU is already
+ * in your cockpit (`views`), else None — the PDU choice stays explicit. An unfinished form skips it.
+ */
+export function registrySpecs(
+  queue: NodeView[],
+  views: NodeView[],
+  edits: ReadonlyMap<number, AdoptForm> = new Map()
+): { nodeId: number; spec: AdoptSpec }[] {
+  const inCockpit = (id: number | null) =>
+    id !== null &&
+    views.some((v) => v.entry.nodeId === id && v.entry.kind === 'pdu' && v.entry.source !== 'new')
   const out: { nodeId: number; spec: AdoptSpec }[] = []
   for (const v of queue) {
-    const kind = adoptability(v.entry).kind
-    const spec = v.entry.registry && kind ? adoptSpec(kind, prefill(v.entry, kind)) : null
+    if (!v.entry.registry || adoptability(v.entry).kind !== 'panel') continue
+    const edited = edits.get(v.entry.nodeId)
+    const form = prefill(v.entry, 'panel')
+    const pduId = typeof form.pduId === 'number' && inCockpit(form.pduId) ? form.pduId : null
+    const spec = adoptSpec('panel', edited ?? { ...form, pduId })
     if (spec) out.push({ nodeId: v.entry.nodeId, spec })
   }
   return out

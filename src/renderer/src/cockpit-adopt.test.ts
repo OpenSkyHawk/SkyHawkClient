@@ -298,11 +298,53 @@ describe('registry onboarding (#93)', () => {
     expect(ev.registry).toBe('NODE_IDS.md: Center_Armament, Instrument panel')
   })
 
-  it('"Add all": every waiting registry board with its defaults, never an unregistered one', () => {
-    const views = nodeViews(model([reg(1), fresh(41, { identified: 'panel' })]), [])
-    expect(registrySpecs(views)).toEqual([
-      { nodeId: 1, spec: { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } }
+  it('"Add all": registry panel groups only, linked only to a PDU already in your cockpit', () => {
+    const pduIn = fresh(5, {
+      source: 'registry',
+      kind: 'pdu',
+      identified: 'pdu',
+      name: 'PDU_Center'
+    })
+    const nav = reg(2, {
+      name: 'Right_Navigation',
+      registry: { name: 'Right_Navigation', console: 'Right', pduId: 4, pduName: 'PDU_Right' }
+    })
+    const newPdu = reg(3, {
+      kind: 'pdu',
+      identified: 'pdu',
+      registry: { name: 'PDU_Left', console: 'Left', pduId: null }
+    })
+    const queue = nodeViews(model([reg(1), nav, newPdu, fresh(41, { identified: 'panel' })]), [])
+    const views = nodeViews(model([pduIn, reg(1), nav, newPdu]), [])
+    expect(registrySpecs(queue, views)).toEqual([
+      { nodeId: 1, spec: { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } },
+      // PDU_Right isn't in your cockpit: no silent link.
+      {
+        nodeId: 2,
+        spec: { name: 'Right_Navigation', console: 'Right', pduId: null, kind: 'panel' }
+      }
+    ]) // the PDU (3) and the unregistered board (41) are added one by one
+  })
+
+  it('"Add all" takes a form you changed — None, a name, even a PDU not added', () => {
+    const queue = nodeViews(model([reg(1), reg(2, { name: 'Right_Navigation' })]), [])
+    const views = nodeViews(
+      model([fresh(5, { source: 'registry', kind: 'pdu', name: 'PDU_Center' })]),
+      []
+    )
+    const edits = new Map([
+      [1, { name: 'Arm', console: 'Center', pduId: null }], // None, on purpose
+      [2, { name: 'Nav', console: 'Right', pduId: 4 }] // its PDU, chosen though not added
     ])
+    expect(
+      registrySpecs(queue, views, edits).map((b) => [b.nodeId, b.spec.name, b.spec.pduId])
+    ).toEqual([
+      [1, 'Arm', null],
+      [2, 'Nav', 4]
+    ])
+    // A form left unfinished ("Choose…") is not added in bulk.
+    const half = new Map([[1, { name: 'Arm', console: 'Center', pduId: '' as const }]])
+    expect(registrySpecs(queue, views, half).map((b) => b.nodeId)).toEqual([2])
   })
 })
 

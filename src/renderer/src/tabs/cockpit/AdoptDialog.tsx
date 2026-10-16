@@ -11,7 +11,8 @@ import {
   nextSelection,
   prefill,
   registrySpecs,
-  seenAgo
+  seenAgo,
+  type AdoptForm as FormValues
 } from '../../cockpit-adopt'
 import { CONSOLE_OPTIONS, powerZoneOptions } from '../../cockpit-panels'
 import { useModalFocus } from '../../useModalFocus'
@@ -55,8 +56,11 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
     if (queue.length === 0) onClose()
   }, [queue.length, onClose])
 
-  // "Add all N from NODE_IDS.md": every waiting registry board, with its defaults.
-  const bulk = registrySpecs(queue)
+  // "Add all N panel groups from NODE_IDS.md": PDUs one by one, links only to PDUs in your cockpit.
+  // Each board's form, as you left it, while the dialog is open: switching rows keeps it, and
+  // "Add all" takes it (None included) over the NODE_IDS.md defaults.
+  const [edits, setEdits] = useState<ReadonlyMap<number, FormValues>>(new Map())
+  const bulk = registrySpecs(queue, props.views, edits)
   const [bulkError, setBulkError] = useState('')
   const addAll = async () => {
     setBulkError('')
@@ -138,6 +142,8 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
             views={props.views}
             dropped={dropped.has(current.entry.nodeId)}
             position={`${ids.indexOf(current.entry.nodeId) + 1} of ${ids.length}`}
+            form={edits.get(current.entry.nodeId)}
+            onForm={(f) => setEdits(new Map(edits).set(current.entry.nodeId, f))}
             bulk={bulk.length > 1 ? bulk.length : 0}
             bulkError={bulkError}
             onAddAll={() => void addAll()}
@@ -155,8 +161,11 @@ function AdoptForm(props: {
   views: NodeView[]
   dropped: boolean
   position: string
-  /** Registry boards waiting (2 or more): offer "Add all N from NODE_IDS.md". */
+  /** Registry panel groups waiting (2 or more): offer "Add all N panel groups from NODE_IDS.md". */
   bulk: number
+  /** This board's form as you left it; undefined = not touched yet (pre-fill / blank). */
+  form?: FormValues
+  onForm: (f: FormValues) => void
   bulkError: string
   onAddAll: () => void
   onDone: () => void
@@ -167,10 +176,11 @@ function AdoptForm(props: {
   // Only a node identified as a PDU or a panel group gets the form; anything else is shown as-is.
   const able = adoptability(e)
   const kind = able.kind
-  const start = kind ? prefill(e, kind) : prefill({ ...e, registry: undefined }, 'panel')
-  const [name, setName] = useState(start.name)
-  const [con, setCon] = useState(start.console)
-  const [pduId, setPduId] = useState<number | null | ''>(start.pduId)
+  const form =
+    props.form ?? (kind ? prefill(e, kind) : prefill({ ...e, registry: undefined }, 'panel'))
+  const { name, console: con, pduId } = form
+  const setName = (v: string) => props.onForm({ ...form, name: v })
+  const setPduId = (v: number | null | '') => props.onForm({ ...form, pduId: v })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const ev = adoptEvidence(props.view)
@@ -243,10 +253,7 @@ function AdoptForm(props: {
                   id="ad-console"
                   className="input"
                   value={con}
-                  onChange={(ev) => {
-                    setCon(ev.target.value)
-                    setPduId('')
-                  }}
+                  onChange={(ev) => props.onForm({ ...form, console: ev.target.value, pduId: '' })}
                 >
                   <option value="">Choose…</option>
                   {CONSOLE_OPTIONS.map((c) => (
@@ -317,7 +324,7 @@ function AdoptForm(props: {
         <span className="hint ad__pos">{props.position}</span>
         {props.bulk > 0 && (
           <button className="toolbtn" disabled={busy} onClick={props.onAddAll}>
-            Add all {props.bulk} from NODE_IDS.md
+            Add all {props.bulk} panel groups from NODE_IDS.md
           </button>
         )}
         <button
