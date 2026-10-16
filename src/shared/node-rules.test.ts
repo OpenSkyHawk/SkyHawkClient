@@ -99,6 +99,31 @@ describe('availability', () => {
     expect(m.hidden).toEqual([2])
     expect(m.ignored).toEqual([1])
   })
+
+  // Review of #85: Settings › Hidden nodes showed registry names, not what the Cockpit showed.
+  it('lists each hidden node with the name and console the Cockpit showed', () => {
+    const file: NodeMappingFile = {
+      version: 1,
+      nodes: {
+        2: { hidden: true, name: 'Nav_Repeater', console: 'Left' },
+        41: { hidden: true, name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: 3 }
+      },
+      ignored: []
+    }
+    const m = buildNodeModel(input({ file, rosterCompleteAt: 0 }))
+    expect(m.hidden).toEqual([2, 41])
+    expect(m.hiddenNodes).toEqual([
+      { nodeId: 2, name: 'Nav_Repeater', console: 'Left' },
+      { nodeId: 41, name: 'Left_Lights', console: 'Left' }
+    ])
+  })
+
+  it('a hidden registry node with no overrides keeps its registry name', () => {
+    const file: NodeMappingFile = { version: 1, nodes: { 2: { hidden: true } }, ignored: [] }
+    expect(buildNodeModel(input({ file })).hiddenNodes).toEqual([
+      { nodeId: 2, name: 'Right_Navigation', console: 'Right' }
+    ])
+  })
 })
 
 describe('new-node detection', () => {

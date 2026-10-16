@@ -103,6 +103,7 @@ const model = (nodes: NodeModelEntry[]): NodeModel => ({
   ignored: [],
   ignoredNodes: [],
   hidden: [],
+  hiddenNodes: [],
   rosterComplete: true
 })
 

@@ -77,6 +77,15 @@ export interface IgnoredNode {
   lastSeen?: 'now' | number
 }
 
+/** One hidden node, as Settings › Hidden nodes lists it: what the Cockpit called it. */
+export interface HiddenNode {
+  nodeId: number
+  /** Effective name: the user's own (renamed or adopted), else the registry's. */
+  name: string
+  /** Effective console; '' for an adopted node placed nowhere. */
+  console: string
+}
+
 export interface NodeModel {
   nodes: NodeModelEntry[]
   outages: PduOutage[]
@@ -87,6 +96,8 @@ export interface NodeModel {
   ignoredNodes: IgnoredNode[]
   /** Hidden until they report again — left out of `nodes`. */
   hidden: number[]
+  /** The same ids with the name and console the Cockpit showed (the hidden nodes are not in `nodes`). */
+  hiddenNodes: HiddenNode[]
   /**
    * The first complete roster since the session started has arrived. Stays false when PanelBridge
    * never ends a roster reply (node status not built into its firmware): registry nodes then stay
@@ -116,10 +127,12 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
 
   const nodes: NodeModelEntry[] = []
   const hidden: number[] = []
+  const hiddenNodes: HiddenNode[] = []
   for (const nodeId of ids) {
     const m = mapping.get(nodeId)
     if (m?.hidden) {
       hidden.push(nodeId)
+      hiddenNodes.push({ nodeId, name: m.name, console: m.console })
       continue
     }
     const st = roster.get(nodeId)
@@ -165,6 +178,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     ignored: [...i.file.ignored],
     ignoredNodes: i.file.ignored.map((id) => ignoredNode(i, id, roster.get(id), telem.get(id))),
     hidden,
+    hiddenNodes,
     rosterComplete: complete
   }
 }

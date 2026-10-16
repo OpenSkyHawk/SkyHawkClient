@@ -115,27 +115,23 @@ describe('import texts', () => {
 })
 
 describe('hiddenRow (#76)', () => {
-  const registry: NodeRegistryInfo = {
-    file: 'Firmware/NODE_IDS.md',
-    commit: 'abc',
-    date: '2026-10-01',
-    nodes: [{ nodeId: 2, name: 'Right_Navigation', console: 'Right', kind: 'panel' }]
-  }
-
-  it('names a registry node with its console', () => {
-    expect(hiddenRow(2, registry)).toEqual({
+  it('uses the name and console the Cockpit showed: a renamed registry node', () => {
+    expect(hiddenRow({ nodeId: 2, name: 'Nav_Repeater', console: 'Left' })).toEqual({
       nodeId: 2,
-      label: 'Right_Navigation',
-      desc: 'Right console · returns when it reports again'
+      label: 'Nav_Repeater',
+      desc: 'Left console · returns when it reports again'
     })
   })
 
-  it('an adopted node is not in the registry, and neither is anything before it loads', () => {
-    expect(hiddenRow(41, registry)).toEqual({
-      nodeId: 41,
-      label: 'Node 41',
-      desc: 'returns when it reports again'
-    })
-    expect(hiddenRow(2).label).toBe('Node 2')
+  it('an adopted node keeps the name the user gave it', () => {
+    expect(hiddenRow({ nodeId: 41, name: 'Left_Lights', console: 'Left' }).label).toBe(
+      'Left_Lights'
+    )
+  })
+
+  it('no console, no console part', () => {
+    expect(hiddenRow({ nodeId: 41, name: 'Spare', console: '' }).desc).toBe(
+      'returns when it reports again'
+    )
   })
 })

@@ -101,6 +101,7 @@ const model = (nodes: NodeModelEntry[], outages: PduOutage[] = []): NodeModel =>
   ignored: [],
   ignoredNodes: [],
   hidden: [],
+  hiddenNodes: [],
   rosterComplete: true
 })
 

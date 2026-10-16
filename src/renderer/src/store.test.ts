@@ -20,6 +20,7 @@ const EMPTY_MODEL: NodeModel = {
   ignored: [],
   ignoredNodes: [],
   hidden: [],
+  hiddenNodes: [],
   rosterComplete: false
 }
 let nodesSnap: NodeSnapshot = { model: EMPTY_MODEL, telemetry: [] }

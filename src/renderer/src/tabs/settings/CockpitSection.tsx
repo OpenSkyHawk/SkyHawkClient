@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import type { NodeRegistryInfo } from '@shared/ipc'
+import { useState } from 'react'
 import { parsePsuLimit, PSU_PRESETS, type PsuLimits } from '@shared/psu'
 import { useStore } from '../../store'
 import { ResetDialog } from './ResetDialog'
@@ -111,19 +110,8 @@ function PowerSupply() {
  */
 function HiddenNodes() {
   const model = useNodeModel()
-  const [registry, setRegistry] = useState<NodeRegistryInfo>()
   const [error, setError] = useState<string>()
-  const hidden = model?.hidden ?? []
-
-  useEffect(() => {
-    let live = true
-    void window.skyhawk?.getNodeRegistry().then((r) => {
-      if (live) setRegistry(r)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
+  const hidden = model?.hiddenNodes ?? []
 
   const unhide = async (ids: number[]) => {
     setError(undefined)
@@ -142,23 +130,23 @@ function HiddenNodes() {
           className="toolbtn"
           style={{ marginLeft: 'auto' }}
           disabled={hidden.length === 0}
-          onClick={() => void unhide(hidden)}
+          onClick={() => void unhide(hidden.map((n) => n.nodeId))}
         >
           Un-hide all
         </button>
       </div>
       <div className="set-card">
-        {hidden.map((id) => {
-          const row = hiddenRow(id, registry)
+        {hidden.map((n) => {
+          const row = hiddenRow(n)
           return (
-            <div className="set-row ig" key={id}>
-              <div className="ig__id">#{id}</div>
+            <div className="set-row ig" key={n.nodeId}>
+              <div className="ig__id">#{n.nodeId}</div>
               <div style={{ flex: 1 }}>
                 <div className="set-row__label">{row.label}</div>
                 <div className="set-row__desc">{row.desc}</div>
               </div>
               <div>
-                <button className="browse" onClick={() => void unhide([id])}>
+                <button className="browse" onClick={() => void unhide([n.nodeId])}>
                   Un-hide
                 </button>
               </div>
