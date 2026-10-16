@@ -26,9 +26,12 @@ export function resetRowDesc(differing: number): string {
     : `${plural(differing, 'node')} ${differing === 1 ? 'differs' : 'differ'} from NODE_IDS.md — return them to their registry name, console and PDU`
 }
 
-/** The confirm button: "Reset 3 nodes", "Reset 3 nodes + forget 1", "Forget 1 adopted node". */
+/**
+ * The confirm button: "Reset 3 nodes", "Reset 3 nodes + forget 1", "Forget 1 adopted node", or a
+ * plain "Reset" (shown disabled) when there is nothing to do.
+ */
 export function resetButtonLabel(nodes: number, forget: number): string {
-  if (nodes === 0) return `Forget ${plural(forget, 'adopted node')}`
+  if (nodes === 0) return forget > 0 ? `Forget ${plural(forget, 'adopted node')}` : 'Reset'
   const reset = `Reset ${plural(nodes, 'node')}`
   return forget > 0 ? `${reset} + forget ${forget}` : reset
 }

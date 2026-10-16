@@ -20,6 +20,7 @@ describe('reset texts', () => {
     expect(resetButtonLabel(3, 0)).toBe('Reset 3 nodes')
     expect(resetButtonLabel(1, 2)).toBe('Reset 1 node + forget 2')
     expect(resetButtonLabel(0, 1)).toBe('Forget 1 adopted node')
+    expect(resetButtonLabel(0, 0)).toBe('Reset') // nothing to do: never "Forget 0 …"
   })
 })
 
