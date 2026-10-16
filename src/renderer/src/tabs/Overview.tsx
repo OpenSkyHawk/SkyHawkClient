@@ -1,5 +1,9 @@
-import { useStore, fmtBytes, fmtUptime } from '../store'
+import { useMemo } from 'react'
+import { useStore, fmtBytes, fmtUptime, type TabId } from '../store'
 import { isLinkUp, type DeviceState } from '@shared/ipc'
+import { attentionItems, healthBand, nodeViews } from '../cockpit'
+import { attentionSummary, cockpitTile, newDevices, newDevicesText } from '../overview'
+import { Dot } from './cockpit/Dot'
 import logo from '../assets/logo.png'
 
 const C = 289.03 // 2·π·46
@@ -18,6 +22,7 @@ const LINK_COLOR: Partial<Record<DeviceState, string>> = {
   reconnecting: 'var(--gold)',
   error: 'var(--red)'
 }
+const TILE_TONE = { ok: 'var(--green)', issue: 'var(--gold)', none: 'var(--muted)' } as const
 
 function Gauge({
   label,
@@ -78,7 +83,31 @@ export function Overview() {
   const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
   const acftSub = s.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
 
-  const tiles: { label: string; value: string; sub: string; color: string; open?: boolean }[] = [
+  // The Cockpit's own picture (#63), summed up for the tile and the banners (#65).
+  const views = useMemo(
+    () => (s.nodeModel ? nodeViews(s.nodeModel, s.nodeTelemetry) : []),
+    [s.nodeModel, s.nodeTelemetry]
+  )
+  const band = useMemo(() => healthBand(views), [views])
+  const cockpit = cockpitTile(band, connected)
+  const attention = useMemo(
+    () =>
+      connected && s.attentionBanner
+        ? attentionSummary(band, attentionItems(views, s.nodeModel?.outages ?? []))
+        : null,
+    [connected, s.attentionBanner, band, views, s.nodeModel]
+  )
+  const waiting = useMemo(() => newDevices(views, connected), [views, connected])
+  const waitingText = waiting && newDevicesText(waiting)
+
+  const tiles: {
+    label: string
+    value: string
+    sub: string
+    color: string
+    symbol?: 'off' | 'warn'
+    open?: { tab: TabId; title: string }
+  }[] = [
     {
       // The device link, not the relay (#69); the stream state rides underneath.
       label: 'Link',
@@ -91,7 +120,7 @@ export function Overview() {
           ? 'relay waiting — resumes when it connects'
           : 'stream stopped',
       color: LINK_COLOR[s.deviceState] ?? 'var(--muted)',
-      open: true
+      open: { tab: 'connection', title: 'Open the Connection tab' }
     },
     {
       label: 'Aircraft',
@@ -99,7 +128,15 @@ export function Overview() {
       sub: acftSub,
       color: s.aircraft.supported ? 'var(--text)' : 'var(--gold)'
     },
-    { label: 'DCS Link', value: link, sub: linkSub, color: 'var(--blue)' }
+    { label: 'DCS Link', value: link, sub: linkSub, color: 'var(--blue)' },
+    {
+      label: 'Cockpit',
+      value: cockpit.value,
+      sub: cockpit.sub,
+      color: TILE_TONE[cockpit.tone],
+      symbol: cockpit.symbol,
+      open: { tab: 'cockpit', title: 'Open the Cockpit tab' }
+    }
   ]
 
   const gaugeColor = (id: string, pct: number): string => {
@@ -164,15 +201,16 @@ export function Overview() {
               {...(t.open && {
                 role: 'button',
                 tabIndex: 0,
-                title: 'Open the Connection tab',
-                onClick: () => s.set({ tab: 'connection' }),
+                title: t.open.title,
+                onClick: () => s.set({ tab: t.open!.tab }),
                 onKeyDown: (e: React.KeyboardEvent) => {
-                  if (e.key === 'Enter' || e.key === ' ') s.set({ tab: 'connection' })
+                  if (e.key === 'Enter' || e.key === ' ') s.set({ tab: t.open!.tab })
                 }
               })}
             >
               <div className="tile__label">{t.label}</div>
               <div className="tile__value" style={{ color: t.color }}>
+                {t.symbol && <Dot state={t.symbol} />}
                 {t.value}
               </div>
               <div className="tile__sub">{t.sub}</div>
@@ -180,6 +218,27 @@ export function Overview() {
           ))}
         </div>
       </div>
+
+      {attention && (
+        <div className="warn-banner" role="status">
+          ⚠ <b>{attention.head}</b> — {attention.detail}.{' '}
+          <button className="wb__link" onClick={() => s.set({ tab: 'cockpit' })}>
+            Open Cockpit
+          </button>
+        </div>
+      )}
+      {waitingText && (
+        <div className="info-banner" role="status">
+          <Dot state="new" />
+          <span>
+            <b>{waitingText.head}</b> — {waitingText.detail}
+          </span>
+          {/* #87 points this at the Adopt dialog once its open state lives in the store. */}
+          <button className="ib__link" onClick={() => s.set({ tab: 'cockpit' })}>
+            Open Cockpit →
+          </button>
+        </div>
+      )}
 
       {!s.aircraft.supported && (
         <div className="warn-banner">
