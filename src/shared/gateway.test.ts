@@ -133,8 +133,22 @@ describe('gatewayEvents — rows read the status', () => {
 })
 
 describe('GatewayWatch — not responding', () => {
-  it('fires once a request goes unanswered for the full window', () => {
+  /** A watch whose Gateway has answered once since the port opened. */
+  const armed = (): GatewayWatch => {
     const w = new GatewayWatch()
+    w.answered('_NODE_STATUS_END', 0)
+    return w
+  }
+
+  it('never fires for a Gateway that has not answered since the port opened', () => {
+    const w = new GatewayWatch() // e.g. built without node status
+    w.asked(0)
+    expect(w.tick(GATEWAY_NO_ANSWER_MS * 10)).toEqual([])
+    expect(w.status()).toBeUndefined()
+  })
+
+  it('fires once a request goes unanswered for the full window', () => {
+    const w = armed()
     w.takeChanged()
     w.asked(1000)
     expect(w.tick(1000 + GATEWAY_NO_ANSWER_MS - 1)).toEqual([])
@@ -149,14 +163,14 @@ describe('GatewayWatch — not responding', () => {
   })
 
   it('counts from the oldest unanswered request — a later poll does not restart it', () => {
-    const w = new GatewayWatch()
+    const w = armed()
     w.asked(0)
     w.asked(GATEWAY_NO_ANSWER_MS - 1)
     expect(w.tick(GATEWAY_NO_ANSWER_MS)).toHaveLength(1)
   })
 
   it('any answer resets the clock; after not responding it logs "responding again"', () => {
-    const w = new GatewayWatch()
+    const w = armed()
     w.asked(0)
     expect(w.answered('_NODE_STATUS_END', 10)).toEqual([])
     expect(w.tick(GATEWAY_NO_ANSWER_MS + 10)).toEqual([])
@@ -169,7 +183,7 @@ describe('GatewayWatch — not responding', () => {
   })
 
   it('answering with a problem: responding again, then the problem', () => {
-    const w = new GatewayWatch()
+    const w = armed()
     w.asked(0)
     w.tick(GATEWAY_NO_ANSWER_MS)
     const out = [...w.answered('r', 6000), ...w.report(node0({ boff: true }), 'r', 6000)]
@@ -177,7 +191,7 @@ describe('GatewayWatch — not responding', () => {
   })
 
   it('a calibration exchange pauses the clock but never ends "not responding"', () => {
-    const w = new GatewayWatch()
+    const w = armed()
     w.asked(0)
     expect(w.tick(GATEWAY_NO_ANSWER_MS, true)).toEqual([])
     expect(w.tick(GATEWAY_NO_ANSWER_MS * 2)).toEqual([]) // nothing pending after the pause
@@ -188,13 +202,14 @@ describe('GatewayWatch — not responding', () => {
   })
 
   it('reset (port open / close) starts over', () => {
-    const w = new GatewayWatch()
+    const w = armed()
     w.asked(0)
     w.tick(GATEWAY_NO_ANSWER_MS)
     w.report(node0({ overheat: true }), 'r', 1)
     w.reset()
     expect(w.status()).toBeUndefined()
-    expect(w.tick(60_000)).toEqual([])
+    w.asked(60_000) // not armed again until it answers on the new port
+    expect(w.tick(70_000)).toEqual([])
   })
 })
 

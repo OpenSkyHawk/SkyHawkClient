@@ -743,7 +743,8 @@ describe('Gateway health (#94)', () => {
     try {
       const { session, serial } = launched()
       serial.openCb('/dev/fake') // seeds the first roster request
-      vi.advanceTimersByTime(4800)
+      serial.dataCb(ascii('_NODE_STATUS_END\n')) // answered: from here it can stop answering
+      vi.advanceTimersByTime(9800) // the 5 s poll goes out and is never answered
       expect(session.status().device.gateway).toBeUndefined()
       vi.advanceTimersByTime(400)
       expect(session.status().device).toMatchObject({
@@ -759,6 +760,20 @@ describe('Gateway health (#94)', () => {
         'client:Gateway: not responding · no answer for 5 s',
         'client:Gateway: responding again'
       ])
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never "not responding" for a Gateway that has not answered since the port opened', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial } = launched()
+      serial.openCb('/dev/fake') // e.g. firmware built without node status: no roster replies
+      vi.advanceTimersByTime(30_000)
+      expect(session.status().device.gateway).toBeUndefined()
+      expect(rows(session).some((r) => r.includes('not responding'))).toBe(false)
       session.shutdown()
     } finally {
       vi.useRealTimers()

@@ -6,8 +6,8 @@
 // The one owner of the Gateway's health: `gatewayStatus` decides severity, label, note and alert,
 // main computes it (GatewayWatch) and sends it on `device:status`, and every surface — pill,
 // popover, Overview alert, Cockpit Attention, event log — only reads it. Every alert is a flag the
-// Gateway raised itself; the one client-side rule is "not responding": a roster request unanswered
-// for GATEWAY_NO_ANSWER_MS while the port is open.
+// Gateway raised itself; the one client-side rule is "not responding": once it has answered since
+// the port opened, a roster request unanswered for GATEWAY_NO_ANSWER_MS while the port is open.
 import { faultLabel, STATUS_FLAGS, type LogEventInput, type StatusFlag } from './events'
 import type { NodeStatus } from './nodes'
 
@@ -194,6 +194,11 @@ export class GatewayWatch {
   private askedAt?: number
   private row?: NodeStatus
   private noAnswer = false
+  /**
+   * It has answered since the port opened. Only then can it stop answering: a Gateway that never
+   * answers (built without node status, PANELBRIDGE_NODE_STATUS off) is not "not responding".
+   */
+  private answeredOnce = false
   private current?: GatewayStatus
   private changed = true
 
@@ -202,6 +207,7 @@ export class GatewayWatch {
     this.askedAt = undefined
     this.row = undefined
     this.noAnswer = false
+    this.answeredOnce = false
     this.current = undefined
     this.changed = true
   }
@@ -214,6 +220,7 @@ export class GatewayWatch {
   /** Any `_NODE_STATUS` / `_NODE_STATUS_END` line: it answers. */
   answered(raw: string, now: number): LogEventInput[] {
     this.askedAt = undefined
+    this.answeredOnce = true
     if (!this.noAnswer) return []
     this.noAnswer = false
     return this.update(raw, now)
@@ -228,11 +235,13 @@ export class GatewayWatch {
   /**
    * Called on the link's flush tick while the port is open. `paused`: a calibration exchange holds
    * the link, and a roster request going unanswered then is not news, so the clock starts over.
-   * Clock only: "not responding" ends with an answer, never with a pause.
+   * Clock only: "not responding" ends with an answer, never with a pause. Armed by its first
+   * answer since the port opened.
    */
   tick(now: number, paused = false): LogEventInput[] {
     if (paused) this.askedAt = undefined
-    const silent = this.askedAt !== undefined && now - this.askedAt >= GATEWAY_NO_ANSWER_MS
+    const silent =
+      this.answeredOnce && this.askedAt !== undefined && now - this.askedAt >= GATEWAY_NO_ANSWER_MS
     if (this.noAnswer || !silent) return []
     this.noAnswer = true
     return this.update(`device: no roster reply for ${SECS} s`, now)
