@@ -1,11 +1,13 @@
-// Cockpit Adopt dialog (#77): the pure decisions behind it — queue order, what each new NODE_ID
-// is seen doing, when the form is complete, the identify row and where the selection goes next.
+// Cockpit Adopt dialog (#77; since #93 the onboarding for every board not in your cockpit): the
+// pure decisions behind it — queue order, what each new NODE_ID is seen doing, the registry
+// pre-fill, when the form is complete, the identify row and where the selection goes next.
 import type { AdoptSpec, NodeKind } from '@shared/node-mapping'
 import { reportedIdentity } from '@shared/node-kind'
 import type { NodeModelEntry } from '@shared/node-rules'
 import { displayCurrentMa } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
 import type { NodeView } from './cockpit'
+import { consoleLabel } from './cockpit-panels'
 import { fmtUptime } from './store'
 
 /**
@@ -77,12 +79,17 @@ export interface Evidence {
 /** "Detected as": the kind and the signal it came from. */
 function detectedAs(e: NodeModelEntry): string {
   const said = reportedIdentity(e.status?.nodeKind)
-  const how = said ? 'reported by the board' : 'PDU telemetry seen'
+  // Not reported (yet): a registry board's kind comes from NODE_IDS.md; else only PDU pages tell.
+  const how = said
+    ? 'reported by the board'
+    : e.registry
+      ? 'from NODE_IDS.md'
+      : 'PDU telemetry seen'
   switch (e.identified) {
     case 'pdu':
       return `PDU (${how})`
     case 'panel':
-      return 'panel group (reported by the board)'
+      return `panel group (${said ? 'reported by the board' : how})`
     case 'bridge':
       return 'SimGateway / PanelBridge (reported by the board)'
     case 'other':
@@ -102,7 +109,9 @@ export function adoptEvidence(v: NodeView): Evidence {
   const e = v.entry
   const st = e.status
   const detected = detectedAs(e)
-  const registry = 'not in NODE_IDS.md'
+  const registry = e.registry
+    ? `NODE_IDS.md: ${e.registry.name}, ${consoleLabel(e.registry.console)}`
+    : 'not in NODE_IDS.md'
   if (e.availability !== 'online' || !st) {
     return { detected, reporting: 'not reporting right now', registry }
   }
@@ -129,6 +138,27 @@ export interface AdoptForm {
   console: string
   /** Panels only. '' = not chosen yet; null = None (no PDU feeds it). */
   pduId: number | null | ''
+}
+
+/**
+ * Where the form starts (#93): a registry board pre-filled from NODE_IDS.md — name, console and its
+ * default PDU — so adding it is one click; a NODE_ID the registry does not know starts blank.
+ */
+export function prefill(e: NodeModelEntry, kind: NodeKind): AdoptForm {
+  const r = e.registry
+  if (!r) return { name: '', console: '', pduId: '' }
+  return { name: r.name, console: r.console, pduId: kind === 'pdu' ? null : r.pduId }
+}
+
+/** Registry boards waiting to be added with their defaults — "Add all N from NODE_IDS.md". */
+export function registrySpecs(queue: NodeView[]): { nodeId: number; spec: AdoptSpec }[] {
+  const out: { nodeId: number; spec: AdoptSpec }[] = []
+  for (const v of queue) {
+    const kind = adoptability(v.entry).kind
+    const spec = v.entry.registry && kind ? adoptSpec(kind, prefill(v.entry, kind)) : null
+    if (spec) out.push({ nodeId: v.entry.nodeId, spec })
+  }
+  return out
 }
 
 /** The adopt request, or null while the form is incomplete. A PDU has no powered-by. */

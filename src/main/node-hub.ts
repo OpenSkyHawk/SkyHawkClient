@@ -83,11 +83,13 @@ export class NodeHub {
   /** Node changes for the event log (#64), named by the mapping. */
   private readonly events = new NodeEventTracker({
     name: (id) => this.mapped().get(id)?.name ?? `Node ${id}`,
-    // "New on the bus" once a node has identified as something adoptable — not at first sight,
-    // and never for the bridge's own row (node 0, our link).
-    unmapped: (id) => !this.mapped().has(id),
+    // "New on the bus" once a node not in your cockpit has identified as something adoptable — not
+    // at first sight, and never for the bridge's own row (node 0, our link). A registry board not
+    // added yet is new too (#93); its kind comes from the registry, so it is news at once.
+    unmapped: (id) => !this.mapped().get(id)?.known,
+    inRegistry: (id) => this.defaults.has(id),
     isNew: (id) =>
-      id !== BRIDGE_NODE_ID && !this.mapped().has(id) && isAdoptableKind(this.kindOf(id))
+      id !== BRIDGE_NODE_ID && !this.mapped().get(id)?.known && isAdoptableKind(this.kindOf(id))
   })
   private mappedFor?: NodeMappingFile
   private mappedCache = new Map<number, MappedNode>()

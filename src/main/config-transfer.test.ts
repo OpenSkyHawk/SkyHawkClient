@@ -126,7 +126,7 @@ describe('ConfigTransfer', () => {
     expect(state.calls).toEqual(['mapping', 'calibration', 'config'])
     expect(state.config.host).toBe('127.0.0.1') // app settings were not picked
     expect(state.config.psu.mode).toBe('custom')
-    expect(state.mapping.nodes[52]).toEqual({ hidden: true })
+    expect(state.mapping.nodes[52]).toMatchObject({ hidden: true })
     expect(Object.keys(state.cache.boards.A7!.axes)).toEqual(['0', '2']) // merged, axis 2 kept
 
     // The backup holds the setup from before the import.

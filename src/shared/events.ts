@@ -65,8 +65,10 @@ export interface NodeLookup {
   name(nodeId: number): string
   /** Neither in the registry nor adopted, and identified as something adoptable: news. */
   isNew(nodeId: number): boolean
-  /** Neither in the registry nor adopted, whatever it has identified as. */
+  /** Not in your cockpit (not added, not adopted), whatever it has identified as. */
   unmapped(nodeId: number): boolean
+  /** In NODE_IDS.md — a new one is waiting to be added, pre-filled (#93). Absent = never. */
+  inRegistry?(nodeId: number): boolean
 }
 
 type StatusFlag = 'boff' | 'epvf' | 'degraded' | 'overheat'
@@ -234,7 +236,11 @@ export class NodeEventTracker {
     const emittedNew = n.present && this.lookup.isNew(id) && !this.newSeen.has(id)
     if (emittedNew) {
       this.newSeen.add(id)
-      ev('new', 'new on the bus', 'not in registry')
+      ev(
+        'new',
+        'new on the bus',
+        this.lookup.inRegistry?.(id) ? 'in NODE_IDS.md' : 'not in registry'
+      )
     }
     const wasPresent = p?.present ?? false
     if (!n.present && (p === undefined || wasPresent)) {

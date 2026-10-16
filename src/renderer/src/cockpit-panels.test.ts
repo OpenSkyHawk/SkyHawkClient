@@ -149,7 +149,7 @@ describe('boardActions', () => {
   })
 
   it('the note says where a forgotten board comes back', () => {
-    expect(boardActions(node(1, off)).note).toMatch(/joins with its NODE_IDS.md defaults/)
+    expect(boardActions(node(1, off)).note).toMatch(/waits in New on the bus, pre-filled/)
     expect(boardActions(node(9, { ...off, source: 'adopted' })).note).toMatch(/shows as new/)
   })
 

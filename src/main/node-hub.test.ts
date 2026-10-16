@@ -28,6 +28,17 @@ vi.mock('./node-mapping', () => {
 const { NodeHub } = await import('./node-hub')
 
 const T0 = '1970-01-01T00:00:00.000Z'
+/** The registry boards added to your cockpit (#93): the setup most tests assume. */
+const added = (): NodeMappingFile => ({
+  version: 2,
+  nodes: {
+    1: { added: true },
+    2: { added: true },
+    3: { added: true },
+    4: { added: true },
+    5: { added: true }
+  }
+})
 
 function hub() {
   const pushes: [string, unknown][] = []
@@ -38,14 +49,14 @@ function hub() {
 
 describe('NodeHub', () => {
   beforeEach(() => {
-    disk.file = { version: 2, nodes: {} }
+    disk.file = added()
     disk.saves = 0
     disk.readOnly = undefined
     disk.fail = false
   })
 
   it('a failed save is reported, and the change is not applied', () => {
-    disk.file = { version: 2, nodes: { 1: { lastSeen: T0 } } }
+    disk.file = { version: 2, nodes: { 1: { added: true, lastSeen: T0 } } }
     const { h, pushes } = hub()
     disk.fail = true
     expect(h.setMapping(1, { name: 'Armament' })).toEqual({
@@ -67,27 +78,30 @@ describe('NodeHub', () => {
   })
 
   it('a reporting board is un-hidden even when that save fails', () => {
-    disk.file = { version: 2, nodes: { 2: { hidden: true } } }
+    disk.file = { version: 2, nodes: { 2: { hidden: true, added: true } } }
     disk.fail = true
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '0201000000000000008000000000', 0)
     h.flush(roster.takeDirty(), 0)
     expect(h.snapshot(0).model.hidden).toEqual([])
-    expect(disk.file.nodes).toEqual({ 2: { hidden: true } }) // not on disk
+    expect(disk.file.nodes).toEqual({ 2: { hidden: true, added: true } }) // not on disk
   })
 
   it('clears "hidden until it reports again" once the node reports, and saves it', () => {
-    disk.file = { version: 2, nodes: { 2: { hidden: true } } }
+    disk.file = { version: 2, nodes: { 1: { added: true }, 2: { hidden: true, added: true } } }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '0101000000000000008000000000', 0) // node 1 present
     roster.applyMessage(NODE_END_MSG, '1', 0)
     h.flush(roster.takeDirty(), 0)
-    expect(disk.file.nodes).toEqual({ 1: { lastSeen: T0 }, 2: { hidden: true } }) // 1 joined
+    expect(disk.file.nodes).toEqual({
+      1: { added: true, lastSeen: T0 },
+      2: { hidden: true, added: true }
+    })
     expect(h.snapshot(0).model.hidden).toEqual([2]) // skipped, not offline
 
     roster.applyMessage(NODE_MSG, '0201000000000000008000000000', 100) // node 2 reports
     h.flush(roster.takeDirty(), 100)
-    expect(disk.file.nodes[2]).toEqual({ lastSeen: '1970-01-01T00:00:00.100Z' })
+    expect(disk.file.nodes[2]).toEqual({ added: true, lastSeen: '1970-01-01T00:00:00.100Z' })
     expect(disk.saves).toBe(2)
     expect(h.snapshot(100).model.nodes.find((n) => n.nodeId === 2)?.availability).toBe('online')
   })
@@ -99,42 +113,52 @@ describe('NodeHub', () => {
     roster.applyMessage(NODE_MSG, row(1, true), 1000)
     roster.applyMessage(NODE_MSG, row(2, true), 1000)
     h.flush(roster.takeDirty(), 1000)
-    expect(disk.file.nodes).toEqual({
-      1: { lastSeen: '1970-01-01T00:00:01.000Z' },
-      2: { lastSeen: '1970-01-01T00:00:01.000Z' }
-    })
+    expect([disk.file.nodes[1], disk.file.nodes[2]]).toEqual([
+      { added: true, lastSeen: '1970-01-01T00:00:01.000Z' },
+      { added: true, lastSeen: '1970-01-01T00:00:01.000Z' }
+    ])
     const saves = disk.saves
     roster.applyMessage(NODE_MSG, row(1, true), 5000) // still there: no write
     h.flush(roster.takeDirty(), 5000)
     expect(disk.saves).toBe(saves)
     roster.applyMessage(NODE_MSG, row(2, false), 6000) // 2 drops
     h.flush(roster.takeDirty(), 6000)
-    expect(disk.file.nodes[2]).toEqual({ lastSeen: '1970-01-01T00:00:06.000Z' })
+    expect(disk.file.nodes[2]?.lastSeen).toBe('1970-01-01T00:00:06.000Z')
     h.linkClosed(9000) // unplug: 1 was still on the bus
-    expect(disk.file.nodes[1]).toEqual({ lastSeen: '1970-01-01T00:00:09.000Z' })
-    expect(disk.file.nodes[2]).toEqual({ lastSeen: '1970-01-01T00:00:06.000Z' })
+    expect(disk.file.nodes[1]?.lastSeen).toBe('1970-01-01T00:00:09.000Z')
+    expect(disk.file.nodes[2]?.lastSeen).toBe('1970-01-01T00:00:06.000Z')
     const after = disk.saves
     h.linkClosed(9500) // nothing on the bus any more: no write
     expect(disk.saves).toBe(after)
   })
 
-  it('a new NODE_ID is never written: it is not in your cockpit until adopted', () => {
+  it('a board not in your cockpit is never written until added or adopted (#93)', () => {
+    disk.file = { version: 2, nodes: {} }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 0) // node 41
+    roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // registry board 1
     h.flush(roster.takeDirty(), 0)
     expect(disk.saves).toBe(0)
+    expect(h.snapshot(0).model.nodes.map((n) => [n.nodeId, n.source])).toEqual([
+      [1, 'new'],
+      [41, 'new']
+    ])
+    const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
+    expect(h.adopt(1, spec).ok).toBe(true) // Add to cockpit
+    expect(disk.file.nodes[1]).toEqual({ added: true })
+    expect(h.snapshot(0).model.nodes[0]).toMatchObject({ nodeId: 1, source: 'registry' })
   })
 
   it('a mapping change persists and pushes the new model; bad input writes nothing', () => {
     const { h, pushes } = hub()
     const ok = h.setMapping(1, { name: 'Armament' })
     expect(ok.ok && ok.model.nodes.find((n) => n.nodeId === 1)?.name).toBe('Armament')
-    expect(disk.file.nodes).toEqual({ 1: { name: 'Armament' } })
+    expect(disk.file.nodes[1]).toEqual({ added: true, name: 'Armament' })
     expect(pushes.at(-1)?.[0]).toBe('nodes:model')
 
     const before = disk.saves
     expect(h.setMapping(1, { name: ' ' })).toEqual({ ok: false, error: 'Name cannot be empty' })
-    expect(h.adopt(1, { name: 'x', console: 'y', pduId: null, kind: 'panel' })).toMatchObject({
+    expect(h.adopt(1, { name: ' ', console: 'y', pduId: null, kind: 'panel' })).toMatchObject({
       ok: false
     })
     expect(disk.saves).toBe(before)
@@ -194,7 +218,7 @@ describe('NodeHub', () => {
 
     roster.applyMessage(NODE_MSG, node2(true), 9000) // board is back
     h.flush(roster.takeDirty(), 9000)
-    expect(disk.file.nodes[2]).toEqual({ lastSeen: '1970-01-01T00:00:09.000Z' })
+    expect(disk.file.nodes[2]).toEqual({ added: true, lastSeen: '1970-01-01T00:00:09.000Z' })
   })
 
   it('hiding a new node is refused and writes nothing', () => {
@@ -210,13 +234,13 @@ describe('NodeHub', () => {
   it('forgetting an offline PDU (#93) unlinks the boards it fed; resetBoard restores a default', () => {
     disk.file = {
       version: 2,
-      nodes: { 2: { lastSeen: T0, name: 'Nav' }, 4: { lastSeen: T0 } }
+      nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' }, 4: { added: true, lastSeen: T0 } }
     }
     const { h } = hub()
     expect(h.forget(4).ok).toBe(true)
-    expect(disk.file.nodes).toEqual({ 2: { lastSeen: T0, name: 'Nav', pduId: null } })
+    expect(disk.file.nodes).toEqual({ 2: { added: true, lastSeen: T0, name: 'Nav', pduId: null } })
     expect(h.resetBoard(2).ok).toBe(true)
-    expect(disk.file.nodes).toEqual({ 2: { lastSeen: T0 } })
+    expect(disk.file.nodes).toEqual({ 2: { added: true, lastSeen: T0 } }) // still in your cockpit
   })
 
   it('a non-boolean on/off is refused; a no-op change writes and pushes nothing', () => {
@@ -243,9 +267,10 @@ describe('NodeHub', () => {
     h.adopt(41, { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' })
     expect(h.previewReset()).toMatchObject({ nodeCount: 1, adopted: [{ nodeId: 41 }] })
     expect(h.resetAll().ok).toBe(true)
-    expect(Object.keys(disk.file.nodes)).toEqual(['41'])
+    expect(disk.file.nodes[1]).toEqual({ added: true }) // back to its defaults, still added
+    expect(disk.file.nodes[41]).toBeDefined()
     expect(h.resetAll({ forgetAdopted: true }).ok).toBe(true)
-    expect(disk.file.nodes).toEqual({})
+    expect(disk.file.nodes).toEqual(added().nodes)
     expect(h.resetAll(null as never)).toEqual({ ok: false, error: 'Invalid reset request' })
   })
 
@@ -275,7 +300,7 @@ describe('NodeHub', () => {
 
 describe('board kind (#344)', () => {
   beforeEach(() => {
-    disk.file = { version: 2, nodes: {} }
+    disk.file = added()
     disk.saves = 0
     disk.readOnly = undefined
     disk.fail = false
@@ -309,7 +334,7 @@ describe('board kind (#344)', () => {
     // Adopted earlier as a panel group fed by PDU 3.
     disk.file = {
       version: 2,
-      nodes: { 41: { name: 'Aft', console: 'Left', kind: 'panel', pduId: 3 } }
+      nodes: { 1: { added: true }, 41: { name: 'Aft', console: 'Left', kind: 'panel', pduId: 3 } }
     }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(41, 0x02), 0)
@@ -319,7 +344,7 @@ describe('board kind (#344)', () => {
   })
 
   it('a registry panel ID that reports PDU is a PDU; a registry PDU that says nothing stays one', () => {
-    disk.file = { version: 2, nodes: { 3: { lastSeen: T0 } } }
+    disk.file = { version: 2, nodes: { 3: { added: true, lastSeen: T0 } } }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(2, 0x02), 0) // Right_Navigation's ID, on a PDU
     expect(node(h, 2)).toMatchObject({ kind: 'pdu', identified: 'pdu' })

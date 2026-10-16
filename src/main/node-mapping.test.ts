@@ -13,7 +13,7 @@ const file = (): string => join(userData.dir, 'node-mapping.json')
 const sample: NodeMappingFile = {
   version: 2,
   nodes: {
-    1: { name: 'Armament', lastSeen: '2026-10-14T21:14:00.000Z' },
+    1: { name: 'Armament', lastSeen: '2026-10-14T21:14:00.000Z', added: true },
     41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
   }
 }

@@ -74,7 +74,9 @@ export function boardActions(e: NodeModelEntry, fed = 0): BoardActions {
     a.note = `Forget removes this PDU from your cockpit. ${boards}Hide keeps the links: they return under it when it reports.`
   } else {
     const back =
-      e.source === 'adopted' ? 'it shows as new' : 'it joins with its NODE_IDS.md defaults'
+      e.source === 'adopted'
+        ? 'it shows as new'
+        : 'it waits in New on the bus, pre-filled from NODE_IDS.md'
     a.note = `Forget removes it from your cockpit and the saved mapping; if it reports again ${back}. Hide takes it off the Cockpit until it reports again.`
   }
   return a

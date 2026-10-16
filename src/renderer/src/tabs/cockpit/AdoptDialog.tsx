@@ -8,6 +8,8 @@ import {
   adoptSpec,
   identState,
   nextSelection,
+  prefill,
+  registrySpecs,
   seenAgo
 } from '../../cockpit-adopt'
 import { CONSOLE_OPTIONS, powerZoneOptions } from '../../cockpit-panels'
@@ -47,6 +49,17 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
     if (queue.length === 0) onClose()
   }, [queue.length, onClose])
 
+  // "Add all N from NODE_IDS.md": every waiting registry board, with its defaults.
+  const bulk = registrySpecs(queue)
+  const [bulkError, setBulkError] = useState('')
+  const addAll = async () => {
+    setBulkError('')
+    for (const b of bulk) {
+      const r = await window.skyhawk?.adoptNode(b.nodeId, b.spec)
+      if (r && !r.ok) return setBulkError(`NODE_ID ${b.nodeId}: ${r.error}`)
+    }
+  }
+
   if (!current) return null
   const move = (how: 'done' | 'later') => {
     const next = nextSelection(order.current, ids, current.entry.nodeId, how)
@@ -72,8 +85,8 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
           <div>
             <div className="ad__t">New on the bus</div>
             <div className="ad__s">
-              {queue.length} device{queue.length === 1 ? '' : 's'} this computer hasn’t linked yet.
-              Boards in NODE_IDS.md join your cockpit by themselves the first time they report.
+              {queue.length} board{queue.length === 1 ? '' : 's'} this computer hasn’t added yet.
+              Boards in NODE_IDS.md come pre-filled — check them and add.
             </div>
           </div>
           <button className="toolbtn" style={{ marginLeft: 'auto' }} onClick={props.onClose}>
@@ -97,7 +110,11 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
                     NODE_ID {v.entry.nodeId}
                     <Badge badge={adoptability(v.entry).badge} />
                   </div>
-                  <div className="ad__im">{seenAgo(v.entry.firstSeenAt, Date.now())}</div>
+                  <div className="ad__im">
+                    {v.entry.registry
+                      ? `${v.entry.registry.name} · in NODE_IDS.md`
+                      : seenAgo(v.entry.firstSeenAt, Date.now())}
+                  </div>
                 </button>
               )
             })}
@@ -108,6 +125,9 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
             views={props.views}
             dropped={dropped.has(current.entry.nodeId)}
             position={`${ids.indexOf(current.entry.nodeId) + 1} of ${ids.length}`}
+            bulk={bulk.length > 1 ? bulk.length : 0}
+            bulkError={bulkError}
+            onAddAll={() => void addAll()}
             onDone={() => move('done')}
             onLater={() => move('later')}
           />
@@ -122,20 +142,32 @@ function AdoptForm(props: {
   views: NodeView[]
   dropped: boolean
   position: string
+  /** Registry boards waiting (2 or more): offer "Add all N from NODE_IDS.md". */
+  bulk: number
+  bulkError: string
+  onAddAll: () => void
   onDone: () => void
   onLater: () => void
 }) {
   const e = props.view.entry
   const id = e.nodeId
-  const [name, setName] = useState('')
-  const [con, setCon] = useState('')
-  const [pduId, setPduId] = useState<number | null | ''>('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const ev = adoptEvidence(props.view)
   // Only a node identified as a PDU or a panel group gets the form; anything else is shown as-is.
   const able = adoptability(e)
   const kind = able.kind
+  const start = kind ? prefill(e, kind) : prefill({ ...e, registry: undefined }, 'panel')
+  const [name, setName] = useState(start.name)
+  const [con, setCon] = useState(start.console)
+  const [pduId, setPduId] = useState<number | null | ''>(start.pduId)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const ev = adoptEvidence(props.view)
+  const zones = powerZoneOptions(props.views, con, null)
+  // #93: the PDU is explicit — a registry default PDU that isn't in your cockpit yet stays a
+  // choice, named as such, and the board moves under it once that PDU is added.
+  const pending =
+    typeof pduId === 'number' && !zones.some((z) => z.value === pduId)
+      ? pendingPduName(props.views, pduId, e)
+      : undefined
   const spec = kind ? adoptSpec(kind, { name, console: con, pduId }) : null
   const ident = identState(e.availability === 'online', props.dropped)
 
@@ -173,6 +205,12 @@ function AdoptForm(props: {
           </div>
         ) : (
           <>
+            {e.registry && (
+              <div className="hint ad__pre">
+                Pre-filled from NODE_IDS.md. Change anything before adding — it’s saved on this
+                computer.
+              </div>
+            )}
             <label className="input-label" htmlFor="ad-name">
               Name
             </label>
@@ -227,12 +265,21 @@ function AdoptForm(props: {
                   >
                     <option value="">Choose…</option>
                     <option value="none">None</option>
-                    {powerZoneOptions(props.views, con, null).map((o) => (
+                    {zones.map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
                       </option>
                     ))}
+                    {pending && (
+                      <option value={pduId as number}>{pending} (not in your cockpit yet)</option>
+                    )}
                   </select>
+                  {pending && (
+                    <div className="hint ad__pdu">
+                      {pending} isn’t in your cockpit yet. Keep it and this board moves under it
+                      once it’s added, or pick None.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -245,16 +292,23 @@ function AdoptForm(props: {
             drops off the bus and green when it’s back.
           </span>
         </div>
-        {kind && (
+        {kind && !e.registry && (
           <div className="hint">
             Saved on this computer. To make it permanent for everyone, add NODE_ID {id} to
             NODE_IDS.md.
           </div>
         )}
-        {error && <div className="set-err ad__err">{error}</div>}
+        {(error || props.bulkError) && (
+          <div className="set-err ad__err">{error || props.bulkError}</div>
+        )}
       </div>
       <div className="ad__ft">
         <span className="hint ad__pos">{props.position}</span>
+        {props.bulk > 0 && (
+          <button className="toolbtn" disabled={busy} onClick={props.onAddAll}>
+            Add all {props.bulk} from NODE_IDS.md
+          </button>
+        )}
         <button
           className="toolbtn"
           style={{ marginLeft: 'auto' }}
@@ -268,11 +322,18 @@ function AdoptForm(props: {
           disabled={busy || !spec}
           onClick={() => spec && void run(() => window.skyhawk?.adoptNode(id, spec))}
         >
-          Adopt
+          {e.registry ? 'Add to cockpit' : 'Adopt'}
         </button>
       </div>
     </>
   )
+}
+
+/** A PDU named by a power zone that isn't in your cockpit: waiting in New on the bus, or not seen. */
+function pendingPduName(views: NodeView[], pduId: number, e: NodeView['entry']): string {
+  const waiting = views.find((v) => v.entry.nodeId === pduId)
+  if (waiting) return waiting.entry.name
+  return (e.registry?.pduId === pduId && e.registry.pduName) || `PDU #${pduId}`
 }
 
 const BADGE_CLASS: Record<ReturnType<typeof adoptability>['badge'], string> = {

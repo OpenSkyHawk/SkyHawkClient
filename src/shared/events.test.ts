@@ -152,6 +152,15 @@ describe('NodeEventTracker — changes', () => {
     ])
   })
 
+  it('a registry board not added yet is new too, and says it is in NODE_IDS.md (#93)', () => {
+    const t = new NodeEventTracker({ ...lookup(), inRegistry: (id) => id === 41 })
+    t.status([st(2)], NODE_MSG, '', 0)
+    t.status([st(2)], NODE_END_MSG, '_NODE_STATUS_END', 10)
+    expect(short(t.status([st(2), st(41)], NODE_MSG, '', 20))).toEqual([
+      'Node 41: new on the bus · in NODE_IDS.md [new]'
+    ])
+  })
+
   it('reports a new node once per app run, even across a reopen', () => {
     const t = live([st(2)])
     expect(short(t.status([st(2), st(41)], NODE_MSG, '', 20))).toEqual([

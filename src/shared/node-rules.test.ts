@@ -61,10 +61,10 @@ const telem = (
 }
 
 const SEEN = '2026-10-14T21:14:00.000Z'
-/** Every registry board has reported in an earlier session — the cockpit these tests assume. */
+/** Every registry board was added and seen in an earlier session — the cockpit these tests assume. */
 const everSeen = (file: NodeMappingFile): NodeMappingFile => {
   const nodes = { ...file.nodes }
-  for (const id of defaults.keys()) nodes[id] = { lastSeen: SEEN, ...nodes[id] }
+  for (const id of defaults.keys()) nodes[id] = { added: true, lastSeen: SEEN, ...nodes[id] }
   return { ...file, nodes }
 }
 const input = (over: Partial<NodeModelInput>): NodeModelInput => ({
@@ -170,10 +170,10 @@ describe('new-node detection', () => {
     expect(entry(i, 42)).toMatchObject({ source: 'new', kind: 'pdu', readings: 'live' })
   })
 
-  it('registry and adopted ids are never new', () => {
+  it('added registry and adopted ids are never new', () => {
     const file: NodeMappingFile = {
       version: 2,
-      nodes: { 41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' } }
+      nodes: { 1: { added: true }, 41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' } }
     }
     const m = buildNodeModel(fresh({ roster: [st(1), st(41)], file }))
     expect(m.nodes.filter((n) => n.source === 'new')).toEqual([])
@@ -348,24 +348,34 @@ describe('differingCount', () => {
 })
 
 describe('your cockpit (#93)', () => {
-  it('a registry board that never reported is not in the model at all', () => {
+  it('a registry board never added is not drawn; on the bus it waits as new, pre-filled', () => {
     const m = buildNodeModel(fresh({ roster: [st(1)], rosterCompleteAt: 0 }))
-    expect(m.nodes.map((n) => n.nodeId)).toEqual([1]) // 2–5 are dictionary entries only
+    expect(m.nodes).toHaveLength(1) // 2–5 are dictionary entries only
+    expect(m.nodes[0]).toMatchObject({
+      nodeId: 1,
+      source: 'new',
+      name: 'Center_Armament',
+      identified: 'panel', // its kind comes from the registry: news at once
+      console: null,
+      pduId: null,
+      registry: { name: 'Center_Armament', console: 'Center', pduId: 5, pduName: 'PDU_Center' }
+    })
+    expect(isReportableNew(m.nodes[0]!)).toBe(true)
     expect(m.outages).toEqual([])
   })
 
-  it('remembered, placed, renamed and adopted boards are in it; online ones join', () => {
+  it('added and adopted boards are in it; anything else on the bus is new', () => {
     const file: NodeMappingFile = {
       version: 2,
       nodes: {
-        2: { lastSeen: SEEN },
-        4: { name: 'PDU_Starboard' },
+        2: { added: true, lastSeen: SEEN },
+        4: { added: true, name: 'PDU_Starboard' },
         41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
       }
     }
     const m = buildNodeModel(fresh({ file, roster: [st(1), st(50)], rosterCompleteAt: 0 }))
     expect(m.nodes.map((n) => [n.nodeId, n.source])).toEqual([
-      [1, 'registry'], // reporting now: joins (main records lastSeen)
+      [1, 'new'], // registry, reporting, not added yet
       [2, 'registry'],
       [4, 'registry'],
       [41, 'adopted'],
@@ -373,14 +383,20 @@ describe('your cockpit (#93)', () => {
     ])
   })
 
-  it('a registry PDU sending pages has reported: it is in your cockpit', () => {
+  it('a registry board not added that went away is not drawn — nor is a forgotten one', () => {
+    const m = buildNodeModel(fresh({ roster: [st(2, false), st(50, false)], rosterCompleteAt: 0 }))
+    expect(m.nodes.map((n) => [n.nodeId, n.source])).toEqual([[50, 'new']]) // 2: gone, not added
+  })
+
+  it('a registry PDU sending pages is on the bus: it waits as new', () => {
     const m = buildNodeModel(fresh({ telemetry: [telem(3)], rosterCompleteAt: 0 }))
-    expect(m.nodes.map((n) => n.nodeId)).toEqual([3])
+    expect(m.nodes.map((n) => [n.nodeId, n.source])).toEqual([[3, 'new']])
     expect(buildNodeModel(fresh({ telemetry: [telem(52)] })).nodes).toEqual([]) // unmapped: no
   })
 
   it('a board whose PDU is not in your cockpit keeps its zone (No power zone on the plan)', () => {
-    const m = buildNodeModel(fresh({ roster: [st(2)], rosterCompleteAt: 0 }))
+    const file: NodeMappingFile = { version: 2, nodes: { 2: { added: true } } }
+    const m = buildNodeModel(fresh({ file, roster: [st(2)], rosterCompleteAt: 0 }))
     expect(m.nodes).toHaveLength(1)
     expect(m.nodes[0]).toMatchObject({ nodeId: 2, pduId: 4 })
   })

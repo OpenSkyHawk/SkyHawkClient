@@ -10,6 +10,8 @@ import {
   adoptSpec,
   identState,
   nextSelection,
+  prefill,
+  registrySpecs,
   seenAgo,
   strayFlag,
   strayNew
@@ -232,6 +234,45 @@ describe('adoptability', () => {
     )
     expect(other).toMatchObject({ badge: 'UNKNOWN TYPE' })
     expect(other.note).toMatch(/doesn’t know \(7\)/)
+  })
+})
+
+describe('registry onboarding (#93)', () => {
+  const reg = (id: number, over: Partial<NodeModelEntry> = {}) =>
+    fresh(id, {
+      name: 'Center_Armament',
+      identified: 'panel',
+      registry: { name: 'Center_Armament', console: 'Center', pduId: 5, pduName: 'PDU_Center' },
+      ...over
+    })
+
+  it('pre-fills name, console and default PDU from NODE_IDS.md; a PDU takes no zone', () => {
+    expect(prefill(reg(1), 'panel')).toEqual({
+      name: 'Center_Armament',
+      console: 'Center',
+      pduId: 5
+    })
+    const pdu = reg(5, {
+      identified: 'pdu',
+      registry: { name: 'PDU_Center', console: 'Center', pduId: null }
+    })
+    expect(prefill(pdu, 'pdu')).toEqual({ name: 'PDU_Center', console: 'Center', pduId: null })
+    expect(prefill(fresh(41), 'panel')).toEqual({ name: '', console: '', pduId: '' }) // unregistered
+  })
+
+  it('says where it comes from', () => {
+    const ev = adoptEvidence(
+      nodeViews(model([reg(1, { status: status(1, { nodeKind: 0 }) })]), [])[0]!
+    )
+    expect(ev.detected).toBe('panel group (from NODE_IDS.md)')
+    expect(ev.registry).toBe('NODE_IDS.md: Center_Armament, Instrument panel')
+  })
+
+  it('"Add all": every waiting registry board with its defaults, never an unregistered one', () => {
+    const views = nodeViews(model([reg(1), fresh(41, { identified: 'panel' })]), [])
+    expect(registrySpecs(views)).toEqual([
+      { nodeId: 1, spec: { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } }
+    ])
   })
 })
 

@@ -28,7 +28,7 @@ export type NodeAvailability = 'online' | 'offline' | 'unknown'
 
 export interface NodeModelEntry {
   nodeId: number
-  /** Effective name; `Node <id>` for a new node. */
+  /** Effective name; for a new node its NODE_IDS.md name, else `Node <id>`. */
   name: string
   /** null for a new node. */
   console: string | null
@@ -41,8 +41,13 @@ export interface NodeModelEntry {
    * yet. Adopt, the new-device counts and the event log key on this, never on `kind`.
    */
   identified?: NodeIdentity
-  /** 'new' = in the roster but neither in the registry nor adopted. */
+  /**
+   * 'new' = on the bus but not in your cockpit: a NODE_ID the registry does not know, or a registry
+   * board not added yet (#93: it waits in New on the bus, pre-filled from `registry`).
+   */
   source: 'registry' | 'adopted' | 'new'
+  /** New registry boards: their NODE_IDS.md defaults, to pre-fill the Adopt form. */
+  registry?: { name: string; console: string; pduId: number | null; pduName?: string }
   availability: NodeAvailability
   /** While offline this session: when the client learned of it. Absent for `notSeen`. */
   offlineAt?: number
@@ -114,9 +119,9 @@ export interface NodeModelInput {
 }
 
 /**
- * Your cockpit (#93): boards that have reported at least once (remembered in node-mapping.json) or
- * that you adopted, plus whatever is on the bus now — a registry board joins the moment it reports
- * (a status row, or a PDU's pages) and a new NODE_ID shows as new. A registry board that never reported is a dictionary entry only:
+ * Your cockpit (#93): the boards you added (registry) or adopted, remembered in node-mapping.json,
+ * plus whatever is on the bus now that isn't in it yet — shown as new, a registry one pre-filled.
+ * A registry board never added is a dictionary entry: not drawn, not counted, never offline. A registry board that never reported is a dictionary entry only:
  * not drawn, not counted, never offline.
  */
 export function buildNodeModel(i: NodeModelInput): NodeModel {
@@ -125,10 +130,16 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   const telem = new Map(i.telemetry.map((t) => [t.nodeId, t]))
   const complete = i.rosterCompleteAt !== undefined
   const known = [...mapping.values()].filter((m) => m.known).map((m) => m.nodeId)
-  // PDU pages are a report too: a registry or adopted PDU sending them is in your cockpit.
+  // On the bus but not in your cockpit: present now, or a NODE_ID nothing maps (shown as new
+  // either way). A registry board that is not added and has gone is not drawn — the roster keeps
+  // absent rows, and a forgotten board must not come back as an offline one.
+  const waiting = [...roster.values()]
+    .filter((n) => n.present || !mapping.has(n.nodeId))
+    .map((n) => n.nodeId)
+  // PDU pages are a report too: a registry or adopted PDU sending them is on the bus.
   const sending = [...telem.keys()].filter((id) => mapping.has(id))
   // The bridge's own row (node 0, v3) is this client's link, not a cockpit node.
-  const ids = [...new Set([...known, ...roster.keys(), ...sending])]
+  const ids = [...new Set([...known, ...waiting, ...sending])]
     .filter((id) => id !== BRIDGE_NODE_ID)
     .sort((a, b) => a - b)
 
@@ -136,7 +147,8 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   const hidden: number[] = []
   const hiddenNodes: HiddenNode[] = []
   for (const nodeId of ids) {
-    const m = mapping.get(nodeId)
+    const mapped = mapping.get(nodeId)
+    const m = mapped?.known ? mapped : undefined
     if (m?.hidden) {
       hidden.push(nodeId)
       hiddenNodes.push({ nodeId, name: m.name, console: m.console })
@@ -149,7 +161,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     const identified = resolveKind({
       reported: st?.nodeKind,
       pduTelemetry: t?.isPdu,
-      stored: m?.kind
+      stored: mapped?.kind // a registry board's kind is known before it is added
     })
     const kind: NodeKind = identified === 'pdu' ? 'pdu' : 'panel'
     // A board missing from the first complete roster is offline — there is no "waiting".
@@ -162,7 +174,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
         : 'unknown'
     const e: NodeModelEntry = {
       nodeId,
-      name: m?.name ?? `Node ${nodeId}`,
+      name: mapped?.name ?? `Node ${nodeId}`,
       console: m ? m.console : null,
       pduId: m && kind !== 'pdu' ? m.pduId : null,
       kind,
@@ -182,6 +194,11 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     if (st) e.status = st
     if (seen?.reportedAt !== undefined) e.reportedAt = seen.reportedAt
     if (source === 'new' && seen) e.firstSeenAt = seen.firstSeenAt
+    if (source === 'new' && mapped) {
+      e.registry = { name: mapped.name, console: mapped.console, pduId: mapped.pduId }
+      const pdu = mapped.pduId === null ? undefined : mapping.get(mapped.pduId)
+      if (pdu) e.registry.pduName = pdu.name
+    }
     if (kind === 'pdu') {
       e.everHadReadings = t?.isPdu ?? false
       if (availability === 'online') e.readings = t && hasFreshPduPage(t) ? 'live' : 'none'
