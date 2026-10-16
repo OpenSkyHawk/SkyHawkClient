@@ -46,7 +46,10 @@ export interface NodeModelEntry {
    * board not added yet (#93: it waits in New on the bus, pre-filled from `registry`).
    */
   source: 'registry' | 'adopted' | 'new'
-  /** New registry boards: their NODE_IDS.md defaults, to pre-fill the Adopt form. */
+  /**
+   * New registry boards: their NODE_IDS.md defaults, to pre-fill the Adopt form once the board has
+   * identified itself. Never used to identify it.
+   */
   registry?: { name: string; console: string; pduId: number | null; pduName?: string }
   availability: NodeAvailability
   /** While offline this session: when the client learned of it. Absent for `notSeen`. */
@@ -164,7 +167,9 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     const identified = resolveKind({
       reported: st?.nodeKind,
       pduTelemetry: t?.isPdu,
-      stored: mapped?.kind // a registry board's kind is known before it is added
+      // Only a board in your cockpit has a stored kind. A new one — registry boards included — is
+      // identified by what it reports (or PDU pages), never by its NODE_ID (#93 re-review C).
+      stored: m?.kind
     })
     const kind: NodeKind = identified === 'pdu' ? 'pdu' : 'panel'
     // A board missing from the first complete roster is offline — there is no "waiting".

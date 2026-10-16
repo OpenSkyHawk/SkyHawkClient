@@ -391,7 +391,15 @@ function addRegistryBoard(
   const console = text(spec.console)
   if (!console) throw new MappingError('Console cannot be empty')
   checkPatch(spec)
-  const kind = kindOf?.(nodeId) ?? d.kind
+  // Added only once the board has said what it is — a PDU or a panel group — like any new board
+  // (#344): a registry entry is never taken as its kind.
+  let kind = d.kind
+  if (kindOf) {
+    const k = kindOf(nodeId)
+    if (k === undefined) throw new MappingError('Its board type is not known yet')
+    if (!isAdoptableKind(k)) throw new MappingError('This board cannot be adopted')
+    kind = k
+  }
   const patch: MappingPatch = { name, console }
   if (kind !== 'pdu') {
     checkPowerZone(file, defaults, nodeId, d.kind, spec.pduId, kindOf)

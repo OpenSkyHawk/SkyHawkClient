@@ -243,7 +243,9 @@ export class NodeHub {
     resolveKind({
       reported: this.roster.snapshot().find((n) => n.nodeId === nodeId)?.nodeKind,
       pduTelemetry: this.telem.snapshot(now).some((t) => t.nodeId === nodeId && t.isPdu),
-      stored: this.defaults.get(nodeId)?.kind ?? this.mapping().nodes[nodeId]?.kind
+      // Only a board in your cockpit has a stored kind; a new one (registry included) is what it
+      // reports, never what its NODE_ID suggests (#93).
+      stored: this.mapped().get(nodeId)?.known ? this.mapped().get(nodeId)?.kind : undefined
     })
 
   /** The bundled NODE_IDS registry, PanelBridge included, and where it came from. */

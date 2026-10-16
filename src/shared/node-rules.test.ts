@@ -362,19 +362,29 @@ describe('differingCount', () => {
 
 describe('your cockpit (#93)', () => {
   it('a registry board never added is not drawn; on the bus it waits as new, pre-filled', () => {
-    const m = buildNodeModel(fresh({ roster: [st(1)], rosterCompleteAt: 0 }))
+    const m = buildNodeModel(fresh({ roster: [{ ...st(1), nodeKind: 1 }], rosterCompleteAt: 0 }))
     expect(m.nodes).toHaveLength(1) // 2–5 are dictionary entries only
     expect(m.nodes[0]).toMatchObject({
       nodeId: 1,
       source: 'new',
       name: 'Center_Armament',
-      identified: 'panel', // its kind comes from the registry: news at once
+      identified: 'panel', // reported by the board
       console: null,
       pduId: null,
       registry: { name: 'Center_Armament', console: 'Center', pduId: 5, pduName: 'PDU_Center' }
     })
     expect(isReportableNew(m.nodes[0]!)).toBe(true)
     expect(m.outages).toEqual([])
+  })
+
+  it('a registry board is identified only by what it reports, never by its NODE_ID (#93 re-review)', () => {
+    const m = buildNodeModel(fresh({ roster: [st(1)], rosterCompleteAt: 0 })) // kind 0: not yet
+    expect(m.nodes[0]?.identified).toBeUndefined()
+    expect(isReportableNew(m.nodes[0]!)).toBe(false) // not news until it says what it is
+    expect(m.nodes[0]?.registry?.name).toBe('Center_Armament') // the pre-fill is still there
+    // Its own report wins over NODE_IDS.md: a registry panel ID reporting PDU is a PDU.
+    const pdu = buildNodeModel(fresh({ roster: [{ ...st(2), nodeKind: 2 }], rosterCompleteAt: 0 }))
+    expect(pdu.nodes[0]?.identified).toBe('pdu')
   })
 
   it('added and adopted boards are in it; anything else on the bus is new', () => {

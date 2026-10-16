@@ -368,6 +368,20 @@ describe('board kind (#344)', () => {
     expect(disk.saves).toBe(0)
   })
 
+  it('a registry board is added only once it says it is a PDU or a panel group (#93 re-review C, G)', () => {
+    disk.file = { version: 2, nodes: {} }
+    const { h, roster } = hub()
+    const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
+    roster.applyMessage(NODE_MSG, row(1, 0x00), 0) // kind not reported yet
+    expect(node(h, 1)?.identified).toBeUndefined()
+    expect(h.adopt(1, spec)).toEqual({ ok: false, error: 'Its board type is not known yet' })
+    roster.applyMessage(NODE_MSG, row(1, 0x03), 10) // a bridge on a registry panel's ID
+    expect(h.adopt(1, spec)).toEqual({ ok: false, error: 'This board cannot be adopted' })
+    roster.applyMessage(NODE_MSG, row(1, 0x01), 20) // a panel group
+    expect(h.adopt(1, spec).ok).toBe(true)
+    expect(disk.file.nodes[1]).toEqual({ added: true })
+  })
+
   it('a kind this client does not know is not adoptable either', () => {
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(41, 0x07), 0)

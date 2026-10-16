@@ -290,11 +290,11 @@ describe('registry onboarding (#93)', () => {
     expect(prefill(fresh(41), 'panel')).toEqual({ name: '', console: '', pduId: '' }) // unregistered
   })
 
-  it('says where it comes from', () => {
+  it('says where it comes from: what it reported, and its NODE_IDS.md entry', () => {
     const ev = adoptEvidence(
-      nodeViews(model([reg(1, { status: status(1, { nodeKind: 0 }) })]), [])[0]!
+      nodeViews(model([reg(1, { status: status(1, { nodeKind: 1 }) })]), [])[0]!
     )
-    expect(ev.detected).toBe('panel group (from NODE_IDS.md)')
+    expect(ev.detected).toBe('panel group (reported by the board)')
     expect(ev.registry).toBe('NODE_IDS.md: Center_Armament, Instrument panel')
   })
 

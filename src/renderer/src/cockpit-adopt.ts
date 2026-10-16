@@ -97,17 +97,13 @@ export interface Evidence {
 /** "Detected as": the kind and the signal it came from. */
 function detectedAs(e: NodeModelEntry): string {
   const said = reportedIdentity(e.status?.nodeKind)
-  // Not reported (yet): a registry board's kind comes from NODE_IDS.md; else only PDU pages tell.
-  const how = said
-    ? 'reported by the board'
-    : e.registry
-      ? 'from NODE_IDS.md'
-      : 'PDU telemetry seen'
+  // Not reported (yet): only PDU pages tell — never the NODE_ID or its NODE_IDS.md entry (#93).
+  const how = said ? 'reported by the board' : 'PDU telemetry seen'
   switch (e.identified) {
     case 'pdu':
       return `PDU (${how})`
     case 'panel':
-      return `panel group (${said ? 'reported by the board' : how})`
+      return 'panel group (reported by the board)'
     case 'bridge':
       return 'SimGateway / PanelBridge (reported by the board)'
     case 'other':
