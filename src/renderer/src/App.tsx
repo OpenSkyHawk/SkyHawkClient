@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 import { useStore, type TabId } from './store'
+import { DevicePopover } from './DevicePopover'
+import { RelayPill } from './RelayPill'
 import { Overview } from './tabs/Overview'
 import { Connection } from './tabs/Connection'
 import { Log } from './tabs/Log'
@@ -19,9 +21,7 @@ const TABS: { id: TabId; label: string }[] = [
 export function App() {
   const tab = useStore((s) => s.tab)
   const sourceMode = useStore((s) => s.sourceMode)
-  const relaying = useStore((s) => s.relaying)
   const set = useStore((s) => s.set)
-  const toggleRelay = useStore((s) => s.toggleRelay)
   const initBridge = useStore((s) => s.initBridge)
 
   useEffect(() => initBridge(), [initBridge])
@@ -36,14 +36,9 @@ export function App() {
         </span>
         <div className="titlebar__right">
           <span className="ver">v{__APP_VERSION__}</span>
-          <button
-            className={`pill pill--btn${relaying ? ' pill--on' : ''}`}
-            onClick={() => toggleRelay()}
-            title={relaying ? 'Click to stop relaying' : 'Click to start relaying'}
-          >
-            <span className="pill__dot" />
-            <span className="pill__txt">{relaying ? 'Relaying' : 'Stopped'}</span>
-          </button>
+          {/* The device link: automatic, and independent of the relay pill beside it (#69). */}
+          <DevicePopover />
+          <RelayPill />
         </div>
       </header>
 

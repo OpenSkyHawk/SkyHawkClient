@@ -102,7 +102,9 @@ class TcpTransport extends BaseTransport {
     sock.on('error', (err) => this.errorCb(err))
     sock.on('close', () => {
       this.connectedCb(false)
-      if (!this.stopped && this.cfg.autoReconnect) {
+      // Always: a relay the user started keeps trying until they stop it. Giving up quietly on a
+      // dropped DCS socket left a "Relaying" pill over a stream that was never coming back.
+      if (!this.stopped) {
         this.reconnectTimer = setTimeout(() => this.connect(), 2000)
       }
     })

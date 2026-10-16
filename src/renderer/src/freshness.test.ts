@@ -9,7 +9,7 @@ describe('report freshness', () => {
     // touching sends nothing. A fault colour here would cry wolf every time the user let go of
     // the stick, and the user would learn to ignore it — including when it meant something.
     for (const ageMs of [0, 5 * MIN, 30 * MIN, 6 * 60 * MIN, Number.MAX_SAFE_INTEGER]) {
-      expect(freshness('relaying', ageMs).cls, `age ${ageMs}`).not.toBe('rate--down')
+      expect(freshness('connected', ageMs).cls, `age ${ageMs}`).not.toBe('rate--down')
     }
   })
 
@@ -29,13 +29,13 @@ describe('report freshness', () => {
   })
 
   it('steps down through the bands as reports age', () => {
-    expect(freshness('relaying', 0).cls).toBe('rate--live')
-    expect(freshness('relaying', FRESH_MS - 1).cls).toBe('rate--live')
-    expect(freshness('relaying', FRESH_MS).cls, 'boundary belongs to the older band').toBe(
+    expect(freshness('connected', 0).cls).toBe('rate--live')
+    expect(freshness('connected', FRESH_MS - 1).cls).toBe('rate--live')
+    expect(freshness('connected', FRESH_MS).cls, 'boundary belongs to the older band').toBe(
       'rate--idle'
     )
-    expect(freshness('relaying', RECENT_MS - 1).cls).toBe('rate--idle')
-    expect(freshness('relaying', RECENT_MS).cls).toBe('rate--stale')
+    expect(freshness('connected', RECENT_MS - 1).cls).toBe('rate--idle')
+    expect(freshness('connected', RECENT_MS).cls).toBe('rate--stale')
   })
 
   it('is measured in minutes, not seconds', () => {

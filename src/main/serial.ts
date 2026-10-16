@@ -20,6 +20,17 @@ export function listSerialPorts(): Promise<SerialPortInfo[]> {
 const BAUD = 250000
 const RECONNECT_MS = 2000
 
+/**
+ * No SimGateway is enumerated. Not a fault: it is the normal state of an unplugged board, and the
+ * device link reports it as "no device" rather than as an error while it keeps looking.
+ */
+export class PortNotFoundError extends Error {
+  constructor() {
+    super('SimGateway serial port not found')
+    this.name = 'PortNotFoundError'
+  }
+}
+
 /** First serial port whose USB VID/PID match the SimGateway, if present. */
 export async function findSimGatewayPort(): Promise<string | undefined> {
   const ports = await SerialPort.list()
@@ -55,6 +66,11 @@ export class SerialBridge implements SerialLink {
    */
   private opening = false
   private readonly autoReconnect: boolean
+  /**
+   * The current "not found" streak has been logged. The link now looks for the board for as long
+   * as the app runs, so logging every 2 s retry would bury debug.log in identical lines.
+   */
+  private notFoundLogged = false
 
   private dataCb: (chunk: Buffer) => void = () => {}
   private monitorCb: (dir: 'tx' | 'rx', chunk: Buffer) => void = () => {}
@@ -152,12 +168,14 @@ export class SerialBridge implements SerialLink {
     try {
       const path = await findSimGatewayPort()
       if (!path) {
-        debugLog('serial.notFound', { vid: VID_HEX, pid: PID_HEX })
-        this.errorCb(new Error('SimGateway serial port not found'))
+        if (!this.notFoundLogged) debugLog('serial.notFound', { vid: VID_HEX, pid: PID_HEX })
+        this.notFoundLogged = true
+        this.errorCb(new PortNotFoundError())
         this.retry()
         return
       }
       this.path = path
+      this.notFoundLogged = false
       debugLog('serial.open', { path })
       // Awaited, not merely called: `close()` only *begins* the release, and on Windows the OS
       // holds the COM handle until it completes — so opening straight after is the process
@@ -202,9 +220,10 @@ export class SerialBridge implements SerialLink {
     this.stopped = true
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
-    // Not awaited — `stop()` is synchronous by interface. Note this leaves one gap: Session
-    // discards the bridge on stop and builds a fresh one on start, so a stop/start pair can still
-    // open the port while this release is in flight. `retry()` recovers it 2 s later.
+    // Not awaited — `stop()` is synchronous by interface. Note this leaves one gap: the device link
+    // discards the bridge on disconnect and builds a fresh one on connect, so a quick
+    // disconnect/connect pair can still open the port while this release is in flight. `retry()`
+    // recovers it 2 s later.
     void this.disposePort()
   }
 

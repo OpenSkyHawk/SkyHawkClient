@@ -44,11 +44,14 @@ export function Settings() {
             onChange={(e) => setConfigField({ port: e.target.value })}
           />
         </Row>
-        <Row k="Auto-reconnect" sub="Re-open the serial port on unplug">
+        <Row
+          k="Connect automatically"
+          sub="Open the SimGateway on launch and whenever it is plugged in, and recover after a drop. Turn off to leave the port to socat / connect-serial-port.cmd."
+        >
           <button
-            className={`toggle${s.autoReconnect ? ' on' : ''}`}
-            onClick={() => setConfigField({ autoReconnect: !s.autoReconnect })}
-            aria-pressed={s.autoReconnect}
+            className={`toggle${s.autoConnect ? ' on' : ''}`}
+            onClick={() => setConfigField({ autoConnect: !s.autoConnect })}
+            aria-pressed={s.autoConnect}
           >
             <span />
           </button>
