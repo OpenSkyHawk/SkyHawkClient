@@ -23,6 +23,7 @@ import {
   type PlanGroup,
   type PlanLayout
 } from '../cockpit'
+import { BoardEvents } from './cockpit/BoardEvents'
 import { Dot } from './cockpit/Dot'
 import { NodePanel, PduPanel } from './cockpit/SidePanels'
 
@@ -148,6 +149,7 @@ export function Cockpit() {
               onShowAll={() => filter('', true)}
               onOpen={setOpen}
             />
+            <BoardEvents />
           </div>
         </div>
       </div>

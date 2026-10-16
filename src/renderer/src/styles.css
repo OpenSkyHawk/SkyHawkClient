@@ -2993,6 +2993,17 @@ button.devind[aria-expanded='true'] {
 .cv__side .more {
   margin-top: auto;
 }
+/* Board events (#64): the list takes the card's spare height; rows are one line each */
+.cv__side .evt--one {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.evt--one li span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 @media (max-width: 1150px) {
   .cv__main {
     grid-template-columns: minmax(0, 1fr);
