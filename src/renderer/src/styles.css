@@ -2865,6 +2865,25 @@ button.devind[aria-expanded='true'] {
 .cv__top .hcard--5v {
   border-left-color: rgba(244, 179, 33, 0.6);
 }
+/* PSU headroom (Settings › Cockpit › Power supply): the limit after a value, and its usage bar */
+.hcard__lim {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted-2);
+}
+.hbar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  margin-top: 8px;
+  overflow: hidden;
+}
+.hbar i {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+  border-radius: 2px;
+}
 .cv__main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
