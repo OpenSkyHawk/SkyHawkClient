@@ -4,7 +4,7 @@
 import { encodeExportFrame } from './dcsbios'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
-export const SUPPORTED_NODE_PROTO = 2
+export const SUPPORTED_NODE_PROTO = 3
 
 /** Reserved DCS-BIOS identifiers (must equal node-status.generated.ts). */
 export const NODE_MSG = '_NODE_STATUS'
@@ -15,11 +15,27 @@ export const NODE_REQ_ADDR = 0x86fe
 export const HFLAG_OVERHEAT = 0x01
 export const HFLAG_DEGRADED = 0x02
 
-// proto v2: 26 hex — the v1 fields plus the node's cached HEALTH_n telemetry.
-const HEX_LEN = 26 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4) dieTempC(2) hFlags(2) faultMask(2) faultId(2)
+/** HEALTH_n board kind, as _NODE_STATUS v3 forwards it (must equal NODE_KINDS; reference.test checks). */
+export const NODE_KIND = {
+  UNKNOWN: 0x00,
+  PANEL_GROUP: 0x01,
+  PDU: 0x02,
+  BRIDGE: 0x03
+} as const
+
+/**
+ * The bridge's own NODE_ID: PanelBridge is the CAN master at address 0, and since v3 every roster
+ * reply starts with its row. That row is this client's own link, never a cockpit node. (An address,
+ * not a board type: a node's type is only ever what it reports.)
+ */
+export const BRIDGE_NODE_ID = 0
+
+// proto v3: 28 hex — v2 plus the node's reported board kind (#344).
+const HEX_LEN = 28 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4) dieTempC(2) hFlags(2) faultMask(2) faultId(2) nodeKind(2)
+const V2_HEX_LEN = 26
 
 export interface NodeStatus {
-  nodeId: number // 1..63
+  nodeId: number // 0 = the bridge's own row (v3), 1..63 CAN nodes
   present: boolean
   boff: boolean // CAN bus-off
   epvf: boolean // CAN error-passive
@@ -32,6 +48,9 @@ export interface NodeStatus {
   overheat: boolean // hFlags bit0 (opt-in firmware trip; usually false)
   degraded: boolean // hFlags bit1 — a registered FaultSource reports non-NONE (rendered by #40, parsed here)
   faultId: number // fault code, 0 = none; label via NODE_FAULT_CODES (node-status.generated.ts), render #40
+  /** NODE_KIND as the board reports it (v3); 0 = not reported yet (or pre-#344 firmware). Kept raw: an
+   * unknown future value passes through and is never adoptable. */
+  nodeKind: number
   // Fault-dictionary enrichment — filled in main from NODE_FAULT_CODES; undefined when healthy or an
   // unknown/reserved id (the decoder passes any faultId through). Renderer falls back to `Fault N`.
   faultAbbr?: string
@@ -44,12 +63,12 @@ export function nodeFaultTag(n: NodeStatus): string {
   return n.faultAbbr ?? `Fault ${n.faultId}`
 }
 
-/** Decode the 26-hex `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
+/** Decode the 28-hex v3 `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
 export function parseNodeStatus(hex: string): NodeStatus | null {
-  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]{26}$/.test(hex)) return null
+  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]{28}$/.test(hex)) return null
   const f = (i: number, n: number) => parseInt(hex.slice(i, i + n), 16)
   const nodeId = f(0, 2)
-  if (nodeId < 1 || nodeId > 63) return null
+  if (nodeId > 63) return null
   const flags = f(4, 2)
   const esr = f(14, 4)
   const traw = f(18, 2) // int8 two's-complement; 0x80 = not-yet-seen sentinel
@@ -66,8 +85,29 @@ export function parseNodeStatus(hex: string): NodeStatus | null {
     dieTempC: traw === 0x80 ? null : traw < 128 ? traw : traw - 256,
     overheat: (hf & HFLAG_OVERHEAT) !== 0,
     degraded: (hf & HFLAG_DEGRADED) !== 0,
-    faultId: f(24, 2)
+    faultId: f(24, 2),
+    nodeKind: f(26, 2)
   }
+}
+
+/**
+ * A v2 (pre-#344) row: well-formed, but this client needs v3. The caller says so loudly rather than
+ * dropping it like a corrupt line, since every row from that bridge would be lost the same way.
+ */
+export function isLegacyNodeStatus(hex: string): boolean {
+  return hex.length === V2_HEX_LEN && /^[0-9a-fA-F]+$/.test(hex)
+}
+
+/**
+ * A node-status line with any junk in front of it removed. Right after a PanelBridge reset the
+ * first line can carry UART noise (seen: `_\xfe_NODE_STATUS …`); since v3 that is the node-0 row.
+ * Only a prefix holding a non-printable byte is cut, so a real identifier that merely contains
+ * `_NODE_` is never mangled; anything else comes back unchanged.
+ */
+export function cleanNodeLine(line: string): string {
+  const at = line.indexOf('_NODE_')
+  if (at <= 0) return line
+  return /[^\x20-\x7e]/.test(line.slice(0, at)) ? line.slice(at) : line
 }
 
 /** A DCS-BIOS export frame that asks PanelBridge for the full node roster. */

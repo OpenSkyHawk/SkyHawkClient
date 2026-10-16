@@ -3,6 +3,7 @@
 // two tabs always agree; the full picture lives in the Cockpit tab.
 import type { PduOutage } from '@shared/node-rules'
 import {
+  affected,
   ATTENTION_SHOWN,
   attentionItems,
   healthBand,
@@ -54,7 +55,7 @@ export function nodesSummary(views: NodeView[], outages: PduOutage[]): NodesSumm
   const rows = items.slice(0, ATTENTION_SHOWN).map((i): SummaryRow => {
     const e = byId.get(i.nodeId)!
     const meta = [`#${i.nodeId}`]
-    if (i.outage) meta.push(`${i.outage.nodeIds.length} nodes affected`)
+    if (i.outage) meta.push(affected(i.outage.nodeIds.length))
     else if (e.kind !== 'pdu') {
       const feed = e.pduId === null ? undefined : byId.get(e.pduId)
       meta.push(feed ? feed.name : 'no power zone')

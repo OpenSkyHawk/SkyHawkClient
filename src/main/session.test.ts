@@ -310,8 +310,11 @@ describe('HID recovery after an unplug', () => {
 type Push = [string, unknown]
 
 /** A `_NODE_STATUS` line: present, no flags, die temp not yet seen. */
-const statusLine = (nodeId: number, present = true): string =>
-  `_NODE_STATUS ${nodeId.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000\n`
+/** A v3 `_NODE_STATUS` row (28 hex): kind 01 panel group unless given. */
+const statusLine = (nodeId: number, present = true, kind = 1): string =>
+  `_NODE_STATUS ${nodeId.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
+    .toString(16)
+    .padStart(2, '0')}\n`
 
 /** A session with the link open (app launched), the relay not started, and a recorder of pushes. */
 function launched(config: Parameters<InstanceType<typeof Session>['setConfig']>[0] = {}) {
@@ -733,6 +736,30 @@ describe('event log (#64)', () => {
     const offline = session.events.snapshot()[2]
     expect(offline.nodeId).toBe(2)
     expect(offline.raw).toBe(statusLine(2, false).trim())
+    session.shutdown()
+  })
+
+  it('a v2 bridge is reported once, loudly, instead of an empty Cockpit', () => {
+    const { session, serial } = launched()
+    serial.openCb('/dev/fake')
+    const v2 = '_NODE_STATUS 01010000000000000080000000\n' // 26 hex: no nodeKind
+    serial.dataCb(Buffer.from(v2 + v2 + '_NODE_STATUS_END 1\n'))
+    const errs = rows(session).filter((r) => r.includes('needs v3'))
+    expect(errs).toHaveLength(1)
+    session.shutdown()
+  })
+
+  it("tolerates reset noise before the bridge's own row, and leaves that row out of the counts", () => {
+    const { session, serial } = launched()
+    serial.openCb('/dev/fake')
+    serial.dataCb(
+      Buffer.concat([
+        Buffer.from([0x5f, 0xfe]), // '_\xfe', as captured on the bench
+        Buffer.from(statusLine(0, true, 3) + statusLine(1) + '_NODE_STATUS_END 2\n')
+      ])
+    )
+    expect(rows(session)).toContain('node:roster: 1 node online')
+    expect(rows(session).some((r) => r.includes('Node 0'))).toBe(false)
     session.shutdown()
   })
 

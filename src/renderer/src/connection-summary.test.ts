@@ -19,6 +19,7 @@ const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => (
   overheat: false,
   degraded: false,
   faultId: 0,
+  nodeKind: 0,
   ...over
 })
 
@@ -160,7 +161,7 @@ describe('nodesSummary rows', () => {
       [o]
     )
     expect(s.rows.map((r) => r.meta)).toEqual([
-      '#4 · 1 nodes affected · not seen this session',
+      '#4 · 1 node affected · not seen this session',
       '#3 · not seen this session'
     ])
   })

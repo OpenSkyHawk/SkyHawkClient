@@ -11,6 +11,7 @@ import {
   NODE_STATUS,
   NODE_HEALTH_FLAGS,
   NODE_FAULT_CODES,
+  NODE_KINDS,
   NODE_TELEM,
   TELEM_PAGES,
   PDU_RAIL_FLAGS,
@@ -23,6 +24,7 @@ import {
   HFLAG_DEGRADED,
   HFLAG_OVERHEAT,
   NODE_END_MSG,
+  NODE_KIND,
   NODE_MSG,
   NODE_REQ_ADDR,
   SUPPORTED_NODE_PROTO
@@ -155,6 +157,8 @@ describe('node-telem contract', () => {
     expect(TELEM_PAGES).toEqual(TELEM_PAGE)
     expect(PDU_RAIL_FLAGS).toEqual(RAIL_FLAG)
     expect(PDU_STATUS_FLAGS).toEqual(PDU_FLAG)
+    // _NODE_STATUS v3 nodeKind (#344): the parser's names must be the firmware's.
+    expect(NODE_KINDS).toEqual(NODE_KIND)
   })
 })
 

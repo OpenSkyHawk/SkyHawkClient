@@ -18,6 +18,7 @@ const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => (
   overheat: false,
   degraded: false,
   faultId: 0,
+  nodeKind: 0,
   ...over
 })
 
@@ -189,18 +190,22 @@ describe('attentionSummary', () => {
 })
 
 describe('reportedKind', () => {
-  it('is a PDU only once it sent PDU pages, never from its NODE_ID', () => {
-    expect(reportedKind(fresh(42, { kind: 'pdu', everHadReadings: true }))).toBe('pdu')
+  it('is what the shared resolver identified, never the display kind or the NODE_ID', () => {
+    expect(reportedKind(fresh(42, { kind: 'pdu', identified: 'pdu' }))).toBe('pdu')
+    expect(reportedKind(fresh(44, { identified: 'panel' }))).toBe('panel')
     // The model files a new node under 'panel' by default: that is not a reported kind.
     expect(reportedKind(fresh(41))).toBeNull()
-    expect(reportedKind(fresh(43, { kind: 'pdu', everHadReadings: false }))).toBeNull()
+    expect(reportedKind(fresh(43, { kind: 'pdu' }))).toBeNull()
+    // A bridge, or a kind this client doesn't know, is not something to adopt.
+    expect(reportedKind(fresh(45, { identified: 'bridge' }))).toBeNull()
+    expect(reportedKind(fresh(46, { identified: 'other' }))).toBeNull()
   })
 })
 
 describe('newDevices', () => {
   const views = (nodes: NodeModelEntry[]) => nodeViews(model(nodes), [])
   const newPdu = (id: number, over: Partial<NodeModelEntry> = {}) =>
-    fresh(id, { kind: 'pdu', everHadReadings: true, ...over })
+    fresh(id, { kind: 'pdu', identified: 'pdu', everHadReadings: true, ...over })
 
   it('is null when no NODE_ID waits to be adopted', () => {
     expect(newDevices(views([node(1), pdu(3)]), true)).toBeNull()
