@@ -137,7 +137,9 @@ export function CalibrationDialog({
   // Centre is not a stage the user navigates to — it is captured inside the same sweep as the
   // stops, and naming it as step 2 promised a separate thing to do that never arrives.
   const steps = ['Full travel', 'Review & write']
-  const stepIndex = cap?.phase === 'capturing' ? 0 : 1
+  // A rejected sweep is still step 1: nothing was captured, and Redo continues the same capture.
+  const inTravel = cap?.phase === 'capturing' || cap?.phase === 'rejected'
+  const stepIndex = inTravel ? 0 : 1
 
   /**
    * Delete is armed by the first click and performed by the second.
@@ -217,7 +219,7 @@ export function CalibrationDialog({
               </div>
             ))}
             <span className="cd__hint">
-              {cap?.phase === 'capturing'
+              {inTravel && cap
                 ? `${sweepsRemaining(cap)} sweep${sweepsRemaining(cap) === 1 ? '' : 's'} remaining`
                 : 'Captured, not written — nothing reaches the device until you write.'}
             </span>
