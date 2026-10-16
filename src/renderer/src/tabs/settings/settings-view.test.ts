@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { NodeRegistryInfo } from '@shared/ipc'
 import type { NodeModel, NodeModelEntry } from '@shared/node-rules'
 import {
+  hiddenRow,
   ignoredRow,
   importDoneText,
   importRowKey,
@@ -109,6 +110,28 @@ describe('import texts', () => {
     expect(importDoneText(1)).toBe('Applied 1 section')
     expect(importDoneText(3, '/u/backups/skyhawk-config-x.json')).toBe(
       'Applied 3 sections · backup saved as skyhawk-config-x.json'
+    )
+  })
+})
+
+describe('hiddenRow (#76)', () => {
+  it('uses the name and console the Cockpit showed: a renamed registry node', () => {
+    expect(hiddenRow({ nodeId: 2, name: 'Nav_Repeater', console: 'Left' })).toEqual({
+      nodeId: 2,
+      label: 'Nav_Repeater',
+      desc: 'Left console · returns when it reports again'
+    })
+  })
+
+  it('an adopted node keeps the name the user gave it', () => {
+    expect(hiddenRow({ nodeId: 41, name: 'Left_Lights', console: 'Left' }).label).toBe(
+      'Left_Lights'
+    )
+  })
+
+  it('no console, no console part', () => {
+    expect(hiddenRow({ nodeId: 41, name: 'Spare', console: '' }).desc).toBe(
+      'returns when it reports again'
     )
   })
 })

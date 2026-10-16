@@ -3051,6 +3051,20 @@ button.devind[aria-expanded='true'] {
   flex-direction: column;
   gap: 3px;
 }
+/* a PDU's header opens its panel (#76); "No power zone" stays plain text */
+button.gh {
+  appearance: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+}
+button.gh:hover {
+  background: rgba(30, 143, 255, 0.08);
+}
 .gh__l {
   display: flex;
   align-items: center;
@@ -3128,6 +3142,15 @@ button.devind[aria-expanded='true'] {
   white-space: nowrap;
   overflow: hidden;
   box-shadow: inset 3px 0 0 rgba(110, 231, 160, 0.55);
+}
+button.tile2 {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  text-align: left;
+}
+button.tile2:hover {
+  border-color: rgba(30, 143, 255, 0.55);
 }
 .tile2--warn {
   border-color: rgba(244, 179, 33, 0.55);
@@ -3283,4 +3306,179 @@ button.devind[aria-expanded='true'] {
 .cog:hover {
   color: var(--blue);
   background: rgba(30, 143, 255, 0.1);
+}
+
+/* ── cockpit side panels (#76) ──────────────────────────────────── */
+.sheet__scrim {
+  position: fixed;
+  inset: 92px 0 0 0;
+  background: rgba(3, 6, 12, 0.55);
+}
+.sheet {
+  position: fixed;
+  top: 92px;
+  right: 0;
+  bottom: 0;
+  width: 420px;
+  max-width: 100%;
+  padding: 22px;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  outline-offset: -6px;
+  overflow-y: auto;
+}
+.sheet__h {
+  margin-bottom: 10px;
+}
+.sh__sec {
+  margin-top: 20px;
+}
+.sh__sec > .section-h {
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+.sh__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.sh__title {
+  font-family: var(--disp);
+  font-size: 16px;
+  font-weight: 700;
+}
+.sh__sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted-3);
+  margin-bottom: 12px;
+}
+.sh__fault {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sh__fault--warn {
+  background: rgba(244, 179, 33, 0.1);
+  border: 1px solid rgba(244, 179, 33, 0.35);
+  color: var(--gold);
+}
+.sh__fault--err {
+  background: rgba(255, 122, 122, 0.1);
+  border: 1px solid rgba(255, 122, 122, 0.35);
+  color: #ff9a9a;
+}
+.sh__fault--new {
+  background: rgba(30, 143, 255, 0.1);
+  border: 1px solid rgba(30, 143, 255, 0.35);
+  color: var(--blue);
+}
+.sh__tabs {
+  display: flex;
+  margin: 4px 0 2px;
+}
+.sh__tabs .segmini {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+}
+.sh__row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.sh__row > div {
+  flex: 1;
+  min-width: 0;
+}
+.sh__hint {
+  margin-top: 6px;
+}
+.sh__err {
+  margin-top: 14px;
+}
+.sh__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+.zone__id {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted-3);
+}
+.danger {
+  appearance: none;
+  cursor: pointer;
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: rgba(255, 122, 122, 0.1);
+  border: 1px solid rgba(255, 122, 122, 0.4);
+  color: #ff9a9a;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: auto;
+}
+.danger + .danger {
+  margin-left: 0;
+}
+.danger:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.chips2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chips2 span {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+}
+/* PDU rails: rail · avg V · min V · A · peak A */
+.rl {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr 0.8fr 1fr;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted-3);
+}
+.rl b {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 12px;
+}
+.rl--alert b {
+  color: var(--gold);
+}
+.rl__k {
+  font-family: var(--disp);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--muted-2);
+}
+select.input {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 28px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-2) 50%),
+    linear-gradient(135deg, var(--muted-2) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 55%,
+    calc(100% - 10px) 55%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
 }

@@ -1,7 +1,5 @@
-import { useEffect, useRef, type ReactNode } from 'react'
-
-const FOCUSABLE =
-  'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+import { useRef, type ReactNode } from 'react'
+import { useModalFocus } from '../../useModalFocus'
 
 /**
  * Modal review dialog (Settings › reset / registry). Esc and the scrim close it; Tab stays inside;
@@ -25,34 +23,7 @@ export function Dialog({
   children: ReactNode
 }) {
   const ref = useRef<HTMLElement>(null)
-  const close = useRef(onClose)
-  close.current = onClose
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    const box = ref.current
-    const items = () => [...(box?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])]
-    ;(items()[0] ?? box)?.focus()
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        close.current()
-      } else if (e.key === 'Tab') {
-        const list = items()
-        if (list.length === 0) return e.preventDefault()
-        const i = list.indexOf(document.activeElement as HTMLElement)
-        const next = e.shiftKey ? (i <= 0 ? list.length - 1 : i - 1) : (i + 1) % list.length
-        e.preventDefault()
-        list[next]!.focus()
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      opener?.focus()
-    }
-  }, [])
+  useModalFocus(ref, onClose)
 
   return (
     <>

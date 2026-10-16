@@ -1,7 +1,8 @@
 // Settings text decisions (#67), pure so they are unit-tested: what each Cockpit / About row says.
 import type { NodeRegistryInfo } from '@shared/ipc'
 import type { NodeKind } from '@shared/node-mapping'
-import type { IgnoredNode, NodeModel } from '@shared/node-rules'
+import type { HiddenNode, IgnoredNode, NodeModel } from '@shared/node-rules'
+import { consoleLabel } from '../../cockpit-panels'
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
@@ -56,6 +57,17 @@ export function ignoredRow(n: IgnoredNode, now = Date.now()): IgnoredRow {
     nodeId: n.nodeId,
     label: n.name ? `${n.name} · ${kind}` : kind,
     desc: `${ignored} · ${seen}`
+  }
+}
+
+/** One Hidden nodes row (#76): the name and console the Cockpit showed for it. */
+export function hiddenRow(n: HiddenNode): IgnoredRow {
+  return {
+    nodeId: n.nodeId,
+    label: n.name,
+    desc: n.console
+      ? `${consoleLabel(n.console)} · returns when it reports again`
+      : 'returns when it reports again'
   }
 }
 

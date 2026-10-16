@@ -193,7 +193,8 @@ export interface PlanLayout {
   wires: PlanWire[]
 }
 
-const shortName = (name: string) => name.replace(/^(Left|Center|Right)_/, '')
+/** Name without its console prefix (`Left_Fuel` → `Fuel`). */
+export const shortName = (name: string) => name.replace(/^(Left|Center|Right)_/, '')
 
 export function outageHint(o: PduOutage): string {
   const n = o.nodeIds.length
