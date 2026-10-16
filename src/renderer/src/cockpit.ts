@@ -167,16 +167,19 @@ const TILE_GAP = 8
 const ROW_H = 42
 /** Tile labels are mono 11 px: about 0.6 em a character. */
 const CHAR_W = 6.6
-/** Left inset and padding, gap and border around the label; the state symbol adds SYM_W. */
-const TILE_CHROME = 30
-const SYM_W = 16
+/**
+ * Left inset and padding, gap and border around the label, plus room for the state symbol — always
+ * reserved, so a board changing state never changes its tile's width or re-wraps its group.
+ */
+const TILE_CHROME = 46
 
 /**
  * A tile fits its label (#93): never narrower than the console's column (`min`), at most `max`
- * (~2 columns, or the whole group on a side console); past that the label ends in "…".
+ * (~2 columns, or the whole group on a side console); past that the label ends in "…". Its width
+ * depends on the name only, never on the board's state.
  */
-export function tileWidth(label: string, symbol: boolean, min: number, max: number): number {
-  const fit = Math.ceil(label.length * CHAR_W + TILE_CHROME + (symbol ? SYM_W : 0))
+export function tileWidth(label: string, min: number, max: number): number {
+  const fit = Math.ceil(label.length * CHAR_W + TILE_CHROME)
   return Math.min(max, Math.max(min, fit))
 }
 const HINT_H = 16
@@ -275,7 +278,7 @@ export function planLayout(views: NodeView[], outages: PduOutage[]): PlanLayout 
       let row = 0
       for (const view of members) {
         const short = shortName(view.entry.name)
-        const w = tileWidth(short, STATE_SYMBOL[view.health.state] !== '', tileW, maxW)
+        const w = tileWidth(short, tileW, maxW)
         if (x > c.x && x + w > c.x + c.w) {
           x = c.x
           row++

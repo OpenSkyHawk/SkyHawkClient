@@ -272,10 +272,25 @@ describe('planLayout', () => {
   })
 
   it('tiles fit their names, from the column width up to ~2 columns, then "…" (#93)', () => {
-    expect(tileWidth('Armament', false, 99, 206)).toBe(99) // short: the column width
-    expect(tileWidth('Fuel_Quantity_Gauge', false, 99, 206)).toBe(156)
-    expect(tileWidth('Fuel_Quantity_Gauge', true, 99, 206)).toBe(172) // room for "!"
-    expect(tileWidth('Angle_Of_Attack_Indexer_Lights', false, 99, 206)).toBe(206) // capped
+    expect(tileWidth('Armament', 99, 206)).toBe(99) // short: the column width
+    expect(tileWidth('Fuel_Quantity_Gauge', 99, 206)).toBe(172) // room for the symbol always kept
+    expect(tileWidth('Angle_Of_Attack_Indexer_Lights', 99, 206)).toBe(206) // capped
+  })
+
+  it('a board changing state never moves a tile (#93 re-review I)', () => {
+    const names = ['Left_ARC51_UHF', 'Left_Fuel', 'Left_Trim']
+    const at = (state: Partial<NodeModelEntry>) =>
+      planLayout(
+        nodeViews(
+          model([
+            pdu(3, 'Left'),
+            ...names.map((name, i) => node(10 + i, { name, pduId: 3, ...(i === 0 ? state : {}) }))
+          ]),
+          []
+        ),
+        []
+      ).groups[0]!.tiles.map((t) => [t.x, t.y, t.w])
+    expect(at({ availability: 'offline' })).toEqual(at({})) // ✕ appears: same places, same widths
   })
 
   it('tiles flow left to right and wrap inside their group', () => {
@@ -288,10 +303,10 @@ describe('planLayout', () => {
       []
     )
     const g = l.groups[0]!
-    // Left console: 200 wide, two 96-px columns. ARC51 needs 129, so it takes its row.
+    // Left console: 200 wide, two 96-px columns. ARC51 needs 145, so it takes its row.
     expect(g.tiles.map((t) => [t.short, t.x - g.x, t.y - g.tiles[0]!.y, t.w])).toEqual([
       ['Engine', 0, 0, 96],
-      ['ARC51_UHF_Radio', 0, 42, 129],
+      ['ARC51_UHF_Radio', 0, 42, 145],
       ['Fuel', 0, 84, 96],
       ['Trim', 104, 84, 96],
       ['Gear', 0, 126, 96]
