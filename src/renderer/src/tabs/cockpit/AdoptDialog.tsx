@@ -7,6 +7,7 @@ import {
   adoptQueue,
   adoptSpec,
   identState,
+  keptQueue,
   nextSelection,
   prefill,
   registrySpecs,
@@ -26,7 +27,12 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
   const ref = useRef<HTMLElement>(null)
   useModalFocus(ref, props.onClose)
 
-  const queue = useMemo(() => adoptQueue(props.views), [props.views])
+  const live = useMemo(() => adoptQueue(props.views), [props.views])
+  // Rows this dialog has shown, so one that drops (power-cycled to identify it) stays listed.
+  const shown = useRef(new Map<number, NodeView>())
+  for (const v of live) shown.current.set(v.entry.nodeId, v)
+  const [done, setDone] = useState<ReadonlySet<number>>(new Set())
+  const queue = useMemo(() => keptQueue(live, shown.current, done), [live, done])
   const ids = queue.map((v) => v.entry.nodeId)
   // The queue as the dialog showed it, so "next" keeps its place as nodes leave it.
   const order = useRef<number[]>(ids)
@@ -54,14 +60,21 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
   const [bulkError, setBulkError] = useState('')
   const addAll = async () => {
     setBulkError('')
+    const added: number[] = []
     for (const b of bulk) {
       const r = await window.skyhawk?.adoptNode(b.nodeId, b.spec)
-      if (r && !r.ok) return setBulkError(`NODE_ID ${b.nodeId}: ${r.error}`)
+      if (r && !r.ok) {
+        setDone(new Set([...done, ...added]))
+        return setBulkError(`NODE_ID ${b.nodeId}: ${r.error}`)
+      }
+      added.push(b.nodeId)
     }
+    setDone(new Set([...done, ...added]))
   }
 
   if (!current) return null
   const move = (how: 'done' | 'later') => {
+    if (how === 'done') setDone(new Set([...done, current.entry.nodeId]))
     const next = nextSelection(order.current, ids, current.entry.nodeId, how)
     if (next === null && how === 'later') return props.onClose()
     setSel(next)

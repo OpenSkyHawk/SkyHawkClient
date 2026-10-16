@@ -22,6 +22,24 @@ export function adoptQueue(views: NodeView[]): NodeView[] {
     .sort((a, b) => at(a) - at(b) || a.entry.nodeId - b.entry.nodeId)
 }
 
+/**
+ * The queue while the dialog is open (#93 re-review): what is waiting now, plus every row it has
+ * already shown that is gone from the model — kept, offline, so power-cycling a board to identify
+ * it (a registry board not added leaves the model when it drops) doesn't close the dialog or lose
+ * its form. A row leaves only once added (`done`) or when the dialog closes.
+ */
+export function keptQueue(
+  live: NodeView[],
+  shown: ReadonlyMap<number, NodeView>,
+  done: ReadonlySet<number>
+): NodeView[] {
+  const ids = new Set(live.map((v) => v.entry.nodeId))
+  const gone = [...shown.values()]
+    .filter((v) => !ids.has(v.entry.nodeId) && !done.has(v.entry.nodeId))
+    .map((v): NodeView => ({ ...v, entry: { ...v.entry, availability: 'offline' } }))
+  return adoptQueue([...live.filter((v) => !done.has(v.entry.nodeId)), ...gone])
+}
+
 /** "first seen 2 min ago" — this session's first sighting (it is not persisted). */
 export function seenAgo(firstSeenAt: number | undefined, now: number): string {
   if (firstSeenAt === undefined) return 'first seen this session'

@@ -9,6 +9,7 @@ import {
   adoptQueue,
   adoptSpec,
   identState,
+  keptQueue,
   nextSelection,
   prefill,
   registrySpecs,
@@ -234,6 +235,35 @@ describe('adoptability', () => {
     )
     expect(other).toMatchObject({ badge: 'UNKNOWN TYPE' })
     expect(other.note).toMatch(/doesn’t know \(7\)/)
+  })
+})
+
+describe('keptQueue (#93 re-review)', () => {
+  const at = (nodes: NodeModelEntry[]) => nodeViews(model(nodes), [])
+  const ids = (q: ReturnType<typeof keptQueue>) =>
+    q.map((v) => [v.entry.nodeId, v.entry.availability])
+
+  it('keeps a row it showed that dropped out of the model — offline, in its place', () => {
+    const first = at([fresh(1, { firstSeenAt: 0 }), fresh(41, { firstSeenAt: 500 })])
+    const shown = new Map(first.map((v) => [v.entry.nodeId, v]))
+    // Board 1 is power-cycled: a registry board not added leaves the model while it is off.
+    const now = at([fresh(41, { firstSeenAt: 500 })])
+    expect(ids(keptQueue(now, shown, new Set()))).toEqual([
+      [1, 'offline'],
+      [41, 'online']
+    ])
+    // It comes back: live again.
+    expect(ids(keptQueue(first, shown, new Set()))).toEqual([
+      [1, 'online'],
+      [41, 'online']
+    ])
+  })
+
+  it('drops a row once it was added, whether it is still in the model or not', () => {
+    const live = at([fresh(1), fresh(41)])
+    const shown = new Map(live.map((v) => [v.entry.nodeId, v]))
+    expect(ids(keptQueue(live, shown, new Set([1])))).toEqual([[41, 'online']])
+    expect(ids(keptQueue(at([fresh(41)]), shown, new Set([1])))).toEqual([[41, 'online']])
   })
 })
 
