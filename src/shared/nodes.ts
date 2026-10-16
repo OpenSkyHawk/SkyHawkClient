@@ -90,6 +90,25 @@ export function nodeRosterRequest(): Uint8Array {
 }
 
 /**
+ * How long after a roster request a `_NODE_STATUS` still counts as part of its reply. The bridge
+ * answers at once (a burst of lines at 250 kbaud); a second is generous.
+ */
+export const ROSTER_REPLY_MS = 1000
+
+/** When a node was first seen and, while it is offline, when and how it went offline. */
+export interface NodeSeen {
+  firstSeenAt: number
+  /** Set while offline: when the client learned of it. */
+  offlineAt?: number
+  /**
+   * 'delta' = a live `_NODE_STATUS` pushed on the transition (arrives ~3 s after the node goes
+   * silent, the bridge's heartbeat timeout). 'roster' = found by a roster reply, so the real
+   * transition happened up to one poll earlier.
+   */
+  offlineVia?: 'delta' | 'roster'
+}
+
+/**
  * Tracks every node seen since reset. Bare messages are live deltas; a request/boot
  * burst ends with `_NODE_STATUS_END`, after which nodes absent from the burst are
  * marked offline (present=false) — they STAY in the roster (shown red) rather than
@@ -97,41 +116,86 @@ export function nodeRosterRequest(): Uint8Array {
  */
 export class NodeRoster {
   private nodes = new Map<number, NodeStatus>()
+  private seen = new Map<number, NodeSeen>()
   private burst: NodeStatus[] = []
+  /** When the pending roster request went out; cleared by its `_NODE_STATUS_END`. */
+  private burstAt?: number
+  private completeAt?: number
   private dirty = false
 
   reset(): void {
     this.nodes.clear()
+    this.seen.clear()
     this.burst = []
+    this.burstAt = undefined
+    this.completeAt = undefined
     this.dirty = true
   }
 
   /** Call when a roster request is sent, so the reply burst is isolated from prior deltas. */
-  beginBurst(): void {
+  beginBurst(now = Date.now()): void {
     this.burst = []
+    this.burstAt = now
+  }
+
+  /**
+   * A status inside the reply window of a pending request is part of the roster reply. Bounded,
+   * so a bridge that never sends `_NODE_STATUS_END` cannot leave every later delta labelled as a
+   * late roster find (which would widen PDU-offline grouping for good).
+   */
+  private inReply(now: number): boolean {
+    return (
+      this.burstAt !== undefined && now >= this.burstAt && now - this.burstAt <= ROSTER_REPLY_MS
+    )
   }
 
   /** Feed one parsed DCS-BIOS command (name + remaining arg text). */
-  applyMessage(name: string, arg: string): void {
+  applyMessage(name: string, arg: string, now = Date.now()): void {
     if (name === NODE_MSG) {
       const ns = parseNodeStatus(arg.trim())
       if (!ns) return
       this.burst.push(ns)
+      const wasPresent = this.nodes.get(ns.nodeId)?.present ?? true
       this.nodes.set(ns.nodeId, ns) // keep absent nodes too; present flag carries state
+      const seen = this.seen.get(ns.nodeId) ?? { firstSeenAt: now }
+      if (ns.present) this.seen.set(ns.nodeId, { firstSeenAt: seen.firstSeenAt })
+      else if (wasPresent || seen.offlineAt === undefined) {
+        this.seen.set(ns.nodeId, {
+          firstSeenAt: seen.firstSeenAt,
+          offlineAt: now,
+          offlineVia: this.inReply(now) ? 'roster' : 'delta'
+        })
+      }
       this.dirty = true
     } else if (name === NODE_END_MSG) {
       // Nodes not in this burst went silent → mark offline, but keep them visible.
-      const seen = new Set(this.burst.map((n) => n.nodeId))
+      const inBurst = new Set(this.burst.map((n) => n.nodeId))
       for (const [id, node] of this.nodes) {
-        if (!seen.has(id) && node.present) this.nodes.set(id, { ...node, present: false })
+        if (!inBurst.has(id) && node.present) {
+          this.nodes.set(id, { ...node, present: false })
+          const seen = this.seen.get(id) ?? { firstSeenAt: now }
+          this.seen.set(id, { firstSeenAt: seen.firstSeenAt, offlineAt: now, offlineVia: 'roster' })
+        }
       }
       this.burst = []
+      this.burstAt = undefined
+      this.completeAt ??= now
       this.dirty = true
     }
   }
 
   snapshot(): NodeStatus[] {
     return [...this.nodes.values()].sort((a, b) => a.nodeId - b.nodeId)
+  }
+
+  /** First-seen / offline timing per node, in memory only (cleared by reset). */
+  seenInfo(): ReadonlyMap<number, NodeSeen> {
+    return this.seen
+  }
+
+  /** When the first complete roster (first `_NODE_STATUS_END`) since reset arrived. */
+  rosterCompleteAt(): number | undefined {
+    return this.completeAt
   }
 
   /** True once since the last call if the roster changed (drives throttled emits). */

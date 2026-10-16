@@ -3,6 +3,7 @@ import {
   NODE_END_MSG,
   NODE_MSG,
   NodeRoster,
+  ROSTER_REPLY_MS,
   parseNodeStatus,
   nodeRosterRequest,
   nodeDotState,
@@ -112,6 +113,48 @@ describe('NodeRoster', () => {
       [3, true]
     ])
     expect(r.takeDirty()).toBe(true)
+  })
+
+  it('records first-seen and when / how a node went offline, clearing it when it returns', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, '01010000000000000080000000', 1000)
+    r.applyMessage(NODE_MSG, '01000000000000000080000000', 5000) // live delta: offline
+    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, offlineAt: 5000, offlineVia: 'delta' })
+    r.applyMessage(NODE_MSG, '01000000000000000080000000', 6000) // repeat keeps the first time
+    expect(r.seenInfo().get(1)?.offlineAt).toBe(5000)
+    r.applyMessage(NODE_MSG, '01010000000000000080000000', 7000)
+    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000 })
+  })
+
+  it('an offline found by a roster reply is marked roster, and the first END is remembered', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, '01010000000000000080000000', 0)
+    r.applyMessage(NODE_MSG, '02010000000000000080000000', 0)
+    expect(r.rosterCompleteAt()).toBeUndefined()
+    r.beginBurst(3999)
+    r.applyMessage(NODE_MSG, '02000000000000000080000000', 4000) // in the reply, reported absent
+    r.applyMessage(NODE_END_MSG, '1', 4001) // node 1 missing from the reply
+    expect(r.seenInfo().get(1)).toMatchObject({ offlineAt: 4001, offlineVia: 'roster' })
+    expect(r.seenInfo().get(2)).toMatchObject({ offlineAt: 4000, offlineVia: 'roster' })
+    expect(r.rosterCompleteAt()).toBe(4001)
+    r.beginBurst()
+    r.applyMessage(NODE_END_MSG, '0', 9000)
+    expect(r.rosterCompleteAt()).toBe(4001) // the first complete roster, not the latest
+    r.reset()
+    expect(r.rosterCompleteAt()).toBeUndefined()
+    expect(r.seenInfo().size).toBe(0)
+  })
+
+  it('a reply that never ends does not turn later deltas into roster finds', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, '01010000000000000080000000', 0)
+    r.applyMessage(NODE_MSG, '02010000000000000080000000', 0)
+    r.beginBurst(1000) // the bridge never answers with _NODE_STATUS_END
+    r.applyMessage(NODE_MSG, '01000000000000000080000000', 1000 + ROSTER_REPLY_MS)
+    expect(r.seenInfo().get(1)?.offlineVia).toBe('roster') // inside the reply window
+    r.applyMessage(NODE_MSG, '02000000000000000080000000', 1001 + ROSTER_REPLY_MS)
+    expect(r.seenInfo().get(2)?.offlineVia).toBe('delta') // after it: a live delta
+    expect(r.rosterCompleteAt()).toBeUndefined() // registry nodes stay unknown, honestly
   })
 })
 

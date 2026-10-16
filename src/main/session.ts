@@ -4,6 +4,7 @@
 // any live mode.
 import { DcsBiosProtocol, LineAssembler, parseCommand } from '@shared/dcsbios'
 import { NODE_END_MSG, NODE_MSG, NodeRoster, nodeRosterRequest } from '@shared/nodes'
+import { NODE_TELEM_MSG } from '@shared/node-telem'
 import {
   DEFAULT_CONFIG,
   type AppConfig,
@@ -45,6 +46,7 @@ import { Recorder, ReplaySource, type ReplayInfo } from './replay'
 import { NODE_NAMES } from './reference/node-names.generated'
 import { NODE_FAULT_CODES } from './reference/node-status.generated'
 import { Decoder } from './decode'
+import { NodeHub } from './node-hub'
 import { Stats } from './stats'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
@@ -76,6 +78,8 @@ export class Session {
   private recorder?: Recorder
   private recordPath?: string
   private readonly roster = new NodeRoster()
+  /** Node telemetry, mapping and the combined node model (#61). */
+  readonly nodes: NodeHub
   private cmdAssembler = new LineAssembler()
   private readonly parser: DcsBiosProtocol
   private decoder = new Decoder()
@@ -100,6 +104,7 @@ export class Session {
 
   constructor(private readonly emit: Emit) {
     this.parser = new DcsBiosProtocol((addr, val) => this.onWrite(addr, val))
+    this.nodes = new NodeHub(emit, this.roster)
   }
 
   getConfig(): AppConfig {
@@ -121,6 +126,7 @@ export class Session {
     this.parser.reset()
     this.stats.reset()
     this.roster.reset()
+    this.nodes.reset()
     this.cmdAssembler = new LineAssembler()
     this.logBuf = []
     this.lastErrKey = ''
@@ -382,6 +388,11 @@ export class Session {
         this.roster.applyMessage(identifier, arg)
         continue
       }
+      // Node telemetry (~1/s per PDU) likewise: tapped, never logged as a panel command.
+      if (identifier === NODE_TELEM_MSG) {
+        this.nodes.telemetry(arg)
+        continue
+      }
       this.stats.command(line.trim())
       this.logBuf.push({ t, dir: 'out', address: 0, name: identifier, value: arg })
     }
@@ -434,7 +445,8 @@ export class Session {
     // Still emitted while nothing is arriving: a silent device is the normal resting state, and
     // ageMs and the rate have to keep moving for the UI to say so.
     if (this.hid) this.emit('hid:report', this.hid.snapshot())
-    if (this.roster.takeDirty()) {
+    const rosterChanged = this.roster.takeDirty()
+    if (rosterChanged) {
       const nodes = this.roster.snapshot().map((n) => {
         const fc = n.faultId ? NODE_FAULT_CODES[n.faultId] : undefined
         return {
@@ -447,6 +459,7 @@ export class Session {
       })
       this.emit('nodes:status', nodes)
     }
+    this.nodes.flush(rosterChanged)
   }
 
   // ── axis calibration (#46) ─────────────────────────────────────────────────

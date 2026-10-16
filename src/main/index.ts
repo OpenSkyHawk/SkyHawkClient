@@ -12,6 +12,7 @@ import {
   type PushChannels,
   type ReplayLoad
 } from '@shared/ipc'
+import type { AdoptSpec, MappingPatch } from '@shared/node-mapping'
 import { HID_CONTROLS, HID_ID } from './reference/hid-controls.generated'
 import { Session } from './session'
 import { loadConfig, saveConfig } from './settings'
@@ -62,6 +63,19 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.relayStatus, () => session.status())
   ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
   ipcMain.handle(CTRL.nodesRefresh, () => session.requestNodes())
+  ipcMain.handle(CTRL.nodesGet, () => session.nodes.snapshot())
+  ipcMain.handle(CTRL.nodeMappingSet, (_e, id: number, patch: MappingPatch) =>
+    session.nodes.setMapping(id, patch)
+  )
+  ipcMain.handle(CTRL.nodeMappingAdopt, (_e, id: number, spec: AdoptSpec) =>
+    session.nodes.adopt(id, spec)
+  )
+  ipcMain.handle(CTRL.nodeMappingForget, (_e, id: number) => session.nodes.forget(id))
+  ipcMain.handle(CTRL.nodeMappingReset, () => session.nodes.resetAll())
+  ipcMain.handle(CTRL.nodeMappingIgnore, (_e, id: number, on: boolean) =>
+    session.nodes.ignore(id, on)
+  )
+  ipcMain.handle(CTRL.nodeMappingHide, (_e, id: number, on: boolean) => session.nodes.hide(id, on))
   ipcMain.handle(CTRL.serialMonitor, (_e, on: boolean) => session.setSerialMonitor(on))
 
   // Axis calibration (#46). Every one returns a discriminated CalResult rather than throwing:

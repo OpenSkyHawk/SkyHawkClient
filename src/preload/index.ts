@@ -11,6 +11,8 @@ import {
   type DebugDumpResult,
   type ExportResult,
   type HidAvailability,
+  type NodeMappingResult,
+  type NodeSnapshot,
   type PushChannel,
   type PushChannels,
   type RelayResult,
@@ -39,6 +41,18 @@ const api: SkyhawkApi = {
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
   getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,
   refreshNodes: () => ipcRenderer.invoke(CTRL.nodesRefresh) as Promise<void>,
+  getNodes: () => ipcRenderer.invoke(CTRL.nodesGet) as Promise<NodeSnapshot>,
+  setNodeMapping: (nodeId, patch) =>
+    ipcRenderer.invoke(CTRL.nodeMappingSet, nodeId, patch) as Promise<NodeMappingResult>,
+  adoptNode: (nodeId, spec) =>
+    ipcRenderer.invoke(CTRL.nodeMappingAdopt, nodeId, spec) as Promise<NodeMappingResult>,
+  forgetNode: (nodeId) =>
+    ipcRenderer.invoke(CTRL.nodeMappingForget, nodeId) as Promise<NodeMappingResult>,
+  resetNodeMapping: () => ipcRenderer.invoke(CTRL.nodeMappingReset) as Promise<NodeMappingResult>,
+  ignoreNode: (nodeId, on) =>
+    ipcRenderer.invoke(CTRL.nodeMappingIgnore, nodeId, on) as Promise<NodeMappingResult>,
+  hideNode: (nodeId, on) =>
+    ipcRenderer.invoke(CTRL.nodeMappingHide, nodeId, on) as Promise<NodeMappingResult>,
   setSerialMonitor: (on: boolean) => ipcRenderer.invoke(CTRL.serialMonitor, on) as Promise<void>,
   dumpSerialPorts: () => ipcRenderer.invoke(CTRL.debugDumpPorts) as Promise<DebugDumpResult>,
   revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>,

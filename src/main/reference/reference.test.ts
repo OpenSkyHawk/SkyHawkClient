@@ -7,7 +7,15 @@ import {
 } from './a4ec-controls.generated'
 import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generated'
 import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
-import { NODE_STATUS, NODE_HEALTH_FLAGS, NODE_FAULT_CODES } from './node-status.generated'
+import {
+  NODE_STATUS,
+  NODE_HEALTH_FLAGS,
+  NODE_FAULT_CODES,
+  NODE_TELEM,
+  TELEM_PAGES,
+  PDU_RAIL_FLAGS,
+  PDU_STATUS_FLAGS
+} from './node-status.generated'
 import { NODE_NAMES } from './node-names.generated'
 import { CAL_PROTO, CAL_TYPES, CAL_NACK_REASONS, CAL_PAYLOAD_LEN } from './axis-cal.generated'
 import { ACFT_NAME } from './dcsbios-metadata'
@@ -19,6 +27,13 @@ import {
   NODE_REQ_ADDR,
   SUPPORTED_NODE_PROTO
 } from '@shared/nodes'
+import {
+  NODE_TELEM_MSG,
+  PDU_FLAG,
+  RAIL_FLAG,
+  SUPPORTED_TELEM_PROTO,
+  TELEM_PAGE
+} from '@shared/node-telem'
 import * as cal from '@shared/calibration'
 
 describe('a4ec-controls.generated', () => {
@@ -95,10 +110,23 @@ describe('node-status.generated', () => {
     expect(NODE_HEALTH_FLAGS.DEGRADED).toBe(HFLAG_DEGRADED)
   })
 
-  it('fault-code dictionary pins the core codes (append-only; a renumber fails loudly)', () => {
-    expect(NODE_FAULT_CODES[0]?.name).toBe('NONE')
-    expect(NODE_FAULT_CODES[1]?.name).toBe('I2C_PERIPHERAL')
-    expect(NODE_FAULT_CODES[1]?.abbr).toBe('I2C')
+  it('fault-code dictionary pins every known code (append-only; a renumber fails loudly)', () => {
+    // Each id -> name + badge tag. A code appended at 0x09+ still passes; swapping or renaming an
+    // existing one (which would put the wrong badge on a degraded node) does not.
+    const pinned: Record<number, { name: string; abbr: string }> = {
+      0x00: { name: 'NONE', abbr: 'NONE' },
+      0x01: { name: 'I2C_PERIPHERAL', abbr: 'I2C' },
+      0x02: { name: 'OVER_VOLTAGE', abbr: 'OVER-V' },
+      0x03: { name: 'UNDER_VOLTAGE', abbr: 'UNDER' },
+      0x04: { name: 'SHORT_CIRCUIT', abbr: 'SHORT' },
+      0x05: { name: 'HOST_LINK_LOST', abbr: 'HOST' },
+      0x06: { name: 'FUSE_OPEN', abbr: 'FUSE' },
+      0x07: { name: 'OVER_TEMPERATURE', abbr: 'OVER-T' },
+      0x08: { name: 'SENSOR_FAULT', abbr: 'SENSOR' }
+    }
+    for (const [id, want] of Object.entries(pinned)) {
+      expect(NODE_FAULT_CODES[Number(id)], `fault 0x${Number(id).toString(16)}`).toMatchObject(want)
+    }
     expect(NODE_FAULT_CODES[1]?.label).toBe('I2C peripheral')
     // every entry carries a non-empty label except NONE
     for (const [id, e] of Object.entries(NODE_FAULT_CODES)) {
@@ -107,6 +135,26 @@ describe('node-status.generated', () => {
     // an unknown/reserved id (parseNodeStatus passes any faultId through) is undefined, not a crash —
     // the Partial<Record> type forces callers to ?.-guard.
     expect(NODE_FAULT_CODES[0x99]).toBeUndefined()
+  })
+
+  it('fault badge tags are unique (OVER_VOLTAGE and OVER_TEMPERATURE must not both read OVER)', () => {
+    const tags = Object.values(NODE_FAULT_CODES).map((e) => e?.abbr)
+    expect(new Set(tags).size).toBe(tags.length)
+  })
+})
+
+// shared/node-telem.ts restates these so `src/shared` needs no `src/main` import. Compared in both
+// directions, so a page or flag added, removed or renumbered firmware-side fails here.
+describe('node-telem contract', () => {
+  it('matches the shared decoder (fails loudly on a firmware bump)', () => {
+    expect(NODE_TELEM.protoVersion).toBe(SUPPORTED_TELEM_PROTO)
+    expect(NODE_TELEM.msgName).toBe(NODE_TELEM_MSG)
+  })
+
+  it('page ids and flag bits match the decoder exactly', () => {
+    expect(TELEM_PAGES).toEqual(TELEM_PAGE)
+    expect(PDU_RAIL_FLAGS).toEqual(RAIL_FLAG)
+    expect(PDU_STATUS_FLAGS).toEqual(PDU_FLAG)
   })
 })
 
