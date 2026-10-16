@@ -753,6 +753,39 @@ describe('event log (#64)', () => {
     session.shutdown()
   })
 
+  it('a DCS link that came up and dropped reports its next error again (review of #86)', () => {
+    const { session } = launched({ sourceMode: 'monitor' })
+    session.start()
+    const t = FakeTransport.last!
+    t.errorCb(new Error('connect ECONNREFUSED')) // started before DCS
+    t.connectedCb(true) // DCS starts: link up
+    t.connectedCb(false) // DCS quits
+    t.errorCb(new Error('connect ECONNREFUSED'))
+    t.errorCb(new Error('connect ECONNREFUSED')) // its retry loop: no further row
+    expect(rows(session).filter((r) => r.startsWith('client:DCS'))).toEqual([
+      'client:DCS: link error · connect ECONNREFUSED',
+      'client:DCS: link up · 127.0.0.1:7778',
+      'client:DCS: reconnecting · 127.0.0.1:7778',
+      'client:DCS: link error · connect ECONNREFUSED'
+    ])
+    session.shutdown()
+  })
+
+  it('Disconnect then Connect reports the same port failure again (review of #86)', () => {
+    const { session, serial } = launched()
+    serial.errorCb(new Error('Cannot lock port'))
+    serial.errorCb(new Error('Cannot lock port')) // the port's own retry loop
+    session.link.disconnect()
+    session.link.connect()
+    FakeSerial.last!.errorCb(new Error('Cannot lock port'))
+    expect(rows(session)).toEqual([
+      'client:SERIAL: serial port error · Cannot lock port',
+      'client:SimGateway: disconnected',
+      'client:SERIAL: serial port error · Cannot lock port'
+    ])
+    session.shutdown()
+  })
+
   it('records relay start and stop', () => {
     const { session, serial } = launched({ sourceMode: 'monitor' })
     serial.openCb('/dev/fake')

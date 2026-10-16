@@ -124,7 +124,9 @@ export class Session {
     this.link.onNodeEvents((events) => this.events.add(events))
     this.link.onStatus((s) => {
       if (s.state === 'reconnecting') this.stats.reconnect()
-      if (s.state === 'connected') this.lastErr.delete('SERIAL') // the next failure is news again
+      // The port's own retry loop stays in `error`; any other state (an explicit Connect or Retry
+      // goes through `scanning`) ends that loop, so the next failure is news again.
+      if (s.state !== 'error') this.lastErr.delete('SERIAL')
       const e = deviceEvent(this.lastDevice, s, Date.now())
       if (e) this.events.add([e])
       if (s.state !== 'scanning') this.lastDevice = s.state
@@ -316,6 +318,8 @@ export class Session {
 
   private setRelay(relay: RelayState): void {
     this.events.add(relayEvents(this.relay, relay, relayContext(this.config), Date.now()))
+    if (relay.stream === 'connected') this.lastErr.delete('DCS') // a later drop's error is news
+
     this.relay = relay
     this.emit('relay:state', relay)
   }
