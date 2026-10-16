@@ -20,7 +20,13 @@ import {
 import { buildNodeModel, type NodeModel } from '@shared/node-rules'
 import { NODE_NAMES } from './reference/node-names.generated'
 import { NODE_FAULT_CODES } from './reference/node-status.generated'
-import { loadNodeMapping, saveNodeMapping } from './node-mapping'
+import {
+  loadNodeMapping,
+  MappingSaveError,
+  saveNodeMapping,
+  type LoadedMapping
+} from './node-mapping'
+import { debugLog } from './debug'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
@@ -36,7 +42,7 @@ function withFaultInfo(n: NodeStatus): NodeStatus {
 export class NodeHub {
   private readonly telem = new NodeTelemStore()
   private readonly defaults = registryDefaults(NODE_NAMES)
-  private file?: NodeMappingFile
+  private loaded?: LoadedMapping
   private telemPushedAt = 0
   private modelDirty = true
 
@@ -46,8 +52,12 @@ export class NodeHub {
   ) {}
 
   /** Read lazily: the userData path is only safe to touch once the app is up. */
+  private store(): LoadedMapping {
+    return (this.loaded ??= loadNodeMapping())
+  }
+
   private mapping(): NodeMappingFile {
-    return (this.file ??= loadNodeMapping())
+    return this.store().file
   }
 
   /** New session: telemetry and first-seen times start over; the mapping persists. */
@@ -122,19 +132,37 @@ export class NodeHub {
     return model
   }
 
-  /** A replaced / removed board that reports again is no longer hidden. */
+  /**
+   * A replaced / removed board that reports again is no longer hidden. If the save fails the
+   * board is still shown — it is reporting, so hiding it would be wrong — and the flag may come
+   * back after a restart, which is the lesser problem.
+   */
   private clearHiddenThatReported(): void {
     const present = this.roster
       .snapshot()
       .filter((n) => n.present)
       .map((n) => n.nodeId)
-    this.save(clearReportedHidden(this.mapping(), present))
+    const next = clearReportedHidden(this.mapping(), present)
+    try {
+      this.save(next)
+    } catch (err) {
+      if (!(err instanceof MappingSaveError)) throw err
+      debugLog('nodes.mapping', err.message)
+      this.commit(next)
+    }
   }
 
+  /** Persist, then adopt in memory — never the other way round, or a failed write looks saved. */
   private save(next: NodeMappingFile): void {
     if (next === this.mapping()) return
-    this.file = next
+    const { readOnly } = this.store()
+    if (readOnly) throw new MappingSaveError(`Not saved: ${readOnly}`)
     saveNodeMapping(next)
+    this.commit(next)
+  }
+
+  private commit(next: NodeMappingFile): void {
+    this.store().file = next
     this.modelDirty = true
   }
 
@@ -143,7 +171,9 @@ export class NodeHub {
     try {
       this.save(fn(this.mapping()))
     } catch (err) {
-      if (err instanceof MappingError) return { ok: false, error: err.message }
+      if (err instanceof MappingError || err instanceof MappingSaveError) {
+        return { ok: false, error: err.message }
+      }
       throw err
     }
     return { ok: true, model: this.pushModel() }

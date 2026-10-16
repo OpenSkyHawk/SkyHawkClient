@@ -65,8 +65,9 @@ vi.mock('./serial', () => ({
 vi.mock('./net', () => ({ createTransport: () => new FakeTransport() }))
 // Keep the node mapping off the real disk.
 vi.mock('./node-mapping', () => ({
-  loadNodeMapping: () => ({ version: 1, nodes: {}, ignored: [] }),
-  saveNodeMapping: () => {}
+  loadNodeMapping: () => ({ file: { version: 1, nodes: {}, ignored: [] } }),
+  saveNodeMapping: () => {},
+  MappingSaveError: class extends Error {}
 }))
 vi.mock('./hid', () => ({
   HidReader: class {

@@ -48,6 +48,9 @@ export interface MappedNode {
   hidden: boolean
 }
 
+/** File format this build writes. A file with a higher version came from a newer client. */
+export const NODE_MAPPING_VERSION = 1
+
 export const EMPTY_MAPPING: NodeMappingFile = { version: 1, nodes: {}, ignored: [] }
 
 const MAX_TEXT = 64
