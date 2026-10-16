@@ -11,6 +11,7 @@ import {
   type PduStatusPage
 } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
+import { PSU_PRESETS, type PsuSetting } from '@shared/psu'
 
 /** How a node reads on the plan. 'unknown' = no complete roster yet and it has not reported. */
 export type NodeState = 'on' | 'warn' | 'off' | 'new' | 'unknown'
@@ -452,6 +453,35 @@ export function healthBand(views: NodeView[]): HealthBand {
     }
   }
   return b
+}
+
+// ── PSU headroom ────────────────────────────────────────────────────────────
+
+/** A band value drawn against a PSU limit (Settings › Cockpit › Power supply). Display only. */
+export interface Headroom {
+  limit: number
+  /** Share of the limit in use, not capped (112 = over). null = no reading. */
+  pct: number | null
+  /** Bar fill, 0–100. */
+  bar: number
+}
+
+/** null = the limit is unknown: the card shows its plain total. */
+export function headroom(value: number | null, limit: number | undefined): Headroom | null {
+  if (limit === undefined) return null
+  const pct = value === null ? null : (value / limit) * 100
+  return { limit, pct, bar: pct === null ? 0 : Math.min(100, Math.max(0, pct)) }
+}
+
+/** `4.6%` under 10 %, `53%` from there. */
+export function fmtPct(pct: number): string {
+  const one = Number(pct.toFixed(1))
+  return one < 10 ? `${one.toFixed(1)}%` : `${Math.round(pct)}%`
+}
+
+/** What the plan's PSU box is called: the preset's model, or plain `PSU` for a custom supply. */
+export function psuName(psu: PsuSetting): string {
+  return psu.mode === 'preset' ? PSU_PRESETS[psu.preset].label : 'PSU'
 }
 
 /** Count of NODE_IDs waiting in "New on the bus". */

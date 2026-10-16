@@ -1,19 +1,24 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isLinkUp } from '@shared/ipc'
 import type { NodeModel } from '@shared/node-rules'
+import { effectivePsuLimits, type PsuLimits } from '@shared/psu'
 import { useStore } from '../store'
 import {
   ATTENTION_SHOWN,
   STAGE_W,
   STATE_SYMBOL,
   attentionItems,
+  fmtPct,
+  headroom,
   healthBand,
   newCount,
   nodeViews,
   planLayout,
+  psuName,
   tileMatches,
   type AttentionItem,
   type HealthBand,
+  type Headroom,
   type NodeState,
   type NodeView,
   type PlanGroup,
@@ -44,6 +49,8 @@ export function Cockpit() {
   const peakW = useStore((s) => s.nodesPeakW)
   const live = useStore((s) => isLinkUp(s.deviceState))
   const linkDownAt = useStore((s) => s.linkDownAt)
+  const psu = useStore((s) => s.psu)
+  const limits = useMemo(() => effectivePsuLimits(psu), [psu])
 
   const [query, setQuery] = useState('')
   const [issuesOnly, setIssuesOnly] = useState(false)
@@ -64,7 +71,7 @@ export function Cockpit() {
 
   return (
     <div className="cv">
-      <Band band={band} live={live} peakW={peakW} linkDownAt={linkDownAt} />
+      <Band band={band} live={live} peakW={peakW} linkDownAt={linkDownAt} limits={limits} />
 
       <div className="cv__main">
         <div>
@@ -121,6 +128,8 @@ export function Cockpit() {
             layout={layout}
             live={live}
             psuW={live ? band.watts : null}
+            psuName={psuName(psu)}
+            psuRating={limits.w}
             lit={(v) => tileMatches(v, query, issuesOnly)}
             focusPdu={focusPdu}
           />
@@ -148,8 +157,33 @@ export function Cockpit() {
 
 // ── health band ─────────────────────────────────────────────────────────────
 
-function Band(props: { band: HealthBand; live: boolean; peakW: number; linkDownAt?: number }) {
-  const { band: b, live } = props
+/** `/ 54` after a band value: the PSU limit it is drawn against. Nothing when it is unknown. */
+function Limit({ h }: { h: Headroom | null }) {
+  return h && <small className="hcard__lim">/ {h.limit}</small>
+}
+
+/** Usage bar under a band value. Display only: it never changes colour or alerts. */
+function Bar({ h, of }: { h: Headroom | null; of: string }) {
+  if (!h) return null
+  const text = h.pct !== null ? `${fmtPct(h.pct)} of ${of}` : undefined
+  return (
+    <div className="hbar" title={text} role={text ? 'img' : undefined} aria-label={text}>
+      <i style={{ width: `${h.bar}%` }} />
+    </div>
+  )
+}
+
+function Band(props: {
+  band: HealthBand
+  live: boolean
+  peakW: number
+  linkDownAt?: number
+  limits: PsuLimits
+}) {
+  const { band: b, live, limits } = props
+  const h12 = headroom(live ? b.amps12 : null, limits.a12)
+  const h5 = headroom(live ? b.amps5 : null, limits.a5)
+  const hW = headroom(live ? b.watts : null, limits.w)
   const dash = '—'
   const offRing = b.total ? RING_C * (1 - b.online / b.total) : RING_C
   const without = `${b.pdusWithout} PDU${b.pdusWithout === 1 ? '' : 's'} without readings`
@@ -206,8 +240,9 @@ function Band(props: { band: HealthBand; live: boolean; peakW: number; linkDownA
       <div className="hcard hcard--12v">
         <div className="hcard__label">12 V bus</div>
         <div className="hcard__value" style={{ color: 'var(--blue)' }}>
-          {live && b.amps12 !== null ? `${b.amps12.toFixed(2)} A` : dash}
+          {live && b.amps12 !== null ? `${b.amps12.toFixed(2)} A` : dash} <Limit h={h12} />
         </div>
+        <Bar h={h12} of="the PSU 12 V rail" />
         <div className="ring__sub">
           {!live
             ? noLive
@@ -222,8 +257,9 @@ function Band(props: { band: HealthBand; live: boolean; peakW: number; linkDownA
       <div className="hcard hcard--5v">
         <div className="hcard__label">5 V bus</div>
         <div className="hcard__value" style={{ color: 'var(--gold)' }}>
-          {live && b.amps5 !== null ? `${b.amps5.toFixed(2)} A` : dash}
+          {live && b.amps5 !== null ? `${b.amps5.toFixed(2)} A` : dash} <Limit h={h5} />
         </div>
+        <Bar h={h5} of="the PSU 5 V rail" />
         <div
           className="ring__sub"
           title={b.low5 && live ? `lowest 5 V rail: ${b.low5.name}` : undefined}
@@ -235,8 +271,9 @@ function Band(props: { band: HealthBand; live: boolean; peakW: number; linkDownA
       <div className="hcard">
         <div className="hcard__label">Total power</div>
         <div className="hcard__value" title="V × A per rail, computed by the client">
-          {live && b.watts !== null ? `${b.watts.toFixed(1)} W` : dash}
+          {live && b.watts !== null ? `${b.watts.toFixed(1)} W` : dash} <Limit h={hW} />
         </div>
+        <Bar h={hW} of="the PSU rating (Settings › Cockpit › Power supply)" />
         <div className="ring__sub" title="Highest this session, computed by the client">
           {props.peakW > 0 ? `peak ${props.peakW.toFixed(1)} W` : live ? '' : noLive}
         </div>
@@ -271,6 +308,10 @@ function Plan(props: {
   layout: PlanLayout
   live: boolean
   psuW: number | null
+  /** The supply's model, or `PSU`. */
+  psuName: string
+  /** Rated W; undefined = unknown, the box shows the plain total. */
+  psuRating?: number
   lit: (v: NodeView) => boolean
   focusPdu: number | null
 }) {
@@ -347,7 +388,16 @@ function Plan(props: {
           />
         ))}
         <div className="psu" style={{ left: l.psu.x, top: l.psu.y }}>
-          PSU · <b>{props.psuW !== null ? `${props.psuW.toFixed(1)} W` : '—'}</b>
+          {props.psuRating !== undefined ? (
+            <>
+              {props.psuName} · <b>{props.psuW !== null ? props.psuW.toFixed(1) : '—'}</b> /{' '}
+              {props.psuRating} W
+            </>
+          ) : (
+            <>
+              PSU · <b>{props.psuW !== null ? `${props.psuW.toFixed(1)} W` : '—'}</b>
+            </>
+          )}
         </div>
       </div>
     </div>
