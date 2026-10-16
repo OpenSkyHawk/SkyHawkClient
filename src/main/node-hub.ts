@@ -22,6 +22,7 @@ import {
   setNodeMapping,
   type AdoptSpec,
   type MappingPatch,
+  type NodeKind,
   type NodeMappingFile,
   type ResetOptions,
   type ResetPreview
@@ -125,9 +126,20 @@ export class NodeHub {
 
   /** Ignoring records when, and what the node reported as, for Settings › Ignored nodes. */
   ignore(nodeId: number, on: boolean, now = Date.now()): NodeMappingResult {
-    const kind = on ? this.model(now).nodes.find((n) => n.nodeId === nodeId)?.kind : undefined
+    const kind = on ? this.knownKind(nodeId, now) : undefined
     const at = new Date(now).toISOString()
     return this.update((f) => setIgnored(f, nodeId, on, kind ? { at, kind } : { at }))
+  }
+
+  /**
+   * A node's kind only when something says so: the registry, an adoption, or `_NODE_TELEM` (only a
+   * PDU sends it). The model's 'panel' for a new node is a display default, not knowledge — stored,
+   * it would outrank telemetry that arrives later, and a PDU ignored early would stay a panel.
+   */
+  private knownKind(nodeId: number, now: number): NodeKind | undefined {
+    const known = this.defaults.get(nodeId)?.kind ?? this.mapping().nodes[nodeId]?.kind
+    if (known) return known
+    return this.telem.snapshot(now).some((t) => t.nodeId === nodeId && t.isPdu) ? 'pdu' : undefined
   }
 
   /** The bundled NODE_IDS registry, PanelBridge included, and where it came from. */
