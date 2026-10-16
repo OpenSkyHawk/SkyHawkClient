@@ -104,6 +104,23 @@ describe('NodeHub', () => {
     expect(disk.saves).toBe(before)
   })
 
+  it('adopting a new node takes it out of "new"; a nameless adopt is refused and changes nothing', () => {
+    const { h, roster } = hub()
+    roster.applyMessage(NODE_MSG, '29010000000000000080000000', 0) // node 41 reports
+    h.flush(roster.takeDirty(), 0)
+    const node41 = () => h.snapshot(0).model.nodes.find((n) => n.nodeId === 41)
+    expect(node41()?.source).toBe('new')
+
+    const nameless = { console: 'Left', pduId: 3, kind: 'panel' } as never
+    expect(h.adopt(41, nameless)).toEqual({ ok: false, error: 'Name cannot be empty' })
+    expect(node41()?.source).toBe('new')
+    expect(disk.saves).toBe(0)
+
+    const ok = h.adopt(41, { name: 'Left_Trim', console: 'Left', pduId: 3, kind: 'panel' })
+    expect(ok.ok).toBe(true)
+    expect(node41()).toMatchObject({ source: 'adopted', name: 'Left_Trim', pduId: 3 })
+  })
+
   it('malformed renderer input resolves to { ok: false } instead of throwing', () => {
     const { h } = hub()
     expect(h.setMapping(1, null as never)).toEqual({ ok: false, error: 'Invalid mapping change' })

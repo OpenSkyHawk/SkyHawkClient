@@ -135,6 +135,26 @@ describe('effectiveMapping / setNodeMapping', () => {
 })
 
 describe('adopt / forget', () => {
+  it('requires a name and a console, so an ok always means adopted', () => {
+    const spec: AdoptSpec = { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
+    for (const [bad, error] of [
+      [{ ...spec, name: undefined }, 'Name cannot be empty'],
+      [{ ...spec, name: '   ' }, 'Name cannot be empty'],
+      [{ ...spec, console: undefined }, 'Console cannot be empty'],
+      [{ ...spec, console: ' ' }, 'Console cannot be empty']
+    ] as const) {
+      expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, bad as unknown as AdoptSpec)).toThrow(
+        new MappingError(error)
+      )
+    }
+  })
+
+  it('a panel adopted without a power zone stores an explicit none', () => {
+    const spec = { name: 'Trim', console: 'Left', kind: 'panel' } as unknown as AdoptSpec
+    const f = adoptNode(EMPTY_MAPPING, defaults, 41, spec)
+    expect(f.nodes[41]).toEqual({ name: 'Trim', console: 'Left', pduId: null, kind: 'panel' })
+  })
+
   it('stores an adopted node in full and lets it be edited afterwards', () => {
     let f = adoptNode(EMPTY_MAPPING, defaults, 41, {
       name: ' Left_Trim ',

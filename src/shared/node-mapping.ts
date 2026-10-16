@@ -249,12 +249,18 @@ export function adoptNode(
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
   if (!isPlainObject(spec)) throw new MappingError('Invalid adopt request')
   if (defaults.has(nodeId)) throw new MappingError(`Node ${nodeId} is in the registry`)
+  // Name and console are required here, not just validated when present: an entry without a
+  // name is not an adopted node (effectiveMapping skips it), so it would stay "new" after an ok.
+  const name = text(spec.name)
+  if (!name) throw new MappingError('Name cannot be empty')
+  const console = text(spec.console)
+  if (!console) throw new MappingError('Console cannot be empty')
   checkPatch(spec)
   if (spec.kind !== 'pdu' && spec.kind !== 'panel') throw new MappingError('Unknown node kind')
   const o: NodeOverride = {
-    name: text(spec.name),
-    console: text(spec.console),
-    pduId: spec.kind === 'pdu' ? null : spec.pduId,
+    name,
+    console,
+    pduId: spec.kind === 'pdu' ? null : (spec.pduId ?? null),
     kind: spec.kind
   }
   return withNode(unignore(file, nodeId), nodeId, o)
