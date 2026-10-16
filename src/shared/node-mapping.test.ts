@@ -417,15 +417,39 @@ describe('reset preview and forgetting adopted nodes', () => {
     expect(resetPreview(defaults, EMPTY_MAPPING)).toEqual({ rows: [], nodeCount: 0, adopted: [] })
   })
 
-  it('forgetAdopted also drops every non-registry entry; the ignore list stays', () => {
+  it('forgetAdopted drops the listed adopted nodes only; stray flags and the ignore list stay', () => {
     expect(resetMapping(file, defaults, { forgetAdopted: true })).toEqual({
       version: 1,
-      nodes: { 1: { hidden: true } },
+      nodes: { 1: { hidden: true }, 55: { hidden: true } },
       ignored: [2]
     })
     const adoptedOnly: NodeMappingFile = { version: 1, nodes: { 41: file.nodes[41]! }, ignored: [] }
     expect(resetMapping(adoptedOnly, defaults)).toBe(adoptedOnly) // nothing to reset
     expect(resetMapping(adoptedOnly, defaults, { forgetAdopted: true }).nodes).toEqual({})
+  })
+
+  it('an ignored adopted node is neither listed nor forgotten', () => {
+    const trim = file.nodes[41]!
+    const both: NodeMappingFile = {
+      version: 1,
+      nodes: { 20: trim, 21: { ...trim, name: 'Trim_B' }, 55: { hidden: true } },
+      ignored: [21]
+    }
+    expect(resetPreview(defaults, both).adopted.map((a) => a.nodeId)).toEqual([20])
+    const after = resetMapping(both, defaults, { forgetAdopted: true })
+    expect(after.nodes).toEqual({ 21: both.nodes[21], 55: { hidden: true } })
+    expect(after.ignored).toEqual([21])
+    // Only ignored / stray entries and nothing differing: no write at all.
+    expect(resetMapping(after, defaults, { forgetAdopted: true })).toBe(after)
+  })
+
+  it('removes exactly what the preview lists', () => {
+    const listed = resetPreview(defaults, file).adopted.map((a) => a.nodeId)
+    const after = resetMapping(file, defaults, { forgetAdopted: true })
+    const gone = Object.keys(file.nodes)
+      .map(Number)
+      .filter((id) => !defaults.has(id) && !(id in after.nodes))
+    expect(gone).toEqual(listed)
   })
 
   it('refuses a malformed reset request', () => {

@@ -350,9 +350,22 @@ export interface ResetOptions {
 }
 
 /**
+ * The NODE_IDs "Also forget adopted nodes" drops: adopted and not ignored — exactly the ones the
+ * review lists. An ignored adopted node keeps its entry (the ignore list is untouched by a reset),
+ * and a stray flag on an unknown id is not an adopted node, so neither is dropped unseen.
+ */
+function forgettable(defaults: Map<number, NodeDefaults>, file: NodeMappingFile): number[] {
+  const ignored = new Set(file.ignored)
+  return Object.keys(file.nodes)
+    .map(Number)
+    .filter((id) => !defaults.has(id) && !ignored.has(id) && adopted(file.nodes[id]))
+    .sort((a, b) => a - b)
+}
+
+/**
  * Every registry node back to its defaults. Adopted nodes, the ignore list and hidden flags are
- * not registry overrides, so they stay — unless `forgetAdopted`, which drops every non-registry
- * entry (adopted nodes and any stray flags on unknown ids). The ignore list always stays.
+ * not registry overrides, so they stay — unless `forgetAdopted`, which also drops the adopted nodes
+ * `resetPreview` lists (see `forgettable`). The ignore list always stays.
  */
 export function resetMapping(
   file: NodeMappingFile,
@@ -365,14 +378,13 @@ export function resetMapping(
   ) {
     throw new MappingError('Invalid reset request')
   }
-  const forget = opts.forgetAdopted === true
-  const hasForeign = Object.keys(file.nodes).some((k) => !defaults.has(Number(k)))
-  if (differingCount(defaults, file) === 0 && !(forget && hasForeign)) return file // no write
+  const drop = new Set(opts.forgetAdopted === true ? forgettable(defaults, file) : [])
+  if (differingCount(defaults, file) === 0 && drop.size === 0) return file // no write
   const nodes: Record<number, NodeOverride> = {}
   for (const [k, o] of Object.entries(file.nodes)) {
     const id = Number(k)
     if (!defaults.has(id)) {
-      if (!forget) nodes[id] = o
+      if (!drop.has(id)) nodes[id] = o
     } else if (o.hidden) nodes[id] = { hidden: true }
   }
   return { ...file, nodes }
@@ -417,18 +429,17 @@ export function resetPreview(
     pduId == null ? '—' : (mapped.get(pduId)?.name ?? defaults.get(pduId)?.name ?? `Node ${pduId}`)
   const rows: ResetRow[] = []
   let nodeCount = 0
-  const adopted: AdoptedRow[] = []
+  const adopted: AdoptedRow[] = forgettable(defaults, file).map((id) => {
+    const m = mapped.get(id)!
+    return { nodeId: id, name: m.name, console: m.console, zone: zoneName(m.pduId) }
+  })
   const ids = Object.keys(file.nodes)
     .map(Number)
+    .filter((id) => defaults.has(id))
     .sort((a, b) => a - b)
   for (const id of ids) {
     const o = file.nodes[id]!
-    const d = defaults.get(id)
-    if (!d) {
-      const m = mapped.get(id)
-      if (m) adopted.push({ nodeId: id, name: m.name, console: m.console, zone: zoneName(m.pduId) })
-      continue
-    }
+    const d = defaults.get(id)!
     if (!hasOverride(o)) continue
     nodeCount++
     if (o.name !== undefined)
