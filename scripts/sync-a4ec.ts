@@ -28,7 +28,7 @@ import { format } from 'prettier'
 
 const PIN = {
   repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
-  commit: 'bcdc1024a90ff98098c4db979a30da47c586f8ec'
+  commit: '22b6a87e73068ca2bfd964d067af1247771d5854'
 }
 
 const SRC = {
@@ -148,8 +148,26 @@ function parseEnum(
   return entries
 }
 
-/** ENUM_NAME -> short badge tag: the first underscore token (I2C_PERIPHERAL -> I2C, OVER_VOLTAGE -> OVER). */
-const abbr = (name: string): string => name.split('_')[0]!
+/**
+ * ENUM_NAMEs -> short badge tags: the first underscore token (I2C_PERIPHERAL -> I2C). Names that
+ * share a first token get the next token's initial too (OVER_VOLTAGE -> OVER-V, OVER_TEMPERATURE
+ * -> OVER-T), so two codes never render the same badge.
+ */
+function abbrs(names: string[]): Record<string, string> {
+  const first = (n: string) => n.split('_')[0]!
+  const count = new Map<string, number>()
+  for (const n of names) count.set(first(n), (count.get(first(n)) ?? 0) + 1)
+  const out: Record<string, string> = {}
+  for (const n of names) {
+    const [head, next] = n.split('_')
+    out[n] = count.get(head!)! > 1 && next ? `${head}-${next[0]}` : head!
+  }
+  const tags = Object.values(out)
+  if (new Set(tags).size !== tags.length) {
+    throw new Error(`[sync] NodeFaultCode badge tags collide: ${tags.join(', ')}`)
+  }
+  return out
+}
 
 /** ENUM_NAME -> human label: title-case the first word, lower-case the rest, keep acronyms (I2C). */
 const labelize = (name: string): string =>
@@ -465,16 +483,29 @@ function genNodeStatus(header: string): string {
   const healthFlags = parseEnum(header, 'NodeHealthFlag', 'NodeStatus.h')
   const faultCodes = parseEnum(header, 'NodeFaultCode', 'NodeStatus.h')
 
+  // _NODE_TELEM contract (#216): versioned separately from _NODE_STATUS.
+  const telemProto = num(/#define\s+NODE_TELEM_PROTO_VERSION\s+(\d+)/, 'TELEM_PROTO_VERSION')
+  const telemMsgName = str(/#define\s+NODE_TELEM_MSG_NAME\s+"([^"]+)"/, 'TELEM_MSG_NAME')
+  // INVALID (0x00) is never sent, so it is not a page the client decodes.
+  const telemPages = parseEnum(header, 'TelemPage', 'NodeStatus.h').filter((e) => e.value !== 0)
+  const railFlags = parseEnum(header, 'PduRailFlag', 'NodeStatus.h')
+  const statusFlags = parseEnum(header, 'PduStatusFlag', 'NodeStatus.h')
+  const bits = (es: { name: string; value: number }[]) =>
+    es.map((e) => `  ${e.name}: ${hex(e.value)}`).join(',\n')
+
+  const faultAbbr = abbrs(faultCodes.map((e) => e.name))
   const flagEntries = healthFlags.map((e) => `  ${e.name}: ${hex(e.value)}`).join(',\n')
   const faultEntries = faultCodes
     .map(
       (e) =>
-        `  ${e.value}: { name: ${q(e.name)}, abbr: ${q(abbr(e.name))}, label: ${q(labelize(e.name))}, description: ${q(e.comment)} }`
+        `  ${e.value}: { name: ${q(e.name)}, abbr: ${q(faultAbbr[e.name]!)}, label: ${q(labelize(e.name))}, description: ${q(e.comment)} }`
     )
     .join(',\n')
 
   return (
-    banner([`${SRC.nodeStatus} (NODE_STATUS contract v${protoVersion})`]) +
+    banner([
+      `${SRC.nodeStatus} (NODE_STATUS contract v${protoVersion}, NODE_TELEM contract v${telemProto})`
+    ]) +
     `
 /**
  * Reserved DCS-BIOS identifiers for PanelBridge node-status reporting (#86).
@@ -510,6 +541,31 @@ export interface NodeFaultInfo {
  */
 export const NODE_FAULT_CODES: Partial<Record<number, NodeFaultInfo>> = {
 ${faultEntries}
+} as const
+
+/**
+ * Reserved DCS-BIOS identifier for PanelBridge node telemetry (#216): one message per TELEM_n
+ * frame, forwarded unread. The decoder in shared/node-telem.ts is written for protoVersion;
+ * reference.test.ts asserts this matches SUPPORTED_TELEM_PROTO.
+ */
+export const NODE_TELEM = {
+  protoVersion: ${telemProto},
+  msgName: ${q(telemMsgName)}
+} as const
+
+/** TELEM_n page ids — from TelemPage (NodeStatus.h). Global and append-only; 0x00 is invalid. */
+export const TELEM_PAGES = {
+${bits(telemPages)}
+} as const
+
+/** PDU_RAIL_* page byte 1 — from PduRailFlag (NodeStatus.h). All zero = healthy. */
+export const PDU_RAIL_FLAGS = {
+${bits(railFlags)}
+} as const
+
+/** PDU_STATUS page byte 1 — from PduStatusFlag (NodeStatus.h). All zero = healthy, calibrated. */
+export const PDU_STATUS_FLAGS = {
+${bits(statusFlags)}
 } as const
 `
   )
