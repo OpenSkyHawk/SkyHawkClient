@@ -2787,6 +2787,11 @@ button.devind[aria-expanded='true'] {
 }
 
 /* ── cockpit (#63) ─────────────────────────────────────────────── */
+/* The plan's scale follows its width and sets its height, so a scrollbar that comes and goes
+   would flip the scale every frame near the fold. Reserve its gutter on this tab. */
+.content:has(.cv) {
+  scrollbar-gutter: stable;
+}
 /* status symbols — never colour alone (! warning, ✕ offline, + new) */
 .node__dot.sym {
   width: 14px;
