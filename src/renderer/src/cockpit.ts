@@ -203,8 +203,14 @@ export const shortName = (name: string) => name.replace(/^(Left|Center|Right)_/,
 
 export function outageHint(o: PduOutage): string {
   const n = o.nodeIds.length
-  const who = n === o.fedCount ? `All ${n} nodes` : `${n} of ${o.fedCount} nodes`
-  return `${who} on this PDU lost power together — a blown 5 V fuse at the PDU looks like this.`
+  const who =
+    n === o.fedCount
+      ? n === 1
+        ? 'The only node'
+        : `All ${n} nodes`
+      : `${n} of ${o.fedCount} nodes`
+  const how = n === 1 ? 'lost power with it' : 'lost power together'
+  return `${who} on this PDU ${how} — a blown 5 V fuse at the PDU looks like this.`
 }
 
 /**

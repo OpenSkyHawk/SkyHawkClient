@@ -299,7 +299,9 @@ describe('planLayout', () => {
     const l = planLayout(nodeViews(model(nodes, [o]), []), [o])
     const g = l.groups.find((x) => x.key === 'pdu-6')!
     expect(g.outage).toBe(o)
-    expect(g.hint!.text).toMatch(/^All 1 nodes on this PDU lost power together/)
+    expect(g.hint!.text).toBe(
+      'The only node on this PDU lost power with it — a blown 5 V fuse at the PDU looks like this.'
+    )
   })
 })
 
@@ -307,6 +309,15 @@ describe('outageHint', () => {
   it('says "N of M" when only some fed nodes dropped', () => {
     expect(outageHint({ pduId: 3, nodeIds: [1, 2, 3], fedCount: 4, at: 0 })).toBe(
       '3 of 4 nodes on this PDU lost power together — a blown 5 V fuse at the PDU looks like this.'
+    )
+  })
+
+  it('says "All N" when every fed node dropped, and "The only node" for one', () => {
+    expect(outageHint({ pduId: 3, nodeIds: [1, 2], fedCount: 2, at: 0 })).toBe(
+      'All 2 nodes on this PDU lost power together — a blown 5 V fuse at the PDU looks like this.'
+    )
+    expect(outageHint({ pduId: 3, nodeIds: [1], fedCount: 1, at: 0 })).toBe(
+      'The only node on this PDU lost power with it — a blown 5 V fuse at the PDU looks like this.'
     )
   })
 })
