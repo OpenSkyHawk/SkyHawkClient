@@ -21,6 +21,42 @@ const parse = (hex: string): NodeTelem => {
   return t
 }
 
+// The firmware's own forwarding test: OpenSkyhawk @ 22b6a87e,
+// Firmware/Tests/PanelBridge/tests/node_telem/node_telem.cpp. Copied verbatim, uppercase as the
+// bridge prints them (%02X), so these do not depend on this file's encoder agreeing with the decoder.
+describe('parseNodeTelem — firmware vectors', () => {
+  it('node 3 PDU_RAIL_12V: 12000 mV avg, 11800 min, 700 mA (node_telem.cpp:13)', () => {
+    expect(parseNodeTelem('030100E02E182EBC02')).toEqual({
+      nodeId: 3,
+      kind: 'rail',
+      page: TELEM_PAGE.PDU_RAIL_12V,
+      flags: 0,
+      vAvgMv: 12000,
+      vMinMv: 11800,
+      iAvgMa: 700
+    })
+  })
+
+  it('node 5 PDU_STATUS: flags 03, 25.0 °C, peaks 10000 / 4660 mA (node_telem.cpp:14)', () => {
+    expect(parseNodeTelem('050303FA0010273412')).toEqual({
+      nodeId: 5,
+      kind: 'status',
+      page: TELEM_PAGE.PDU_STATUS,
+      flags: PDU_FLAG.UNCAL_VDDA | PDU_FLAG.UNCAL_ZERO,
+      ntcTempC: 25,
+      i12PeakMa: 10000,
+      i5PeakMa: 4660
+    })
+  })
+
+  // node_telem.cpp:46-48 — frames the bridge drops. Should one leak through, the client drops it too.
+  it('rejects the frames the bridge must drop: page 0, a 4-byte frame, node 0', () => {
+    expect(parseNodeTelem('030001020304050607')).toBeNull() // page0[] on canIdTelem(3)
+    expect(parseNodeTelem('030100E02E')).toBeNull() // rail12[] truncated to 4 bytes
+    expect(parseNodeTelem('000100E02E182EBC02')).toBeNull() // rail12[] on canIdTelem(0)
+  })
+})
+
 describe('parseNodeTelem', () => {
   it('decodes a 12 V rail page, little-endian, with a signed current', () => {
     const hex = telem(3, [0x01, RAIL_FLAG.UNDER_V, ...le(12034), ...le(11950), ...le(-12 & 0xffff)])

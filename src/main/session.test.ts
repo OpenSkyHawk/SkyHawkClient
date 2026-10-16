@@ -186,7 +186,8 @@ describe('node telemetry tap', () => {
       const transport = FakeTransport.last!
       transport.sent.length = 0
 
-      const line = '_NODE_TELEM 030100022fae2ef4ff\n' // PDU_Left, 12 V rail
+      // A real bridge line: OpenSkyhawk node_telem.cpp:13 @ 22b6a87e (node 3, 12 V rail).
+      const line = '_NODE_TELEM 030100E02E182EBC02\n'
       serial.dataCb(ascii(line))
       expect(Buffer.concat(transport.sent)).toEqual(ascii(line)) // relay unchanged
       vi.advanceTimersByTime(250)
