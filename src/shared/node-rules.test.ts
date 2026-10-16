@@ -406,9 +406,13 @@ describe('your cockpit (#93)', () => {
     ])
   })
 
-  it('a registry board not added that went away is not drawn — nor is a forgotten one', () => {
+  it('a board not in your cockpit that went away is not listed, registry or not', () => {
+    // Not added / not adopted (or just forgotten), and gone from the bus: it comes back as new
+    // when it reports again (#93 re-review, user decision).
     const m = buildNodeModel(fresh({ roster: [st(2, false), st(50, false)], rosterCompleteAt: 0 }))
-    expect(m.nodes.map((n) => [n.nodeId, n.source])).toEqual([[50, 'new']]) // 2: gone, not added
+    expect(m.nodes).toEqual([])
+    const back = buildNodeModel(fresh({ roster: [st(2, false), st(50)], rosterCompleteAt: 0 }))
+    expect(back.nodes.map((n) => [n.nodeId, n.source])).toEqual([[50, 'new']])
   })
 
   it('a registry PDU sending pages is on the bus: it waits as new', () => {

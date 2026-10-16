@@ -133,12 +133,9 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   const telem = new Map(i.telemetry.map((t) => [t.nodeId, t]))
   const complete = i.rosterCompleteAt !== undefined
   const known = [...mapping.values()].filter((m) => m.known).map((m) => m.nodeId)
-  // On the bus but not in your cockpit: present now, or a NODE_ID nothing maps (shown as new
-  // either way). A registry board that is not added and has gone is not drawn — the roster keeps
-  // absent rows, and a forgotten board must not come back as an offline one.
-  const waiting = [...roster.values()]
-    .filter((n) => n.present || !mapping.has(n.nodeId))
-    .map((n) => n.nodeId)
+  // Not in your cockpit, registry or not: shown as new only while it is on the bus. The roster
+  // keeps absent rows; one that dropped (or that you just forgot) comes back when it reports.
+  const waiting = [...roster.values()].filter((n) => n.present).map((n) => n.nodeId)
   // PDU pages are a report too: a registry or adopted PDU sending them now is on the bus. Pages are
   // kept (only marked stale), so one that stopped sending — dropped, or forgotten — is not.
   const sending = [...telem.values()]
