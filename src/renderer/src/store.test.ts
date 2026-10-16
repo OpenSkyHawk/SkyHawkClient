@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CalSnapshot, PushChannel, PushChannels, RelayStatus } from '@shared/ipc'
+import type { CalSnapshot, NodeSnapshot, PushChannel, PushChannels, RelayStatus } from '@shared/ipc'
+import type { NodeModel } from '@shared/node-rules'
+import type { NodeTelemSnapshot } from '@shared/node-telem'
 
 // The store talks to main through window.skyhawk. Only the calls initBridge() makes need to be
 // real here; the rest exist so subscription setup does not throw.
@@ -11,6 +13,16 @@ let status: RelayStatus = {
   device: { state: 'no-device' }
 }
 
+const EMPTY_MODEL: NodeModel = {
+  nodes: [],
+  outages: [],
+  differingCount: 0,
+  ignored: [],
+  hidden: [],
+  rosterComplete: false
+}
+let nodesSnap: NodeSnapshot = { model: EMPTY_MODEL, telemetry: [] }
+
 let startResult: { ok: boolean; error?: string } = { ok: true }
 
 function fakeApi() {
@@ -20,6 +32,7 @@ function fakeApi() {
       return () => {}
     },
     getStatus: () => Promise.resolve(status),
+    getNodes: () => Promise.resolve(nodesSnap),
     getConfig: () =>
       Promise.resolve({
         sourceMode: 'bridge',
@@ -205,5 +218,78 @@ describe('starting the relay (#69)', () => {
     s.getState().toggleRelay()
     await new Promise((r) => setTimeout(r, 0))
     expect(s.getState().relaying).toBe(true)
+  })
+})
+
+describe('node state (#63)', () => {
+  const pduModel: NodeModel = {
+    ...EMPTY_MODEL,
+    rosterComplete: true,
+    nodes: [
+      {
+        nodeId: 3,
+        name: 'PDU_Left',
+        console: 'Left',
+        pduId: null,
+        kind: 'pdu',
+        source: 'registry',
+        availability: 'online',
+        readings: 'live',
+        differs: false
+      }
+    ]
+  }
+  const telem = (i12Ma: number): NodeTelemSnapshot[] => [
+    {
+      nodeId: 3,
+      isPdu: true,
+      rail12V: {
+        kind: 'rail',
+        page: 1,
+        flags: 0,
+        vAvgMv: 12_000,
+        vMinMv: 11_900,
+        iAvgMa: i12Ma,
+        ageMs: 0,
+        stale: false
+      },
+      other: [],
+      live: true
+    }
+  ]
+
+  beforeEach(() => {
+    status = { running: false, relay: { running: false }, device: { state: 'connected' } }
+    nodesSnap = { model: EMPTY_MODEL, telemetry: [] }
+  })
+
+  it('rehydrates the model and telemetry on a renderer reload', async () => {
+    nodesSnap = { model: pduModel, telemetry: telem(1000) }
+    const s = await freshStore()
+    expect(s.getState().nodeModel).toBe(pduModel)
+    expect(s.getState().nodeTelemetry).toHaveLength(1)
+  })
+
+  it('keeps the last model when the link drops, and remembers when it dropped', async () => {
+    const s = await freshStore()
+    push('nodes:model', pduModel)
+    expect(s.getState().linkDownAt).toBeUndefined()
+    push('device:status', { state: 'reconnecting' })
+    expect(s.getState().nodeModel).toBe(pduModel)
+    const at = s.getState().linkDownAt
+    expect(at).toBeDefined()
+    push('device:status', { state: 'no-device' })
+    expect(s.getState().linkDownAt, 'only the up → down transition sets it').toBe(at)
+    push('device:status', { state: 'connected' })
+    expect(s.getState().linkDownAt).toBeUndefined()
+  })
+
+  it('tracks the session peak of the computed total power', async () => {
+    const s = await freshStore()
+    push('nodes:model', pduModel)
+    push('nodes:telemetry', telem(2000))
+    expect(s.getState().nodesPeakW).toBeCloseTo(24)
+    push('nodes:telemetry', telem(1000))
+    expect(s.getState().nodesPeakW).toBeCloseTo(24)
   })
 })
