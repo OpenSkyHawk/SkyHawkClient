@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceState } from '@shared/ipc'
-import { deviceView, relayNote, relayTip, relayWaiting, startBlocked } from './device-view'
+import {
+  deviceView,
+  relayNote,
+  relayTip,
+  relayWaiting,
+  startBlocked,
+  startBlockedReason
+} from './device-view'
 
 const STATES: DeviceState[] = [
   'connected',
@@ -176,5 +183,12 @@ describe('startBlocked', () => {
     }
     expect(at('bridge', 'connected')).toBe(false)
     expect(at('replay', 'connected', true)).toBe(false)
+  })
+})
+
+describe('startBlockedReason', () => {
+  it('tells Replay it can also run undriven', () => {
+    expect(startBlockedReason('bridge')).toBe('Connect the SimGateway to start the relay.')
+    expect(startBlockedReason('replay')).toMatch(/turn Drive SimGateway off/)
   })
 })

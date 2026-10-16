@@ -177,6 +177,14 @@ body {
 .pill--on .pill__txt {
   color: var(--green);
 }
+/* Stopped, and Start would be refused: no board for a mode that needs one (#69). */
+.pill--blocked {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.pill--blocked .pill__dot {
+  animation: none;
+}
 /* Running but not delivering end to end — still "Relaying", gold (#69). */
 .pill--wait {
   background: rgba(244, 179, 33, 0.08);
@@ -832,6 +840,10 @@ button.devind[aria-expanded='true'] {
   color: #5cb0ff;
   border: 1px solid rgba(30, 143, 255, 0.45);
   box-shadow: 0 0 24px rgba(30, 143, 255, 0.25);
+}
+.bigbtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .bigbtn--stop {
   background: rgba(255, 122, 122, 0.1);

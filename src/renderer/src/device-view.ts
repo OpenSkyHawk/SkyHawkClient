@@ -216,3 +216,10 @@ export function relayWaiting(opts: RelayOpts): boolean {
     (opts.mode === 'replay' && opts.stream === 'ended')
   )
 }
+
+/** Why Start is unavailable, for the pill tooltip and the note under the Start button. */
+export function startBlockedReason(mode: SourceMode): string {
+  return mode === 'replay'
+    ? 'Connect the SimGateway to play the capture to it, or turn Drive SimGateway off.'
+    : 'Connect the SimGateway to start the relay.'
+}

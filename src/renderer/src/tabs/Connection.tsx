@@ -1,7 +1,7 @@
 import { fmtUptime, useStore, type SourceMode, type Transport } from '../store'
 import { nodeDotState, nodeFaultTag, nodeFaultTooltip } from '@shared/nodes'
 import { isLinkUp } from '@shared/ipc'
-import { deviceView, relayNote } from '../device-view'
+import { deviceView, relayNote, startBlocked, startBlockedReason } from '../device-view'
 
 const REC_DOT = (
   <span
@@ -110,12 +110,21 @@ export function Connection() {
     detail: s.deviceDetail,
     autoConnect: s.autoConnect
   })
-  const note = relayNote({
-    mode: s.sourceMode,
-    relaying: s.relaying,
-    stream: s.relayStream,
-    deviceState: s.deviceState
-  })
+  const blocked =
+    !s.relaying &&
+    startBlocked({
+      mode: s.sourceMode,
+      replayDriveSerial: s.replayDriveSerial,
+      deviceState: s.deviceState
+    })
+  const note = blocked
+    ? { text: startBlockedReason(s.sourceMode), info: true }
+    : relayNote({
+        mode: s.sourceMode,
+        relaying: s.relaying,
+        stream: s.relayStream,
+        deviceState: s.deviceState
+      })
   const deviceRows = [
     { k: 'Identity', v: connected ? 'A-4E Skyhawk' : '— no device' },
     { k: 'VID / PID', v: connected ? '0x2E8A / 0x4134' : '0x2E8A / 0x4134 · target' },
@@ -323,6 +332,7 @@ export function Connection() {
           <button
             className={`bigbtn${s.relaying ? ' bigbtn--stop' : ''}`}
             style={{ width: '100%' }}
+            disabled={blocked}
             onClick={() => toggleRelay()}
           >
             {s.relaying ? 'Stop relay' : 'Start relay'}

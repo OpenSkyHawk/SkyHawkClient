@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useStore, type TabId } from './store'
-import { deviceView, relayTip, relayWaiting } from './device-view'
+import { deviceView, relayTip, relayWaiting, startBlocked, startBlockedReason } from './device-view'
 import { DevicePopover } from './DevicePopover'
 import { Overview } from './tabs/Overview'
 import { Connection } from './tabs/Connection'
@@ -46,6 +46,10 @@ export function App() {
         : 'unicast listen'
   // Gold, still "Relaying", while running but not delivering end to end (#69).
   const waiting = relayWaiting({ mode: sourceMode, relaying, stream: relayStream, deviceState })
+  const replayDriveSerial = useStore((s) => s.replayDriveSerial)
+  // Stopped, and the mode needs a board that is not there: Start would be refused. The click
+  // opens the device popover instead, where Connect is.
+  const blocked = !relaying && startBlocked({ mode: sourceMode, replayDriveSerial, deviceState })
   const relayTitle = relayTip({
     mode: sourceMode,
     relaying,
@@ -69,9 +73,14 @@ export function App() {
           {/* The device link: automatic, and independent of the relay pill beside it (#69). */}
           <DevicePopover />
           <button
-            className={`pill pill--btn${relaying ? ' pill--on' : ''}${waiting ? ' pill--wait' : ''}`}
-            onClick={() => toggleRelay()}
-            title={relayTitle}
+            className={`pill pill--btn${relaying ? ' pill--on' : ''}${waiting ? ' pill--wait' : ''}${blocked ? ' pill--blocked' : ''}`}
+            aria-disabled={blocked}
+            onClick={() => (blocked ? set({ devicePopover: true }) : toggleRelay())}
+            title={
+              blocked
+                ? `${startBlockedReason(sourceMode)} Click to open the device link.`
+                : relayTitle
+            }
           >
             <span className="pill__dot" />
             <span className="pill__txt">{relaying ? 'Relaying' : 'Stopped'}</span>
