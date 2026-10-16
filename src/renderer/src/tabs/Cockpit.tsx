@@ -25,6 +25,7 @@ import {
 } from '../cockpit'
 import { BoardEvents } from './cockpit/BoardEvents'
 import { Dot } from './cockpit/Dot'
+import { AdoptDialog } from './cockpit/AdoptDialog'
 import { NodePanel, PduPanel } from './cockpit/SidePanels'
 
 const RING_C = 289.03 // 2π × 46, the ring's circumference
@@ -50,6 +51,7 @@ export function Cockpit() {
   const [focusPdu, setFocusPdu] = useState<number | null>(null)
   /** NODE_ID whose side panel is open: the node panel, or the PDU panel for a PDU. */
   const [open, setOpen] = useState<number | null>(null)
+  const [adopting, setAdopting] = useState(false)
   /** A node another tab asked to open here (Connection's "›"). */
   const pendingOpen = useStore((s) => s.cockpitOpen)
   const set = useStore((s) => s.set)
@@ -156,12 +158,14 @@ export function Cockpit() {
               }}
               onShowAll={() => filter('', true)}
               onOpen={setOpen}
+              onAdopt={() => setAdopting(true)}
             />
             <BoardEvents />
           </div>
         </div>
       </div>
 
+      {adopting && <AdoptDialog views={views} onClose={() => setAdopting(false)} />}
       {openView &&
         (openView.entry.kind === 'pdu' ? (
           <PduPanel
@@ -542,6 +546,7 @@ function Attention(props: {
   onShowOutage: (pduId: number) => void
   onShowAll: () => void
   onOpen: (nodeId: number) => void
+  onAdopt: () => void
 }) {
   const { items, live } = props
   const fresh = props.model ? newCount(props.model) : 0
@@ -562,6 +567,9 @@ function Attention(props: {
             <br />
             <span>not linked yet</span>
           </div>
+          <button className="browse adopt-cta__btn" onClick={props.onAdopt}>
+            Adopt…
+          </button>
         </div>
       )}
       {!live ? (
