@@ -1,6 +1,8 @@
 // Phase-0 behaviour probes (SkyHawkClient#97, arch-phase0-contract PART 1B/1C): each test asserts
 // TODAY's behaviour for a fix-track or conflict row, so the structure rewrite can show it changed
 // nothing. A fix ticket that changes one of these behaviours on purpose updates its probe.
+// Main and shared only; the probes that read renderer helpers are in
+// src/renderer/src/phase0-probes.test.ts (main never imports renderer code).
 import { describe, expect, it, vi } from 'vitest'
 import type { NodeMappingFile } from '@shared/node-mapping'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from '@shared/nodes'
@@ -10,17 +12,11 @@ import {
   setNodeMapping,
   adoptNode,
   effectiveMapping,
-  setHidden,
   EMPTY_MAPPING
 } from '@shared/node-mapping'
 import { parseConfigFile, CONFIG_FORMAT, diffImport } from '@shared/config-file'
 import { buildNodeModel } from '@shared/node-rules'
 import { GatewayWatch, GATEWAY_NO_ANSWER_MS } from '@shared/gateway'
-import { nodeViews, healthBand, attentionItems, nodeHealth } from '../renderer/src/cockpit'
-import { strayNew, registrySpecs, adoptPduChoices } from '../renderer/src/cockpit-adopt'
-import { nodeFaultBoxes } from '../renderer/src/cockpit-panels'
-import { cockpitTile, attentionSummary, newDevices } from '../renderer/src/overview'
-import { nodesSummary } from '../renderer/src/connection-summary'
 import { DEFAULT_PSU } from '@shared/psu'
 import { DEFAULT_APP_SETTINGS } from '../test-fixtures/config'
 
@@ -184,68 +180,6 @@ describe('fix-track probes (today)', () => {
     expect(diff[0]!.rows.some((r) => /added|cockpit/i.test(`${r.k}${r.to}`))).toBe(false)
   })
 
-  it('D1 conflict: one stray is a Cockpit warning but Overview/Connection see nothing', () => {
-    const roster = new NodeRoster()
-    roster.applyMessage(NODE_MSG, row(9, 0), 0)
-    const model = buildNodeModel({
-      roster: roster.snapshot(),
-      seen: roster.seenInfo(),
-      rosterCompleteAt: 0,
-      telemetry: [],
-      defaults,
-      file: EMPTY_MAPPING
-    })
-    const views = nodeViews(model, [])
-    const { strays } = strayNew(views, 6000)
-    expect(strays).toHaveLength(1)
-    const cockpitBand = healthBand(views, strays.length)
-    expect(cockpitBand.warn).toBe(1)
-    expect(
-      attentionItems(views, [], [{ nodeId: 9, flag: 'UNIDENTIFIED · can’t be adopted' }])
-    ).toHaveLength(1)
-    // Overview
-    const ovBand = healthBand(views)
-    expect(cockpitTile(ovBand, true)).toMatchObject({ value: '—', sub: 'no nodes known' })
-    expect(attentionSummary(ovBand, attentionItems(views, []))).toBeNull()
-    expect(newDevices(views, true)).toBeNull()
-    // Connection
-    expect(nodesSummary(views, [])).toMatchObject({ known: 0, warn: 0, rows: [] })
-  })
-
-  it('S6: grace counts from first sighting — a board seen absent then online late is a stray at once', () => {
-    const roster = new NodeRoster()
-    roster.applyMessage(NODE_MSG, row(9, 0, false), 0)
-    roster.applyMessage(NODE_MSG, row(9, 0, true), 60_000)
-    const model = buildNodeModel({
-      roster: roster.snapshot(),
-      seen: roster.seenInfo(),
-      rosterCompleteAt: 0,
-      telemetry: [],
-      defaults,
-      file: EMPTY_MAPPING
-    })
-    expect(strayNew(nodeViews(model, []), 60_001).strays).toHaveLength(1)
-  })
-
-  it('C6: a registry board waiting to be added is labelled "NOT IN REGISTRY" / "Not in registry"', () => {
-    const roster = new NodeRoster()
-    roster.applyMessage(NODE_MSG, row(2, 1), 0)
-    const model = buildNodeModel({
-      roster: roster.snapshot(),
-      seen: roster.seenInfo(),
-      rosterCompleteAt: 0,
-      telemetry: [],
-      defaults,
-      file: EMPTY_MAPPING
-    })
-    const e = model.nodes.find((n) => n.nodeId === 2)!
-    expect(e.registry?.name).toBe('Right_Navigation')
-    expect(nodeHealth(e).flag).toBe('NOT IN REGISTRY')
-    expect(nodeFaultBoxes(nodeViews(model, []).find((v) => v.entry.nodeId === 2)!)[0]!.title).toBe(
-      'Not in registry'
-    )
-  })
-
   it('#95 bug 1: an adopted board renamed to its later registry name drops out', () => {
     const f = adoptNode(EMPTY_MAPPING, defaults, 41, {
       name: 'Left_Oxygen',
@@ -256,26 +190,6 @@ describe('fix-track probes (today)', () => {
     const later = registryDefaults({ ...REG, 41: { name: 'Left_Oxy', console: 'Left' } })
     const g = setNodeMapping(f, later, 41, { name: 'Left_Oxy' })
     expect(effectiveMapping(later, g).get(41)?.known).toBe(false)
-  })
-
-  it('#95 bug 2: a hidden in-cockpit PDU is "(not added)" to Add all and the PDU choices', () => {
-    let f: NodeMappingFile = { version: 3, nodes: { 5: { added: true } } }
-    f = setHidden(f, defaults, 5, true)
-    const roster = new NodeRoster()
-    roster.applyMessage(NODE_MSG, row(1, 1), 0)
-    const m = buildNodeModel({
-      roster: roster.snapshot(),
-      seen: roster.seenInfo(),
-      rosterCompleteAt: 0,
-      telemetry: [],
-      defaults,
-      file: f
-    })
-    const views = nodeViews(m, [])
-    expect(registrySpecs(views, views)[0]?.spec.pduId).toBeNull()
-    expect(adoptPduChoices(views, 'Center', 5, m.nodes.find((n) => n.nodeId === 1)!).pending).toBe(
-      'PDU_Center'
-    )
   })
 
   it('#95 bug 3: a registry panel ID added while reporting PDU reads panel once silent', () => {

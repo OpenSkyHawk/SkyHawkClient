@@ -19,5 +19,5 @@
       "@renderer/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer", "src/shared", "src/test-fixtures", "src/main/phase0-probes.test.ts"]
+  "include": ["src/renderer", "src/shared", "src/test-fixtures"]
 }
