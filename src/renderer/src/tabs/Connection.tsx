@@ -1,5 +1,7 @@
 import { fmtUptime, useStore, type SourceMode, type Transport } from '../store'
 import { nodeDotState, nodeFaultTag, nodeFaultTooltip } from '@shared/nodes'
+import { isLinkUp } from '@shared/ipc'
+import { deviceView } from '../device-view'
 
 const REC_DOT = (
   <span
@@ -17,22 +19,22 @@ const REC_DOT = (
 
 function NodesCard() {
   const nodes = useStore((x) => x.nodes)
-  const sourceMode = useStore((x) => x.sourceMode)
+  const deviceState = useStore((x) => x.deviceState)
+  const autoConnect = useStore((x) => x.autoConnect)
   const refreshNodes = useStore((x) => x.refreshNodes)
-  const isBridge = sourceMode === 'bridge'
+  // Node status rides on the device link, which is up in every source mode (#69).
+  const linkUp = isLinkUp(deviceState)
 
   return (
     <div className="card field">
       <div className="panel-h">
         <span className="section-h">Connected nodes</span>
-        <button className="toolbtn" onClick={() => refreshNodes()} disabled={!isBridge}>
+        <button className="toolbtn" onClick={() => refreshNodes()} disabled={!linkUp}>
           Refresh
         </button>
       </div>
-      {!isBridge ? (
-        <div className="hint">
-          PanelGroup node status is reported over the serial link — Bridge mode only.
-        </div>
+      {!linkUp ? (
+        <div className="hint">{deviceView(deviceState, { autoConnect }).nodesHint}</div>
       ) : nodes.length === 0 ? (
         <div className="hint">No nodes reported. Power on a PanelGroup, or press Refresh.</div>
       ) : (
@@ -79,9 +81,9 @@ const HINTS: Record<SourceMode, string> = {
   bridge:
     'Full relay — SimGateway serial ↔ DCS-BIOS, plus HID. Replaces socat / connect-serial-port.cmd.',
   monitor:
-    'No device — read DCS-BIOS off the LAN to inspect/test the stream. Serial relay + HID inactive.',
+    'Read DCS-BIOS off the LAN to inspect/test the stream — nothing is sent to the device. The device link, HID and node status stay up.',
   replay:
-    'No DCS — feed the parser/UI from a recorded capture; optionally drive the SimGateway serial.'
+    'No DCS — feed the parser/UI from a recorded capture; optionally drive the SimGateway over the same link.'
 }
 
 const TRANSPORTS: { id: Transport; title: string; detail: string }[] = [
@@ -96,17 +98,22 @@ export function Connection() {
   const toggleRelay = useStore((x) => x.toggleRelay)
   const openReplay = useStore((x) => x.openReplay)
   const toggleCapture = useStore((x) => x.toggleCapture)
+  const connectDevice = useStore((x) => x.connectDevice)
+  const set = useStore((x) => x.set)
+  const disconnectDevice = useStore((x) => x.disconnectDevice)
 
-  // The device details are live: populated once a SimGateway is actually found.
-  // Before that, only the match target (VID/PID) is shown — not real device data.
-  const connected = !!s.devicePort
+  // The device card shows the link (#69), which is automatic and independent of the relay.
+  // Before a SimGateway is found, only the match target (VID/PID) is shown — not real device data.
+  const connected = isLinkUp(s.deviceState)
+  const dev = deviceView(s.deviceState, {
+    port: s.devicePort,
+    detail: s.deviceDetail,
+    autoConnect: s.autoConnect
+  })
   const deviceRows = [
     { k: 'Identity', v: connected ? 'A-4E Skyhawk' : '— no device' },
     { k: 'VID / PID', v: connected ? '0x2E8A / 0x4134' : '0x2E8A / 0x4134 · target' },
-    {
-      k: 'Serial port',
-      v: s.devicePort ?? (s.sourceMode === 'bridge' ? 'scanning…' : 'monitor — no device')
-    },
+    { k: 'Serial port', v: dev.portRow },
     { k: 'Interfaces', v: connected ? 'CDC serial + HID' : '—' }
   ]
 
@@ -133,30 +140,20 @@ export function Connection() {
               <div className="dev__name">A-4E Skyhawk · SimGateway</div>
               <div className="dev__meta">composite USB · CDC + HID</div>
             </div>
-            <span
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                fontFamily: 'var(--disp)',
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                color: s.relaying ? 'var(--green)' : 'var(--muted)'
-              }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: s.relaying ? 'var(--green)' : 'var(--muted-3)',
-                  boxShadow: s.relaying ? '0 0 8px var(--green)' : 'none'
-                }}
-              />
-              {s.relaying ? 'Relaying' : 'Stopped'}
+            <span className={`devind ${dev.cls}`} title={dev.tip}>
+              <span className="devind__dot" />
+              {dev.chip}
             </span>
+            <button
+              className={dev.button.action === 'disconnect' ? 'toolbtn' : 'browse'}
+              style={{ padding: '7px 14px' }}
+              disabled={dev.button.disabled}
+              onClick={() =>
+                dev.button.action === 'disconnect' ? disconnectDevice() : connectDevice()
+              }
+            >
+              {dev.button.label}
+            </button>
           </div>
           <div className="dev__body">
             {deviceRows.map((d) => (
@@ -165,28 +162,19 @@ export function Connection() {
                 <span className="dev__v">{d.v}</span>
               </div>
             ))}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingTop: 14
-              }}
-            >
-              <div>
-                <div className="dev__k">Auto-reconnect</div>
-                <div style={{ fontSize: 11, color: 'var(--muted-3)', marginTop: 2 }}>
-                  Re-open the port on unplug
-                </div>
+            {dev.note && (
+              <div className="devnote">
+                {dev.note}
+                {dev.noteSettingsLink && (
+                  <>
+                    {' '}
+                    <button className="devnote__link" onClick={() => set({ tab: 'settings' })}>
+                      Settings › Connection
+                    </button>
+                  </>
+                )}
               </div>
-              <button
-                className={`toggle${s.autoConnect ? ' on' : ''}`}
-                onClick={() => setConfigField({ autoConnect: !s.autoConnect })}
-                aria-pressed={s.autoConnect}
-              >
-                <span />
-              </button>
-            </div>
+            )}
           </div>
         </div>
 

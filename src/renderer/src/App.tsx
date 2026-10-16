@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
 import { useStore, type TabId } from './store'
+import { deviceView, relayTip } from './device-view'
+import { DevicePopover } from './DevicePopover'
 import { Overview } from './tabs/Overview'
 import { Connection } from './tabs/Connection'
 import { Log } from './tabs/Log'
@@ -20,11 +22,37 @@ export function App() {
   const tab = useStore((s) => s.tab)
   const sourceMode = useStore((s) => s.sourceMode)
   const relaying = useStore((s) => s.relaying)
+  const relayStream = useStore((s) => s.relayStream)
+  const deviceState = useStore((s) => s.deviceState)
+  const devicePort = useStore((s) => s.devicePort)
+  const deviceDetail = useStore((s) => s.deviceDetail)
+  const autoConnect = useStore((s) => s.autoConnect)
+  const transport = useStore((s) => s.transport)
+  const host = useStore((s) => s.host)
+  const port = useStore((s) => s.port)
+  const replayFile = useStore((s) => s.replayFile)
   const set = useStore((s) => s.set)
   const toggleRelay = useStore((s) => s.toggleRelay)
   const initBridge = useStore((s) => s.initBridge)
 
   useEffect(() => initBridge(), [initBridge])
+
+  const dev = deviceView(deviceState, { port: devicePort, detail: deviceDetail, autoConnect })
+  const endpoint =
+    transport === 'tcp'
+      ? `${host}:${port}`
+      : transport === 'loop'
+        ? '239.255.50.10:5010'
+        : 'unicast listen'
+  const relayTitle = relayTip({
+    mode: sourceMode,
+    relaying,
+    stream: relayStream,
+    deviceState,
+    deviceLabel: dev.label,
+    endpoint,
+    replayFile
+  })
 
   return (
     <div className="app">
@@ -36,10 +64,12 @@ export function App() {
         </span>
         <div className="titlebar__right">
           <span className="ver">v{__APP_VERSION__}</span>
+          {/* The device link: automatic, and independent of the relay pill beside it (#69). */}
+          <DevicePopover />
           <button
             className={`pill pill--btn${relaying ? ' pill--on' : ''}`}
             onClick={() => toggleRelay()}
-            title={relaying ? 'Click to stop relaying' : 'Click to start relaying'}
+            title={relayTitle}
           >
             <span className="pill__dot" />
             <span className="pill__txt">{relaying ? 'Relaying' : 'Stopped'}</span>

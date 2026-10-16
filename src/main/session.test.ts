@@ -456,11 +456,37 @@ describe('device link is independent of the relay (#69)', () => {
     }
   })
 
-  it('reports a port that will not open as an error', () => {
+  it('reports a port that will not open as an error, and Retry starts over', () => {
     const { session, serial } = launched()
     serial.errorCb(new Error('Access denied'))
-    expect(session.status().device).toMatchObject({ state: 'error', detail: 'Access denied' })
+    expect(session.status().device).toMatchObject({
+      state: 'error',
+      portPath: '/dev/fake',
+      detail: 'Access denied'
+    })
+    session.link.connect() // Retry
+    expect(serial.stopped, 'the failed port is released').toBe(true)
+    expect(FakeSerial.last).not.toBe(serial)
+    expect(session.status().device.state).toBe('scanning')
     session.shutdown()
+  })
+
+  it('ignores connect while the link is already open or looking', () => {
+    const { session, serial } = launched()
+    session.link.connect()
+    expect(FakeSerial.last).toBe(serial)
+    serial.openCb('/dev/fake')
+    session.link.connect()
+    expect(FakeSerial.last).toBe(serial)
+    expect(serial.stopped).toBe(false)
+    session.shutdown()
+  })
+
+  it('runs HID from launch even with auto-connect off', async () => {
+    const { session } = launched({ autoConnect: false })
+    expect((await HID()).stopped).toBe(false)
+    session.shutdown()
+    expect((await HID()).stopped).toBe(true)
   })
 
   it('reconnects after a drop, and stays down after one when auto-connect is off', () => {
@@ -490,12 +516,14 @@ describe('device link is independent of the relay (#69)', () => {
     session.shutdown()
   })
 
-  it('disconnect releases the port until connect, whatever auto-connect says', async () => {
+  it('disconnect releases the serial port until connect, and leaves HID running', async () => {
     const { session, serial } = launched()
     serial.openCb('/dev/fake')
     session.link.disconnect()
     expect(serial.stopped).toBe(true)
-    expect((await HID()).stopped).toBe(true)
+    expect((await HID()).stopped, 'HID is shared with DCS and stays up').toBe(false)
+    const cal = await session.link.calHello()
+    expect(cal.ok ? 'ok' : cal.kind, 'calibration rides on serial').toBe('offline')
     expect(session.status().device.state).toBe('disconnected')
     session.link.connect()
     expect(FakeSerial.last).not.toBe(serial)

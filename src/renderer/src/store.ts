@@ -101,6 +101,8 @@ export interface AppState {
   // live link state
   deviceState: DeviceState
   devicePort?: string
+  /** Why the link is in `error` — e.g. another program holds the port. */
+  deviceDetail?: string
   aircraft: AircraftStatus
   nodes: NodeStatus[]
 
@@ -172,6 +174,10 @@ export interface AppState {
     >
   ) => void
   toggleRelay: () => void
+  /** Open the device link now (also the Retry after an error). */
+  connectDevice: () => void
+  /** Release the serial port until connectDevice(), even through a replug. */
+  disconnectDevice: () => void
   toggleCapture: () => void
   openReplay: () => void
   clearLog: () => void
@@ -264,6 +270,14 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  connectDevice: () => {
+    void window.skyhawk?.connectDevice()
+  },
+
+  disconnectDevice: () => {
+    void window.skyhawk?.disconnectDevice()
+  },
+
   toggleCapture: () => {
     void window.skyhawk
       ?.toggleCapture()
@@ -346,6 +360,7 @@ export const useStore = create<AppState>((set, get) => ({
         relayStream: st.relay.stream,
         deviceState: st.device.state,
         devicePort: st.device.portPath,
+        deviceDetail: st.device.detail,
         // cal:data is only pushed when the port opens. A renderer reload builds a fresh store
         // while the main-process session keeps running, so without carrying the snapshot here
         // the badges would stay blank until the next reconnect — forever, on a stable link.
@@ -364,7 +379,7 @@ export const useStore = create<AppState>((set, get) => ({
         })
       ),
       api.on('device:status', (d) => {
-        set({ deviceState: d.state, devicePort: d.portPath })
+        set({ deviceState: d.state, devicePort: d.portPath, deviceDetail: d.detail })
         // Calibration describes the gateway currently attached, so it is only trustworthy while
         // the link is up. Everything else — reconnecting after a close, error, no-device,
         // disconnected — means the snapshot may describe a board that is gone. Clearing only on

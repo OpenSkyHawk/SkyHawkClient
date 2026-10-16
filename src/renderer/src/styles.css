@@ -178,6 +178,154 @@ body {
   color: var(--green);
 }
 
+/* ── device link indicator (#69): the automatic SimGateway link, separate from the relay pill ── */
+button.devind {
+  appearance: none;
+  cursor: pointer;
+}
+button.devind:hover,
+button.devind[aria-expanded='true'] {
+  border-color: rgba(30, 143, 255, 0.55);
+  background: rgba(30, 143, 255, 0.08);
+}
+.devind--bare {
+  border: 0;
+  padding: 0;
+  background: none;
+}
+.devpop-wrap {
+  position: relative;
+  display: flex;
+}
+.devpop__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+.devpop {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 61;
+  width: 300px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid rgba(30, 143, 255, 0.3);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.devpop__st {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--disp);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.devpop__meta {
+  margin: 6px 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.devpop__acts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.devpop__link {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: var(--blue);
+}
+.devpop__link:hover {
+  text-decoration: underline;
+}
+.devind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  font-family: var(--disp);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.devind__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-3);
+}
+.devind--on {
+  color: var(--green);
+}
+.devind--on .devind__dot {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+.devind--retry {
+  color: var(--gold);
+}
+.devind--retry .devind__dot {
+  background: var(--gold);
+  animation: blink 0.8s ease-in-out infinite;
+}
+.devind--scan {
+  color: var(--blue-2);
+}
+.devind--scan .devind__dot {
+  background: var(--blue);
+  animation: blink 0.8s ease-in-out infinite;
+}
+.devind--off {
+  color: var(--muted);
+}
+.devind--off .devind__dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--muted-2);
+}
+.devind--err {
+  color: #ff9a9a;
+}
+.devind--err .devind__dot {
+  background: var(--red);
+}
+.devnote a,
+.devnote__link {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: var(--blue);
+}
+.devnote {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--line);
+  color: var(--muted);
+}
+
 /* ── tab bar ──────────────────────────────────────────────────── */
 .tabbar {
   display: flex;
@@ -313,6 +461,12 @@ body {
   background: rgba(5, 10, 18, 0.6);
   border: 1px solid var(--line);
   border-radius: 11px;
+}
+.tile--link {
+  cursor: pointer;
+}
+.tile--link:hover {
+  border-color: rgba(30, 143, 255, 0.45);
 }
 .tile__label {
   font-family: var(--disp);

@@ -1,8 +1,23 @@
 import { useStore, fmtBytes, fmtUptime } from '../store'
-import { isLinkUp } from '@shared/ipc'
+import { isLinkUp, type DeviceState } from '@shared/ipc'
 import logo from '../assets/logo.png'
 
 const C = 289.03 // 2·π·46
+
+const LINK_VALUE: Record<DeviceState, string> = {
+  connected: 'Connected',
+  scanning: 'Scanning',
+  reconnecting: 'Reconnecting',
+  'no-device': 'No device',
+  disconnected: 'Disconnected',
+  error: 'Error'
+}
+const LINK_COLOR: Partial<Record<DeviceState, string>> = {
+  connected: 'var(--green)',
+  scanning: 'var(--blue-2)',
+  reconnecting: 'var(--gold)',
+  error: 'var(--red)'
+}
 
 function Gauge({
   label,
@@ -63,12 +78,20 @@ export function Overview() {
   const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
   const acftSub = s.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
 
-  const tiles = [
+  const tiles: { label: string; value: string; sub: string; color: string; open?: boolean }[] = [
     {
+      // The device link, not the relay (#69); the stream state rides underneath.
       label: 'Link',
-      value: connected ? 'Connected' : s.relaying ? s.deviceState : 'Idle',
-      sub: connected ? s.deviceState : s.relaying ? 'connecting…' : 'awaiting start',
-      color: connected ? 'var(--green)' : s.relaying ? 'var(--gold)' : 'var(--muted)'
+      value: LINK_VALUE[s.deviceState],
+      sub: connected
+        ? s.relaying
+          ? 'SimGateway · relaying'
+          : 'SimGateway · stream stopped'
+        : s.relaying
+          ? 'relay keeps running'
+          : 'stream stopped',
+      color: LINK_COLOR[s.deviceState] ?? 'var(--muted)',
+      open: true
     },
     {
       label: 'Aircraft',
@@ -135,7 +158,19 @@ export function Overview() {
         </div>
         <div className="hero__tiles">
           {tiles.map((t) => (
-            <div className="tile" key={t.label}>
+            <div
+              className={`tile${t.open ? ' tile--link' : ''}`}
+              key={t.label}
+              {...(t.open && {
+                role: 'button',
+                tabIndex: 0,
+                title: 'Open the Connection tab',
+                onClick: () => s.set({ tab: 'connection' }),
+                onKeyDown: (e: React.KeyboardEvent) => {
+                  if (e.key === 'Enter' || e.key === ' ') s.set({ tab: 'connection' })
+                }
+              })}
+            >
               <div className="tile__label">{t.label}</div>
               <div className="tile__value" style={{ color: t.color }}>
                 {t.value}

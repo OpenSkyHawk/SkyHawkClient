@@ -156,8 +156,23 @@ export class DeviceLink {
       // Poll the node roster so silent deaths get reconciled — relaying or not.
       setInterval(() => this.requestNodes(), NODES_REFRESH_MS)
     ]
+    this.startHid()
     if (autoConnect) this.connect()
     else this.setStatus({ state: 'disconnected' })
+  }
+
+  /**
+   * HID is read, never claimed: DCS reads the same interface as a joystick, so it runs for as long
+   * as the app does — independent of the serial port, and still up while the port is released.
+   * It reconnects on its own, so its errors are worth recording rather than swallowing — they are
+   * how we learn whether an unplug surfaces here at all, or only as the serial port dropping.
+   */
+  private startHid(): void {
+    const h = new HidReader()
+    this.hid = h
+    h.onError((err) => debugLog('hid.error', { message: err.message }))
+    h.onReport(() => this.pushHid())
+    h.start()
   }
 
   /** App quit. */
@@ -165,6 +180,10 @@ export class DeviceLink {
     for (const t of this.timers) clearInterval(t)
     this.timers = []
     this.teardown()
+    if (this.hidPushTimer) clearTimeout(this.hidPushTimer)
+    this.hidPushTimer = undefined
+    this.hid?.stop()
+    this.hid = undefined
     this.started = false
   }
 
@@ -178,9 +197,13 @@ export class DeviceLink {
     if (this.started && on && !was && !this.serial) this.connect()
   }
 
-  /** Open the port, looking for the board until it appears. A no-op while already open/opening. */
+  /**
+   * Open the port, looking for the board until it appears. A no-op while already open or looking
+   * — except after an error, where it is the Retry: start over with a fresh port.
+   */
   connect(): void {
-    if (this.serial) return
+    if (this.serial && this.status.state !== 'error') return
+    this.teardown()
     // Always retries: "not found" keeps looking whatever the setting, because someone asked for
     // this link. What auto-connect governs is reopening after a drop, handled in onClose.
     const s = new SerialBridge(true)
@@ -203,32 +226,24 @@ export class DeviceLink {
         return
       }
       this.raise('SERIAL', err.message)
-      this.setStatus({ state: 'error', detail: err.message })
+      this.setStatus({ state: 'error', portPath: s.portPath(), detail: err.message })
     })
     this.setStatus({ state: 'scanning' })
     s.start()
-
-    // HID runs in parallel with the serial CDC. It reconnects on its own now, so its errors are
-    // worth recording rather than swallowing — they are how we learn whether an unplug surfaces
-    // here at all, or only as the serial port dropping.
-    const h = new HidReader()
-    this.hid = h
-    h.onError((err) => debugLog('hid.error', { message: err.message }))
-    h.onReport(() => this.pushHid())
-    h.start()
   }
 
-  /** Close the port and keep it closed — through a replug — until connect(). */
+  /**
+   * Close the serial port and keep it closed — through a replug — until connect(). HID stays up:
+   * releasing the port is for other tools that need the CDC, and the HID interface is shared.
+   * Calibration rides on the serial port, so it is unavailable until the link is back.
+   */
   disconnect(): void {
     this.teardown()
     this.setStatus({ state: 'disconnected' })
   }
 
+  /** Release the serial port and what rides on it. */
   private teardown(): void {
-    if (this.hidPushTimer) clearTimeout(this.hidPushTimer)
-    this.hidPushTimer = undefined
-    this.hid?.stop()
-    this.hid = undefined
     // Bytes the de-mux was holding are DCS traffic, but with the link going away deliberately
     // there is no stream left for them to belong to.
     this.cal?.close()
