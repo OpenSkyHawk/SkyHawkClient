@@ -3,6 +3,7 @@ import { useStore, fmtBytes, fmtUptime, type TabId } from '../store'
 import { isLinkUp, type DeviceState } from '@shared/ipc'
 import { attentionItems, healthBand, nodeViews } from '../cockpit'
 import { attentionSummary, cockpitTile, newDevices, newDevicesText } from '../overview'
+import { gatewayView } from '../gateway-view'
 import { Dot } from './cockpit/Dot'
 import logo from '../assets/logo.png'
 
@@ -97,6 +98,9 @@ export function Overview() {
         : null,
     [connected, s.attentionBanner, band, views, s.nodeModel]
   )
+  // Serious Gateway faults only (#94): panel input can't reach DCS. Its own link, so not behind the
+  // board-problems setting.
+  const gatewayAlert = gatewayView(s.deviceGateway, connected).alert
   const waiting = useMemo(() => newDevices(views, connected), [views, connected])
   const waitingText = waiting && newDevicesText(waiting)
 
@@ -114,8 +118,8 @@ export function Overview() {
       value: LINK_VALUE[s.deviceState],
       sub: connected
         ? s.relaying
-          ? 'SimGateway · relaying'
-          : 'SimGateway · stream stopped'
+          ? 'Gateway · relaying'
+          : 'Gateway · stream stopped'
         : s.relaying
           ? 'relay waiting — resumes when it connects'
           : 'stream stopped',
@@ -190,7 +194,7 @@ export function Overview() {
       <div className="hero">
         <img className="hero__logo" src={logo} alt="OPEN SKYHAWK" />
         <div className="hero__txt">
-          <div className="hero__tag">SimGateway connector &amp; DCS-BIOS / HID monitor</div>
+          <div className="hero__tag">Gateway connector &amp; DCS-BIOS / HID monitor</div>
           <div className="hero__sub">Open hardware. Open cockpits.</div>
         </div>
         <div className="hero__tiles">
@@ -219,6 +223,19 @@ export function Overview() {
         </div>
       </div>
 
+      {gatewayAlert && (
+        <div className="err-banner" role="alert">
+          <span className="err-banner__sym" aria-hidden="true">
+            ✕
+          </span>
+          <span>
+            <b>{gatewayAlert.head}</b> — {gatewayAlert.text}
+          </span>
+          <button className="ib__link" onClick={() => s.set({ devicePopOpen: true })}>
+            Details
+          </button>
+        </div>
+      )}
       {attention && (
         <div className="warn-banner" role="status">
           ⚠ <b>{attention.head}</b> — {attention.detail}.{' '}

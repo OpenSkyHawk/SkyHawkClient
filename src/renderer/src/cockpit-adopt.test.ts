@@ -230,7 +230,7 @@ describe('adoptability', () => {
     const bridge = adoptability(fresh(43, { identified: 'bridge' }))
     expect(bridge).toMatchObject({ badge: 'BRIDGE' })
     expect(bridge.kind).toBeUndefined()
-    expect(bridge.note).toMatch(/SimGateway \/ PanelBridge/)
+    expect(bridge.note).toMatch(/Gateway/)
     const other = adoptability(
       fresh(44, { identified: 'other', status: status(44, { nodeKind: 7 }) })
     )
@@ -403,9 +403,7 @@ describe('strayNew', () => {
 
 describe('strayFlag', () => {
   it('says what it is and that it can’t be adopted', () => {
-    expect(strayFlag(fresh(44, { identified: 'bridge' }))).toBe(
-      'SECOND SIMGATEWAY · can’t be adopted'
-    )
+    expect(strayFlag(fresh(44, { identified: 'bridge' }))).toBe('SECOND GATEWAY · can’t be adopted')
     expect(strayFlag(fresh(45, { identified: 'other' }))).toBe(
       'UNKNOWN BOARD TYPE · can’t be adopted'
     )

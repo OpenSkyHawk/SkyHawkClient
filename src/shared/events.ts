@@ -31,7 +31,7 @@ export interface LogEventInput {
   source: EventSource
   /** Node events about one node; absent for the roster summary and client events. */
   nodeId?: number
-  /** Node: its effective name. Client: `SERIAL`, `DCS`, `SimGateway` or `Relay`. */
+  /** Node: its effective name. Client: `SERIAL`, `DCS`, `Gateway` or `Relay`. */
   name: string
   severity: EventSeverity
   /** What happened, e.g. `5V UNDER-V raised`, `offline`, `connected`. */
@@ -309,7 +309,7 @@ export function deviceEvent(
   now: number
 ): LogEventInput | null {
   if (next.state === 'scanning' || next.state === last) return null
-  const base = { t: now, source: 'client' as const, name: 'SimGateway' }
+  const base = { t: now, source: 'client' as const, name: 'Gateway' }
   const raw = ['device:', next.state, next.portPath, next.detail].filter(Boolean).join(' ')
   switch (next.state) {
     case 'connected':

@@ -50,12 +50,12 @@ export function hiddenRow(n: HiddenNode): ListRow {
   }
 }
 
-/** "NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, PanelBridge". */
+/** "NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, Gateway". */
 export function registrySummary(r: NodeRegistryInfo): string {
   const pdus = r.nodes.filter((n) => n.kind === 'pdu').length
   const panels = r.nodes.filter((n) => n.kind === 'panel').length
   const parts = [plural(pdus, 'PDU'), plural(panels, 'panel group')]
-  if (r.nodes.some((n) => n.kind === 'bridge')) parts.push('PanelBridge')
+  if (r.nodes.some((n) => n.kind === 'bridge')) parts.push('Gateway')
   const file = r.file.split('/').pop()
   return `${file} · ${plural(r.nodes.length, 'node')}: ${parts.join(', ')}`
 }

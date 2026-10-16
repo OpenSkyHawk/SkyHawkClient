@@ -193,7 +193,7 @@ export function CalibrationDialog({
           <div className="cd__title">
             <div className="cd__h1">Axis Calibration · {AXIS_LABELS[s.axis]}</div>
             <div className="cd__h2">
-              SimGateway ·{' '}
+              Gateway ·{' '}
               {s.paused ? (
                 <span className="cd__off">serial link closed</span>
               ) : (

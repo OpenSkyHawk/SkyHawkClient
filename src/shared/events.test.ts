@@ -284,22 +284,22 @@ describe('client events', () => {
     expect(deviceEvent(undefined, { state: 'no-device' }, 0)).toBeNull()
     expect(deviceEvent('disconnected', { state: 'no-device' }, 0)).toBeNull()
     const up = deviceEvent('no-device', { state: 'connected', portPath: p }, 0)!
-    expect(short([up])).toEqual([`SimGateway: connected · ${p} [info]`])
+    expect(short([up])).toEqual([`Gateway: connected · ${p} [info]`])
     expect(up.raw).toBe(`device: connected ${p}`)
     expect(deviceEvent('connected', { state: 'connected', portPath: p }, 0)).toBeNull()
     expect(short([deviceEvent('connected', { state: 'reconnecting' }, 0)!])).toEqual([
-      'SimGateway: reconnecting · link dropped [warn]'
+      'Gateway: reconnecting · link dropped [warn]'
     ])
     expect(short([deviceEvent('reconnecting', { state: 'no-device' }, 0)!])).toEqual([
-      'SimGateway: no device · unplugged [warn]'
+      'Gateway: no device · unplugged [warn]'
     ])
     // A port that will not open is already the SERIAL error row; recovering from it is news.
     expect(deviceEvent('no-device', { state: 'error', detail: 'port busy' }, 0)).toBeNull()
     expect(short([deviceEvent('error', { state: 'connected', portPath: p }, 0)!])).toEqual([
-      `SimGateway: connected · ${p} [info]`
+      `Gateway: connected · ${p} [info]`
     ])
     expect(short([deviceEvent('connected', { state: 'disconnected' }, 0)!])).toEqual([
-      'SimGateway: disconnected [info]'
+      'Gateway: disconnected [info]'
     ])
   })
 

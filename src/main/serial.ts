@@ -26,7 +26,7 @@ const RECONNECT_MS = 2000
  */
 export class PortNotFoundError extends Error {
   constructor() {
-    super('SimGateway serial port not found')
+    super('Gateway serial port not found')
     this.name = 'PortNotFoundError'
   }
 }

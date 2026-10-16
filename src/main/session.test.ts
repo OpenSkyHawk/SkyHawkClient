@@ -549,7 +549,7 @@ describe('device link is independent of the relay (#69)', () => {
 
   it('refuses Start until the board is connected when the mode delivers to it', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
-    expect(session.start()).toEqual({ ok: false, error: 'SimGateway is not connected' })
+    expect(session.start()).toEqual({ ok: false, error: 'Gateway is not connected' })
     expect(session.status().running).toBe(false)
     expect(FakeTransport.last, 'no DCS transport is opened').toBeUndefined()
     serial.openCb('/dev/fake')
@@ -573,7 +573,7 @@ describe('device link is independent of the relay (#69)', () => {
     monitor.session.shutdown()
 
     const driven = launched({ sourceMode: 'replay', replayDriveSerial: true })
-    expect(driven.session.start()).toEqual({ ok: false, error: 'SimGateway is not connected' })
+    expect(driven.session.start()).toEqual({ ok: false, error: 'Gateway is not connected' })
     driven.session.shutdown()
     // Undriven Replay is only refused for having no capture, never for the board.
     const plain = launched({ sourceMode: 'replay', replayDriveSerial: false })
@@ -697,6 +697,94 @@ describe('relay state (#69)', () => {
   })
 })
 
+describe('Gateway health (#94)', () => {
+  beforeEach(() => {
+    FakeSerial.last = undefined
+    FakeTransport.last = undefined
+  })
+
+  const rows = (session: InstanceType<typeof Session>) =>
+    session.events.snapshot().map((e) => `${e.source}:${e.name}: ${eventText(e)}`)
+
+  /** The Gateway's own row (node 0, kind 03, 42 °C), with these heartbeat flags. */
+  const gatewayLine = (flags = 0): string =>
+    `_NODE_STATUS 0001${flags.toString(16).padStart(2, '0')}0000000000002a00000003\n`
+
+  it('carries its own row on device:status, and logs its flags', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial, of } = launched()
+      serial.openCb('/dev/fake')
+      serial.dataCb(ascii(gatewayLine() + '_NODE_STATUS_END\n'))
+      vi.advanceTimersByTime(250)
+      expect(session.status().device.gateway).toMatchObject({
+        notResponding: false,
+        row: { boff: false, dieTempC: 42 }
+      })
+      serial.dataCb(ascii(gatewayLine(0x01))) // bus-off
+      vi.advanceTimersByTime(250)
+      expect(of('device:status').at(-1)).toMatchObject({
+        state: 'connected',
+        gateway: { row: { boff: true } }
+      })
+      expect(rows(session)).toContain('client:Gateway: bus-off')
+      // Still never a cockpit node.
+      const model = of('nodes:model').at(-1) as NodeModel
+      expect(model.nodes.map((n) => n.nodeId)).not.toContain(0)
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a roster request unanswered for 5 s is "not responding", until it answers', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial } = launched()
+      serial.openCb('/dev/fake') // seeds the first roster request
+      vi.advanceTimersByTime(4800)
+      expect(session.status().device.gateway?.notResponding).toBe(false)
+      vi.advanceTimersByTime(400)
+      expect(session.status().device).toMatchObject({
+        state: 'connected', // a Gateway problem, not a link state change
+        gateway: { notResponding: true }
+      })
+      serial.dataCb(ascii('_NODE_STATUS_END\n'))
+      vi.advanceTimersByTime(250)
+      expect(session.status().device.gateway?.notResponding).toBe(false)
+      expect(
+        rows(session).filter((r) => r.startsWith('client:Gateway: ') && !r.includes('connected'))
+      ).toEqual([
+        'client:Gateway: not responding · no answer for 5 s',
+        'client:Gateway: responding again'
+      ])
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('is gone while the link is down, and starts over on the next open', () => {
+    vi.useFakeTimers()
+    try {
+      const { session, serial } = launched()
+      serial.openCb('/dev/fake')
+      serial.dataCb(ascii(gatewayLine(0x02)))
+      vi.advanceTimersByTime(250)
+      expect(session.status().device.gateway?.row?.epvf).toBe(true)
+      serial.closeCb()
+      expect(session.status().device.gateway).toBeUndefined()
+      vi.advanceTimersByTime(10_000) // no "not responding" while the port is closed
+      serial.openCb('/dev/fake')
+      expect(session.status().device.gateway).toEqual({ notResponding: false })
+      expect(rows(session).some((r) => r.includes('not responding'))).toBe(false)
+      session.shutdown()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('event log (#64)', () => {
   beforeEach(() => {
     FakeSerial.last = undefined
@@ -731,10 +819,10 @@ describe('event log (#64)', () => {
     serial.dataCb(Buffer.from(statusLine(2, false)))
     serial.closeCb()
     expect(rows(session)).toEqual([
-      'client:SimGateway: connected · /dev/fake',
+      'client:Gateway: connected · /dev/fake',
       'node:roster: 2 nodes online',
       'node:Right_Navigation: offline · no heartbeat',
-      'client:SimGateway: reconnecting · link dropped'
+      'client:Gateway: reconnecting · link dropped'
     ])
     const offline = session.events.snapshot()[2]
     expect(offline.nodeId).toBe(2)
@@ -810,7 +898,7 @@ describe('event log (#64)', () => {
     FakeSerial.last!.errorCb(new Error('Cannot lock port'))
     expect(rows(session)).toEqual([
       'client:SERIAL: serial port error · Cannot lock port',
-      'client:SimGateway: disconnected',
+      'client:Gateway: disconnected',
       'client:SERIAL: serial port error · Cannot lock port'
     ])
     session.shutdown()

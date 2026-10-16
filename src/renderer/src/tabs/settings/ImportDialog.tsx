@@ -6,7 +6,7 @@ import { Dialog } from './Dialog'
 import { importRowKey, importSubtitle } from './settings-view'
 
 const CAL_NOTE =
-  'Adds these values to the client’s calibration copy — nothing is written to the device here. If the SimGateway has lost calibration, the usual Review & restore offer appears on the HID tab; axes the device still holds are never overwritten.'
+  'Adds these values to the client’s calibration copy — nothing is written to the device here. If the Gateway has lost calibration, the usual Review & restore offer appears on the HID tab; axes the device still holds are never overwritten.'
 
 /**
  * Import configuration — review what the file changes, section by section, and apply the ones

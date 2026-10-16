@@ -60,7 +60,7 @@ export function Serial() {
         {view.length === 0 ? (
           <div className="hint" style={{ padding: '16px 28px' }}>
             {monitor
-              ? 'Monitoring — no serial traffic yet. (TX/RX needs a connected SimGateway.)'
+              ? 'Monitoring — no serial traffic yet. (TX/RX needs a connected Gateway.)'
               : 'Serial monitor is off. Start it to see raw bytes both ways.'}
           </div>
         ) : (

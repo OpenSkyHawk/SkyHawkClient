@@ -8,7 +8,7 @@ export function ConnectionSection() {
 
   return (
     <>
-      <SectionHead title="Connection" desc="How the client reaches DCS and the SimGateway." />
+      <SectionHead title="Connection" desc="How the client reaches DCS and the Gateway." />
       <div className="set-card">
         <Row k="Source mode" sub="How telemetry reaches the client">
           <span className="set-row__value" style={{ textTransform: 'capitalize' }}>
@@ -33,7 +33,7 @@ export function ConnectionSection() {
         </Row>
         <Row
           k="Connect automatically"
-          sub="Open the SimGateway on launch and whenever it is plugged in, and recover after a drop. Turn off to leave the port to socat / connect-serial-port.cmd."
+          sub="Open the Gateway on launch and whenever it is plugged in, and recover after a drop. Turn off to leave the port to socat / connect-serial-port.cmd."
         >
           <button
             className={`toggle${s.autoConnect ? ' on' : ''}`}

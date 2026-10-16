@@ -121,11 +121,11 @@ function NodesCard() {
 
 const HINTS: Record<SourceMode, string> = {
   bridge:
-    'Full relay — SimGateway serial ↔ DCS-BIOS, plus HID. Replaces socat / connect-serial-port.cmd.',
+    'Full relay — Gateway serial ↔ DCS-BIOS, plus HID. Replaces socat / connect-serial-port.cmd.',
   monitor:
     'Read DCS-BIOS off the LAN to inspect/test the stream — nothing is sent to the device. The device link, HID and node status stay up.',
   replay:
-    'No DCS — feed the parser/UI from a recorded capture; optionally drive the SimGateway over the same link.'
+    'No DCS — feed the parser/UI from a recorded capture; optionally drive the Gateway over the same link.'
 }
 
 const TRANSPORTS: { id: Transport; title: string; detail: string }[] = [
@@ -194,7 +194,7 @@ export function Connection() {
               </svg>
             </div>
             <div style={{ flex: 1 }}>
-              <div className="dev__name">A-4E Skyhawk · SimGateway</div>
+              <div className="dev__name">A-4E Skyhawk · Gateway</div>
               <div className="dev__meta">composite USB · CDC + HID</div>
             </div>
             <span className={`devind ${dev.cls}`} title={dev.tip}>
@@ -288,7 +288,7 @@ export function Connection() {
               }}
             >
               <div>
-                <div className="dev__k">Drive SimGateway</div>
+                <div className="dev__k">Drive Gateway</div>
                 <div style={{ fontSize: 11, color: 'var(--muted-3)', marginTop: 2 }}>
                   Also write the replay to the serial device
                 </div>

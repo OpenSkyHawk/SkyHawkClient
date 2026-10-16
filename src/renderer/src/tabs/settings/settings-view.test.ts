@@ -40,7 +40,7 @@ const REG: NodeRegistryInfo = {
 
 describe('registry', () => {
   it('summarises the bundled registry', () => {
-    expect(registrySummary(REG)).toBe('NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, PanelBridge')
+    expect(registrySummary(REG)).toBe('NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, Gateway')
   })
 
   it('"On the bus" comes from the link and the roster, and says when there is no data', () => {
