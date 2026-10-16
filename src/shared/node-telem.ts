@@ -43,7 +43,11 @@ export const TELEM_STALE_MS = 10_000
 const HEX_LEN = 18 // nodeId(2) + 8 frame bytes (16), frame bytes in wire order
 const NTC_UNAVAILABLE = -0x8000 // INT16_MIN
 
-/** PDU_RAIL_12V / PDU_RAIL_5V. Averages and the minimum cover the 3 s since the page's last send. */
+/**
+ * PDU_RAIL_12V / PDU_RAIL_5V. Averages and the minimum cover the window since this page's
+ * previous PERIODIC send (3 s). A flag-change send goes out at once without restarting that
+ * window, so the next periodic page still covers the full 3 s.
+ */
 export interface PduRailPage {
   kind: 'rail'
   page: typeof TELEM_PAGE.PDU_RAIL_12V | typeof TELEM_PAGE.PDU_RAIL_5V
@@ -61,7 +65,9 @@ export interface PduStatusPage {
   flags: number // PDU_FLAG bits
   /** Board NTC temperature, °C at 0.1 resolution; null = the board reports it unavailable. */
   ntcTempC: number | null
+  /** 12 V peak current over the same window as the rail averages, after the board's ~100 µs RC filter. */
   i12PeakMa: number
+  /** 5 V peak current, same window and filter. */
   i5PeakMa: number
 }
 
