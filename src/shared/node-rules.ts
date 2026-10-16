@@ -78,7 +78,7 @@ export interface PduOutage {
   pduId: number
   /** The fed nodes that dropped with it. */
   nodeIds: number[]
-  /** Fed nodes in total (excluding hidden ones), for "N of M". */
+  /** Fed nodes in total (excluding hidden ones and ones not seen this session), for "N of M". */
   fedCount: number
   at: number
 }
@@ -234,7 +234,8 @@ export function pduOutages(nodes: NodeModelEntry[]): PduOutage[] {
     if (pdu.kind !== 'pdu' || pdu.availability !== 'offline' || pdu.offlineAt === undefined) {
       continue
     }
-    const fed = nodes.filter((n) => n.pduId === pdu.nodeId && n.nodeId !== pdu.nodeId)
+    // A board not seen this session could not have dropped with it: it counts for neither side.
+    const fed = nodes.filter((n) => n.pduId === pdu.nodeId && n.nodeId !== pdu.nodeId && !n.notSeen)
     const hit = fed.filter((n) => n.availability === 'offline' && droppedTogether(n, pdu))
     if (fed.length > 0 && hit.length * 2 > fed.length) {
       out.push({

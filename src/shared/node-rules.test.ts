@@ -326,6 +326,19 @@ describe('PDU-offline grouping', () => {
     })
   })
 
+  it('fed boards not seen this session count for neither side (#93 review)', () => {
+    // PDU_Left (3) feeds 41, 42, 43; only 41 is listed this session, and it dropped with the PDU.
+    const roster = [st(3, false), st(41, false)]
+    const seen = new Map<number, NodeSeen>([
+      [3, off(1000)],
+      [41, off(1000)]
+    ])
+    const m = buildNodeModel(input({ file, roster, seen, rosterCompleteAt: 0 }))
+    expect(m.nodes.filter((n) => n.pduId === 3 && n.notSeen).map((n) => n.nodeId)).toEqual([42, 43])
+    // Counting 42 and 43 made it "1 of 3" — no outage. They could not have dropped with it.
+    expect(m.outages).toEqual([{ pduId: 3, nodeIds: [41], fedCount: 1, at: 1000 }])
+  })
+
   it('an online PDU is never an outage', () => {
     expect(
       model(
