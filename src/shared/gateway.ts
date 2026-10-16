@@ -110,7 +110,7 @@ export function gatewayStatus(
       severity: sev(f),
       kind: 'error-passive',
       label: title(f.label),
-      note: `CAN errors high (TEC ${row.tec}): it still reaches the panels but may drop frames. Check the bus cabling and termination.`
+      note: 'Its CAN error count is high, so it may lose an occasional panel input on the way to DCS. Usually cabling or termination; it also happens when no other board is on the bus.'
     }
   }
   if (health && (row.degraded || row.faultId !== 0)) {
@@ -146,7 +146,7 @@ function said(s: GatewayStatus, row: NodeStatus | undefined): { event: string; d
     case 'overheat':
       return { event: flag('overheat').label }
     case 'error-passive':
-      return { event: flag('epvf').label, detail: row && `TEC ${row.tec}` }
+      return { event: flag('epvf').label, detail: row && `TEC ${row.tec} · REC ${row.rec}` }
     default:
       return { event: flag('degraded').label, detail: s.label }
   }

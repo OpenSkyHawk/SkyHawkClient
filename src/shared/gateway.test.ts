@@ -64,7 +64,10 @@ describe('gatewayStatus — the one place the Gateway’s health is decided', ()
       kind: 'error-passive',
       label: 'Error-passive'
     })
-    expect(st({ epvf: true, tec: 131 }).note).toMatch(/TEC 131/)
+    // Plain words for the user; the counters go in the log row.
+    expect(st({ epvf: true, tec: 131 }).note).toBe(
+      'Its CAN error count is high, so it may lose an occasional panel input on the way to DCS. Usually cabling or termination; it also happens when no other board is on the bus.'
+    )
     const dup = st({ degraded: true, faultId: 9, faultLabel: 'Duplicate NODE_ID' })
     expect(dup).toMatchObject({ severity: 'warn', kind: 'fault', label: 'Duplicate NODE_ID' })
     expect(dup.note).toMatch(/uses NODE_ID 0, the Gateway’s own/)
@@ -122,7 +125,10 @@ describe('gatewayEvents — rows read the status', () => {
   it('raised and cleared, in the node rows’ words', () => {
     expect(ev({}, { boff: true })).toEqual(['Gateway: bus-off [error]'])
     expect(ev({ boff: true }, {})).toEqual(['Gateway: bus-off cleared [info]'])
-    expect(ev({}, { epvf: true, tec: 131 })).toEqual(['Gateway: error-passive · TEC 131 [warn]'])
+    // Error-passive is TEC or REC at 128 or more: both counters, as reported.
+    expect(ev({}, { epvf: true, tec: 3, rec: 140 })).toEqual([
+      'Gateway: error-passive · TEC 3 · REC 140 [warn]'
+    ])
     expect(ev({}, { faultId: 9, faultLabel: 'Duplicate NODE_ID' })).toEqual([
       'Gateway: degraded · Duplicate NODE_ID [warn]'
     ])
