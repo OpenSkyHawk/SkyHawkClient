@@ -121,6 +121,16 @@ describe('NodeHub', () => {
     expect(node41()).toMatchObject({ source: 'adopted', name: 'Left_Trim', pduId: 3 })
   })
 
+  it('hiding a new node is refused and writes nothing', () => {
+    const { h } = hub()
+    expect(h.hide(41, true)).toEqual({
+      ok: false,
+      error: 'Only a registry or adopted node can be hidden — ignore a new node instead'
+    })
+    expect(disk.saves).toBe(0)
+    expect(h.hide(2, true).ok).toBe(true)
+  })
+
   it('malformed renderer input resolves to { ok: false } instead of throwing', () => {
     const { h } = hub()
     expect(h.setMapping(1, null as never)).toEqual({ ok: false, error: 'Invalid mapping change' })

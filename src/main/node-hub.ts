@@ -111,7 +111,7 @@ export class NodeHub {
   }
 
   hide(nodeId: number, on: boolean): NodeMappingResult {
-    return this.update((f) => setHidden(f, nodeId, on))
+    return this.update((f) => setHidden(f, this.defaults, nodeId, on))
   }
 
   private model(now: number): NodeModel {

@@ -302,13 +302,32 @@ export function setIgnored(file: NodeMappingFile, nodeId: number, on: boolean): 
   return { ...file, ignored: [...file.ignored, nodeId].sort((a, b) => a - b) }
 }
 
-/** Set or clear "hidden until it reports again". */
-export function setHidden(file: NodeMappingFile, nodeId: number, on: boolean): NodeMappingFile {
-  if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
+function withoutHidden(file: NodeMappingFile, nodeId: number): NodeMappingFile {
   const next: NodeOverride = { ...file.nodes[nodeId] }
-  if (on) next.hidden = true
-  else delete next.hidden
+  delete next.hidden
   return withNode(file, nodeId, next)
+}
+
+/**
+ * Set or clear "hidden until it reports again" — for a replaced / removed board, so only a
+ * registry or adopted node can be hidden. A new NODE_ID has nothing to hide (it is in the
+ * roster because it reports); Ignore is its action. Clearing is allowed for any id, so a stray
+ * flag can always be removed.
+ */
+export function setHidden(
+  file: NodeMappingFile,
+  defaults: Map<number, NodeDefaults>,
+  nodeId: number,
+  on: boolean
+): NodeMappingFile {
+  if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
+  if (!on) return withoutHidden(file, nodeId)
+  if (!defaults.has(nodeId) && !adopted(file.nodes[nodeId])) {
+    throw new MappingError(
+      'Only a registry or adopted node can be hidden — ignore a new node instead'
+    )
+  }
+  return withNode(file, nodeId, { ...file.nodes[nodeId], hidden: true })
 }
 
 /**
@@ -321,7 +340,7 @@ export function clearReportedHidden(
 ): NodeMappingFile {
   let next = file
   for (const id of presentIds) {
-    if (next.nodes[id]?.hidden) next = setHidden(next, id, false)
+    if (next.nodes[id]?.hidden) next = withoutHidden(next, id)
   }
   return next
 }

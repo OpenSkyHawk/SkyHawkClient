@@ -219,10 +219,27 @@ describe('reset / ignore / hidden', () => {
   })
 
   it('hidden is set, cleared, and cleared again when the node reports', () => {
-    const f = setHidden(EMPTY_MAPPING, 2, true)
+    const f = setHidden(EMPTY_MAPPING, defaults, 2, true)
     expect(effectiveMapping(defaults, f).get(2)?.hidden).toBe(true)
-    expect(setHidden(f, 2, false).nodes).toEqual({})
+    expect(setHidden(f, defaults, 2, false).nodes).toEqual({})
     expect(clearReportedHidden(f, [1, 2]).nodes).toEqual({})
     expect(clearReportedHidden(f, [1, 3])).toBe(f) // unchanged → same object, no write
+  })
+
+  it('only registry and adopted nodes can be hidden; un-hiding works for any id', () => {
+    expect(() => setHidden(EMPTY_MAPPING, defaults, 41, true)).toThrow(
+      new MappingError('Only a registry or adopted node can be hidden — ignore a new node instead')
+    )
+    const adoptedOnly = adoptNode(EMPTY_MAPPING, defaults, 41, {
+      name: 'Trim',
+      console: 'Left',
+      pduId: 3,
+      kind: 'panel'
+    })
+    expect(
+      effectiveMapping(defaults, setHidden(adoptedOnly, defaults, 41, true)).get(41)?.hidden
+    ).toBe(true)
+    const stray: NodeMappingFile = { version: 1, nodes: { 41: { hidden: true } }, ignored: [] }
+    expect(setHidden(stray, defaults, 41, false).nodes).toEqual({})
   })
 })
