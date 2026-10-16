@@ -3,7 +3,6 @@
 import type { CachedAxis, CachedBoard } from './cal-cache'
 import { DEFAULT_PSU, sanitizePsu, type PsuSetting } from './psu'
 import type { SectionDiff, SectionId } from './config-file'
-import type { NodeStatus } from './nodes'
 import type { NodeTelemSnapshot } from './node-telem'
 import type { AdoptSpec, MappingPatch, NodeKind, ResetOptions, ResetPreview } from './node-mapping'
 import type { NodeModel } from './node-rules'
@@ -177,7 +176,6 @@ export interface PushChannels {
   'events:batch': LogEvent[]
   'hid:report': HidSnapshot
   'telemetry:tick': TelemetryReadout[]
-  'nodes:status': NodeStatus[]
   /** Latest PDU telemetry per node (#61). At most once a second, and only on change. */
   'nodes:telemetry': NodeTelemSnapshot[]
   /** Roster + telemetry + node mapping combined: what the Cockpit tab shows (#61, UI in #63). */
@@ -198,7 +196,6 @@ export const IPC = {
   eventsBatch: 'events:batch',
   hidReport: 'hid:report',
   telemetryTick: 'telemetry:tick',
-  nodesStatus: 'nodes:status',
   nodesTelemetry: 'nodes:telemetry',
   nodesModel: 'nodes:model',
   serialTraffic: 'serial:traffic',

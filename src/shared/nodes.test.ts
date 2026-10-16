@@ -6,9 +6,7 @@ import {
   ROSTER_REPLY_MS,
   parseNodeStatus,
   nodeRosterRequest,
-  nodeDotState,
   nodeFaultTag,
-  nodeFaultTooltip,
   type NodeStatus
 } from './nodes'
 
@@ -158,21 +156,8 @@ describe('NodeRoster', () => {
   })
 })
 
-describe('nodeDotState', () => {
-  it('offline wins over everything', () => {
-    expect(nodeDotState(node({ present: false, degraded: true, overheat: true }))).toBe('off')
-  })
-  it('present + degraded or overheat → warn (amber)', () => {
-    expect(nodeDotState(node({ degraded: true }))).toBe('warn')
-    expect(nodeDotState(node({ overheat: true }))).toBe('warn')
-  })
-  it('present + healthy → on', () => {
-    expect(nodeDotState(node({}))).toBe('on')
-  })
-})
-
-describe('nodeFaultTag / nodeFaultTooltip', () => {
-  it('uses the enriched abbr + label + description', () => {
+describe('nodeFaultTag', () => {
+  it('uses the enriched abbr', () => {
     const n = node({
       degraded: true,
       faultId: 1,
@@ -181,16 +166,9 @@ describe('nodeFaultTag / nodeFaultTooltip', () => {
       faultDesc: 'an I2C device tripped its breaker'
     })
     expect(nodeFaultTag(n)).toBe('I2C')
-    expect(nodeFaultTooltip(n)).toBe('I2C peripheral — an I2C device tripped its breaker')
   })
   it('falls back to `Fault N` for an unknown/reserved id (no enrichment)', () => {
     const n = node({ degraded: true, faultId: 0x99 })
     expect(nodeFaultTag(n)).toBe('Fault 153')
-    expect(nodeFaultTooltip(n)).toBe('Fault 153')
-  })
-  it('tooltip is the label alone when there is no description', () => {
-    expect(
-      nodeFaultTooltip(node({ faultId: 2, faultAbbr: 'OVER', faultLabel: 'Over voltage' }))
-    ).toBe('Over voltage')
   })
 })

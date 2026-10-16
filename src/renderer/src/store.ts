@@ -10,7 +10,6 @@ import type {
   LogRow as IpcLogRow,
   TelemetryReadout
 } from '@shared/ipc'
-import type { NodeStatus } from '@shared/nodes'
 import type { NodeModel } from '@shared/node-rules'
 import type { NodeTelemSnapshot } from '@shared/node-telem'
 import { DEFAULT_PSU, type PsuSetting } from '@shared/psu'
@@ -116,7 +115,6 @@ export interface AppState {
   /** Why the link is in `error` — e.g. another program holds the port. */
   deviceDetail?: string
   aircraft: AircraftStatus
-  nodes: NodeStatus[]
   /** Roster + telemetry + mapping, as main combines them (#61). Kept, dimmed, while the link is down. */
   nodeModel?: NodeModel
   nodeTelemetry: NodeTelemSnapshot[]
@@ -277,7 +275,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   deviceState: 'no-device',
   aircraft: { name: 'NONE', inferred: false, supported: true },
-  nodes: [],
   nodeTelemetry: [],
   nodesPeakW: 0,
 
@@ -484,7 +481,6 @@ export const useStore = create<AppState>((set, get) => ({
       api.on('relay:state', (r) => set({ relaying: r.running, relayStream: r.stream })),
       api.on('cal:data', (c) => set({ cal: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
-      api.on('nodes:status', (n) => set({ nodes: n })),
       api.on('nodes:model', (m) => setNodes(m, get().nodeTelemetry)),
       api.on('nodes:telemetry', (t) => setNodes(get().nodeModel, t)),
       api.on('serial:traffic', (frames) => {

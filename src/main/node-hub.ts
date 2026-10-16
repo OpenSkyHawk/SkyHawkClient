@@ -47,7 +47,7 @@ type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => voi
 /** Shortest gap between `nodes:telemetry` pushes. ~3 PDUs send ~3 frames/s between them. */
 const NODE_TELEM_PUSH_MS = 1000
 
-/** Fault-dictionary enrichment, as `nodes:status` carries it. */
+/** Fault-dictionary enrichment: the abbr, label and description for the node's faultId. */
 function withFaultInfo(n: NodeStatus): NodeStatus {
   const fc = n.faultId ? NODE_FAULT_CODES[n.faultId] : undefined
   return { ...n, faultAbbr: fc?.abbr, faultLabel: fc?.label, faultDesc: fc?.description }

@@ -20,7 +20,6 @@ const HEX_LEN = 26 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4) 
 
 export interface NodeStatus {
   nodeId: number // 1..63
-  name?: string // panel name from the NODE_IDS registry (filled in main)
   present: boolean
   boff: boolean // CAN bus-off
   epvf: boolean // CAN error-passive
@@ -40,22 +39,9 @@ export interface NodeStatus {
   faultDesc?: string
 }
 
-/** Status-dot state: offline wins, then any amber condition (overheat/degraded), else healthy. */
-export function nodeDotState(n: NodeStatus): 'on' | 'off' | 'warn' {
-  if (!n.present) return 'off'
-  if (n.overheat || n.degraded) return 'warn'
-  return 'on'
-}
-
 /** Short degraded-badge tag — the fault abbr, or `Fault N` for an unknown/reserved id. */
 export function nodeFaultTag(n: NodeStatus): string {
   return n.faultAbbr ?? `Fault ${n.faultId}`
-}
-
-/** Degraded-badge tooltip — full label + firmware description (falls back to the tag). */
-export function nodeFaultTooltip(n: NodeStatus): string {
-  const label = n.faultLabel ?? nodeFaultTag(n)
-  return n.faultDesc ? `${label} — ${n.faultDesc}` : label
 }
 
 /** Decode the 26-hex `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
