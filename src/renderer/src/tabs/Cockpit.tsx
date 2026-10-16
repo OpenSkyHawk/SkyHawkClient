@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isLinkUp } from '@shared/ipc'
 import type { NodeModel } from '@shared/node-rules'
 import { effectivePsuLimits, type PsuLimits } from '@shared/psu'
@@ -19,11 +19,12 @@ import {
   type AttentionItem,
   type HealthBand,
   type Headroom,
-  type NodeState,
   type NodeView,
   type PlanGroup,
   type PlanLayout
 } from '../cockpit'
+import { Dot } from './cockpit/Dot'
+import { NodePanel, PduPanel } from './cockpit/SidePanels'
 
 const RING_C = 289.03 // 2π × 46, the ring's circumference
 
@@ -32,16 +33,6 @@ const hhmm = (ms: number) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 const volts = (mv: number) => (mv / 1000).toFixed(2)
-
-/** Status dot with its symbol — never colour alone. */
-function Dot({ state }: { state: NodeState }) {
-  const sym = STATE_SYMBOL[state]
-  return (
-    <span className={`node__dot ${state}${sym ? ' sym' : ''}`} aria-hidden="true">
-      {sym}
-    </span>
-  )
-}
 
 export function Cockpit() {
   const model = useStore((s) => s.nodeModel)
@@ -56,12 +47,19 @@ export function Cockpit() {
   const [issuesOnly, setIssuesOnly] = useState(false)
   /** A PDU group highlighted from its Attention item. */
   const [focusPdu, setFocusPdu] = useState<number | null>(null)
+  /** NODE_ID whose side panel is open: the node panel, or the PDU panel for a PDU. */
+  const [open, setOpen] = useState<number | null>(null)
 
   const views = useMemo(() => (model ? nodeViews(model, telemetry) : []), [model, telemetry])
   const outages = useMemo(() => model?.outages ?? [], [model])
   const layout = useMemo(() => planLayout(views, outages), [views, outages])
   const band = useMemo(() => healthBand(views), [views])
   const items = useMemo(() => (live ? attentionItems(views, outages) : []), [live, views, outages])
+  const openView = open === null ? undefined : views.find((v) => v.entry.nodeId === open)
+  // A node can leave the model while its panel is open (hidden, ignored, forgotten): close it.
+  useEffect(() => {
+    if (open !== null && !openView) setOpen(null)
+  }, [open, openView])
 
   const filter = (q: string, issues: boolean) => {
     setQuery(q)
@@ -132,6 +130,7 @@ export function Cockpit() {
             psuRating={limits.w}
             lit={(v) => tileMatches(v, query, issuesOnly)}
             focusPdu={focusPdu}
+            onOpen={setOpen}
           />
         </div>
 
@@ -147,10 +146,31 @@ export function Cockpit() {
                 setFocusPdu(pduId)
               }}
               onShowAll={() => filter('', true)}
+              onOpen={setOpen}
             />
           </div>
         </div>
       </div>
+
+      {openView &&
+        (openView.entry.kind === 'pdu' ? (
+          <PduPanel
+            key={openView.entry.nodeId}
+            view={openView}
+            views={views}
+            outage={outages.some((o) => o.pduId === openView.entry.nodeId)}
+            live={live}
+            onClose={() => setOpen(null)}
+          />
+        ) : (
+          <NodePanel
+            key={openView.entry.nodeId}
+            view={openView}
+            views={views}
+            live={live}
+            onClose={() => setOpen(null)}
+          />
+        ))}
     </div>
   )
 }
@@ -314,6 +334,7 @@ function Plan(props: {
   psuRating?: number
   lit: (v: NodeView) => boolean
   focusPdu: number | null
+  onOpen: (nodeId: number) => void
 }) {
   const { layout: l } = props
   const box = useRef<HTMLDivElement>(null)
@@ -385,6 +406,7 @@ function Plan(props: {
             g={g}
             focused={g.pdu !== null && g.pdu.entry.nodeId === props.focusPdu}
             lit={props.lit}
+            onOpen={props.onOpen}
           />
         ))}
         <div className="psu" style={{ left: l.psu.x, top: l.psu.y }}>
@@ -404,7 +426,12 @@ function Plan(props: {
   )
 }
 
-function Group(props: { g: PlanGroup; focused: boolean; lit: (v: NodeView) => boolean }) {
+function Group(props: {
+  g: PlanGroup
+  focused: boolean
+  lit: (v: NodeView) => boolean
+  onOpen: (nodeId: number) => void
+}) {
   const { g, focused } = props
   const p = g.pdu
   const off = p?.health.state === 'off'
@@ -426,29 +453,44 @@ function Group(props: { g: PlanGroup; focused: boolean; lit: (v: NodeView) => bo
       : []
   // One flag fits the header; the rest are counted, and all of them are in the tooltip.
   const alert = flags.length ? flags[0] + (flags.length > 1 ? ` +${flags.length - 1}` : '') : ''
+  const cls = `gh${off ? ' gh--off' : ''}${focused ? ' gh--focus' : ''}`
+  const style = { left: g.x, top: g.y, width: g.w }
+  const head = (
+    <>
+      <span className="gh__l">
+        {p ? <Dot state={p.health.state} /> : <span className="node__dot" aria-hidden="true" />}
+        <span className="gh__n">{p ? p.entry.name : 'No power zone'}</span>
+        {p && `#${p.entry.nodeId}`}
+        {alert && (
+          <b className={`flag ${off ? 'flag--err' : 'flag--warn'}`} title={flags.join(' · ')}>
+            {alert}
+          </b>
+        )}
+        {p?.noReadings && !off && <span className="nr">no readings</span>}
+        {p && g.wide && <span className="gh__rails">{rails}</span>}
+      </span>
+      {p && !g.wide && <span className="gh__l">{rails}</span>}
+    </>
+  )
   return (
     <>
-      <div
-        className={`gh${off ? ' gh--off' : ''}${focused ? ' gh--focus' : ''}`}
-        style={{ left: g.x, top: g.y, width: g.w }}
-      >
-        <span className="gh__l">
-          {p ? <Dot state={p.health.state} /> : <span className="node__dot" aria-hidden="true" />}
-          <span className="gh__n">{p ? p.entry.name : 'No power zone'}</span>
-          {p && `#${p.entry.nodeId}`}
-          {alert && (
-            <b className={`flag ${off ? 'flag--err' : 'flag--warn'}`} title={flags.join(' · ')}>
-              {alert}
-            </b>
-          )}
-          {p?.noReadings && !off && <span className="nr">no readings</span>}
-          {p && g.wide && <span className="gh__rails">{rails}</span>}
-        </span>
-        {p && !g.wide && <span className="gh__l">{rails}</span>}
-      </div>
+      {p ? (
+        <button
+          className={cls}
+          style={style}
+          title={`${p.entry.name} — power zone details`}
+          onClick={() => props.onOpen(p.entry.nodeId)}
+        >
+          {head}
+        </button>
+      ) : (
+        <div className={cls} style={style}>
+          {head}
+        </div>
+      )}
       {g.tiles.map((t) => {
         const { state, flag } = t.view.health
-        const cls =
+        const tcls =
           state === 'off'
             ? ' tile2--off'
             : state === 'warn'
@@ -458,17 +500,18 @@ function Group(props: { g: PlanGroup; focused: boolean; lit: (v: NodeView) => bo
                 : ''
         const tip = flag ? ` — ${flag}` : state === 'unknown' ? ' — no status yet' : ''
         return (
-          <div
+          <button
             key={t.view.entry.nodeId}
-            className={`tile2${cls}${props.lit(t.view) ? '' : ' tile2--dim'}${focused ? ' tile2--focus' : ''}`}
+            className={`tile2${tcls}${props.lit(t.view) ? '' : ' tile2--dim'}${focused ? ' tile2--focus' : ''}`}
             style={{ left: t.x, top: t.y, width: t.w }}
             title={`#${t.view.entry.nodeId} ${t.view.entry.name}${tip}`}
+            onClick={() => props.onOpen(t.view.entry.nodeId)}
           >
             <span className="tile2__t">{t.short}</span>
             <span className="tile2__s" aria-label={flag}>
               {STATE_SYMBOL[state]}
             </span>
-          </div>
+          </button>
         )
       })}
       {g.hint && (
@@ -488,6 +531,7 @@ function Attention(props: {
   items: AttentionItem[]
   onShowOutage: (pduId: number) => void
   onShowAll: () => void
+  onOpen: (nodeId: number) => void
 }) {
   const { items, live } = props
   const fresh = props.model ? newCount(props.model) : 0
@@ -526,12 +570,21 @@ function Attention(props: {
                   {i.flag} · #{i.nodeId}
                 </span>
               </span>
-              {i.outage && (
+              {i.outage ? (
                 <button
                   className="cog"
                   title="Show on map"
                   aria-label={`Show ${i.name} on the map`}
                   onClick={() => props.onShowOutage(i.nodeId)}
+                >
+                  <CogIcon />
+                </button>
+              ) : (
+                <button
+                  className="cog"
+                  title="Details"
+                  aria-label={`${i.name} details`}
+                  onClick={() => props.onOpen(i.nodeId)}
                 >
                   <CogIcon />
                 </button>
