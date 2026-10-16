@@ -1,6 +1,12 @@
 // Node data layer in main: taps `_NODE_TELEM`, owns the node mapping, and pushes the combined
 // node picture. Kept out of session.ts so the session only feeds it lines and ticks.
-import type { NodeMappingResult, NodeSnapshot, PushChannel, PushChannels } from '@shared/ipc'
+import type {
+  NodeMappingResult,
+  NodeRegistryInfo,
+  NodeSnapshot,
+  PushChannel,
+  PushChannels
+} from '@shared/ipc'
 import type { NodeRoster, NodeStatus } from '@shared/nodes'
 import { NodeTelemStore, parseNodeTelem } from '@shared/node-telem'
 import {
@@ -10,15 +16,19 @@ import {
   MappingError,
   registryDefaults,
   resetMapping,
+  resetPreview,
   setHidden,
   setIgnored,
   setNodeMapping,
   type AdoptSpec,
   type MappingPatch,
-  type NodeMappingFile
+  type NodeKind,
+  type NodeMappingFile,
+  type ResetOptions,
+  type ResetPreview
 } from '@shared/node-mapping'
 import { buildNodeModel, cameOnline, type NodeModel } from '@shared/node-rules'
-import { NODE_NAMES } from './reference/node-names.generated'
+import { NODE_NAMES, NODE_REGISTRY_SOURCE } from './reference/node-names.generated'
 import { NODE_FAULT_CODES } from './reference/node-status.generated'
 import {
   loadNodeMapping,
@@ -105,12 +115,43 @@ export class NodeHub {
     return this.update((f) => forgetNode(f, nodeId))
   }
 
-  resetAll(): NodeMappingResult {
-    return this.update((f) => resetMapping(f, this.defaults))
+  resetAll(opts?: ResetOptions): NodeMappingResult {
+    return this.update((f) => resetMapping(f, this.defaults, opts))
   }
 
-  ignore(nodeId: number, on: boolean): NodeMappingResult {
-    return this.update((f) => setIgnored(f, nodeId, on))
+  /** What `resetAll` would change, for the review shown before it runs. */
+  previewReset(): ResetPreview {
+    return resetPreview(this.defaults, this.mapping())
+  }
+
+  /** Ignoring records when, and what the node reported as, for Settings › Ignored nodes. */
+  ignore(nodeId: number, on: boolean, now = Date.now()): NodeMappingResult {
+    const kind = on ? this.knownKind(nodeId, now) : undefined
+    const at = new Date(now).toISOString()
+    return this.update((f) => setIgnored(f, nodeId, on, kind ? { at, kind } : { at }))
+  }
+
+  /**
+   * A node's kind only when something says so: the registry, an adoption, or `_NODE_TELEM` (only a
+   * PDU sends it). The model's 'panel' for a new node is a display default, not knowledge — stored,
+   * it would outrank telemetry that arrives later, and a PDU ignored early would stay a panel.
+   */
+  private knownKind(nodeId: number, now: number): NodeKind | undefined {
+    const known = this.defaults.get(nodeId)?.kind ?? this.mapping().nodes[nodeId]?.kind
+    if (known) return known
+    return this.telem.snapshot(now).some((t) => t.nodeId === nodeId && t.isPdu) ? 'pdu' : undefined
+  }
+
+  /** The bundled NODE_IDS registry, PanelBridge included, and where it came from. */
+  registry(): NodeRegistryInfo {
+    const nodes = Object.entries(NODE_NAMES)
+      .map(([k, v]): NodeRegistryInfo['nodes'][number] => {
+        const nodeId = Number(k)
+        const kind = this.defaults.get(nodeId)?.kind ?? 'bridge'
+        return { nodeId, name: v.name, console: v.console, kind }
+      })
+      .sort((a, b) => a.nodeId - b.nodeId)
+    return { ...NODE_REGISTRY_SOURCE, nodes }
   }
 
   hide(nodeId: number, on: boolean): NodeMappingResult {

@@ -13,6 +13,7 @@ import type {
 import type { NodeStatus } from '@shared/nodes'
 import type { NodeModel } from '@shared/node-rules'
 import type { NodeTelemSnapshot } from '@shared/node-telem'
+import { DEFAULT_PSU, type PsuSetting } from '@shared/psu'
 import { nodeViews, totalWatts } from './cockpit'
 import type { SerialFrame } from '@shared/ipc'
 
@@ -123,6 +124,10 @@ export interface AppState {
   replayInfo?: { events: number; durationMs: number }
   replayDriveSerial: boolean
 
+  // Cockpit options (#67)
+  attentionBanner: boolean
+  psu: PsuSetting
+
   // developer / debug
   debugMode: boolean
   debugDump?: { path: string; count: number }
@@ -180,6 +185,8 @@ export interface AppState {
         | 'autoConnect'
         | 'replayDriveSerial'
         | 'debugMode'
+        | 'attentionBanner'
+        | 'psu'
       >
     >
   ) => void
@@ -208,7 +215,9 @@ function buildConfig(s: AppState): Partial<AppConfig> {
     commandPort: Number(s.port) || 7778,
     autoConnect: s.autoConnect,
     replayDriveSerial: s.replayDriveSerial,
-    debugMode: s.debugMode
+    debugMode: s.debugMode,
+    attentionBanner: s.attentionBanner,
+    psu: s.psu
   }
 }
 
@@ -234,6 +243,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   recording: false,
   replayDriveSerial: false,
+  attentionBanner: true,
+  psu: DEFAULT_PSU,
   debugMode: false,
 
   telemetry: IDLE_TELEMETRY,
@@ -370,7 +381,9 @@ export const useStore = create<AppState>((set, get) => ({
         port: String(cfg.commandPort),
         autoConnect: cfg.autoConnect,
         replayDriveSerial: cfg.replayDriveSerial,
-        debugMode: cfg.debugMode
+        debugMode: cfg.debugMode,
+        attentionBanner: cfg.attentionBanner,
+        psu: cfg.psu
       })
     })
 

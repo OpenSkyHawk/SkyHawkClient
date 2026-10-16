@@ -17,7 +17,9 @@ describe('sanitizeConfig', () => {
       listenPort: 5010,
       autoConnect: false,
       replayDriveSerial: true,
-      debugMode: true
+      debugMode: true,
+      attentionBanner: false,
+      psu: { mode: 'custom', preset: 'nx650', custom: { a12: 40, w: 650 } }
     })
     expect(out).toEqual({
       sourceMode: 'bridge',
@@ -27,7 +29,9 @@ describe('sanitizeConfig', () => {
       listenPort: 5010,
       autoConnect: false,
       replayDriveSerial: true,
-      debugMode: true
+      debugMode: true,
+      attentionBanner: false,
+      psu: { mode: 'custom', preset: 'nx650', custom: { a12: 40, w: 650 } }
     })
   })
 
@@ -37,6 +41,13 @@ describe('sanitizeConfig', () => {
     expect(sanitizeConfig({ autoReconnect: false }).autoConnect).toBe(true)
     expect(sanitizeConfig({ autoConnect: false }).autoConnect).toBe(false)
     expect(sanitizeConfig({ autoConnect: 'no' }).autoConnect).toBe(true)
+  })
+
+  it('keeps the Cockpit options apart from junk', () => {
+    expect(sanitizeConfig({ attentionBanner: 'off', psu: 'NX650' })).toMatchObject({
+      attentionBanner: true,
+      psu: DEFAULT_CONFIG.psu
+    })
   })
 
   it('coerces bad enum / port back to defaults', () => {

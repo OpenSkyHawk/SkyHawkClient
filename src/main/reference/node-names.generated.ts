@@ -11,3 +11,10 @@ export const NODE_NAMES: Record<number, { name: string; console: string }> = {
   4: { name: 'PDU_Right', console: 'Right' },
   5: { name: 'PDU_Center', console: 'Center' }
 }
+
+/** Where NODE_NAMES came from, shown in Settings › About. `date` is the commit's date. */
+export const NODE_REGISTRY_SOURCE = {
+  file: 'Firmware/NODE_IDS.md',
+  commit: '22b6a87e73068ca2bfd964d067af1247771d5854',
+  date: '2026-10-15'
+}

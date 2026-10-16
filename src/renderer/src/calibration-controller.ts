@@ -7,6 +7,7 @@ import {
   beginCapture,
   midpoint,
   push as pushSample,
+  restartSweep,
   retrySweep,
   tick,
   type CaptureResult,
@@ -141,6 +142,15 @@ export interface CalibrationState {
   restorable?: { board: CachedBoard; axes: number[] }
   /** Whether the restore offer is expanded for review. Never restores without this. */
   restoreOpen: boolean
+  /**
+   * The serial link is closed, so nothing can reach the device (#74).
+   *
+   * Calibration rides on the serial port while the joystick does not, so the dialog can outlive
+   * the link. Paused is not cancelled: drafts, accepted sweeps and the last snapshot are kept,
+   * and the session is reopened when the same board comes back. Set from the moment the link
+   * drops until that reopen is acknowledged — not merely until the link is up again.
+   */
+  paused: boolean
   busy: boolean
 }
 
@@ -151,6 +161,7 @@ const emptyState = (): CalibrationState => ({
   restPosition: {},
   streaming: false,
   restoreOpen: false,
+  paused: false,
   busy: false
 })
 
@@ -166,6 +177,19 @@ export class CalibrationController {
   private ticker?: ReturnType<typeof setInterval>
   private holdTimer?: ReturnType<typeof setTimeout>
   private noticeTimer?: ReturnType<typeof setTimeout>
+  /** The serial link as last reported, kept outside `state` so it survives open() resetting it. */
+  private linkUp = true
+  private resuming = false
+  /**
+   * The cache has not been read for this dialog yet — opened while the link was down, the link
+   * dropped during the open handshake, or a different board came back. The next resume reads it.
+   */
+  private seedOnResume = false
+  /**
+   * The failure a session open reported, kept by identity so a later successful reopen can take
+   * it down. Any other failure — a write, a delete — replaces the object and so is left showing.
+   */
+  private sessionFailure?: CalibrationState['failure']
 
   constructor(
     private readonly api: CalibrationApi,
@@ -218,12 +242,30 @@ export class CalibrationController {
    * request would leave us believing in a session the device does not have.
    */
   async open(axis: number, device?: CalSnapshot): Promise<void> {
+    if (!this.linkUp) {
+      // The link closed between the click and here. Open paused; the session opens on resume.
+      this.set({ ...emptyState(), open: true, axis, device, paused: true })
+      this.seedOnResume = true
+      return
+    }
+    // Cleared only once the cache has actually been read: if the link drops during the
+    // handshake, the open fails and the resume that follows has to do the seeding instead.
+    this.seedOnResume = true
     this.set({ ...emptyState(), open: true, axis, device, busy: true })
     const r = await this.api.calSessionOpen(axis)
     if (!r.ok) {
-      this.set({ busy: false, failure: { ...r, axis } })
+      this.sessionFailure = { ...r, axis }
+      this.set({ busy: false, failure: this.sessionFailure })
       return
     }
+    await this.seedFromCache()
+    this.seedOnResume = false
+    this.set({ busy: false, failure: undefined })
+    this.startTicking()
+  }
+
+  /** Rest positions and the restore offer, from the local cache. Run once per dialog. */
+  private async seedFromCache(): Promise<void> {
     // The rest position is part of the calibration, but the device has no field for it — there is
     // deliberately no axis type in the blob. So it comes back from the cache, or every axis would
     // silently revert to the self-centring default and a throttle would be asked to release to a
@@ -239,8 +281,7 @@ export class CalibrationController {
         restorable = { board: cache.value.board, axes: cache.value.regressed }
       }
     }
-    this.set({ busy: false, failure: undefined, restPosition, restorable })
-    this.startTicking()
+    this.set({ restPosition, restorable })
   }
 
   /**
@@ -251,6 +292,12 @@ export class CalibrationController {
    */
   async selectAxis(axis: number): Promise<void> {
     if (axis === this.state.axis || this.state.switchingTo === axis) return
+    if (this.state.paused) {
+      // Nothing to tell the device: the session reopens on whichever axis is on screen when the
+      // link returns. Switching still works so drafts can be reviewed while waiting.
+      this.set({ axis, streaming: false, capture: undefined, live: undefined })
+      return
+    }
     this.set({ switchingTo: axis, busy: true, failure: undefined })
 
     const r = await this.api.calStreamSelect(axis)
@@ -273,7 +320,7 @@ export class CalibrationController {
   async close(): Promise<void> {
     this.stopTicking()
     await this.api.calSessionClose()
-    this.set(emptyState())
+    this.set({ ...emptyState(), paused: !this.linkUp })
   }
 
   // ── sampling ───────────────────────────────────────────────────────────────
@@ -285,6 +332,8 @@ export class CalibrationController {
    * across a STREAM_SELECT, and RAW carries `idx` precisely so it can be discarded.
    */
   ingest(samples: CalRawSample[]): void {
+    // A batch flushed after the close predates it, and the capture it would feed is frozen.
+    if (this.state.paused) return
     let capture = this.state.capture
     let live = this.state.live
     for (const s of samples) {
@@ -335,7 +384,7 @@ export class CalibrationController {
    */
   async restore(): Promise<void> {
     const r = this.state.restorable
-    if (!r || this.state.write) return
+    if (!r || this.state.write || this.state.paused) return
     // `restPosition` is not touched here: open() seeded it from this same cache entry, and
     // restore() cannot run before open().
     const drafts = { ...this.state.drafts }
@@ -356,6 +405,7 @@ export class CalibrationController {
 
   /** Begin capturing the axis on screen, honouring its rest-position setting. */
   startCapture(): void {
+    if (this.state.paused) return
     this.set({
       capture: beginCapture(this.now(), this.selfCentring()),
       failure: undefined
@@ -364,6 +414,7 @@ export class CalibrationController {
 
   /** Acknowledge a rejected sweep and redo it, keeping the accepted ones. */
   retry(): void {
+    if (this.state.paused) return
     if (this.state.capture) this.set({ capture: retrySweep(this.state.capture, this.now()) })
   }
 
@@ -377,7 +428,7 @@ export class CalibrationController {
     this.stopTicking()
     this.ticker = setInterval(() => {
       const c = this.state.capture
-      if (!c || c.phase !== 'capturing') return
+      if (!c || c.phase !== 'capturing' || this.state.paused) return
       const next = tick(c, this.now())
       if (next !== c) this.advanceCapture(next)
     }, 100)
@@ -480,7 +531,7 @@ export class CalibrationController {
    */
   async save(): Promise<void> {
     const queue = this.dirtyAxes()
-    if (!queue.length || this.state.write) return
+    if (!queue.length || this.state.write || this.state.paused) return
 
     this.set({ write: { phase: 'writing', queue, at: 0, stored: [] }, failure: undefined })
     const stored: number[] = []
@@ -616,6 +667,7 @@ export class CalibrationController {
    * so it fails the same ways, and needs the same read-back.
    */
   async deleteAxis(idx: number): Promise<void> {
+    if (this.state.paused) return
     this.set({ busy: true, failure: undefined })
     const r = await this.api.calReset(idx)
     if (!r.ok) {
@@ -657,13 +709,89 @@ export class CalibrationController {
     this.flash({ kind: 'erased', axes: [idx] })
   }
 
-  /** Discard a snapshot that describes a board no longer attached. */
+  /**
+   * The serial link opened or closed (#74).
+   *
+   * Closing pauses rather than cancels. The ticker stops with it, and that matters: silence is
+   * how a hold completes, so a ticker left running would commit whatever value the axis held
+   * when the link dropped — an endpoint timed across an outage. Opening does not resume on its
+   * own; resuming waits for the board's report, which says whether it is the same board.
+   */
+  linkChanged(up: boolean): void {
+    this.linkUp = up
+    if (!up) {
+      this.stopTicking()
+      if (!this.state.paused) this.set({ paused: true, streaming: false, switchingTo: undefined })
+      return
+    }
+    // With no dialog open there is no session to restore.
+    if (!this.state.open && this.state.paused) this.set({ paused: false })
+  }
+
+  /**
+   * Take in the device's latest report, discarding work that belongs to a different board.
+   *
+   * While paused an absent report means "cannot ask", not "gone": the last snapshot is kept,
+   * because it is what identifies the board the drafts were captured on when the link returns.
+   */
   deviceChanged(next?: CalSnapshot): void {
+    if (!next && this.state.paused) return
     if (boardOf(next) !== boardOf(this.state.device)) {
-      this.set({ device: next, drafts: {}, capture: undefined, live: undefined })
+      // The restore offer and rest positions came from the old board's cache entry too. Kept,
+      // a Restore would write that board's endpoints onto this one — and the read-back would
+      // pass, caching them under the new serial. The resume below reads this board's own.
+      this.set({
+        device: next,
+        drafts: {},
+        capture: undefined,
+        live: undefined,
+        restorable: undefined,
+        restoreOpen: false,
+        restPosition: {}
+      })
+      this.seedOnResume = true
     } else {
       this.set({ device: next })
     }
+    if (next && this.state.paused && this.state.open && this.linkUp) void this.resume()
+  }
+
+  /**
+   * Reopen the session after the link returns, on the axis on screen.
+   *
+   * The device lost its session with the port, so nothing streams until this is acknowledged.
+   * A sweep that was mid-capture starts again; its accepted sweeps are kept. A failed reopen
+   * leaves the dialog paused, with the reason shown.
+   */
+  private async resume(): Promise<void> {
+    if (this.resuming) return
+    this.resuming = true
+    const axis = this.state.axis
+    const r = await this.api.calSessionOpen(axis)
+    this.resuming = false
+    // Closed again while the reopen was in flight: the next report will retry.
+    if (!this.linkUp || !this.state.open) return
+    if (!r.ok) {
+      this.sessionFailure = { ...r, axis }
+      this.set({ failure: this.sessionFailure })
+      return
+    }
+    if (this.seedOnResume) {
+      this.seedOnResume = false
+      await this.seedFromCache()
+    }
+    const c = this.state.capture
+    // A failed open or reopen is answered by this one succeeding; a failed write is not.
+    const stale = this.state.failure && this.state.failure === this.sessionFailure
+    this.sessionFailure = undefined
+    this.set({
+      ...(stale ? { failure: undefined } : {}),
+      paused: false,
+      streaming: false,
+      live: undefined,
+      capture: c?.phase === 'capturing' ? restartSweep(c, this.now()) : c
+    })
+    this.startTicking()
   }
 
   dispose(): void {

@@ -96,6 +96,7 @@ const model = (nodes: NodeModelEntry[], outages: PduOutage[] = []): NodeModel =>
   outages,
   differingCount: 0,
   ignored: [],
+  ignoredNodes: [],
   hidden: [],
   rosterComplete: true
 })

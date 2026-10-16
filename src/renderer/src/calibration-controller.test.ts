@@ -928,3 +928,275 @@ describe('CalibrationController device identity', () => {
     expect(c.dirtyAxes()).toEqual([0])
   })
 })
+
+describe('CalibrationController serial link (#74)', () => {
+  beforeEach(() => {
+    clock = 0
+    vi.useFakeTimers()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  /** What the HID tab does when the link drops: the store clears the snapshot in the same go. */
+  const closeLink = (c: CalibrationController) => {
+    c.linkChanged(false)
+    c.deviceChanged(undefined)
+  }
+  /** Reconnect: link state first, the board's report once GET_CAL answers. */
+  const reopenLink = async (c: CalibrationController, snap: CalSnapshot = snapshot({})) => {
+    c.linkChanged(true)
+    c.deviceChanged(snap)
+    await vi.advanceTimersByTimeAsync(0)
+  }
+  /** Take the axis to its first stop and hold it, without letting the hold finish. */
+  const startHoldAt = (c: CalibrationController, from: number, to: number) => {
+    c.ingest(samples(0, [from, to, to + 150]))
+  }
+
+  it('pauses rather than cancels: drafts, accepted sweeps and the board are kept', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    c.startCapture()
+    await sweep(c, 13000, 51000, 32000)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(c as any).state.drafts[1] = { min: 1, centre: 2, max: 3, selfCentring: true }
+
+    closeLink(c)
+
+    const s = c.snapshot()
+    expect(s.paused).toBe(true)
+    expect(s.capture?.accepted, 'the accepted sweep survives').toHaveLength(1)
+    expect(c.dirtyAxes(), 'an empty snapshot is not a different board').toEqual([1])
+    expect(s.device?.serialNumber, 'kept to recognise the board when it returns').toBe('BOARD-A')
+  })
+
+  it('commits nothing from the silence of a closed link', async () => {
+    // Silence is how a hold completes. A ticker left running would bank whatever the axis held
+    // when the link dropped, timed across the outage.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    c.startCapture()
+    startHoldAt(c, 32000, 51000)
+    closeLink(c)
+    clock += C.endpointHoldMs * 4
+    vi.advanceTimersByTime(C.endpointHoldMs * 4)
+    expect(c.snapshot().capture?.phase).toBe('capturing')
+    expect(c.snapshot().capture?.current.stopA).toBeUndefined()
+  })
+
+  it('ignores samples flushed after the close', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    c.startCapture()
+    closeLink(c)
+    c.ingest(samples(0, [32000, 51000, 51150]))
+    expect(c.snapshot().live).toBeUndefined()
+    expect(c.snapshot().capture?.stepFrom).toBeNull()
+  })
+
+  it('sends nothing to the device while paused', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    d.stored[0] = { min: 1000, centre: 30000, max: 60000 }
+    await c.open(0, snapshot(d.stored))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(c as any).state.drafts[1] = { min: 1000, centre: 30000, max: 60000, selfCentring: true }
+    closeLink(c)
+    d.calls.length = 0
+
+    await c.save()
+    await c.deleteAxis(0)
+    await c.restore()
+    c.startCapture()
+
+    expect(d.calls, 'Write, Delete and Restore all need the link').toEqual([])
+    expect(c.snapshot().capture, 'Start needs it too').toBeUndefined()
+    expect(c.dirtyAxes(), 'and the draft is still waiting').toEqual([1])
+  })
+
+  it('switches axes locally while paused, and resumes on the one on screen', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    closeLink(c)
+    d.calls.length = 0
+
+    await c.selectAxis(1)
+    expect(c.snapshot().axis).toBe(1)
+    expect(d.calls, 'no STREAM_SELECT over a closed link').toEqual([])
+
+    await reopenLink(c)
+    expect(d.calls).toEqual(['open:1'])
+  })
+
+  it('waits for the board to report before resuming, then reopens the session', async () => {
+    // The device lost its session with the port. Reopening on link-up alone would resume before
+    // knowing whether the board that came back is the one the drafts were captured on.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    closeLink(c)
+    d.calls.length = 0
+
+    c.linkChanged(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(d.calls, 'nothing until the board reports').toEqual([])
+    expect(c.snapshot().paused).toBe(true)
+
+    c.deviceChanged(snapshot({}))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(d.calls).toEqual(['open:0'])
+    expect(c.snapshot().paused).toBe(false)
+  })
+
+  it('restarts the interrupted sweep on resume, keeping the accepted ones', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    c.startCapture()
+    await sweep(c, 13000, 51000, 32000)
+    startHoldAt(c, 32000, 51000)
+    closeLink(c)
+    await reopenLink(c)
+
+    const cap = c.snapshot().capture!
+    expect(cap.accepted).toHaveLength(1)
+    expect(cap.step, 'the half-done sweep starts over').toBe('stopA')
+    expect(cap.current).toEqual({})
+
+    // And capture continues to completion from there.
+    await sweep(c, 13000, 51000, 32000)
+    await sweep(c, 13000, 51000, 32000)
+    expect(c.dirtyAxes()).toEqual([0])
+  })
+
+  it('discards the drafts if a different board comes back', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(c as any).state.drafts[0] = { min: 1, centre: 2, max: 3, selfCentring: true }
+    closeLink(c)
+    await reopenLink(c, { ...snapshot({}), serialNumber: 'BOARD-B' })
+    expect(c.dirtyAxes()).toEqual([])
+    expect(c.snapshot().paused, 'the dialog carries on, on the new board').toBe(false)
+  })
+
+  it('never offers the old board’s saved copy to a board swapped in while paused', async () => {
+    // Board A's cache holds axis 1, which A has lost, and axis 0 as non-centring. Restoring that
+    // onto board B would pass the read-back and get cached under B's serial.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await d.api.calCacheStore([
+      { idx: 0, min: 1000, centre: 30000, max: 60000, selfCentring: false },
+      { idx: 1, min: 1111, centre: 22222, max: 55555, selfCentring: true }
+    ])
+    d.stored[0] = { min: 1000, centre: 30000, max: 60000 }
+    await c.open(0, snapshot(d.stored))
+    c.setRestoreOpen(true)
+    expect(c.snapshot().restorable?.axes, 'board A is offered its own copy').toEqual([1])
+    expect(c.selfCentring(0)).toBe(false)
+
+    closeLink(c)
+    // Main keys the cache on the attached board's serial; board B has no entry.
+    d.api.calCacheRead = async () => {
+      d.calls.push('cache:read')
+      return ok({ board: undefined, regressed: [] })
+    }
+    d.calls.length = 0
+    await reopenLink(c, { ...snapshot({}), serialNumber: 'BOARD-B' })
+
+    expect(d.calls, 'the cache is read again, for board B').toEqual(['open:0', 'cache:read'])
+    expect(c.snapshot().restorable).toBeUndefined()
+    expect(c.snapshot().restoreOpen).toBe(false)
+    expect(c.selfCentring(0), 'board A’s rest positions do not carry over').toBe(true)
+
+    await c.restore()
+    expect(d.calls.filter((x) => x.startsWith('commit'))).toEqual([])
+  })
+
+  it('reads the cache on resume when the link dropped during the open handshake', async () => {
+    // The open fails without reaching the cache. Resuming without it would treat a throttle the
+    // cache knows as non-centring as self-centring, and a write would cache that over it.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await d.api.calCacheStore([
+      { idx: 0, min: 1000, centre: 30000, max: 60000, selfCentring: false }
+    ])
+    const realOpen = d.api.calSessionOpen
+    let answer!: (r: CalResult<{ timeoutMs: number; axisIdx: number }>) => void
+    d.api.calSessionOpen = () => new Promise((r) => (answer = r))
+
+    const opening = c.open(0, snapshot({}))
+    closeLink(c) // CalLink fails the pending SESSION_OPEN when the port closes
+    answer({ ok: false, kind: 'timeout', message: 'no reply' })
+    await opening
+    expect(c.snapshot().paused).toBe(true)
+    expect(c.snapshot().failure?.kind).toBe('timeout')
+
+    d.api.calSessionOpen = realOpen
+    d.calls.length = 0
+    await reopenLink(c)
+
+    expect(d.calls).toEqual(['open:0', 'cache:read'])
+    expect(c.selfCentring(0), 'the cached rest position applies').toBe(false)
+    expect(c.snapshot().failure, 'the reopen answers the failed open').toBeUndefined()
+    expect(c.snapshot().paused).toBe(false)
+  })
+
+  it('keeps a write failure on screen through a resume', async () => {
+    // Unlike a failed open, nothing about reconnecting answers it, and "stored before stopping"
+    // is still true.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(c as any).state.drafts[0] = { min: 1000, centre: 30000, max: 60000, selfCentring: true }
+    d.fail.commit = { ok: false, kind: 'timeout', message: 'no reply' }
+    await c.save()
+    expect(c.snapshot().failure?.kind).toBe('timeout')
+
+    closeLink(c)
+    await reopenLink(c)
+    expect(c.snapshot().paused).toBe(false)
+    expect(c.snapshot().failure?.kind).toBe('timeout')
+    expect(c.dirtyAxes(), 'and the unwritten draft is still there').toEqual([0])
+  })
+
+  it('stays paused and says why when the session will not reopen', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    closeLink(c)
+    d.api.calSessionOpen = async () => ({ ok: false, kind: 'timeout', message: 'no reply' })
+    await reopenLink(c)
+    expect(c.snapshot().paused).toBe(true)
+    expect(c.snapshot().failure?.kind).toBe('timeout')
+  })
+
+  it('opens paused if the link closed first, and reads the cache once it resumes', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    c.linkChanged(false)
+    await c.open(0, snapshot({}))
+    expect(c.snapshot().open).toBe(true)
+    expect(c.snapshot().paused).toBe(true)
+    expect(d.calls).toEqual([])
+
+    await reopenLink(c)
+    expect(d.calls).toEqual(['open:0', 'cache:read'])
+  })
+
+  it('does not stay paused after the dialog closes and the link returns', async () => {
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await c.open(0, snapshot({}))
+    closeLink(c)
+    await c.close()
+    expect(c.snapshot().paused, 'still closed').toBe(true)
+    c.linkChanged(true)
+    expect(c.snapshot().paused).toBe(false)
+  })
+})

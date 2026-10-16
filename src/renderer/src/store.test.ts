@@ -18,6 +18,7 @@ const EMPTY_MODEL: NodeModel = {
   outages: [],
   differingCount: 0,
   ignored: [],
+  ignoredNodes: [],
   hidden: [],
   rosterComplete: false
 }

@@ -534,6 +534,18 @@ export function push(s: CaptureState, sample: CaptureSample): CaptureState {
 /** Acknowledge a rejected sweep and redo it. Accepted sweeps are kept. */
 export function retrySweep(s: CaptureState, now: number): CaptureState {
   if (s.phase !== 'rejected') return s
+  return restartSweep(s, now)
+}
+
+/**
+ * Throw away the sweep in progress and start it again from the first stop. Accepted sweeps are
+ * kept.
+ *
+ * For a sweep that was interrupted rather than rejected — the serial link closing mid-capture.
+ * Its samples stop at the close and the gap is not visible in the data, so the half-finished
+ * sweep cannot be trusted to continue: a hold that spans the outage would be timed across it.
+ */
+export function restartSweep(s: CaptureState, now: number): CaptureState {
   return {
     ...s,
     phase: 'capturing',
