@@ -9,6 +9,7 @@ import {
   STAGE_W,
   STATE_SYMBOL,
   attentionItems,
+  canErrorsSub,
   fmtPct,
   headroom,
   healthBand,
@@ -352,8 +353,11 @@ function Band(props: {
         <div className="hcard__value">
           {live && can ? (can.rec > can.tec ? `REC ${can.rec}` : `TEC ${can.tec}`) : dash}
         </div>
-        <div className="ring__sub" title={live && can ? `worst: ${can.name}` : undefined}>
-          {live ? `${can ? `worst #${can.nodeId} · ` : ''}${b.busOff} bus-off` : noLive}
+        <div
+          className="ring__sub"
+          title={live && can && Math.max(can.tec, can.rec) > 0 ? `worst: ${can.name}` : undefined}
+        >
+          {live ? canErrorsSub(b) : noLive}
         </div>
       </div>
 

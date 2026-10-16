@@ -210,7 +210,8 @@ export interface PlanLayout {
 }
 
 /** Name without its console prefix (`Left_Fuel` → `Fuel`). */
-export const shortName = (name: string) => name.replace(/^(Left|Center|Right)_/, '')
+/** The tile label: the console prefix goes, however it is joined (`Center_`, `Center `, `Center-`). */
+export const shortName = (name: string) => name.replace(/^(Left|Center|Right)[_\s-]+(?=\S)/i, '')
 
 export function outageHint(o: PduOutage): string {
   const n = o.nodeIds.length
@@ -513,6 +514,17 @@ export function healthBand(views: NodeView[], strays = 0): HealthBand {
     }
   }
   return b
+}
+
+/**
+ * The CAN errors card's sub-line. A board is named only when its counters are above 0: with every
+ * count at 0 there is no "worst" board, and naming one reads as a problem.
+ */
+export function canErrorsSub(b: HealthBand): string {
+  const c = b.worstCan
+  const bus = `${b.busOff} bus-off`
+  if (!c) return bus
+  return Math.max(c.tec, c.rec) > 0 ? `worst #${c.nodeId} · ${bus}` : `no errors · ${bus}`
 }
 
 // ── PSU headroom ────────────────────────────────────────────────────────────

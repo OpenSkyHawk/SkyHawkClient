@@ -6,6 +6,7 @@ import {
   STATE_SYMBOL,
   affected,
   attentionItems,
+  canErrorsSub,
   consoleKey,
   fmtPct,
   headroom,
@@ -18,6 +19,7 @@ import {
   pduAlertFlags,
   planLayout,
   psuName,
+  shortName,
   tileMatches,
   totalWatts
 } from './cockpit'
@@ -220,6 +222,16 @@ describe('consoleKey', () => {
   })
 })
 
+describe('shortName', () => {
+  it('drops the console prefix however it is joined, never the whole name', () => {
+    expect(shortName('Center_Armament')).toBe('Armament')
+    expect(shortName('Center Armament')).toBe('Armament')
+    expect(shortName('Left-Fuel')).toBe('Fuel')
+    expect(shortName('Centerline')).toBe('Centerline')
+    expect(shortName('Center')).toBe('Center')
+  })
+})
+
 describe('planLayout', () => {
   const nodes = [
     node(1, { name: 'Center_Armament', console: 'Center', pduId: 5 }),
@@ -404,6 +416,12 @@ describe('healthBand', () => {
   it('finds the lowest 5 V rail, worst CAN counters, bus-off count and the hottest PDU', () => {
     expect(b.low5).toEqual({ volts: 4.7, nodeId: 4, name: 'PDU_Right' })
     expect(b.worstCan).toMatchObject({ nodeId: 1, tec: 8 })
+    expect(canErrorsSub(b)).toBe('worst #1 · 1 bus-off')
+    const quiet = healthBand(
+      nodeViews(model([node(1, { status: status(1, { tec: 0, rec: 0 }) })]), [])
+    )
+    expect(canErrorsSub(quiet)).toBe('no errors · 0 bus-off') // no board named when all are 0
+    expect(canErrorsSub(healthBand([]))).toBe('0 bus-off')
     expect(b.busOff).toBe(1)
     expect(b.hottest).toEqual({ tempC: 41.3, nodeId: 4, name: 'PDU_Right', level: 'warn' })
   })

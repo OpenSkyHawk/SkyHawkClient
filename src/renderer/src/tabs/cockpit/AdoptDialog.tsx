@@ -270,9 +270,7 @@ function AdoptForm(props: {
                         {o.label}
                       </option>
                     ))}
-                    {pending && (
-                      <option value={pduId as number}>{pending} (not in your cockpit yet)</option>
-                    )}
+                    {pending && <option value={pduId as number}>{pending} (not added)</option>}
                   </select>
                   {pending && (
                     <div className="hint ad__pdu">
