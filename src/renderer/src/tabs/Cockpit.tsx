@@ -622,25 +622,19 @@ function Attention(props: {
                   {i.flag} · #{i.nodeId}
                 </span>
               </span>
-              {i.outage ? (
-                <button
-                  className="cog"
-                  title="Show on map"
-                  aria-label={`Show ${i.name} on the map`}
-                  onClick={() => props.onShowOutage(i.nodeId)}
-                >
-                  <CogIcon />
-                </button>
-              ) : (
-                <button
-                  className="cog"
-                  title="Details"
-                  aria-label={`${i.name} details`}
-                  onClick={() => props.onOpen(i.nodeId)}
-                >
-                  <CogIcon />
-                </button>
-              )}
+              {/* The cog always opens the node's panel. For a PDU outage it opens the PDU's, and
+                  the plan also outlines that PDU's group: the nodes that dropped with it. */}
+              <button
+                className="cog"
+                title="Details"
+                aria-label={`${i.name} details`}
+                onClick={() => {
+                  if (i.outage) props.onShowOutage(i.nodeId)
+                  props.onOpen(i.nodeId)
+                }}
+              >
+                <CogIcon />
+              </button>
             </li>
           ))}
         </ul>
