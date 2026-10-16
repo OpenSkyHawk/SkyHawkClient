@@ -1084,6 +1084,39 @@ describe('CalibrationController serial link (#74)', () => {
     expect(c.snapshot().paused, 'the dialog carries on, on the new board').toBe(false)
   })
 
+  it('never offers the old board’s saved copy to a board swapped in while paused', async () => {
+    // Board A's cache holds axis 1, which A has lost, and axis 0 as non-centring. Restoring that
+    // onto board B would pass the read-back and get cached under B's serial.
+    const d = fakeDevice()
+    const c = new CalibrationController(d.api, now, 0)
+    await d.api.calCacheStore([
+      { idx: 0, min: 1000, centre: 30000, max: 60000, selfCentring: false },
+      { idx: 1, min: 1111, centre: 22222, max: 55555, selfCentring: true }
+    ])
+    d.stored[0] = { min: 1000, centre: 30000, max: 60000 }
+    await c.open(0, snapshot(d.stored))
+    c.setRestoreOpen(true)
+    expect(c.snapshot().restorable?.axes, 'board A is offered its own copy').toEqual([1])
+    expect(c.selfCentring(0)).toBe(false)
+
+    closeLink(c)
+    // Main keys the cache on the attached board's serial; board B has no entry.
+    d.api.calCacheRead = async () => {
+      d.calls.push('cache:read')
+      return ok({ board: undefined, regressed: [] })
+    }
+    d.calls.length = 0
+    await reopenLink(c, { ...snapshot({}), serialNumber: 'BOARD-B' })
+
+    expect(d.calls, 'the cache is read again, for board B').toEqual(['open:0', 'cache:read'])
+    expect(c.snapshot().restorable).toBeUndefined()
+    expect(c.snapshot().restoreOpen).toBe(false)
+    expect(c.selfCentring(0), 'board A’s rest positions do not carry over').toBe(true)
+
+    await c.restore()
+    expect(d.calls.filter((x) => x.startsWith('commit'))).toEqual([])
+  })
+
   it('stays paused and says why when the session will not reopen', async () => {
     const d = fakeDevice()
     const c = new CalibrationController(d.api, now, 0)

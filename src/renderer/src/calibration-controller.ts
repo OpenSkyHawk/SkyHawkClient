@@ -725,7 +725,19 @@ export class CalibrationController {
   deviceChanged(next?: CalSnapshot): void {
     if (!next && this.state.paused) return
     if (boardOf(next) !== boardOf(this.state.device)) {
-      this.set({ device: next, drafts: {}, capture: undefined, live: undefined })
+      // The restore offer and rest positions came from the old board's cache entry too. Kept,
+      // a Restore would write that board's endpoints onto this one — and the read-back would
+      // pass, caching them under the new serial. The resume below reads this board's own.
+      this.set({
+        device: next,
+        drafts: {},
+        capture: undefined,
+        live: undefined,
+        restorable: undefined,
+        restoreOpen: false,
+        restPosition: {}
+      })
+      this.seedOnResume = true
     } else {
       this.set({ device: next })
     }
