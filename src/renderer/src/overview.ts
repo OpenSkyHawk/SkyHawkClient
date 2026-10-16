@@ -99,31 +99,31 @@ export interface NewDevices {
   count: number
   panels: number
   pdus: number
-  /** Not reported a kind yet: neither a panel group nor a PDU as far as the client knows. */
-  unidentified: number
 }
 
-/** NODE_IDs waiting to be adopted, by the kind each reported. null = none waiting. */
-export function newDevices(views: NodeView[]): NewDevices | null {
-  const fresh = views.filter((v) => v.entry.source === 'new')
-  if (fresh.length === 0) return null
-  const kinds = fresh.map((v) => reportedKind(v.entry))
+/**
+ * NODE_IDs waiting to be adopted that are on the bus now and have said what they are, by kind.
+ * A node is not news until it has identified itself (no "unknown" count), and one that left the
+ * bus is not "on the bus". null = nothing to show, including while the link is down.
+ */
+export function newDevices(views: NodeView[], live: boolean): NewDevices | null {
+  if (!live) return null
+  const kinds = views
+    .filter((v) => v.entry.source === 'new' && v.entry.availability === 'online')
+    .map((v) => reportedKind(v.entry))
   const panels = kinds.filter((k) => k === 'panel').length
   const pdus = kinds.filter((k) => k === 'pdu').length
-  return { count: fresh.length, panels, pdus, unidentified: fresh.length - panels - pdus }
+  return panels + pdus ? { count: panels + pdus, panels, pdus } : null
 }
 
-/** `2 new devices on the bus` + `1 PDU, 1 not identified yet, not in NODE_IDS.md.` */
+/** `2 new devices on the bus` + `1 panel group, 1 PDU, not in NODE_IDS.md.` */
 export function newDevicesText(d: NewDevices): { head: string; detail: string } {
-  const parts = [
+  const kinds = [
     ...(d.panels ? [plural(d.panels, 'panel group')] : []),
-    ...(d.pdus ? [plural(d.pdus, 'PDU')] : []),
-    ...(d.unidentified ? [`${d.unidentified} not identified yet`] : [])
+    ...(d.pdus ? [plural(d.pdus, 'PDU')] : [])
   ]
-  // None identified: no count to repeat ("2 new devices on the bus — not identified yet, …").
-  const kinds = d.unidentified === d.count ? 'not identified yet' : parts.join(', ')
   return {
     head: `${plural(d.count, 'new device')} on the bus`,
-    detail: `${kinds}, not in NODE_IDS.md.`
+    detail: `${kinds.join(', ')}, not in NODE_IDS.md.`
   }
 }

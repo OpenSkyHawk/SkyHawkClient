@@ -198,34 +198,48 @@ describe('reportedKind', () => {
 
 describe('newDevices', () => {
   const views = (nodes: NodeModelEntry[]) => nodeViews(model(nodes), [])
+  const newPdu = (id: number, over: Partial<NodeModelEntry> = {}) =>
+    fresh(id, { kind: 'pdu', everHadReadings: true, ...over })
 
   it('is null when no NODE_ID waits to be adopted', () => {
-    expect(newDevices(views([node(1), pdu(3)]))).toBeNull()
+    expect(newDevices(views([node(1), pdu(3)]), true)).toBeNull()
   })
 
-  it('counts new NODE_IDs by reported kind; an unknown kind is not a panel group', () => {
-    const d = newDevices(
-      views([node(1), fresh(0), fresh(41), fresh(42, { kind: 'pdu', everHadReadings: true })])
-    )
-    expect(d).toEqual({ count: 3, panels: 0, pdus: 1, unidentified: 2 })
+  it('counts identified new NODE_IDs only; an unidentified one is not mentioned', () => {
+    expect(newDevices(views([node(1), fresh(0), fresh(41), newPdu(42)]), true)).toEqual({
+      count: 1,
+      panels: 0,
+      pdus: 1
+    })
+  })
+
+  it('is null while every new NODE_ID is still unidentified', () => {
+    expect(newDevices(views([fresh(41), fresh(43, { kind: 'pdu' })]), true)).toBeNull()
+  })
+
+  it('leaves out an identified node that has left the bus', () => {
+    expect(newDevices(views([newPdu(42, { availability: 'offline' })]), true)).toBeNull()
+    expect(newDevices(views([newPdu(42, { availability: 'offline' }), newPdu(44)]), true)).toEqual({
+      count: 1,
+      panels: 0,
+      pdus: 1
+    })
+  })
+
+  it('is null while the link is down', () => {
+    expect(newDevices(views([newPdu(42)]), false)).toBeNull()
   })
 })
 
 describe('newDevicesText', () => {
-  it('lists the known kinds, then the rest as not identified', () => {
-    expect(newDevicesText({ count: 2, panels: 0, pdus: 1, unidentified: 1 })).toEqual({
-      head: '2 new devices on the bus',
-      detail: '1 PDU, 1 not identified yet, not in NODE_IDS.md.'
-    })
-    expect(newDevicesText({ count: 3, panels: 1, pdus: 2, unidentified: 0 }).detail).toBe(
-      '1 panel group, 2 PDUs, not in NODE_IDS.md.'
-    )
-  })
-
-  it('does not repeat the count when none is identified', () => {
-    expect(newDevicesText({ count: 1, panels: 0, pdus: 0, unidentified: 1 })).toEqual({
+  it('lists the reported kinds', () => {
+    expect(newDevicesText({ count: 1, panels: 0, pdus: 1 })).toEqual({
       head: '1 new device on the bus',
-      detail: 'not identified yet, not in NODE_IDS.md.'
+      detail: '1 PDU, not in NODE_IDS.md.'
+    })
+    expect(newDevicesText({ count: 3, panels: 1, pdus: 2 })).toEqual({
+      head: '3 new devices on the bus',
+      detail: '1 panel group, 2 PDUs, not in NODE_IDS.md.'
     })
   })
 })

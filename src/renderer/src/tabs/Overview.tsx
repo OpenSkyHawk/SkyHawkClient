@@ -97,7 +97,7 @@ export function Overview() {
         : null,
     [connected, s.attentionBanner, band, views, s.nodeModel]
   )
-  const waiting = useMemo(() => newDevices(views), [views])
+  const waiting = useMemo(() => newDevices(views, connected), [views, connected])
   const waitingText = waiting && newDevicesText(waiting)
 
   const tiles: {
