@@ -13,6 +13,8 @@ import {
   setHidden,
   setIgnored,
   setNodeMapping,
+  type AdoptSpec,
+  type MappingPatch,
   type NodeMappingFile
 } from './node-mapping'
 
@@ -116,6 +118,19 @@ describe('effectiveMapping / setNodeMapping', () => {
     expect(() => setNodeMapping(EMPTY_MAPPING, defaults, 1, { name: '  ' })).toThrow(MappingError)
     expect(() => setNodeMapping(EMPTY_MAPPING, defaults, 1, { pduId: 0 })).toThrow(MappingError)
     expect(() => setNodeMapping(EMPTY_MAPPING, defaults, 30, { name: 'x' })).toThrow(/adopt/)
+  })
+
+  it('refuses a change or adopt request that is not a plain object (renderer input)', () => {
+    for (const bad of [null, undefined, 'x', 7, [], [{ name: 'x' }]]) {
+      const patch = bad as unknown as MappingPatch
+      const spec = bad as unknown as AdoptSpec
+      expect(() => setNodeMapping(EMPTY_MAPPING, defaults, 1, patch)).toThrow(
+        new MappingError('Invalid mapping change')
+      )
+      expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, spec)).toThrow(
+        new MappingError('Invalid adopt request')
+      )
+    }
   })
 })
 

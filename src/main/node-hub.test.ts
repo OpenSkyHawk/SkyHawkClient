@@ -104,6 +104,13 @@ describe('NodeHub', () => {
     expect(disk.saves).toBe(before)
   })
 
+  it('malformed renderer input resolves to { ok: false } instead of throwing', () => {
+    const { h } = hub()
+    expect(h.setMapping(1, null as never)).toEqual({ ok: false, error: 'Invalid mapping change' })
+    expect(h.adopt(41, 'x' as never)).toEqual({ ok: false, error: 'Invalid adopt request' })
+    expect(disk.saves).toBe(0)
+  })
+
   it('drops malformed telemetry and pushes nothing while idle', () => {
     const { h, pushes } = hub()
     h.flush(false, 0) // first tick: initial model

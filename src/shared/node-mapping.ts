@@ -197,6 +197,14 @@ function withNode(
   return { ...file, nodes }
 }
 
+/**
+ * These arrive over IPC from the renderer, where types are only a promise. Anything that is not a
+ * plain object (null, a string, an array) is refused here as a MappingError, so the caller gets
+ * `{ ok: false }` rather than a TypeError surfacing as a rejected invoke.
+ */
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
 function checkPatch(p: MappingPatch): void {
   if (p.name !== undefined && !text(p.name)) throw new MappingError('Name cannot be empty')
   if (p.console !== undefined && !text(p.console)) throw new MappingError('Console cannot be empty')
@@ -216,6 +224,7 @@ export function setNodeMapping(
   patch: MappingPatch
 ): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
+  if (!isPlainObject(patch)) throw new MappingError('Invalid mapping change')
   checkPatch(patch)
   const d = defaults.get(nodeId)
   const cur = file.nodes[nodeId]
@@ -238,6 +247,7 @@ export function adoptNode(
   spec: AdoptSpec
 ): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
+  if (!isPlainObject(spec)) throw new MappingError('Invalid adopt request')
   if (defaults.has(nodeId)) throw new MappingError(`Node ${nodeId} is in the registry`)
   checkPatch(spec)
   if (spec.kind !== 'pdu' && spec.kind !== 'panel') throw new MappingError('Unknown node kind')
