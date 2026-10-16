@@ -110,10 +110,23 @@ describe('node-status.generated', () => {
     expect(NODE_HEALTH_FLAGS.DEGRADED).toBe(HFLAG_DEGRADED)
   })
 
-  it('fault-code dictionary pins the core codes (append-only; a renumber fails loudly)', () => {
-    expect(NODE_FAULT_CODES[0]?.name).toBe('NONE')
-    expect(NODE_FAULT_CODES[1]?.name).toBe('I2C_PERIPHERAL')
-    expect(NODE_FAULT_CODES[1]?.abbr).toBe('I2C')
+  it('fault-code dictionary pins every known code (append-only; a renumber fails loudly)', () => {
+    // Each id -> name + badge tag. A code appended at 0x09+ still passes; swapping or renaming an
+    // existing one (which would put the wrong badge on a degraded node) does not.
+    const pinned: Record<number, { name: string; abbr: string }> = {
+      0x00: { name: 'NONE', abbr: 'NONE' },
+      0x01: { name: 'I2C_PERIPHERAL', abbr: 'I2C' },
+      0x02: { name: 'OVER_VOLTAGE', abbr: 'OVER-V' },
+      0x03: { name: 'UNDER_VOLTAGE', abbr: 'UNDER' },
+      0x04: { name: 'SHORT_CIRCUIT', abbr: 'SHORT' },
+      0x05: { name: 'HOST_LINK_LOST', abbr: 'HOST' },
+      0x06: { name: 'FUSE_OPEN', abbr: 'FUSE' },
+      0x07: { name: 'OVER_TEMPERATURE', abbr: 'OVER-T' },
+      0x08: { name: 'SENSOR_FAULT', abbr: 'SENSOR' }
+    }
+    for (const [id, want] of Object.entries(pinned)) {
+      expect(NODE_FAULT_CODES[Number(id)], `fault 0x${Number(id).toString(16)}`).toMatchObject(want)
+    }
     expect(NODE_FAULT_CODES[1]?.label).toBe('I2C peripheral')
     // every entry carries a non-empty label except NONE
     for (const [id, e] of Object.entries(NODE_FAULT_CODES)) {
