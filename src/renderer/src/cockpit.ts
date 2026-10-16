@@ -455,6 +455,8 @@ export interface HealthBand {
   /** Highest TEC / REC among online nodes. */
   worstCan?: { tec: number; rec: number; nodeId: number; name: string }
   busOff: number
+  /** The first board that is bus-off (lowest NODE_ID): the CAN card names it before any count. */
+  busOffBoard?: { nodeId: number; name: string }
   hottest?: { tempC: number; nodeId: number; name: string; level: 'ok' | 'warn' | 'crit' }
 }
 
@@ -526,7 +528,10 @@ export function healthBand(views: NodeView[], strays = 0): HealthBand {
   for (const v of known) {
     const st = v.entry.status
     if (v.entry.availability !== 'online' || !st) continue
-    if (st.boff) b.busOff++
+    if (st.boff) {
+      b.busOff++
+      b.busOffBoard ??= { nodeId: v.entry.nodeId, name: v.entry.name }
+    }
     const worst = b.worstCan ? Math.max(b.worstCan.tec, b.worstCan.rec) : -1
     if (Math.max(st.tec, st.rec) > worst) {
       b.worstCan = { tec: st.tec, rec: st.rec, nodeId: v.entry.nodeId, name: v.entry.name }
@@ -536,14 +541,23 @@ export function healthBand(views: NodeView[], strays = 0): HealthBand {
 }
 
 /**
- * The CAN errors card's sub-line. A board is named only when its counters are above 0: with every
- * count at 0 there is no "worst" board, and naming one reads as a problem.
+ * The CAN errors card's sub-line. A bus-off board is the worst, whatever its counters say (a
+ * bus-off node can read TEC 0), so it is named first. Otherwise a board is named only when its
+ * counters are above 0; "no errors" only when nothing is bus-off and every count is 0.
  */
 export function canErrorsSub(b: HealthBand): string {
-  const c = b.worstCan
   const bus = `${b.busOff} bus-off`
+  if (b.busOffBoard) return `worst #${b.busOffBoard.nodeId} · ${bus}`
+  const c = b.worstCan
   if (!c) return bus
   return Math.max(c.tec, c.rec) > 0 ? `worst #${c.nodeId} · ${bus}` : `no errors · ${bus}`
+}
+
+/** Who the CAN card's "worst" is, for its tooltip; undefined when it names no board. */
+export function canErrorsWorst(b: HealthBand): string | undefined {
+  if (b.busOffBoard) return b.busOffBoard.name
+  const c = b.worstCan
+  return c && Math.max(c.tec, c.rec) > 0 ? c.name : undefined
 }
 
 // ── PSU headroom ────────────────────────────────────────────────────────────

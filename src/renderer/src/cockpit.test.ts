@@ -7,6 +7,7 @@ import {
   affected,
   attentionItems,
   canErrorsSub,
+  canErrorsWorst,
   consoleKey,
   fmtPct,
   headroom,
@@ -445,12 +446,25 @@ describe('healthBand', () => {
   it('finds the lowest 5 V rail, worst CAN counters, bus-off count and the hottest PDU', () => {
     expect(b.low5).toEqual({ volts: 4.7, nodeId: 4, name: 'PDU_Right' })
     expect(b.worstCan).toMatchObject({ nodeId: 1, tec: 8 })
-    expect(canErrorsSub(b)).toBe('worst #1 · 1 bus-off')
+    expect(canErrorsSub(b)).toBe('worst #7 · 1 bus-off') // the bus-off board is named first
     const quiet = healthBand(
       nodeViews(model([node(1, { status: status(1, { tec: 0, rec: 0 }) })]), [])
     )
     expect(canErrorsSub(quiet)).toBe('no errors · 0 bus-off') // no board named when all are 0
     expect(canErrorsSub(healthBand([]))).toBe('0 bus-off')
+    // A bus-off board can read TEC 0: never "no errors" while one is bus-off — it is named first.
+    const off = healthBand(
+      nodeViews(
+        model([
+          node(1, { status: status(1, { tec: 40 }) }),
+          node(7, { name: 'Center_Clock', status: status(7, { boff: true, tec: 0, rec: 0 }) })
+        ]),
+        []
+      )
+    )
+    expect(canErrorsSub(off)).toBe('worst #7 · 1 bus-off')
+    expect(canErrorsWorst(off)).toBe('Center_Clock')
+    expect(canErrorsWorst(quiet)).toBeUndefined()
     expect(b.busOff).toBe(1)
     expect(b.hottest).toEqual({ tempC: 41.3, nodeId: 4, name: 'PDU_Right', level: 'warn' })
   })

@@ -10,6 +10,7 @@ import {
   STATE_SYMBOL,
   attentionItems,
   canErrorsSub,
+  canErrorsWorst,
   fmtPct,
   headroom,
   healthBand,
@@ -355,7 +356,7 @@ function Band(props: {
         </div>
         <div
           className="ring__sub"
-          title={live && can && Math.max(can.tec, can.rec) > 0 ? `worst: ${can.name}` : undefined}
+          title={live && canErrorsWorst(b) ? `worst: ${canErrorsWorst(b)}` : undefined}
         >
           {live ? canErrorsSub(b) : noLive}
         </div>
