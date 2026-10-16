@@ -7,6 +7,7 @@ import type { NodeStatus } from './nodes'
 import type { NodeTelemSnapshot } from './node-telem'
 import type { AdoptSpec, MappingPatch, NodeKind, ResetOptions, ResetPreview } from './node-mapping'
 import type { NodeModel } from './node-rules'
+import type { LogEvent } from './events'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
 export type DcsTransport = 'loopback-multicast' | 'unicast-listen' | 'tcp-to-host'
@@ -86,7 +87,7 @@ export interface StatsSnapshot {
 
 export interface LogRow {
   t: number
-  dir: 'in' | 'out' | 'sys' // sys = client diagnostic (serial/transport error, …)
+  dir: 'in' | 'out' // client diagnostics are client events in the event log (#64)
   address: number
   name?: string
   value: number | string
@@ -165,13 +166,15 @@ export interface CalSnapshot {
 // the last state, dimmed via isLinkUp(). hid:report is neither: the joystick is read for as long
 // as the app runs, serial port open or not. **Relay-scoped** pushes flow only while
 // relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries
-// both (panel commands and link errors are logged while stopped too).
+// both (panel commands are logged while stopped too), and so does events:batch.
 export interface PushChannels {
   'device:status': DeviceStatus
   'relay:state': RelayState
   'aircraft:changed': AircraftStatus
   'stats:tick': StatsSnapshot
   'log:batch': LogRow[]
+  /** New event-log rows (#64), oldest first. */
+  'events:batch': LogEvent[]
   'hid:report': HidSnapshot
   'telemetry:tick': TelemetryReadout[]
   'nodes:status': NodeStatus[]
@@ -192,6 +195,7 @@ export const IPC = {
   aircraftChanged: 'aircraft:changed',
   statsTick: 'stats:tick',
   logBatch: 'log:batch',
+  eventsBatch: 'events:batch',
   hidReport: 'hid:report',
   telemetryTick: 'telemetry:tick',
   nodesStatus: 'nodes:status',
@@ -372,6 +376,9 @@ export const CTRL = {
   deviceConnect: 'device:connect',
   deviceDisconnect: 'device:disconnect',
   logExport: 'log:export',
+  eventsGet: 'events:get',
+  eventsClear: 'events:clear',
+  eventsExport: 'events:export',
   captureToggle: 'capture:toggle',
   replayOpen: 'replay:open',
   hidAvailability: 'hid:availability',
@@ -425,6 +432,14 @@ export interface SkyhawkApi {
   /** Close the device link and keep it closed — through a replug — until connectDevice(). */
   disconnectDevice(): Promise<void>
   exportLog(text: string): Promise<ExportResult>
+
+  // ── event log (#64) — in memory in main, this app run only ────────────────
+  /** Every event this session, oldest first, for a renderer (re)load. */
+  getEvents(): Promise<LogEvent[]>
+  /** Clear the session's events (what Clear in Log › Events does). */
+  clearEvents(): Promise<void>
+  /** Save dialog, then every event as TSV, oldest first, whatever the view filters. */
+  exportEvents(): Promise<ExportResult>
   toggleCapture(): Promise<CaptureState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>

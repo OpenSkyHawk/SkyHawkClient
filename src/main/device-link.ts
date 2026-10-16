@@ -9,6 +9,7 @@
 import { LineAssembler, parseCommand } from '@shared/dcsbios'
 import { NODE_END_MSG, NODE_MSG, NodeRoster, nodeRosterRequest } from '@shared/nodes'
 import { NODE_TELEM_MSG } from '@shared/node-telem'
+import type { LogEventInput } from '@shared/events'
 import {
   isLinkUp,
   type CalCacheEntry,
@@ -111,9 +112,12 @@ export class DeviceLink {
   private readonly lineCbs = new Set<(line: DeviceLine) => void>()
   private readonly statusCbs = new Set<(status: DeviceStatus) => void>()
   private readonly errorCbs = new Set<(tag: string, message: string) => void>()
+  private readonly eventCbs = new Set<(events: LogEventInput[]) => void>()
 
   constructor(private readonly emit: Emit) {
-    this.nodes = new NodeHub(emit, this.roster)
+    this.nodes = new NodeHub(emit, this.roster, (events) => {
+      for (const cb of this.eventCbs) cb(events)
+    })
   }
 
   // ── events ─────────────────────────────────────────────────────────────────
@@ -139,6 +143,11 @@ export class DeviceLink {
   /** Link faults worth showing the user. "No board plugged in" is a state, not one of these. */
   onError(cb: (tag: string, message: string) => void): Unsubscribe {
     return subscribe(this.errorCbs, cb)
+  }
+
+  /** Node changes for the event log (#64): online / offline, flags raised and cleared, new nodes. */
+  onNodeEvents(cb: (events: LogEventInput[]) => void): Unsubscribe {
+    return subscribe(this.eventCbs, cb)
   }
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
@@ -355,11 +364,12 @@ export class DeviceLink {
       // Node-status messages are tapped to the roster, not logged as panel commands.
       if (identifier === NODE_MSG || identifier === NODE_END_MSG) {
         debugLog('node', `${identifier} ${arg}`.trim())
-        this.roster.applyMessage(identifier, arg)
+        this.roster.applyMessage(identifier, arg, t)
+        this.nodes.statusLine(identifier, line.trim(), t)
         kind = 'node'
       } else if (identifier === NODE_TELEM_MSG) {
         // Node telemetry (~1/s per PDU) likewise: tapped, never logged as a panel command.
-        this.nodes.telemetry(arg)
+        this.nodes.telemetry(arg, t, line.trim())
         kind = 'node'
       }
       for (const cb of this.lineCbs) cb({ kind, identifier, arg, line: line.trim(), t })
