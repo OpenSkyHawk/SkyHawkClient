@@ -52,6 +52,12 @@ npm run build    # typecheck + bundle
 npm run sync     # regenerate reference files from pinned OpenSkyhawk commit
 ```
 
+Dev builds keep their settings (`config.json`, `node-mapping.json`, `calibration-cache.json`,
+`debug.log`) in `.userdata/` at the repo root, so each worktree is isolated from the others
+and from the installed app. Delete `.userdata/` to start clean. Set `SKYHAWK_USER_DATA=<dir>`
+to use another folder; it also works for a packaged build, e.g. to try a release against a
+scratch folder. Packaged builds without it use the normal OS app-data folder.
+
 ## Sync script
 
 `scripts/sync-a4ec.ts` (`npm run sync`) sparse-fetches a **pinned OpenSkyhawk commit**

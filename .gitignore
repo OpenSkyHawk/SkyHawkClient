@@ -9,3 +9,4 @@ release/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+.userdata/
