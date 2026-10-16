@@ -169,6 +169,13 @@ function adopted(
   return !!o?.name && !!o.kind
 }
 
+/**
+ * In your cockpit: a registry board you added, or a board you adopted — and an adopted board stays
+ * in it even once its NODE_ID is in NODE_IDS.md (a later registry); the registry is only where
+ * names come from, never what decides membership (#93 re-review F). The one rule every check uses.
+ */
+const inCockpit = (o: NodeOverride | undefined): boolean => o?.added === true || adopted(o)
+
 const hasOverride = (o: NodeOverride): boolean =>
   o.name !== undefined || o.console !== undefined || o.pduId !== undefined
 
@@ -192,7 +199,7 @@ export function effectiveMapping(
       source: 'registry',
       differs: hasOverride(o),
       hidden: o.hidden === true,
-      known: o.added === true
+      known: inCockpit(o)
     }
     if (o.lastSeen) m.lastSeen = o.lastSeen
     out.set(nodeId, m)
@@ -327,7 +334,7 @@ export function setNodeMapping(
   checkPatch(patch)
   const d = defaults.get(nodeId)
   const cur = file.nodes[nodeId]
-  if (d ? !cur?.added : !adopted(cur)) {
+  if (!inCockpit(cur)) {
     throw new MappingError(`Node ${nodeId} is not in your cockpit — add it first`)
   }
   if ('pduId' in patch) {
@@ -457,7 +464,7 @@ export function resetNode(
 /** What a reset keeps of a registry board's entry: everything that is not an override. */
 function keptOnReset(o: NodeOverride | undefined): NodeOverride {
   const kept: NodeOverride = {}
-  if (o?.added) kept.added = true
+  if (inCockpit(o)) kept.added = true // an adopted one stays in your cockpit, as a registry one
   if (o?.hidden) kept.hidden = true
   if (o?.lastSeen) kept.lastSeen = o.lastSeen
   return kept
@@ -616,7 +623,7 @@ function withoutHidden(file: NodeMappingFile, nodeId: number): NodeMappingFile {
  */
 export function setHidden(
   file: NodeMappingFile,
-  defaults: Map<number, NodeDefaults>,
+  _defaults: Map<number, NodeDefaults>, // kept for the mutators' common shape
   nodeId: number,
   on: boolean
 ): NodeMappingFile {
@@ -624,7 +631,7 @@ export function setHidden(
   checkOnOff(on)
   if (!on) return withoutHidden(file, nodeId)
   const cur = file.nodes[nodeId]
-  if (defaults.has(nodeId) ? !cur?.added : !adopted(cur)) {
+  if (!inCockpit(cur)) {
     throw new MappingError('Only a board in your cockpit can be hidden')
   }
   return withNode(file, nodeId, { ...file.nodes[nodeId], hidden: true })
@@ -651,14 +658,14 @@ export function clearReportedHidden(
  */
 export function markSeen(
   file: NodeMappingFile,
-  defaults: Map<number, NodeDefaults>,
+  _defaults: Map<number, NodeDefaults>, // kept for the mutators' common shape
   ids: Iterable<number>,
   at: string
 ): NodeMappingFile {
   let next = file
   for (const id of ids) {
     const cur = next.nodes[id]
-    if (defaults.has(id) ? !cur?.added : !adopted(cur)) continue
+    if (!inCockpit(cur)) continue
     next = withNode(next, id, { ...cur, lastSeen: at })
   }
   return next

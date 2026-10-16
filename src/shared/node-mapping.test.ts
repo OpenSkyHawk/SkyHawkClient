@@ -380,6 +380,33 @@ describe('forget (#93)', () => {
   })
 })
 
+describe('adopted, then in the registry (#93 re-review F)', () => {
+  it('a board you adopted stays in your cockpit once its NODE_ID is in NODE_IDS.md', () => {
+    const f = adoptNode(EMPTY_MAPPING, defaults, 41, {
+      name: 'Left_Oxygen',
+      console: 'Left',
+      pduId: 3,
+      kind: 'panel'
+    })
+    // A later client bundles a NODE_IDS.md that lists 41.
+    const later = registryDefaults({ ...REGISTRY, 41: { name: 'Left_Oxy', console: 'Left' } })
+    expect(effectiveMapping(later, f).get(41)).toMatchObject({
+      known: true,
+      source: 'registry',
+      name: 'Left_Oxygen', // your name, not the registry's
+      pduId: 3
+    })
+    // Every in-cockpit check agrees: last seen, hide, edits; reset keeps it in your cockpit.
+    expect(markSeen(f, later, [41], '2026-10-16T12:00:00.000Z').nodes[41]?.lastSeen).toBeDefined()
+    expect(effectiveMapping(later, setHidden(f, later, 41, true)).get(41)?.hidden).toBe(true)
+    expect(setNodeMapping(f, later, 41, { name: 'O2' }).nodes[41]?.name).toBe('O2')
+    expect(effectiveMapping(later, resetNode(f, later, 41)).get(41)).toMatchObject({
+      known: true,
+      name: 'Left_Oxy'
+    })
+  })
+})
+
 describe('importMapping (#93 review)', () => {
   const seen = '2026-10-14T21:14:00.000Z'
   it('takes the settings from the file and keeps added / last-seen from this computer', () => {
