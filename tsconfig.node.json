@@ -26,5 +26,7 @@
     "scripts",
     "electron.vite.config.ts",
     "vitest.config.mts"
-  ]
+  ],
+  // The phase-0 probes also read renderer helpers (DOM types), so tsconfig.json checks them.
+  "exclude": ["src/main/phase0-probes.test.ts"]
 }
