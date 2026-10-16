@@ -8,7 +8,6 @@
 // what should carry on to DCS and the line assembler.
 import {
   CAL_AXIS_NONE,
-  CAL_NACK,
   CAL_PROTO_VERSION,
   CAL_TYPE,
   CalDemux,
@@ -21,6 +20,7 @@ import {
   decodeSessionAck,
   encodeCommit,
   encodeReset,
+  nackRefusalName,
   type CalData,
   type CalFrame,
   type HelloAck,
@@ -34,15 +34,6 @@ const REPLY_TIMEOUT_MS = 2000
 /** The device closes an idle session after 30 s; a user reading a dialog step sends nothing. */
 const KEEPALIVE_MS = 10_000
 
-/** Names for the five NACK reasons that can actually reach us; see CAL_NACK in the codec. */
-const NACK_NAME: Record<number, string> = {
-  [CAL_NACK.BAD_INDEX]: 'BAD_INDEX',
-  [CAL_NACK.BAD_ORDER]: 'BAD_ORDER',
-  [CAL_NACK.NO_SESSION]: 'NO_SESSION',
-  [CAL_NACK.NO_STORAGE]: 'NO_STORAGE',
-  [CAL_NACK.BAD_DEADZONE]: 'BAD_DEADZONE'
-}
-
 /** The device answered and refused. Distinct from a timeout, and needs different messaging. */
 export class CalNackError extends Error {
   constructor(
@@ -51,7 +42,7 @@ export class CalNackError extends Error {
     /** Axis index where one applies, else CAL_AXIS_NONE. */
     readonly detail: number
   ) {
-    super(`calibration: device refused (${NACK_NAME[reason] ?? `reason 0x${reason.toString(16)}`})`)
+    super(`calibration: device refused (${nackRefusalName(reason)})`)
     this.name = 'CalNackError'
   }
 }
@@ -88,7 +79,7 @@ export class CalLink {
   private seq = 0
   private session = false
   private keepalive?: ReturnType<typeof setInterval>
-  private streamAxis = CAL_AXIS_NONE
+  private streamAxis: number = CAL_AXIS_NONE
   /** Fallback timer that reopens the gate after a close we never got an answer to. */
   private expiry?: ReturnType<typeof setTimeout>
   /** The device's idle expiry, as it reported in SESSION_ACK. Default until it tells us. */

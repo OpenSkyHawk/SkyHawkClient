@@ -1,27 +1,23 @@
 // PanelBridge node-status decode + roster (pure, no Node/Electron deps).
-// Wire contract: NodeStatus.h NODE_STATUS_* (mirrored in
-// src/main/reference/node-status.generated.ts; reference.test asserts they match).
+// Wire contract: NodeStatus.h NODE_STATUS_* (generated into shared/firmware; reference.test
+// asserts the decoder's protoVersion matches).
 import { encodeExportFrame } from './dcsbios'
+import { NODE_HEALTH_FLAGS, NODE_KINDS, NODE_STATUS } from './firmware'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_NODE_PROTO = 3
 
-/** Reserved DCS-BIOS identifiers (must equal node-status.generated.ts). */
-export const NODE_MSG = '_NODE_STATUS'
-export const NODE_END_MSG = '_NODE_STATUS_END'
-export const NODE_REQ_ADDR = 0x86fe
+/** Reserved DCS-BIOS identifiers (NODE_STATUS in the firmware reference). */
+export const NODE_MSG = NODE_STATUS.msgName
+export const NODE_END_MSG = NODE_STATUS.endMsgName
+export const NODE_REQ_ADDR = NODE_STATUS.reqAddress
 
-/** hFlags bit masks (must equal NODE_HEALTH_FLAGS in node-status.generated.ts; reference.test checks). */
-export const HFLAG_OVERHEAT = 0x01
-export const HFLAG_DEGRADED = 0x02
+/** hFlags bit masks (NODE_HEALTH_FLAGS in the firmware reference). */
+export const HFLAG_OVERHEAT = NODE_HEALTH_FLAGS.OVERHEAT
+export const HFLAG_DEGRADED = NODE_HEALTH_FLAGS.DEGRADED
 
-/** HEALTH_n board kind, as _NODE_STATUS v3 forwards it (must equal NODE_KINDS; reference.test checks). */
-export const NODE_KIND = {
-  UNKNOWN: 0x00,
-  PANEL_GROUP: 0x01,
-  PDU: 0x02,
-  BRIDGE: 0x03
-} as const
+/** HEALTH_n board kind, as _NODE_STATUS v3 forwards it (NODE_KINDS in the firmware reference). */
+export const NODE_KIND = NODE_KINDS
 
 /**
  * The bridge's own NODE_ID: PanelBridge is the CAN master at address 0, and since v3 every roster

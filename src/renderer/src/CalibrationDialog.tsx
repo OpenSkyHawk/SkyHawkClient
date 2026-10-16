@@ -6,9 +6,15 @@ import {
   holdRemainingMs,
   sweepsRemaining
 } from '@shared/axis-capture'
+import { CAL_PROTO, HID_REPORT_LAYOUT } from '@shared/firmware'
 import type { CalSnapshot } from '@shared/ipc'
 import { CalibrationController, type CalibrationState } from './calibration-controller'
 import { AXIS_LABELS, useStore } from './store'
+
+/** 32768: the unsigned -> signed offset, from the HID report's axis range. */
+const AXIS_OFFSET = -HID_REPORT_LAYOUT.axes.min
+/** 65535: the full unsigned span, from the HID report's axis range. */
+const AXIS_SPAN = HID_REPORT_LAYOUT.axes.max - HID_REPORT_LAYOUT.axes.min
 
 /**
  * Display units: signed ±32767, matching what DCS shows and what the HID tab reads off the
@@ -18,11 +24,11 @@ import { AXIS_LABELS, useStore } from './store'
  * **Display only. Never call this on a value being committed.** The offset applied twice, or
  * zero times, still yields plausible in-range numbers and fails silently.
  */
-const toDisplay = (unsigned: number) => unsigned - 32768
+const toDisplay = (unsigned: number) => unsigned - AXIS_OFFSET
 const fmt = (n: number) => toDisplay(n).toLocaleString('en-US')
 /** A span, not a position — no offset applies. */
 const fmtSpan = (n: number) => n.toLocaleString('en-US')
-const pct = (v: number) => Math.max(0, Math.min(100, (v / 65535) * 100)).toFixed(2) + '%'
+const pct = (v: number) => Math.max(0, Math.min(100, (v / AXIS_SPAN) * 100)).toFixed(2) + '%'
 
 type Point = 'stopA' | 'stopB' | 'centre'
 
@@ -36,8 +42,8 @@ const TRAVEL_BANDS = [
 function travelQuality(min?: number, max?: number) {
   if (min === undefined || max === undefined) return null
   const counts = max - min
-  const band = TRAVEL_BANDS.find((b) => counts / 65535 >= b.at)!
-  return { counts, pct: Math.round((counts / 65535) * 100), ...band }
+  const band = TRAVEL_BANDS.find((b) => counts / AXIS_SPAN >= b.at)!
+  return { counts, pct: Math.round((counts / AXIS_SPAN) * 100), ...band }
 }
 
 /**
@@ -260,8 +266,8 @@ export function CalibrationDialog({
               </button>
             ))}
             <div className="cd__note">
-              {present.length} of 8 slots · device-reported. Edits are kept when you switch axes and
-              written together.
+              {present.length} of {CAL_PROTO.axisSlots} slots · device-reported. Edits are kept when
+              you switch axes and written together.
             </div>
           </div>
 
@@ -315,7 +321,7 @@ export function CalibrationDialog({
                   className="cd__band"
                   style={{
                     left: pct(shown.min),
-                    width: (((shown.max - shown.min) / 65535) * 100).toFixed(2) + '%'
+                    width: (((shown.max - shown.min) / AXIS_SPAN) * 100).toFixed(2) + '%'
                   }}
                 />
               )}
@@ -323,7 +329,7 @@ export function CalibrationDialog({
               {s.live && <span className="cd__now" style={{ left: pct(s.live.raw) }} />}
             </div>
             <div className="cd__scale">
-              <span>−32768</span>
+              <span>−{AXIS_OFFSET}</span>
               <span>0</span>
               <span>32767</span>
             </div>

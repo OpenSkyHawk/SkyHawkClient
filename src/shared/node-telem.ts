@@ -1,38 +1,23 @@
 // PanelBridge node telemetry decode + latest-value store (pure, no Node/Electron deps).
-// Wire contract: NodeStatus.h NODE_TELEM_* / TelemPage / PduRailFlag / PduStatusFlag (mirrored in
-// src/main/reference/node-status.generated.ts; reference.test asserts they match). Page layouts:
+// Wire contract: NodeStatus.h NODE_TELEM_* / TelemPage / PduRailFlag / PduStatusFlag (generated
+// into shared/firmware; reference.test asserts the decoder's protoVersion matches). Page layouts:
 // FirmwarePlan/02-can-protocol.md § Node Telemetry Payload — TELEM_n (#216).
+import { NODE_TELEM, PDU_RAIL_FLAGS, PDU_STATUS_FLAGS, TELEM_PAGES } from './firmware'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_TELEM_PROTO = 1
 
-/** Reserved DCS-BIOS identifier (must equal NODE_TELEM.msgName in node-status.generated.ts). */
-export const NODE_TELEM_MSG = '_NODE_TELEM'
+/** Reserved DCS-BIOS identifier (NODE_TELEM.msgName in the firmware reference). */
+export const NODE_TELEM_MSG = NODE_TELEM.msgName
 
-/** TelemPage ids (must equal TELEM_PAGES). Global and append-only; 0x00 is invalid. */
-export const TELEM_PAGE = {
-  PDU_RAIL_12V: 0x01,
-  PDU_RAIL_5V: 0x02,
-  PDU_STATUS: 0x03
-} as const
+/** TelemPage ids (TELEM_PAGES). Global and append-only; 0x00 is invalid. */
+export const TELEM_PAGE = TELEM_PAGES
 
-/** PDU_RAIL_* byte 1 bits (must equal PDU_RAIL_FLAGS). All zero = healthy. */
-export const RAIL_FLAG = {
-  UNDER_V: 0x01,
-  OVER_V: 0x02,
-  OVER_CURRENT: 0x04,
-  FUSE_OPEN: 0x08,
-  SENSOR_FAULT: 0x10
-} as const
+/** PDU_RAIL_* byte 1 bits (PDU_RAIL_FLAGS). All zero = healthy. */
+export const RAIL_FLAG = PDU_RAIL_FLAGS
 
-/** PDU_STATUS byte 1 bits (must equal PDU_STATUS_FLAGS). All zero = healthy, calibrated. */
-export const PDU_FLAG = {
-  UNCAL_VDDA: 0x01,
-  UNCAL_ZERO: 0x02,
-  TEMP_WARN: 0x04,
-  TEMP_CRIT: 0x08,
-  NTC_FAULT: 0x10
-} as const
+/** PDU_STATUS byte 1 bits (PDU_STATUS_FLAGS). All zero = healthy, calibrated. */
+export const PDU_FLAG = PDU_STATUS_FLAGS
 
 /**
  * A page older than this is stale. Each PDU page refreshes every 3 s, so 10 s is three missed

@@ -1,5 +1,5 @@
 /**
- * Firmware sync — regenerates `src/main/reference/*.generated.ts` from a PINNED
+ * Firmware sync — regenerates `src/shared/firmware/*.generated.ts` from a PINNED
  * commit of the OpenSkyhawk firmware repo. See PRD.md §7 / §12.
  *
  * Sources (read from the pinned commit):
@@ -42,7 +42,7 @@ const SRC = {
 }
 
 const REPO_ROOT = join(__dirname, '..')
-const OUT_DIR = join(REPO_ROOT, 'src', 'main', 'reference')
+const OUT_DIR = join(REPO_ROOT, 'src', 'shared', 'firmware')
 
 const PRETTIER_OPTS = {
   parser: 'typescript' as const,
@@ -794,7 +794,7 @@ export const NODE_REGISTRY_SOURCE = {
 async function writeGenerated(file: string, code: string): Promise<void> {
   const formatted = await format(code, PRETTIER_OPTS)
   writeFileSync(join(OUT_DIR, file), formatted)
-  console.log(`[sync] wrote src/main/reference/${file}`)
+  console.log(`[sync] wrote src/shared/firmware/${file}`)
 }
 
 async function main(): Promise<void> {

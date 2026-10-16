@@ -3,11 +3,11 @@ import {
   A4EC_OUTPUTS,
   A4EC_OUTPUTS_BY_ADDRESS,
   A4EC_INPUTS,
-  A4EC_INPUTS_BY_ID
-} from './a4ec-controls.generated'
-import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generated'
-import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
-import {
+  A4EC_INPUTS_BY_ID,
+  HID_CONTROLS,
+  HID_CONTROLS_BY_ID,
+  HID_ID,
+  HID_REPORT_LAYOUT,
   NODE_STATUS,
   NODE_HEALTH_FLAGS,
   NODE_FAULT_CODES,
@@ -15,11 +15,14 @@ import {
   NODE_TELEM,
   TELEM_PAGES,
   PDU_RAIL_FLAGS,
-  PDU_STATUS_FLAGS
-} from './node-status.generated'
-import { NODE_NAMES } from './node-names.generated'
-import { CAL_PROTO, CAL_TYPES, CAL_NACK_REASONS, CAL_PAYLOAD_LEN } from './axis-cal.generated'
-import { ACFT_NAME } from './dcsbios-metadata'
+  PDU_STATUS_FLAGS,
+  NODE_NAMES,
+  CAL_PROTO,
+  CAL_TYPES,
+  CAL_NACK_REASONS,
+  CAL_PAYLOAD_LEN
+} from '.'
+import { ACFT_NAME } from '../../main/reference/dcsbios-metadata'
 import {
   HFLAG_DEGRADED,
   HFLAG_OVERHEAT,

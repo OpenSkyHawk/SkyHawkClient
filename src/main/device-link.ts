@@ -33,7 +33,7 @@ import {
   type PushChannels,
   type SerialFrame
 } from '@shared/ipc'
-import { CAL_NACK, CAL_AXIS_NONE } from '@shared/calibration'
+import { CAL_AXIS_NONE, nackReasonName } from '@shared/calibration'
 import {
   boardFor,
   dropAxis,
@@ -563,9 +563,7 @@ export class DeviceLink {
         return { ok: false, kind: 'timeout', message: err.message }
       }
       if (err instanceof CalNackError) {
-        const name =
-          Object.entries(CAL_NACK).find(([, v]) => v === err.reason)?.[0] ??
-          `0x${err.reason.toString(16)}`
+        const name = nackReasonName(err.reason)
         return {
           ok: false,
           kind: 'nack',
