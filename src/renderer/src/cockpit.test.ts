@@ -374,6 +374,15 @@ describe('healthBand', () => {
     expect([e.amps12, e.amps5, e.watts, e.hottest]).toEqual([null, null, null, undefined])
     expect(totalWatts([])).toBeNull()
   })
+
+  it('leaves out a PDU still waiting to be adopted, as the Total card does', () => {
+    const views = nodeViews(model([pdu(3, 'Left'), pdu(42, 'Left', { source: 'new' })]), [
+      telem(3, { i12: 1000, i5: 0 }),
+      telem(42, { i12: 1000, i5: 0 })
+    ])
+    expect(totalWatts(views)).toBeCloseTo(12)
+    expect(healthBand(views).watts).toBeCloseTo(12)
+  })
 })
 
 describe('newCount', () => {

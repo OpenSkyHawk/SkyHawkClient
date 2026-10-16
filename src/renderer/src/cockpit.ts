@@ -380,10 +380,15 @@ export interface HealthBand {
 
 const railW = (p?: PduRailPage) => (p ? (p.vAvgMv / 1000) * (displayCurrentMa(p.iAvgMa) / 1000) : 0)
 
-/** Total W the client computes from the fresh rails (V × A per rail). null = no readings at all. */
+/**
+ * Total W the client computes from the fresh rails (V × A per rail). null = no readings at all.
+ * Placed nodes only: a PDU still waiting in "New on the bus" reports readings but is not on the
+ * plan, and the Total card and its session peak must add up the same PDUs.
+ */
 export function totalWatts(views: NodeView[]): number | null {
   let w: number | null = null
   for (const v of views) {
+    if (v.entry.source === 'new') continue
     const { rail12V, rail5V } = v.readings
     if (rail12V || rail5V) w = (w ?? 0) + railW(rail12V) + railW(rail5V)
   }
