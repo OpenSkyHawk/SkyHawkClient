@@ -20,6 +20,7 @@ describe('effectivePsuLimits', () => {
       PSU_PRESETS.nx650.limits
     )
     expect(effectivePsuLimits({ mode: 'custom', preset: 'nx650', custom })).toEqual(custom)
+    expect(PSU_PRESETS.nx650.limits).toEqual({ a12: 54, a5: 20, w: 650 })
   })
 })
 

@@ -23,8 +23,9 @@ export interface PsuPreset {
 
 /** Supplies bundled with the client. Limits are read-only in Settings. */
 export const PSU_PRESETS: Record<PsuPresetId, PsuPreset> = {
-  // GOLDEN FIELD NX650 — the project's supply. Values pending: to be taken from its label.
-  nx650: { label: 'NX650', name: 'GOLDEN FIELD NX650', limits: {} }
+  // GOLDEN FIELD NX650 — the project's supply. From its spec: +12 V 54 A, +5 V 20 A, 650 W.
+  // (+3.3 V and +5 V share 100 W combined; the Cockpit shows no 3.3 V rail, so that is left out.)
+  nx650: { label: 'NX650', name: 'GOLDEN FIELD NX650', limits: { a12: 54, a5: 20, w: 650 } }
 }
 
 export interface PsuSetting {
