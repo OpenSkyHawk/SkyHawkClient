@@ -11,10 +11,13 @@ import type {
   TelemetryReadout
 } from '@shared/ipc'
 import type { NodeStatus } from '@shared/nodes'
+import type { NodeModel } from '@shared/node-rules'
+import type { NodeTelemSnapshot } from '@shared/node-telem'
 import { DEFAULT_PSU, type PsuSetting } from '@shared/psu'
+import { nodeViews, totalWatts } from './cockpit'
 import type { SerialFrame } from '@shared/ipc'
 
-export type TabId = 'overview' | 'connection' | 'log' | 'serial' | 'hid' | 'settings'
+export type TabId = 'overview' | 'connection' | 'cockpit' | 'log' | 'serial' | 'hid' | 'settings'
 
 export interface SerialRow extends SerialFrame {
   id: number
@@ -106,6 +109,13 @@ export interface AppState {
   deviceDetail?: string
   aircraft: AircraftStatus
   nodes: NodeStatus[]
+  /** Roster + telemetry + mapping, as main combines them (#61). Kept, dimmed, while the link is down. */
+  nodeModel?: NodeModel
+  nodeTelemetry: NodeTelemSnapshot[]
+  /** Highest total W the client computed this session (Cockpit health band). */
+  nodesPeakW: number
+  /** When the device link last went down after being up — "last known" time on the Cockpit. */
+  linkDownAt?: number
 
   // record / replay
   recording: boolean
@@ -228,6 +238,8 @@ export const useStore = create<AppState>((set, get) => ({
   deviceState: 'no-device',
   aircraft: { name: 'NONE', inferred: false, supported: true },
   nodes: [],
+  nodeTelemetry: [],
+  nodesPeakW: 0,
 
   recording: false,
   replayDriveSerial: false,
@@ -355,6 +367,9 @@ export const useStore = create<AppState>((set, get) => ({
       .getHidAvailability()
       .then((a) => set({ availAxes: a.axes, availHats: a.hats, availButtons: a.buttons }))
 
+    // Node pushes only fire on change, so a reloaded renderer asks for the current picture.
+    void api.getNodes().then(({ model, telemetry }) => setNodes(model, telemetry))
+
     void api.getConfig().then((cfg) => {
       const transport = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(
         (k) => TRANSPORT_TO_IPC[k] === cfg.transport
@@ -388,6 +403,11 @@ export const useStore = create<AppState>((set, get) => ({
       })
     )
 
+    const setNodes = (model: NodeModel | undefined, telemetry: NodeTelemSnapshot[]) => {
+      const w = model ? (totalWatts(nodeViews(model, telemetry)) ?? 0) : 0
+      set({ nodeModel: model, nodeTelemetry: telemetry, nodesPeakW: Math.max(get().nodesPeakW, w) })
+    }
+
     const unsubs = [
       api.on('hid:report', (h) =>
         set({
@@ -399,7 +419,10 @@ export const useStore = create<AppState>((set, get) => ({
         })
       ),
       api.on('device:status', (d) => {
+        const wasUp = isLinkUp(get().deviceState)
         set({ deviceState: d.state, devicePort: d.portPath, deviceDetail: d.detail })
+        if (wasUp && !isLinkUp(d.state)) set({ linkDownAt: Date.now() })
+        else if (isLinkUp(d.state)) set({ linkDownAt: undefined })
         // Calibration describes the gateway currently attached, so it is only trustworthy while
         // the link is up. Everything else — reconnecting after a close, error, no-device,
         // disconnected — means the snapshot may describe a board that is gone. Clearing only on
@@ -412,6 +435,8 @@ export const useStore = create<AppState>((set, get) => ({
       api.on('cal:data', (c) => set({ cal: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:status', (n) => set({ nodes: n })),
+      api.on('nodes:model', (m) => setNodes(m, get().nodeTelemetry)),
+      api.on('nodes:telemetry', (t) => setNodes(get().nodeModel, t)),
       api.on('serial:traffic', (frames) => {
         const s = get()
         let seq = s.private_serialSeq
