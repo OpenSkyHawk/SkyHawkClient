@@ -1,0 +1,15 @@
+{
+  "process": "warn",
+  "crossProcess": "warn",
+  "electron": "warn",
+  "rendererShared": "warn",
+  "contracts": "warn",
+  "cycles": "warn",
+  "firmwareLeaf": "warn",
+  "formatLeaf": "warn",
+  "kitLeaf": "warn",
+  "topicsMain": "warn",
+  "topicsRenderer": "warn",
+  "deepMain": "warn",
+  "deepRenderer": "warn"
+}
