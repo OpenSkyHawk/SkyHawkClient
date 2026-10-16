@@ -165,6 +165,20 @@ const CONSOLES: Record<
 }
 const TILE_GAP = 8
 const ROW_H = 42
+/** Tile labels are mono 11 px: about 0.6 em a character. */
+const CHAR_W = 6.6
+/** Left inset and padding, gap and border around the label; the state symbol adds SYM_W. */
+const TILE_CHROME = 30
+const SYM_W = 16
+
+/**
+ * A tile fits its label (#93): never narrower than the console's column (`min`), at most `max`
+ * (~2 columns, or the whole group on a side console); past that the label ends in "…".
+ */
+export function tileWidth(label: string, symbol: boolean, min: number, max: number): number {
+  const fit = Math.ceil(label.length * CHAR_W + TILE_CHROME + (symbol ? SYM_W : 0))
+  return Math.min(max, Math.max(min, fit))
+}
 const HINT_H = 16
 const GROUP_GAP = 10
 
@@ -228,7 +242,7 @@ export function outageHint(o: PduOutage): string {
 /**
  * One group per PDU on the PDU's console, then the console's nodes without a power zone. A panel
  * sits under the PDU that feeds it, wherever its own console is; new nodes are not placed (they
- * wait in "New on the bus").
+ * wait in "New on the bus"). Tiles fit their names and wrap within their group (#93).
  */
 export function planLayout(views: NodeView[], outages: PduOutage[]): PlanLayout {
   const pdus = views.filter((v) => v.entry.kind === 'pdu' && v.entry.source !== 'new')
@@ -240,6 +254,7 @@ export function planLayout(views: NodeView[], outages: PduOutage[]): PlanLayout 
   for (const key of ['L', 'C', 'R'] as const) {
     const c = CONSOLES[key]
     const tileW = Math.floor((c.w - TILE_GAP * (c.cols - 1)) / c.cols)
+    const maxW = Math.min(2 * tileW + TILE_GAP, c.w)
     let y = c.top
     const place = (pdu: NodeView | null, members: NodeView[]) => {
       const outage = pdu ? outages.find((o) => o.pduId === pdu.entry.nodeId) : undefined
@@ -255,16 +270,20 @@ export function planLayout(views: NodeView[], outages: PduOutage[]): PlanLayout 
         outage
       }
       y += c.wide ? 30 : 44
-      members.forEach((view, i) => {
-        g.tiles.push({
-          view,
-          short: shortName(view.entry.name),
-          x: c.x + (i % c.cols) * (tileW + TILE_GAP),
-          y: y + Math.floor(i / c.cols) * ROW_H,
-          w: tileW
-        })
-      })
-      y += Math.ceil(members.length / c.cols) * ROW_H
+      // Tiles flow left to right and wrap inside the group, each as wide as its label needs.
+      let x = c.x
+      let row = 0
+      for (const view of members) {
+        const short = shortName(view.entry.name)
+        const w = tileWidth(short, STATE_SYMBOL[view.health.state] !== '', tileW, maxW)
+        if (x > c.x && x + w > c.x + c.w) {
+          x = c.x
+          row++
+        }
+        g.tiles.push({ view, short, x, y: y + row * ROW_H, w })
+        x += w + TILE_GAP
+      }
+      y += (members.length ? row + 1 : 0) * ROW_H
       if (outage) {
         g.hint = { text: outageHint(outage), y: y - 4 }
         y += HINT_H

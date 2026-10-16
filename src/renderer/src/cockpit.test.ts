@@ -21,6 +21,7 @@ import {
   psuName,
   shortName,
   tileMatches,
+  tileWidth,
   totalWatts
 } from './cockpit'
 
@@ -267,6 +268,34 @@ describe('planLayout', () => {
     )
     expect(l.groups).toHaveLength(1)
     expect(l.groups[0]!.tiles[0]!.view.entry.nodeId).toBe(1)
+  })
+
+  it('tiles fit their names, from the column width up to ~2 columns, then "…" (#93)', () => {
+    expect(tileWidth('Armament', false, 99, 206)).toBe(99) // short: the column width
+    expect(tileWidth('Fuel_Quantity_Gauge', false, 99, 206)).toBe(156)
+    expect(tileWidth('Fuel_Quantity_Gauge', true, 99, 206)).toBe(172) // room for "!"
+    expect(tileWidth('Angle_Of_Attack_Indexer_Lights', false, 99, 206)).toBe(206) // capped
+  })
+
+  it('tiles flow left to right and wrap inside their group', () => {
+    const names = ['Left_Engine', 'Left_ARC51_UHF_Radio', 'Left_Fuel', 'Left_Trim', 'Left_Gear']
+    const l = planLayout(
+      nodeViews(
+        model([pdu(3, 'Left'), ...names.map((name, i) => node(10 + i, { name, pduId: 3 }))]),
+        []
+      ),
+      []
+    )
+    const g = l.groups[0]!
+    // Left console: 200 wide, two 96-px columns. ARC51 needs 129, so it takes its row.
+    expect(g.tiles.map((t) => [t.short, t.x - g.x, t.y - g.tiles[0]!.y, t.w])).toEqual([
+      ['Engine', 0, 0, 96],
+      ['ARC51_UHF_Radio', 0, 42, 129],
+      ['Fuel', 0, 84, 96],
+      ['Trim', 104, 84, 96],
+      ['Gear', 0, 126, 96]
+    ])
+    for (const t of g.tiles) expect(t.x + t.w).toBeLessThanOrEqual(g.x + g.w)
   })
 
   it('never places new nodes', () => {
