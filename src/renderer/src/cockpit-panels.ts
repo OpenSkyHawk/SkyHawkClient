@@ -115,22 +115,36 @@ export function pduFlagMeanings(v: NodeView): string[] {
   return out
 }
 
-/** The box at the top of the PDU panel. */
-export function pduFaultBox(v: NodeView, outage: boolean): FaultBox | null {
+/**
+ * The boxes at the top of the PDU panel, stacked. Offline says it all on its own. Otherwise the
+ * PDU's own node fault (the same as any node's) comes first, then its rail / status flags, then
+ * "no readings": each is a separate thing the board told us, so none hides another.
+ */
+export function pduFaultBoxes(v: NodeView, outage: boolean): FaultBox[] {
   const e = v.entry
   if (e.availability === 'offline') {
-    return {
-      tone: 'err',
-      title: 'Offline',
-      text:
-        'no status or readings from this PDU.' +
-        (outage
-          ? ' Its nodes dropped at the same time — a blown 5 V fuse at the PDU looks like this.'
-          : '')
-    }
+    return [
+      {
+        tone: 'err',
+        title: 'Offline',
+        text:
+          'no status or readings from this PDU.' +
+          (outage
+            ? ' Its nodes dropped at the same time — a blown 5 V fuse at the PDU looks like this.'
+            : '')
+      }
+    ]
+  }
+  const out: FaultBox[] = []
+  const node = nodeFaultBox(v)
+  if (node) out.push(node)
+  const flags = pduAlertFlags(v.readings)
+  if (flags.length) {
+    const said = pduFlagMeanings(v).join('; ')
+    out.push({ tone: 'warn', title: flags.join(' · '), text: `${said}. Raised by the board.` })
   }
   if (v.noReadings) {
-    return {
+    out.push({
       tone: 'new',
       title: 'No readings received',
       text:
@@ -138,14 +152,9 @@ export function pduFaultBox(v: NodeView, outage: boolean): FaultBox | null {
         (e.everHadReadings
           ? ''
           : ' If it never had readings, the PanelBridge firmware may be too old to forward PDU telemetry.')
-    }
+    })
   }
-  const flags = pduAlertFlags(v.readings)
-  if (flags.length) {
-    const said = pduFlagMeanings(v).join('; ')
-    return { tone: 'warn', title: flags.join(' · '), text: `${said}. Raised by the board.` }
-  }
-  return nodeFaultBox(v)
+  return out
 }
 
 // ── rows ────────────────────────────────────────────────────────────────────

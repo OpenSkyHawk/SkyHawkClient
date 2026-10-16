@@ -12,7 +12,7 @@ import {
   nodeFaultBox,
   nodeStatusRows,
   pduBoardRows,
-  pduFaultBox,
+  pduFaultBoxes,
   pduRailRows,
   powerZoneOptions
 } from './cockpit-panels'
@@ -182,34 +182,68 @@ describe('nodeFaultBox', () => {
   })
 })
 
-describe('pduFaultBox', () => {
-  it('offline mentions the fuse only when its nodes dropped with it', () => {
+describe('pduFaultBoxes', () => {
+  it('offline stands alone, and mentions the fuse only when its nodes dropped with it', () => {
     const v = view(pdu(6, 'Center', { availability: 'offline' }))
-    expect(pduFaultBox(v, false)?.text).toBe('no status or readings from this PDU.')
-    expect(pduFaultBox(v, true)?.text).toMatch(/a blown 5 V fuse at the PDU looks like this\.$/)
+    expect(pduFaultBoxes(v, false)).toEqual([
+      { tone: 'err', title: 'Offline', text: 'no status or readings from this PDU.' }
+    ])
+    expect(pduFaultBoxes(v, true)[0]!.text).toMatch(
+      /a blown 5 V fuse at the PDU looks like this\.$/
+    )
   })
 
   it('no readings: the firmware hint only when it never had any', () => {
     const had = view(pdu(3, 'Left', { readings: 'none', everHadReadings: true }))
     const never = view(pdu(3, 'Left', { readings: 'none', everHadReadings: false }))
-    expect(pduFaultBox(had, false)?.text).not.toMatch(/firmware/)
-    expect(pduFaultBox(never, false)?.text).toMatch(/PanelBridge firmware may be too old/)
+    expect(
+      pduFaultBoxes(had, false)
+        .map((b) => b.text)
+        .join()
+    ).not.toMatch(/firmware/)
+    expect(pduFaultBoxes(never, false)[0]!.text).toMatch(/PanelBridge firmware may be too old/)
   })
 
   it('a raised flag names it and says what it means, as NodeStatus.h does', () => {
     const v = view(pdu(4, 'Right'), [
       telem(4, { flags5: RAIL_FLAG.UNDER_V, status: PDU_FLAG.TEMP_WARN })
     ])
-    expect(pduFaultBox(v, false)).toEqual({
-      tone: 'warn',
-      title: '5V UNDER-V · TEMP WARN',
-      text: 'the 5 V rail is below its under-voltage threshold; board temperature at the warning threshold. Raised by the board.'
-    })
+    expect(pduFaultBoxes(v, false)).toEqual([
+      {
+        tone: 'warn',
+        title: '5V UNDER-V · TEMP WARN',
+        text: 'the 5 V rail is below its under-voltage threshold; board temperature at the warning threshold. Raised by the board.'
+      }
+    ])
   })
 
   it('calibration state alone is not a fault', () => {
     const v = view(pdu(4, 'Right'), [telem(4, { status: PDU_FLAG.UNCAL_VDDA })])
-    expect(pduFaultBox(v, false)).toBeNull()
+    expect(pduFaultBoxes(v, false)).toEqual([])
+  })
+
+  // Review of #85: the PDU's own node fault was hidden behind "no readings" or a raised flag.
+  it('bus-off shows even when the PDU has no readings', () => {
+    const v = view(pdu(3, 'Left', { readings: 'none', status: status(3, { boff: true }) }))
+    expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual(['Bus-off', 'No readings received'])
+  })
+
+  it('a degraded PDU keeps its fault label next to "no readings"', () => {
+    const v = view(
+      pdu(3, 'Left', { readings: 'none', status: status(3, { degraded: true, faultId: 7 }) })
+    )
+    expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual(['Fault 7', 'No readings received'])
+  })
+
+  it('a degraded PDU keeps its fault label next to a raised rail flag', () => {
+    const e = pdu(4, 'Right', {
+      status: status(4, { degraded: true, faultId: 8, faultLabel: 'Sensor fault' })
+    })
+    const v = view(e, [telem(4, { flags12: RAIL_FLAG.SENSOR_FAULT })])
+    expect(pduFaultBoxes(v, false).map((b) => [b.tone, b.title])).toEqual([
+      ['warn', 'Sensor fault'],
+      ['warn', '12V SENSOR FAULT']
+    ])
   })
 })
 

@@ -10,7 +10,7 @@ import {
   nodeFaultBox,
   nodeStatusRows,
   pduBoardRows,
-  pduFaultBox,
+  pduFaultBoxes,
   pduRailRows,
   powerZoneOptions,
   type FaultBox,
@@ -357,7 +357,9 @@ export function PduPanel(props: {
         {others.length ? ` · shared with ${others.map((o) => o.entry.name).join(', ')}` : ''}
         {props.live ? '' : ' · last known'}
       </div>
-      <Fault box={pduFaultBox(v, props.outage)} />
+      {pduFaultBoxes(v, props.outage).map((b) => (
+        <Fault key={b.title} box={b} />
+      ))}
 
       <div className="sh__sec">
         <div className="section-h">Rails · {props.live ? 'live' : 'last known'}</div>
