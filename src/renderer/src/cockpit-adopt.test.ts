@@ -10,7 +10,8 @@ import {
   adoptSpec,
   identState,
   nextSelection,
-  seenAgo
+  seenAgo,
+  unidentifiedNew
 } from './cockpit-adopt'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
@@ -232,5 +233,26 @@ describe('adoptability', () => {
     )
     expect(other).toMatchObject({ badge: 'UNKNOWN TYPE' })
     expect(other.note).toMatch(/doesn’t know \(7\)/)
+  })
+})
+
+describe('unidentifiedNew', () => {
+  const at = (nodes: NodeModelEntry[]) => nodeViews(model(nodes), [])
+
+  it('counts a node still unknown after the wait, and says when the next one is due', () => {
+    const views = at([fresh(41, { firstSeenAt: 0 }), fresh(43, { firstSeenAt: 3000 })])
+    expect(unidentifiedNew(views, 4000)).toEqual({ count: 0, nextAt: 5000 })
+    expect(unidentifiedNew(views, 5000)).toEqual({ count: 1, nextAt: 8000 })
+    expect(unidentifiedNew(views, 8000)).toEqual({ count: 2 })
+  })
+
+  it('counts a bridge or an unknown type at once; never an adoptable or offline node', () => {
+    const views = at([
+      fresh(44, { identified: 'bridge', firstSeenAt: 1000 }),
+      fresh(45, { identified: 'other', firstSeenAt: 1000 }),
+      fresh(41, { identified: 'panel', firstSeenAt: 0 }),
+      fresh(46, { availability: 'offline', firstSeenAt: 0 })
+    ])
+    expect(unidentifiedNew(views, 1000)).toEqual({ count: 2 })
   })
 })

@@ -3833,3 +3833,11 @@ select.input {
   font-size: 12px;
   line-height: 1.5;
 }
+/* new nodes that can't be adopted (yet): reachable for Ignore, never news (#87 review) */
+.adopt-cta--quiet {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--line);
+}
+.adopt-cta--quiet b {
+  color: var(--muted);
+}

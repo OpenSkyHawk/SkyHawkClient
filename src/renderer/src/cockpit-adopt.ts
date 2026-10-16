@@ -165,3 +165,28 @@ export function nextSelection(
   if (how === 'later') return after ?? null
   return after ?? queue.find((id) => id !== current) ?? null
 }
+
+/** A normal board reports its kind ~1 s after it appears; past this it is "unidentified". */
+export const IDENTIFY_WAIT_MS = 5000
+
+/**
+ * New nodes on the bus that can't be adopted and have had time to identify: still unknown after
+ * IDENTIFY_WAIT_MS, or a kind that can't be adopted (bridge, unknown type). The Cockpit shows them
+ * as a quiet line — not news (they never count as "New on the bus") — so the Adopt dialog, where
+ * they can be ignored, stays reachable. `nextAt` = when one still waiting will cross the line.
+ */
+export function unidentifiedNew(
+  views: NodeView[],
+  now: number
+): { count: number; nextAt?: number } {
+  let count = 0
+  let nextAt: number | undefined
+  for (const v of views) {
+    const e = v.entry
+    if (e.source !== 'new' || e.availability !== 'online' || adoptability(e).kind) continue
+    const due = (e.firstSeenAt ?? 0) + IDENTIFY_WAIT_MS
+    if (e.identified || due <= now) count++
+    else nextAt = Math.min(nextAt ?? due, due)
+  }
+  return nextAt === undefined ? { count } : { count, nextAt }
+}
