@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildNodeModel,
+  cameOnline,
   PDU_GROUP_POLL_CATCH_MS,
   PDU_GROUP_WINDOW_MS,
   type NodeModelInput
@@ -256,5 +257,14 @@ describe('differingCount', () => {
   it('is carried on the model', () => {
     const file: NodeMappingFile = { version: 1, nodes: { 1: { name: 'X' } }, ignored: [] }
     expect(buildNodeModel(input({ file })).differingCount).toBe(1)
+  })
+})
+
+describe('cameOnline', () => {
+  it('lists only nodes that were not present at the previous roster change', () => {
+    expect(cameOnline(new Set(), [st(1), st(2, false)])).toEqual([1]) // first roster
+    expect(cameOnline(new Set([1]), [st(1), st(2)])).toEqual([2]) // 1 still present
+    expect(cameOnline(new Set([1]), [st(1, false)])).toEqual([]) // gone
+    expect(cameOnline(new Set(), [st(1)])).toEqual([1]) // back after being gone
   })
 })

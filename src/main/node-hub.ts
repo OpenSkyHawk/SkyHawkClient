@@ -17,7 +17,7 @@ import {
   type MappingPatch,
   type NodeMappingFile
 } from '@shared/node-mapping'
-import { buildNodeModel, type NodeModel } from '@shared/node-rules'
+import { buildNodeModel, cameOnline, type NodeModel } from '@shared/node-rules'
 import { NODE_NAMES } from './reference/node-names.generated'
 import { NODE_FAULT_CODES } from './reference/node-status.generated'
 import {
@@ -45,6 +45,8 @@ export class NodeHub {
   private loaded?: LoadedMapping
   private telemPushedAt = 0
   private modelDirty = true
+  /** Present NODE_IDs at the last roster change, to tell "came back" from "still listed". */
+  private wasPresent = new Set<number>()
 
   constructor(
     private readonly emit: Emit,
@@ -63,6 +65,7 @@ export class NodeHub {
   /** New session: telemetry and first-seen times start over; the mapping persists. */
   reset(): void {
     this.telem.reset()
+    this.wasPresent.clear()
     this.telemPushedAt = 0
     this.modelDirty = true
   }
@@ -133,16 +136,17 @@ export class NodeHub {
   }
 
   /**
-   * A replaced / removed board that reports again is no longer hidden. If the save fails the
+   * A replaced / removed board that comes back online is no longer hidden. Only a transition
+   * counts: a board the bridge still lists (within its 3 s heartbeat timeout, or about to be
+   * removed) stays hidden through later polls. If the save fails the
    * board is still shown — it is reporting, so hiding it would be wrong — and the flag may come
    * back after a restart, which is the lesser problem.
    */
   private clearHiddenThatReported(): void {
-    const present = this.roster
-      .snapshot()
-      .filter((n) => n.present)
-      .map((n) => n.nodeId)
-    const next = clearReportedHidden(this.mapping(), present)
+    const roster = this.roster.snapshot()
+    const back = cameOnline(this.wasPresent, roster)
+    this.wasPresent = new Set(roster.filter((n) => n.present).map((n) => n.nodeId))
+    const next = clearReportedHidden(this.mapping(), back)
     try {
       this.save(next)
     } catch (err) {

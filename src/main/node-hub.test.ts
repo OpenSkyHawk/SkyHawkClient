@@ -121,6 +121,31 @@ describe('NodeHub', () => {
     expect(node41()).toMatchObject({ source: 'adopted', name: 'Left_Trim', pduId: 3 })
   })
 
+  it('a board hidden while still listed stays hidden until it actually comes back', () => {
+    const { h, roster } = hub()
+    const node2 = (present: boolean) =>
+      present ? '02010000000000000080000000' : '02000000000000000080000000'
+    roster.applyMessage(NODE_MSG, node2(true), 0)
+    h.flush(roster.takeDirty(), 0)
+    expect(h.hide(2, true).ok).toBe(true) // still listed (bridge has not timed it out)
+
+    roster.applyMessage(NODE_MSG, '01010000000000000080000000', 100) // another node's delta
+    h.flush(roster.takeDirty(), 100)
+    roster.beginBurst() // poll reply still lists node 2
+    roster.applyMessage(NODE_MSG, node2(true), 5000)
+    roster.applyMessage(NODE_END_MSG, '2', 5000)
+    h.flush(roster.takeDirty(), 5000)
+    expect(disk.file.nodes[2]).toEqual({ hidden: true })
+
+    roster.applyMessage(NODE_MSG, node2(false), 6000) // timed out
+    h.flush(roster.takeDirty(), 6000)
+    expect(disk.file.nodes[2]).toEqual({ hidden: true })
+
+    roster.applyMessage(NODE_MSG, node2(true), 9000) // board is back
+    h.flush(roster.takeDirty(), 9000)
+    expect(disk.file.nodes[2]).toBeUndefined()
+  })
+
   it('hiding a new node is refused and writes nothing', () => {
     const { h } = hub()
     expect(h.hide(41, true)).toEqual({

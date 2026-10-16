@@ -177,3 +177,12 @@ export function pduOutages(nodes: NodeModelEntry[]): PduOutage[] {
   }
   return out
 }
+
+/**
+ * NODE_IDs present now that were not present at the previous roster change: the nodes that just
+ * came (back) online. A node that stays present across updates is not in the list, which is what
+ * lets a still-listed board be hidden without the next poll un-hiding it.
+ */
+export function cameOnline(previous: ReadonlySet<number>, roster: NodeStatus[]): number[] {
+  return roster.filter((n) => n.present && !previous.has(n.nodeId)).map((n) => n.nodeId)
+}
