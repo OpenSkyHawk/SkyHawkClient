@@ -270,7 +270,7 @@ export function NodePanel(props: {
                     onChange={(ev) => setPduId(ev.target.value ? Number(ev.target.value) : null)}
                   >
                     <option value="">None</option>
-                    {powerZoneOptions(views).map((o) => (
+                    {powerZoneOptions(views, con, pduId).map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
                       </option>

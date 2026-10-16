@@ -261,14 +261,25 @@ export function consoleLabel(console: string | null): string {
   return CONSOLE_OPTIONS.find((c) => c.value === console)?.label ?? console ?? DASH
 }
 
-/** Placed PDUs a panel can be fed by, as `PDU_Left · Left console`. */
-export function powerZoneOptions(views: NodeView[]): { value: number; label: string }[] {
-  return views
-    .filter((v) => v.entry.kind === 'pdu' && v.entry.source !== 'new')
-    .map((v) => ({
-      value: v.entry.nodeId,
-      label: `${v.entry.name} · ${consoleLabel(v.entry.console)}`
-    }))
+/**
+ * The PDUs a panel on `console` can be fed by: the placed PDUs on that console (a PDU on the left
+ * console cannot power the instrument panel). None is always offered by the caller. A stored zone
+ * on another console (set before this rule, or the PDU moved) stays listed, marked, until changed.
+ */
+export function powerZoneOptions(
+  views: NodeView[],
+  console: string,
+  current: number | null
+): { value: number; label: string }[] {
+  const pdus = views.filter((v) => v.entry.kind === 'pdu' && v.entry.source !== 'new')
+  const out = pdus
+    .filter((v) => v.entry.console === console)
+    .map((v) => ({ value: v.entry.nodeId, label: v.entry.name }))
+  const stray = current === null ? undefined : pdus.find((v) => v.entry.nodeId === current)
+  if (stray && stray.entry.console !== console) {
+    out.push({ value: stray.entry.nodeId, label: `${stray.entry.name} (other console)` })
+  }
+  return out
 }
 
 /** Picking a console picks its first PDU (none when it has no PDU), as the board does. */

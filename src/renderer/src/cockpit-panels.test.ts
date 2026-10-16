@@ -313,11 +313,19 @@ describe('placement', () => {
     expect(consoleLabel('Aft')).toBe('Aft')
   })
 
-  it('power zones are placed PDUs only', () => {
-    expect(powerZoneOptions(views)).toEqual([
-      { value: 3, label: 'PDU_Left · Left console' },
-      { value: 5, label: 'PDU_Center · Instrument panel' },
-      { value: 6, label: 'PDU_Center · Instrument panel' }
+  it('power zones are the placed PDUs on the chosen console', () => {
+    expect(powerZoneOptions(views, 'Center', 5)).toEqual([
+      { value: 5, label: 'PDU_Center' },
+      { value: 6, label: 'PDU_Center' }
+    ])
+    expect(powerZoneOptions(views, 'Right', null)).toEqual([])
+  })
+
+  it('keeps a stored zone on another console listed, marked, until it is changed', () => {
+    expect(powerZoneOptions(views, 'Center', 3)).toEqual([
+      { value: 5, label: 'PDU_Center' },
+      { value: 6, label: 'PDU_Center' },
+      { value: 3, label: 'PDU_Left (other console)' }
     ])
   })
 
