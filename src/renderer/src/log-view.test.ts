@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest'
 import type { LogEvent } from '@shared/events'
-import { eventSourceLabel, fileName, filterEvents, mergeEvents, restoreEvents } from './log-view'
+import {
+  boardEventLine,
+  eventSourceLabel,
+  fileName,
+  filterEvents,
+  mergeEvents,
+  restoreEvents,
+  rowsThatFit
+} from './log-view'
+
+describe('Board events (Cockpit)', () => {
+  it('a node row is its name and event; the roster summary stands alone', () => {
+    expect(
+      boardEventLine({ nodeId: 4, name: 'PDU_Right', event: '5V UNDER-V raised', detail: '4.71 V' })
+    ).toBe('PDU_Right 5V UNDER-V raised · 4.71 V')
+    expect(boardEventLine({ nodeId: 27, name: 'Center_Clock', event: 'bus-off' })).toBe(
+      'Center_Clock bus-off'
+    )
+    expect(boardEventLine({ name: 'roster', event: '40 nodes online' })).toBe('40 nodes online')
+  })
+
+  it('shows whole rows only, at least one, at most max; unmeasured shows max', () => {
+    expect(rowsThatFit(200, 33, 30)).toBe(6) // 6.06 → 6, never a half row
+    expect(rowsThatFit(198, 33, 30)).toBe(6)
+    expect(rowsThatFit(197, 33, 30)).toBe(5)
+    expect(rowsThatFit(10, 33, 30)).toBe(1)
+    expect(rowsThatFit(5000, 33, 30)).toBe(30)
+    expect(rowsThatFit(200, 0, 30)).toBe(30)
+  })
+})
 
 const ev = (id: number, over: Partial<LogEvent> = {}): LogEvent => ({
   id,

@@ -58,6 +58,22 @@ export function restoreEvents(
   return [...byId.values()].sort((a, b) => b.id - a.id).slice(0, max)
 }
 
+// ── Cockpit › Board events ──────────────────────────────────────────────────
+
+/** One Board events line: `PDU_Right 5V UNDER-V raised · 4.71 V`; the roster summary alone. */
+export function boardEventLine(e: Pick<LogEvent, 'nodeId' | 'name' | 'event' | 'detail'>): string {
+  return e.nodeId === undefined ? eventText(e) : `${e.name} ${eventText(e)}`
+}
+
+/**
+ * Whole rows that fit a list `height` px tall, rows `rowHeight` px each — never a half row. Before
+ * a row has been measured (0), `max`; at least one, so a cramped box still says something.
+ */
+export function rowsThatFit(height: number, rowHeight: number, max: number): number {
+  if (rowHeight <= 0) return max
+  return Math.min(max, Math.max(1, Math.floor(height / rowHeight)))
+}
+
 /** `skyhawk-events-….tsv` from a full save path, for the footer's "Saved" note. */
 export function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
