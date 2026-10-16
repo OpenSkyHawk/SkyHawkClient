@@ -11,12 +11,11 @@ const { loadNodeMapping, saveNodeMapping, MappingSaveError } = await import('./n
 
 const file = (): string => join(userData.dir, 'node-mapping.json')
 const sample: NodeMappingFile = {
-  version: 1,
+  version: 2,
   nodes: {
-    1: { name: 'Armament' },
+    1: { name: 'Armament', lastSeen: '2026-10-14T21:14:00.000Z' },
     41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
-  },
-  ignored: [50]
+  }
 }
 
 describe('node-mapping.json', () => {
@@ -29,7 +28,7 @@ describe('node-mapping.json', () => {
   })
 
   it('a missing file loads as an empty, writable mapping', () => {
-    expect(loadNodeMapping()).toEqual({ file: { version: 1, nodes: {}, ignored: [] } })
+    expect(loadNodeMapping()).toEqual({ file: { version: 2, nodes: {} } })
   })
 
   it('round-trips, writing atomically (no temp file left behind)', () => {
@@ -40,14 +39,19 @@ describe('node-mapping.json', () => {
 
   it('moves a damaged file aside instead of letting the next save overwrite it', () => {
     writeFileSync(file(), '{"version":1,"nodes":{"1":{"name":"Arm')
-    expect(loadNodeMapping()).toEqual({ file: { version: 1, nodes: {}, ignored: [] } })
+    expect(loadNodeMapping()).toEqual({ file: { version: 2, nodes: {} } })
     const bad = readdirSync(userData.dir).filter((f) => f.startsWith('node-mapping.json.bad-'))
     expect(bad).toHaveLength(1)
     expect(readFileSync(join(userData.dir, bad[0]!), 'utf8')).toContain('"Arm')
   })
 
-  it("loads a newer client's file read-only, so it is never rewritten as v1", () => {
-    writeFileSync(file(), JSON.stringify({ ...sample, version: 2 }))
+  it('reads a v1 file (before #93) as v2: writable, its ignore list dropped', () => {
+    writeFileSync(file(), JSON.stringify({ version: 1, nodes: sample.nodes, ignored: [50] }))
+    expect(loadNodeMapping()).toEqual({ file: sample })
+  })
+
+  it("loads a newer client's file read-only, so it is never rewritten as v2", () => {
+    writeFileSync(file(), JSON.stringify({ ...sample, version: 3 }))
     expect(loadNodeMapping()).toEqual({
       file: sample,
       readOnly: 'node-mapping.json was written by a newer client'
@@ -57,8 +61,8 @@ describe('node-mapping.json', () => {
   it.skipIf(process.getuid?.() === 0)('throws MappingSaveError when the write fails', () => {
     saveNodeMapping(sample)
     chmodSync(userData.dir, 0o500) // read-only userData
-    expect(() => saveNodeMapping({ ...sample, ignored: [] })).toThrow(MappingSaveError)
-    expect(() => saveNodeMapping({ ...sample, ignored: [] })).toThrow(
+    expect(() => saveNodeMapping({ ...sample, nodes: {} })).toThrow(MappingSaveError)
+    expect(() => saveNodeMapping({ ...sample, nodes: {} })).toThrow(
       /^Could not save node mapping: /
     )
     chmodSync(userData.dir, 0o700)

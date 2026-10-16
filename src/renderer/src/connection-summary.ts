@@ -7,6 +7,7 @@ import {
   ATTENTION_SHOWN,
   attentionItems,
   healthBand,
+  lastSeenLabel,
   type NodeState,
   type NodeView
 } from './cockpit'
@@ -19,7 +20,11 @@ export interface SummaryRow {
   /** Chip text: `OFFLINE`, `BUS-OFF`, or the flags the board raised. */
   chip: string
   tone: 'err' | 'warn'
-  /** `#13 · PDU_Left · offline since 21:11:18` */
+  /**
+   * `#13 · PDU_Left · offline since 21:11:18`, or for a board remembered from an earlier session
+   * that hasn't reported since the link opened, `… · not seen this session · last seen 14 Oct,
+   * 21:13` — "offline since" would be the roster's time, not when it went (#93).
+   */
   meta: string
 }
 
@@ -60,14 +65,17 @@ export function nodesSummary(views: NodeView[], outages: PduOutage[]): NodesSumm
       const feed = e.pduId === null ? undefined : byId.get(e.pduId)
       meta.push(feed ? feed.name : 'no power zone')
     }
-    if (e.availability === 'offline' && e.offlineAt !== undefined) {
+    if (e.notSeen) {
+      meta.push('not seen this session')
+      if (e.lastSeenAt !== undefined) meta.push(`last seen ${lastSeenLabel(e.lastSeenAt)}`)
+    } else if (e.availability === 'offline' && e.offlineAt !== undefined) {
       meta.push(`offline since ${clock(e.offlineAt)}`)
     }
     return {
       nodeId: i.nodeId,
       name: i.name,
       state: i.state,
-      chip: i.outage ? 'OFFLINE' : i.flag,
+      chip: i.outage || e.notSeen ? 'OFFLINE' : i.flag,
       tone: i.state === 'off' ? 'err' : 'warn',
       meta: meta.join(' · ')
     }

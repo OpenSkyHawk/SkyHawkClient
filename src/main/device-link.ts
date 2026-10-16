@@ -193,6 +193,7 @@ export class DeviceLink {
 
   /** App quit. */
   shutdown(): void {
+    this.nodes.linkClosed() // remember when the boards on the bus were last seen (#93)
     for (const t of this.timers) clearInterval(t)
     this.timers = []
     this.teardown()
@@ -254,6 +255,7 @@ export class DeviceLink {
    * Calibration rides on the serial port, so it is unavailable until the link is back.
    */
   disconnect(): void {
+    this.nodes.linkClosed()
     this.teardown()
     this.setStatus({ state: 'disconnected' })
   }
@@ -273,8 +275,8 @@ export class DeviceLink {
 
   private onOpen(path: string): void {
     // A port open may be a different board, or the same one after an outage: node state starts
-    // over, together. What survives is persisted (node-mapping.json) — names, adopted and ignored
-    // nodes, hidden flags. Not on close: while unplugged the renderer shows the last state, dimmed.
+    // over, together. What survives is persisted (node-mapping.json) — names, adopted nodes, hidden
+    // flags, last-seen times. Not on close: while unplugged the renderer shows the last state, dimmed.
     this.roster.reset()
     this.nodes.reset()
     this.legacyNodesWarned = false
@@ -294,6 +296,7 @@ export class DeviceLink {
   }
 
   private onClose(): void {
+    this.nodes.linkClosed() // the boards on the bus were last seen now (#93)
     // Fail anything in flight and release held bytes: a reconnect must not resume
     // mid-candidate, and an awaiting caller would otherwise hang on a reply that cannot come.
     // The released bytes are a candidate that never completed — not a frame, therefore DCS

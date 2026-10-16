@@ -65,7 +65,7 @@ function otherSetupFile(): string {
       host: '10.0.0.2',
       psu: { mode: 'custom', preset: 'nx650', custom: { a12: 40 } }
     },
-    mapping: { version: 1, nodes: { 1: { name: 'Arm' } }, ignored: [52] },
+    mapping: { version: 2, nodes: { 1: { name: 'Arm' }, 52: { hidden: true } } },
     cache: {
       version: 1,
       boards: { A7: { confirmedAt: '2026-10-12T00:00:00Z', axes: { 0: axis(1, 2, 3) } } }
@@ -87,7 +87,7 @@ describe('ConfigTransfer', () => {
     dir = mkdtempSync(join(tmpdir(), 'skyhawk-transfer-'))
     state = {
       config: DEFAULT_CONFIG,
-      mapping: { version: 1, nodes: {}, ignored: [] },
+      mapping: { version: 2, nodes: {} },
       cache: {
         version: 1,
         boards: { A7: { confirmedAt: '2026-10-14T00:00:00Z', axes: { 2: axis(4, 5, 6) } } }
@@ -126,7 +126,7 @@ describe('ConfigTransfer', () => {
     expect(state.calls).toEqual(['mapping', 'calibration', 'config'])
     expect(state.config.host).toBe('127.0.0.1') // app settings were not picked
     expect(state.config.psu.mode).toBe('custom')
-    expect(state.mapping.ignored).toEqual([52])
+    expect(state.mapping.nodes[52]).toEqual({ hidden: true })
     expect(Object.keys(state.cache.boards.A7!.axes)).toEqual(['0', '2']) // merged, axis 2 kept
 
     // The backup holds the setup from before the import.

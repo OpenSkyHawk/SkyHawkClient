@@ -384,10 +384,10 @@ export const CTRL = {
   nodeMappingSet: 'node-mapping:set',
   nodeMappingAdopt: 'node-mapping:adopt',
   nodeMappingForget: 'node-mapping:forget',
+  nodeMappingResetNode: 'node-mapping:reset-node',
   nodeMappingReset: 'node-mapping:reset',
   nodeMappingResetPreview: 'node-mapping:reset-preview',
   nodeRegistry: 'nodes:registry',
-  nodeMappingIgnore: 'node-mapping:ignore',
   nodeMappingHide: 'node-mapping:hide',
   serialMonitor: 'serial:monitor',
   debugDumpPorts: 'debug:dump-ports',
@@ -450,20 +450,26 @@ export interface SkyhawkApi {
   setNodeMapping(nodeId: number, patch: MappingPatch): Promise<NodeMappingResult>
   /** Place a new NODE_ID (not in the registry); it stops being "new". */
   adoptNode(nodeId: number, spec: AdoptSpec): Promise<NodeMappingResult>
-  /** Drop an adopted node (new again if it reports) or a registry node's overrides. */
-  forgetNode(nodeId: number): Promise<NodeMappingResult>
   /**
-   * Every registry node back to its defaults; ignored and hidden are kept, and adopted nodes too
-   * unless `forgetAdopted`.
+   * Remove an offline board from your cockpit, keeping nothing; forgetting a PDU unlinks its
+   * boards. Refused while the board is online.
+   */
+  forgetNode(nodeId: number): Promise<NodeMappingResult>
+  /** One registry board back to its NODE_IDS.md name, console and power zone. */
+  resetNode(nodeId: number): Promise<NodeMappingResult>
+  /**
+   * Every registry node back to its defaults; hidden flags and last-seen times are kept, and
+   * adopted nodes too unless `forgetAdopted`.
    */
   resetNodeMapping(opts?: ResetOptions): Promise<NodeMappingResult>
   /** What resetNodeMapping would change, field by field — the review before a reset. */
   previewNodeReset(): Promise<ResetPreview>
   /** The bundled NODE_IDS registry (PanelBridge included) and the commit it came from. */
   getNodeRegistry(): Promise<NodeRegistryInfo>
-  /** Ignore permanently (true) or un-ignore (false). */
-  ignoreNode(nodeId: number, on: boolean): Promise<NodeMappingResult>
-  /** "Hidden until it reports again" on / off. Cleared automatically when the node reports. */
+  /**
+   * "Hidden until it reports again" on / off. Cleared automatically when the node reports; turning
+   * it on is refused while the board is online.
+   */
   hideNode(nodeId: number, on: boolean): Promise<NodeMappingResult>
   setSerialMonitor(on: boolean): Promise<void>
   dumpSerialPorts(): Promise<DebugDumpResult>

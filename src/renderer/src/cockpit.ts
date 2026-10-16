@@ -77,10 +77,21 @@ export interface NodeHealth {
   flag?: string
 }
 
+/** "14 Oct, 21:14": when a remembered board was last on the bus (#93). */
+export function lastSeenLabel(t: number): string {
+  return new Date(t).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
 /** Offline wins, then bus-off, then any flag the node (or, for a PDU, its pages) raised. */
 export function nodeHealth(e: NodeModelEntry, r: PduReadings = {}): NodeHealth {
   if (e.source === 'new') return { state: 'new', flag: 'NOT IN REGISTRY' }
   if (e.availability === 'unknown') return { state: 'unknown' }
+  if (e.notSeen) return { state: 'off', flag: 'NOT SEEN THIS SESSION' }
   if (e.availability === 'offline') return { state: 'off', flag: 'OFFLINE' }
   const st = e.status
   if (st?.boff) return { state: 'off', flag: 'BUS-OFF' }
@@ -337,14 +348,27 @@ export interface AttentionItem {
   flag: string
   /** A PDU outage: one item for the PDU and every node that dropped with it. */
   outage?: PduOutage
+  /** A new board on the bus that can't be adopted (#93): its cog opens the Adopt dialog. */
+  stray?: boolean
+}
+
+/** A new board that can't be adopted, and what Attention says about it (cockpit-adopt strayNew). */
+export interface StrayItem {
+  nodeId: number
+  flag: string
 }
 
 /**
  * Most severe first: PDU outages, then offline (incl. bus-off), then warnings — each by NODE_ID.
- * Nodes that dropped with their PDU are folded into its outage item. New nodes have their own
- * prompt; a PDU without readings is not an issue (its panel explains).
+ * Nodes that dropped with their PDU are folded into its outage item. New boards that can be
+ * adopted have their own prompt; ones that can't (`strays`) are warnings, after the rest. A PDU
+ * without readings is not an issue (its panel explains).
  */
-export function attentionItems(views: NodeView[], outages: PduOutage[]): AttentionItem[] {
+export function attentionItems(
+  views: NodeView[],
+  outages: PduOutage[],
+  strays: StrayItem[] = []
+): AttentionItem[] {
   const folded = new Set(outages.flatMap((o) => o.nodeIds))
   const items: (AttentionItem & { rank: number })[] = []
   for (const v of views) {
@@ -352,14 +376,28 @@ export function attentionItems(views: NodeView[], outages: PduOutage[]): Attenti
     if (state !== 'off' && state !== 'warn') continue
     const outage = outages.find((o) => o.pduId === v.entry.nodeId)
     if (!outage && folded.has(v.entry.nodeId)) continue
+    const e = v.entry
+    const seen =
+      e.notSeen && e.lastSeenAt !== undefined ? ` · last seen ${lastSeenLabel(e.lastSeenAt)}` : ''
     items.push({
-      key: `n-${v.entry.nodeId}`,
-      nodeId: v.entry.nodeId,
-      name: v.entry.name,
+      key: `n-${e.nodeId}`,
+      nodeId: e.nodeId,
+      name: e.name,
       state,
-      flag: outage ? `OFFLINE · ${affected(outage.nodeIds.length)}` : (flag ?? ''),
+      flag: outage ? `OFFLINE · ${affected(outage.nodeIds.length)}` : `${flag ?? ''}${seen}`,
       outage,
       rank: outage ? 0 : state === 'off' ? 1 : 2
+    })
+  }
+  for (const s of strays) {
+    items.push({
+      key: `s-${s.nodeId}`,
+      nodeId: s.nodeId,
+      name: `NODE_ID ${s.nodeId}`,
+      state: 'warn',
+      flag: s.flag,
+      stray: true,
+      rank: 3
     })
   }
   return items
@@ -374,7 +412,11 @@ export const ATTENTION_SHOWN = 3
 
 export interface HealthBand {
   online: number
-  /** Known nodes (registry + adopted, PDUs included); new nodes are not counted. */
+  /**
+   * Your cockpit's boards (registry + adopted, PDUs included), plus new boards on the bus that
+   * can't be adopted — those are active and a warning (#93). New boards waiting for Adopt are not
+   * counted.
+   */
   total: number
   warn: number
   off: number
@@ -413,13 +455,14 @@ export function totalWatts(views: NodeView[]): number | null {
   return w
 }
 
-export function healthBand(views: NodeView[]): HealthBand {
+export function healthBand(views: NodeView[], strays = 0): HealthBand {
   const known = views.filter((v) => v.entry.source !== 'new')
   const pdus = known.filter((v) => v.entry.kind === 'pdu')
   const b: HealthBand = {
-    online: known.filter((v) => v.health.state === 'on' || v.health.state === 'warn').length,
-    total: known.length,
-    warn: known.filter((v) => v.health.state === 'warn').length,
+    online:
+      known.filter((v) => v.health.state === 'on' || v.health.state === 'warn').length + strays,
+    total: known.length + strays,
+    warn: known.filter((v) => v.health.state === 'warn').length + strays,
     off: known.filter((v) => v.health.state === 'off').length,
     unknown: known.filter((v) => v.health.state === 'unknown').length,
     amps12: null,

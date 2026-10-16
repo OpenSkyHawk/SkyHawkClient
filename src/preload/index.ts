@@ -68,12 +68,12 @@ const api: SkyhawkApi = {
     ipcRenderer.invoke(CTRL.nodeMappingAdopt, nodeId, spec) as Promise<NodeMappingResult>,
   forgetNode: (nodeId) =>
     ipcRenderer.invoke(CTRL.nodeMappingForget, nodeId) as Promise<NodeMappingResult>,
+  resetNode: (nodeId) =>
+    ipcRenderer.invoke(CTRL.nodeMappingResetNode, nodeId) as Promise<NodeMappingResult>,
   resetNodeMapping: (opts) =>
     ipcRenderer.invoke(CTRL.nodeMappingReset, opts) as Promise<NodeMappingResult>,
   previewNodeReset: () => ipcRenderer.invoke(CTRL.nodeMappingResetPreview) as Promise<ResetPreview>,
   getNodeRegistry: () => ipcRenderer.invoke(CTRL.nodeRegistry) as Promise<NodeRegistryInfo>,
-  ignoreNode: (nodeId, on) =>
-    ipcRenderer.invoke(CTRL.nodeMappingIgnore, nodeId, on) as Promise<NodeMappingResult>,
   hideNode: (nodeId, on) =>
     ipcRenderer.invoke(CTRL.nodeMappingHide, nodeId, on) as Promise<NodeMappingResult>,
   setSerialMonitor: (on: boolean) => ipcRenderer.invoke(CTRL.serialMonitor, on) as Promise<void>,

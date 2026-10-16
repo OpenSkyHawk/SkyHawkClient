@@ -10,6 +10,7 @@ import {
   fmtPct,
   headroom,
   healthBand,
+  lastSeenLabel,
   newCount,
   nodeHealth,
   nodeViews,
@@ -100,8 +101,6 @@ const model = (nodes: NodeModelEntry[], outages: PduOutage[] = []): NodeModel =>
   nodes,
   outages,
   differingCount: 0,
-  ignored: [],
-  ignoredNodes: [],
   hidden: [],
   hiddenNodes: [],
   rosterComplete: true
@@ -349,6 +348,24 @@ describe('attentionItems', () => {
       attentionItems(nodeViews(model([pdu(3, 'Left', { readings: 'none' })]), []), [])
     ).toEqual([])
   })
+
+  it('a remembered board not seen this session says so, and when it last was (#93)', () => {
+    const t = Date.UTC(2026, 9, 14, 21, 14)
+    const nodes = [node(2, { availability: 'offline', notSeen: true, lastSeenAt: t })]
+    expect(attentionItems(nodeViews(model(nodes), []), []).map((i) => i.flag)).toEqual([
+      `NOT SEEN THIS SESSION · last seen ${lastSeenLabel(t)}`
+    ])
+  })
+
+  it('new boards that can’t be adopted are warnings after the rest; their cog reviews (#93)', () => {
+    const nodes = [node(1, { status: status(1, { epvf: true }) }), node(41, { source: 'new' })]
+    const strays = [{ nodeId: 44, flag: 'SECOND SIMGATEWAY · can’t be adopted' }]
+    const items = attentionItems(nodeViews(model(nodes), []), [], strays)
+    expect(items.map((i) => [i.name, i.state, i.flag, !!i.stray])).toEqual([
+      ['Node_1', 'warn', 'ERR-PASSIVE', false],
+      ['NODE_ID 44', 'warn', 'SECOND SIMGATEWAY · can’t be adopted', true]
+    ])
+  })
 })
 
 describe('healthBand', () => {
@@ -369,6 +386,11 @@ describe('healthBand', () => {
 
   it('counts known nodes only (new ones wait in their own prompt)', () => {
     expect([b.online, b.total, b.warn, b.off, b.unknown]).toEqual([4, 6, 1, 2, 0])
+  })
+
+  it('a new board that can’t be adopted is on the bus and a warning (#93)', () => {
+    const s = healthBand(nodeViews(model(nodes), telemetry), 1)
+    expect([s.online, s.total, s.warn, s.off]).toEqual([5, 7, 2, 2])
   })
 
   it('sums amps and watts over PDUs with readings; a negative offset reads as 0', () => {

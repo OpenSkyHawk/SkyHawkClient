@@ -3,7 +3,7 @@ import { parsePsuLimit, PSU_PRESETS, type PsuLimits } from '@shared/psu'
 import { useStore } from '../../store'
 import { ResetDialog } from './ResetDialog'
 import { Row, SectionHead } from './Row'
-import { hiddenRow, ignoredRow, resetRowDesc } from './settings-view'
+import { hiddenRow, resetRowDesc } from './settings-view'
 import { useNodeModel } from './useNodeModel'
 
 type LimitKey = keyof PsuLimits
@@ -105,8 +105,9 @@ function PowerSupply() {
 }
 
 /**
- * Nodes hidden from the Cockpit until they report again (#76). Un-hide brings one back now; a
- * hidden node also leaves this list on its own when it reports.
+ * Boards hidden from the Cockpit until they report again (#76; since #93 the only way to tidy
+ * the display — Ignore is gone). Un-hide brings one back now; a hidden board also leaves this list
+ * on its own when it reports.
  */
 function HiddenNodes() {
   const model = useNodeModel()
@@ -124,7 +125,7 @@ function HiddenNodes() {
   return (
     <>
       <div className="ig__head">
-        <span className="section-h">Hidden nodes</span>
+        <span className="section-h">Hidden boards</span>
         <span className="ig__n">{hidden.length || ''}</span>
         <button
           className="toolbtn"
@@ -156,75 +157,14 @@ function HiddenNodes() {
         {hidden.length === 0 && (
           <div className="set-row">
             <div className="set-row__desc">
-              No hidden nodes. “Hide until it reports again” in a node’s Cockpit panel lists it
-              here.
+              No hidden boards. Hide in an offline board’s Cockpit panel lists it here.
             </div>
           </div>
         )}
       </div>
       <div className={error ? 'set-err' : 'hint'} style={{ margin: '10px 2px 0' }}>
         {error ??
-          'Hidden = a removed or replaced board, kept off the Cockpit until it reports again. Un-hide brings it back now.'}
-      </div>
-    </>
-  )
-}
-
-function IgnoredNodes() {
-  const model = useNodeModel()
-  const [error, setError] = useState<string>()
-  const ignored = model?.ignoredNodes ?? []
-
-  const unignore = async (ids: number[]) => {
-    setError(undefined)
-    for (const id of ids) {
-      const r = await window.skyhawk?.ignoreNode(id, false)
-      if (r && !r.ok) return setError(r.error)
-    }
-  }
-
-  return (
-    <>
-      <div className="ig__head">
-        <span className="section-h">Ignored nodes</span>
-        <span className="ig__n">{ignored.length || ''}</span>
-        <button
-          className="toolbtn"
-          style={{ marginLeft: 'auto' }}
-          disabled={ignored.length === 0}
-          onClick={() => void unignore(ignored.map((n) => n.nodeId))}
-        >
-          Un-ignore all
-        </button>
-      </div>
-      <div className="set-card">
-        {ignored.map((n) => {
-          const row = ignoredRow(n)
-          return (
-            <div className="set-row ig" key={n.nodeId}>
-              <div className="ig__id">#{n.nodeId}</div>
-              <div style={{ flex: 1 }}>
-                <div className="set-row__label">{row.label}</div>
-                <div className="set-row__desc">{row.desc}</div>
-              </div>
-              <div>
-                <button className="browse" onClick={() => void unignore([n.nodeId])}>
-                  Un-ignore
-                </button>
-              </div>
-            </div>
-          )
-        })}
-        {ignored.length === 0 && (
-          <div className="set-row">
-            <div className="set-row__desc">
-              No ignored nodes. Ignoring a device in the Adopt dialog lists it here.
-            </div>
-          </div>
-        )}
-      </div>
-      <div className={error ? 'set-err' : 'hint'} style={{ margin: '10px 2px 0' }}>
-        {error ?? 'Un-ignored nodes show up again in “New on the bus” the next time they report.'}
+          'Hidden = a removed or replaced board, kept off the Cockpit while it’s offline. It comes back by itself when it reports again; Un-hide brings it back now. A board that’s online always shows — it’s active on the bus.'}
       </div>
     </>
   )
@@ -267,7 +207,6 @@ export function CockpitSection() {
       </div>
       <PowerSupply />
       <HiddenNodes />
-      <IgnoredNodes />
       {resetOpen && <ResetDialog model={model} onClose={() => setResetOpen(false)} />}
     </>
   )

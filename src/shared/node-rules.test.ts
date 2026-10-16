@@ -60,7 +60,23 @@ const telem = (
   }
 }
 
+const SEEN = '2026-10-14T21:14:00.000Z'
+/** Every registry board has reported in an earlier session — the cockpit these tests assume. */
+const everSeen = (file: NodeMappingFile): NodeMappingFile => {
+  const nodes = { ...file.nodes }
+  for (const id of defaults.keys()) nodes[id] = { lastSeen: SEEN, ...nodes[id] }
+  return { ...file, nodes }
+}
 const input = (over: Partial<NodeModelInput>): NodeModelInput => ({
+  roster: [],
+  seen: new Map(),
+  telemetry: [],
+  defaults,
+  ...over,
+  file: everSeen(over.file ?? EMPTY_MAPPING)
+})
+/** As input(), but registry boards are in your cockpit only if the file says so (#93). */
+const fresh = (over: Partial<NodeModelInput>): NodeModelInput => ({
   roster: [],
   seen: new Map(),
   telemetry: [],
@@ -72,15 +88,25 @@ const entry = (i: NodeModelInput, id: number) =>
   buildNodeModel(i).nodes.find((n) => n.nodeId === id)
 
 describe('availability', () => {
-  it('registry nodes are unknown until the first complete roster, then offline if missing', () => {
+  it('remembered boards are unknown until the first complete roster, then not seen if missing', () => {
     expect(entry(input({}), 1)?.availability).toBe('unknown')
     const after = input({ roster: [st(2)], rosterCompleteAt: 500 })
-    expect(entry(after, 1)).toMatchObject({
+    const e = entry(after, 1)
+    // Missing from this session's roster: not "offline since 500" — that is only when the roster
+    // came (#93). When it was last on the bus comes from node-mapping.json.
+    expect(e).toMatchObject({
       availability: 'offline',
-      offlineAt: 500,
-      offlineVia: 'roster'
+      notSeen: true,
+      lastSeenAt: Date.parse(SEEN)
     })
+    expect(e?.offlineAt).toBeUndefined()
     expect(entry(after, 2)?.availability).toBe('online')
+  })
+
+  it('a board the roster lists as gone this session is offline since then, not "not seen"', () => {
+    const after = input({ roster: [st(1, false)], rosterCompleteAt: 500 })
+    expect(entry(after, 1)).toMatchObject({ availability: 'offline', offlineAt: 500 })
+    expect(entry(after, 1)?.notSeen).toBeUndefined()
   })
 
   it('a node reported absent is offline with its own timing', () => {
@@ -94,23 +120,21 @@ describe('availability', () => {
     })
   })
 
-  it('hidden nodes are skipped (not offline), ignored nodes are left out entirely', () => {
-    const file: NodeMappingFile = { version: 1, nodes: { 2: { hidden: true } }, ignored: [1] }
+  it('hidden nodes are skipped (not offline)', () => {
+    const file: NodeMappingFile = { version: 2, nodes: { 2: { hidden: true } } }
     const m = buildNodeModel(input({ file, rosterCompleteAt: 0 }))
-    expect(m.nodes.map((n) => n.nodeId)).toEqual([3, 4, 5])
+    expect(m.nodes.map((n) => n.nodeId)).toEqual([1, 3, 4, 5])
     expect(m.hidden).toEqual([2])
-    expect(m.ignored).toEqual([1])
   })
 
   // Review of #85: Settings › Hidden nodes showed registry names, not what the Cockpit showed.
   it('lists each hidden node with the name and console the Cockpit showed', () => {
     const file: NodeMappingFile = {
-      version: 1,
+      version: 2,
       nodes: {
         2: { hidden: true, name: 'Nav_Repeater', console: 'Left' },
         41: { hidden: true, name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: 3 }
-      },
-      ignored: []
+      }
     }
     const m = buildNodeModel(input({ file, rosterCompleteAt: 0 }))
     expect(m.hidden).toEqual([2, 41])
@@ -121,7 +145,7 @@ describe('availability', () => {
   })
 
   it('a hidden registry node with no overrides keeps its registry name', () => {
-    const file: NodeMappingFile = { version: 1, nodes: { 2: { hidden: true } }, ignored: [] }
+    const file: NodeMappingFile = { version: 2, nodes: { 2: { hidden: true } } }
     expect(buildNodeModel(input({ file })).hiddenNodes).toEqual([
       { nodeId: 2, name: 'Right_Navigation', console: 'Right' }
     ])
@@ -145,13 +169,12 @@ describe('new-node detection', () => {
     expect(entry(i, 42)).toMatchObject({ source: 'new', kind: 'pdu', readings: 'live' })
   })
 
-  it('registry, adopted and ignored ids are never new', () => {
+  it('registry and adopted ids are never new', () => {
     const file: NodeMappingFile = {
-      version: 1,
-      nodes: { 41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' } },
-      ignored: [42]
+      version: 2,
+      nodes: { 41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' } }
     }
-    const m = buildNodeModel(input({ roster: [st(1), st(41), st(42)], file }))
+    const m = buildNodeModel(fresh({ roster: [st(1), st(41)], file }))
     expect(m.nodes.filter((n) => n.source === 'new')).toEqual([])
     const adopted = m.nodes.find((n) => n.nodeId === 41)
     expect(adopted).toMatchObject({ source: 'adopted', name: 'Trim' })
@@ -196,13 +219,12 @@ describe('PDU readings', () => {
 describe('PDU-offline grouping', () => {
   // PDU_Left (3) feeds 41, 42, 43.
   const file: NodeMappingFile = {
-    version: 1,
+    version: 2,
     nodes: {
       41: { name: 'A', console: 'Left', pduId: 3, kind: 'panel' },
       42: { name: 'B', console: 'Left', pduId: 3, kind: 'panel' },
       43: { name: 'C', console: 'Left', pduId: 3, kind: 'panel' }
-    },
-    ignored: []
+    }
   }
   const off = (at: number, via: 'delta' | 'roster' = 'delta'): NodeSeen => ({
     firstSeenAt: 0,
@@ -283,8 +305,18 @@ describe('PDU-offline grouping', () => {
     expect(m.outages[0]).toMatchObject({ pduId: 3, nodeIds: [41, 42, 43] })
   })
 
-  it('a PDU and its nodes all missing from the first roster group together', () => {
+  it('a PDU and its nodes all missing from the first roster: not seen, never an outage (#93)', () => {
     const m = buildNodeModel(input({ file, rosterCompleteAt: 2000 }))
+    expect(m.outages).toEqual([])
+    expect(m.nodes.filter((n) => [3, 41].includes(n.nodeId)).map((n) => n.notSeen)).toEqual([
+      true,
+      true
+    ])
+  })
+
+  it('a PDU and its nodes listed as gone in the first roster still group together', () => {
+    const roster = [st(3, false), st(41, false), st(42, false), st(43, false)]
+    const m = buildNodeModel(input({ file, roster, rosterCompleteAt: 2000 }))
     expect(m.outages.find((o) => o.pduId === 3)).toEqual({
       pduId: 3,
       nodeIds: [41, 42, 43],
@@ -309,36 +341,47 @@ describe('PDU-offline grouping', () => {
 
 describe('differingCount', () => {
   it('is carried on the model', () => {
-    const file: NodeMappingFile = { version: 1, nodes: { 1: { name: 'X' } }, ignored: [] }
+    const file: NodeMappingFile = { version: 2, nodes: { 1: { name: 'X' } } }
     expect(buildNodeModel(input({ file })).differingCount).toBe(1)
   })
 })
 
-describe('ignoredNodes', () => {
-  const file: NodeMappingFile = {
-    version: 1,
-    nodes: {},
-    ignored: [3, 47, 52, 58],
-    ignoredMeta: { 47: { at: '2026-10-12T10:00:00.000Z', kind: 'panel' } }
-  }
+describe('your cockpit (#93)', () => {
+  it('a registry board that never reported is not in the model at all', () => {
+    const m = buildNodeModel(fresh({ roster: [st(1)], rosterCompleteAt: 0 }))
+    expect(m.nodes.map((n) => n.nodeId)).toEqual([1]) // 2–5 are dictionary entries only
+    expect(m.outages).toEqual([])
+  })
 
-  it('names registry ids, keeps the recorded kind, and says when each was ignored', () => {
-    const m = buildNodeModel(input({ file, telemetry: [telem(52)] }))
-    expect(m.ignored).toEqual([3, 47, 52, 58])
-    expect(m.ignoredNodes).toEqual([
-      { nodeId: 3, name: 'PDU_Left', kind: 'pdu' },
-      { nodeId: 47, kind: 'panel', ignoredAt: '2026-10-12T10:00:00.000Z' },
-      { nodeId: 52, kind: 'pdu' }, // sends _NODE_TELEM, so a PDU
-      { nodeId: 58 } // nothing known
+  it('remembered, placed, renamed and adopted boards are in it; online ones join', () => {
+    const file: NodeMappingFile = {
+      version: 2,
+      nodes: {
+        2: { lastSeen: SEEN },
+        4: { name: 'PDU_Starboard' },
+        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+      }
+    }
+    const m = buildNodeModel(fresh({ file, roster: [st(1), st(50)], rosterCompleteAt: 0 }))
+    expect(m.nodes.map((n) => [n.nodeId, n.source])).toEqual([
+      [1, 'registry'], // reporting now: joins (main records lastSeen)
+      [2, 'registry'],
+      [4, 'registry'],
+      [41, 'adopted'],
+      [50, 'new']
     ])
   })
 
-  it('last seen is this session only: reporting now, offline since, or not seen', () => {
-    const seen = new Map<number, NodeSeen>([[52, { firstSeenAt: 1, offlineAt: 5000 }]])
-    const m = buildNodeModel(input({ file, roster: [st(47), st(52, false)], seen }))
-    const last = Object.fromEntries(m.ignoredNodes.map((n) => [n.nodeId, n.lastSeen]))
-    expect(last).toEqual({ 3: undefined, 47: 'now', 52: 5000, 58: undefined })
-    expect(m.nodes.map((n) => n.nodeId)).not.toContain(47) // still left out of the roster view
+  it('a registry PDU sending pages has reported: it is in your cockpit', () => {
+    const m = buildNodeModel(fresh({ telemetry: [telem(3)], rosterCompleteAt: 0 }))
+    expect(m.nodes.map((n) => n.nodeId)).toEqual([3])
+    expect(buildNodeModel(fresh({ telemetry: [telem(52)] })).nodes).toEqual([]) // unmapped: no
+  })
+
+  it('a board whose PDU is not in your cockpit keeps its zone (No power zone on the plan)', () => {
+    const m = buildNodeModel(fresh({ roster: [st(2)], rosterCompleteAt: 0 }))
+    expect(m.nodes).toHaveLength(1)
+    expect(m.nodes[0]).toMatchObject({ nodeId: 2, pduId: 4 })
   })
 })
 

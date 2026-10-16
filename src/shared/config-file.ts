@@ -205,38 +205,29 @@ function diffNodes(
 ): { rows: DiffRow[]; nodes: number } {
   const a = effectiveMapping(defaults, cur)
   const b = effectiveMapping(defaults, next)
-  const curIgnored = new Set(cur.ignored)
-  const nextIgnored = new Set(next.ignored)
   const zone = (map: Map<number, MappedNode>, pduId: number | null) =>
     pduId === null ? '—' : (map.get(pduId)?.name ?? defaults.get(pduId)?.name ?? `Node ${pduId}`)
   const where = (map: Map<number, MappedNode>, m: MappedNode) =>
     `${m.console} · ${zone(map, m.pduId)}`
   const rows: DiffRow[] = []
   const changed = new Set<number>()
-  const ids = [...new Set([...a.keys(), ...b.keys(), ...cur.ignored, ...next.ignored])].sort(
-    (x, y) => x - y
-  )
+  const ids = [...new Set([...a.keys(), ...b.keys()])].sort((x, y) => x - y)
   for (const id of ids) {
     const push = (k: string, from: string, to: string) => {
       rows.push({ k, from, to })
       changed.add(id)
     }
-    const wasIgnored = curIgnored.has(id)
-    const isIgnored = nextIgnored.has(id)
-    if (wasIgnored !== isIgnored)
-      push(`#${id}`, wasIgnored ? 'ignored' : 'not ignored', isIgnored ? 'ignored' : 'not ignored')
     const x = a.get(id)
     const y = b.get(id)
     if (!defaults.has(id)) {
       // Adopted (or not) as a whole: name, console and power zone together.
       const show = (map: Map<number, MappedNode>, m?: MappedNode) =>
         m ? `${m.name} · ${where(map, m)}` : 'not adopted'
-      if (wasIgnored || isIgnored) continue // an ignored id is shown by its ignore row only
       if (show(a, x) !== show(b, y)) push(`#${id}`, show(a, x), show(b, y))
       continue
     }
     const d = defaults.get(id)!
-    if (!x || !y) continue // ignored registry node: its overrides are not shown
+    if (!x || !y) continue
     if (x.name !== y.name) push(`${d.name} · name`, x.name, y.name)
     if (x.console !== y.console) push(`${d.name} · console`, x.console, y.console)
     if (zone(a, x.pduId) !== zone(b, y.pduId))

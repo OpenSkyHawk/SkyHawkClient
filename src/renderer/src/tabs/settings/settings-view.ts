@@ -1,13 +1,9 @@
 // Settings text decisions (#67), pure so they are unit-tested: what each Cockpit / About row says.
 import type { NodeRegistryInfo } from '@shared/ipc'
-import type { NodeKind } from '@shared/node-mapping'
-import type { HiddenNode, IgnoredNode, NodeModel } from '@shared/node-rules'
+import type { HiddenNode, NodeModel } from '@shared/node-rules'
 import { consoleLabel } from '../../cockpit-panels'
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
-
-const kindLabel = (k: NodeKind | undefined) =>
-  k === 'pdu' ? 'PDU' : k === 'panel' ? 'Panel group' : 'Unknown kind'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 /** Local YYYY-MM-DD. */
@@ -37,31 +33,14 @@ export function resetButtonLabel(nodes: number, forget: number): string {
   return forget > 0 ? `${reset} + forget ${forget}` : reset
 }
 
-export interface IgnoredRow {
+export interface ListRow {
   nodeId: number
   label: string
   desc: string
 }
 
-/** One Ignored nodes row. Last seen is this session only, and says so when it does not know. */
-export function ignoredRow(n: IgnoredNode, now = Date.now()): IgnoredRow {
-  const kind = kindLabel(n.kind)
-  const ignored = n.ignoredAt ? `ignored ${day(Date.parse(n.ignoredAt))}` : 'ignored earlier'
-  const seen =
-    n.lastSeen === 'now'
-      ? 'on the bus now'
-      : n.lastSeen === undefined
-        ? 'not seen this session'
-        : `offline since ${day(n.lastSeen) === day(now) ? clock(n.lastSeen) : day(n.lastSeen)}`
-  return {
-    nodeId: n.nodeId,
-    label: n.name ? `${n.name} · ${kind}` : kind,
-    desc: `${ignored} · ${seen}`
-  }
-}
-
-/** One Hidden nodes row (#76): the name and console the Cockpit showed for it. */
-export function hiddenRow(n: HiddenNode): IgnoredRow {
+/** One Hidden boards row (#76): the name and console the Cockpit showed for it. */
+export function hiddenRow(n: HiddenNode): ListRow {
   return {
     nodeId: n.nodeId,
     label: n.name,
@@ -94,7 +73,6 @@ export function registryOnBus(
 ): OnBus {
   if (nodeId === 0)
     return linkUp ? { text: 'serial link', dot: 'on' } : { text: 'no device', dot: '' }
-  if (model?.ignored.includes(nodeId)) return { text: 'ignored', dot: '' }
   if (model?.hidden.includes(nodeId)) return { text: 'hidden', dot: '' }
   const e = model?.nodes.find((n) => n.nodeId === nodeId)
   if (e?.availability === 'online') return { text: 'yes', dot: 'on' }

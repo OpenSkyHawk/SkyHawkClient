@@ -41,12 +41,19 @@ export interface NodeModelEntry {
    * yet. Adopt, the new-device counts and the event log key on this, never on `kind`.
    */
   identified?: NodeIdentity
-  /** 'new' = in the roster but neither in the registry, adopted nor ignored. */
+  /** 'new' = in the roster but neither in the registry nor adopted. */
   source: 'registry' | 'adopted' | 'new'
   availability: NodeAvailability
-  /** While offline: when the client learned of it (the first complete roster for a never-seen node). */
+  /** While offline this session: when the client learned of it. Absent for `notSeen`. */
   offlineAt?: number
   offlineVia?: 'delta' | 'roster'
+  /**
+   * A board remembered from an earlier session (#93) that the bridge has not listed since the link
+   * opened: offline, but not since any time this session knows — `lastSeenAt` says when it was.
+   */
+  notSeen?: boolean
+  /** When it was last on the bus, from node-mapping.json (any session); absent if never recorded. */
+  lastSeenAt?: number
   /** Last roster entry, when the node has ever reported. */
   status?: NodeStatus
   /** New nodes: when this session first saw it. Not persisted. */
@@ -64,25 +71,9 @@ export interface PduOutage {
   pduId: number
   /** The fed nodes that dropped with it. */
   nodeIds: number[]
-  /** Fed nodes in total (excluding hidden / ignored), for "N of M". */
+  /** Fed nodes in total (excluding hidden ones), for "N of M". */
   fedCount: number
   at: number
-}
-
-/** One ignored NODE_ID, as Settings › Ignored nodes lists it. */
-export interface IgnoredNode {
-  nodeId: number
-  /** Registry or adopted name, when the id has one. */
-  name?: string
-  /** Recorded when ignored, else what it is known as now; absent when nothing says. */
-  kind?: NodeKind
-  /** When it was ignored (ISO 8601); absent for ids ignored before this was recorded. */
-  ignoredAt?: string
-  /**
-   * This session only (not persisted): 'now' while reporting, else when the client learned it was
-   * offline; absent when the bridge has not listed it since the session started.
-   */
-  lastSeen?: 'now' | number
 }
 
 /** One hidden node, as Settings › Hidden nodes lists it: what the Cockpit called it. */
@@ -99,9 +90,6 @@ export interface NodeModel {
   outages: PduOutage[]
   /** Registry nodes that differ from their defaults (what "Reset all" changes). */
   differingCount: number
-  ignored: number[]
-  /** The same ids with what Settings shows for each. */
-  ignoredNodes: IgnoredNode[]
   /** Hidden until they report again — left out of `nodes`. */
   hidden: number[]
   /** The same ids with the name and console the Cockpit showed (the hidden nodes are not in `nodes`). */
@@ -123,15 +111,23 @@ export interface NodeModelInput {
   file: NodeMappingFile
 }
 
+/**
+ * Your cockpit (#93): boards that have reported at least once (remembered in node-mapping.json) or
+ * that you adopted, plus whatever is on the bus now — a registry board joins the moment it reports
+ * (a status row, or a PDU's pages) and a new NODE_ID shows as new. A registry board that never reported is a dictionary entry only:
+ * not drawn, not counted, never offline.
+ */
 export function buildNodeModel(i: NodeModelInput): NodeModel {
   const mapping = effectiveMapping(i.defaults, i.file)
-  const ignored = new Set(i.file.ignored)
   const roster = new Map(i.roster.map((n) => [n.nodeId, n]))
   const telem = new Map(i.telemetry.map((t) => [t.nodeId, t]))
   const complete = i.rosterCompleteAt !== undefined
+  const known = [...mapping.values()].filter((m) => m.known).map((m) => m.nodeId)
+  // PDU pages are a report too: a registry or adopted PDU sending them is in your cockpit.
+  const sending = [...telem.keys()].filter((id) => mapping.has(id))
   // The bridge's own row (node 0, v3) is this client's link, not a cockpit node.
-  const ids = [...new Set([...mapping.keys(), ...roster.keys()])]
-    .filter((id) => !ignored.has(id) && id !== BRIDGE_NODE_ID)
+  const ids = [...new Set([...known, ...roster.keys(), ...sending])]
+    .filter((id) => id !== BRIDGE_NODE_ID)
     .sort((a, b) => a - b)
 
   const nodes: NodeModelEntry[] = []
@@ -154,7 +150,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
       stored: m?.kind
     })
     const kind: NodeKind = identified === 'pdu' ? 'pdu' : 'panel'
-    // A mapped node missing from the first complete roster is offline — there is no "waiting".
+    // A board missing from the first complete roster is offline — there is no "waiting".
     const availability: NodeAvailability = st
       ? st.present
         ? 'online'
@@ -173,9 +169,13 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
       differs: m?.differs ?? false
     }
     if (availability === 'offline') {
-      e.offlineAt = seen?.offlineAt ?? i.rosterCompleteAt
-      e.offlineVia = seen?.offlineVia ?? 'roster'
+      if (st) {
+        e.offlineAt = seen?.offlineAt ?? i.rosterCompleteAt
+        e.offlineVia = seen?.offlineVia ?? 'roster'
+      } else e.notSeen = true // remembered, not listed since the link opened
     }
+    const lastSeenAt = m?.lastSeen ? Date.parse(m.lastSeen) : NaN
+    if (!Number.isNaN(lastSeenAt)) e.lastSeenAt = lastSeenAt
     if (identified) e.identified = identified
     if (st) e.status = st
     if (source === 'new' && seen) e.firstSeenAt = seen.firstSeenAt
@@ -190,8 +190,6 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     nodes,
     outages: pduOutages(nodes),
     differingCount: differingCount(i.defaults, i.file),
-    ignored: [...i.file.ignored],
-    ignoredNodes: i.file.ignored.map((id) => ignoredNode(i, id, roster.get(id), telem.get(id))),
     hidden,
     hiddenNodes,
     rosterComplete: complete
@@ -199,32 +197,6 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
 }
 
 /** Did `n` drop together with `pdu`? Both must be offline with a known time. */
-function ignoredNode(
-  i: NodeModelInput,
-  nodeId: number,
-  st: NodeStatus | undefined,
-  t: NodeTelemSnapshot | undefined
-): IgnoredNode {
-  const meta = i.file.ignoredMeta?.[nodeId]
-  const d = i.defaults.get(nodeId)
-  const o = i.file.nodes[nodeId]
-  const e: IgnoredNode = { nodeId }
-  const name = d?.name ?? o?.name
-  if (name) e.name = name
-  const known = resolveKind({
-    reported: st?.nodeKind,
-    pduTelemetry: t?.isPdu,
-    stored: d?.kind ?? o?.kind
-  })
-  const kind = meta?.kind ?? (isAdoptableKind(known) ? known : undefined)
-  if (kind) e.kind = kind
-  if (meta) e.ignoredAt = meta.at
-  const offlineAt = i.seen.get(nodeId)?.offlineAt
-  if (st?.present) e.lastSeen = 'now'
-  else if (offlineAt !== undefined) e.lastSeen = offlineAt
-  return e
-}
-
 export function droppedTogether(n: NodeModelEntry, pdu: NodeModelEntry): boolean {
   if (n.offlineAt === undefined || pdu.offlineAt === undefined) return false
   const d = n.offlineAt - pdu.offlineAt

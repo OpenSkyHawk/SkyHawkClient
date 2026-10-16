@@ -11,7 +11,8 @@ import {
   identState,
   nextSelection,
   seenAgo,
-  unidentifiedNew
+  strayFlag,
+  strayNew
 } from './cockpit-adopt'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
@@ -49,8 +50,6 @@ const model = (nodes: NodeModelEntry[]): NodeModel => ({
   nodes,
   outages: [],
   differingCount: 0,
-  ignored: [],
-  ignoredNodes: [],
   hidden: [],
   hiddenNodes: [],
   rosterComplete: true
@@ -219,7 +218,7 @@ describe('adoptability', () => {
   it('still identifying: no kind, an "Identifying…" note', () => {
     expect(adoptability(fresh(41))).toEqual({
       badge: 'IDENTIFYING',
-      note: 'Identifying… waiting for the board to report its type.'
+      note: 'Identifying… waiting for the board to report its type. If it doesn’t within a few seconds, it shows in Attention as an issue.'
     })
   })
 
@@ -236,23 +235,39 @@ describe('adoptability', () => {
   })
 })
 
-describe('unidentifiedNew', () => {
+describe('strayNew', () => {
   const at = (nodes: NodeModelEntry[]) => nodeViews(model(nodes), [])
+  const ids = (r: ReturnType<typeof strayNew>) => r.strays.map((v) => v.entry.nodeId)
 
-  it('counts a node still unknown after the wait, and says when the next one is due', () => {
+  it('waits IDENTIFY_WAIT_MS for an unknown board, and says when the next one is due', () => {
     const views = at([fresh(41, { firstSeenAt: 0 }), fresh(43, { firstSeenAt: 3000 })])
-    expect(unidentifiedNew(views, 4000)).toEqual({ count: 0, nextAt: 5000 })
-    expect(unidentifiedNew(views, 5000)).toEqual({ count: 1, nextAt: 8000 })
-    expect(unidentifiedNew(views, 8000)).toEqual({ count: 2 })
+    expect(strayNew(views, 4000)).toEqual({ strays: [], nextAt: 5000 })
+    const r = strayNew(views, 5000)
+    expect(ids(r)).toEqual([41])
+    expect(r.nextAt).toBe(8000)
+    expect(strayNew(views, 8000).nextAt).toBeUndefined()
+    expect(ids(strayNew(views, 8000))).toEqual([41, 43])
   })
 
-  it('counts a bridge or an unknown type at once; never an adoptable or offline node', () => {
+  it('takes a bridge or an unknown type at once; never an adoptable or offline node', () => {
     const views = at([
       fresh(44, { identified: 'bridge', firstSeenAt: 1000 }),
       fresh(45, { identified: 'other', firstSeenAt: 1000 }),
       fresh(41, { identified: 'panel', firstSeenAt: 0 }),
       fresh(46, { availability: 'offline', firstSeenAt: 0 })
     ])
-    expect(unidentifiedNew(views, 1000)).toEqual({ count: 2 })
+    expect(ids(strayNew(views, 1000))).toEqual([44, 45])
+  })
+})
+
+describe('strayFlag', () => {
+  it('says what it is and that it can’t be adopted', () => {
+    expect(strayFlag(fresh(44, { identified: 'bridge' }))).toBe(
+      'SECOND SIMGATEWAY · can’t be adopted'
+    )
+    expect(strayFlag(fresh(45, { identified: 'other' }))).toBe(
+      'UNKNOWN BOARD TYPE · can’t be adopted'
+    )
+    expect(strayFlag(fresh(43))).toBe('UNIDENTIFIED · can’t be adopted')
   })
 })

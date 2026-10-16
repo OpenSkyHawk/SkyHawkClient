@@ -33,9 +33,8 @@ const st = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
 })
 
 const NAMES: Record<number, string> = { 2: 'Right_Navigation', 4: 'PDU_Right', 7: 'Left_Fuel' }
-const lookup = (ignored: number[] = []): NodeLookup => ({
+const lookup = (): NodeLookup => ({
   name: (id) => NAMES[id] ?? `Node ${id}`,
-  ignored: (id) => ignored.includes(id),
   isNew: (id) => !(id in NAMES),
   unmapped: (id) => !(id in NAMES)
 })
@@ -45,8 +44,8 @@ const short = (es: LogEventInput[]): string[] =>
   es.map((e) => `${e.name}: ${eventText(e)} [${e.severity}]`)
 
 /** A tracker past its baseline, with `nodes` online. */
-function live(nodes: NodeStatus[], ignored: number[] = []): NodeEventTracker {
-  const t = new NodeEventTracker(lookup(ignored))
+function live(nodes: NodeStatus[]): NodeEventTracker {
+  const t = new NodeEventTracker(lookup())
   t.status(nodes, NODE_MSG, '', 0)
   t.status(nodes, NODE_END_MSG, '_NODE_STATUS_END', 10)
   return t
@@ -183,15 +182,6 @@ describe('NodeEventTracker — changes', () => {
       'Node 41: new on the bus · not in registry [new]'
     ])
   })
-
-  it('ignored nodes get no events and are not counted', () => {
-    const t = new NodeEventTracker(lookup([7]))
-    expect(t.status([st(2), st(7, { boff: true })], NODE_MSG, '', 0)).toEqual([])
-    expect(short(t.status([st(2), st(7)], NODE_END_MSG, '', 1))).toEqual([
-      'roster: 1 node online [info]'
-    ])
-    expect(t.status([st(2), st(7, { present: false })], NODE_MSG, '', 20)).toEqual([])
-  })
 })
 
 describe('NodeEventTracker — PDU telemetry', () => {
@@ -254,9 +244,7 @@ describe('NodeEventTracker — PDU telemetry', () => {
     ])
   })
 
-  it('reset forgets the flags; ignored and unknown pages are skipped', () => {
-    const t = new NodeEventTracker(lookup([4]))
-    expect(t.telemetry(rail(2, RAIL_FLAG.UNDER_V), '', 0)).toEqual([])
+  it('reset forgets the flags; unknown pages are skipped', () => {
     const u = new NodeEventTracker(lookup())
     expect(u.telemetry({ nodeId: 4, kind: 'unknown', page: 9, body: '00' }, '', 0)).toEqual([])
     u.telemetry(rail(2, RAIL_FLAG.UNDER_V), '', 0)

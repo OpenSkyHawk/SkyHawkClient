@@ -15,10 +15,12 @@ import { useModalFocus } from '../../useModalFocus'
 import { Dot } from './Dot'
 
 /**
- * New on the bus (#77): name and place each NODE_ID the registry does not know, ignore it for
- * good, or leave it for later. Esc, the scrim and Close shut it; focus returns to Adopt….
+ * New on the bus (#77): name and place each NODE_ID the registry does not know, or leave it for
+ * later. A board that can't be adopted is listed so you can see what it is; it stays in Attention
+ * while it's on the bus (#93 — no Ignore). Esc, the scrim and Close shut it; focus returns to
+ * what opened it. `initial` selects a NODE_ID (a stray's Attention cog).
  */
-export function AdoptDialog(props: { views: NodeView[]; onClose: () => void }) {
+export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClose: () => void }) {
   const ref = useRef<HTMLElement>(null)
   useModalFocus(ref, props.onClose)
 
@@ -27,7 +29,9 @@ export function AdoptDialog(props: { views: NodeView[]; onClose: () => void }) {
   // The queue as the dialog showed it, so "next" keeps its place as nodes leave it.
   const order = useRef<number[]>(ids)
   for (const id of ids) if (!order.current.includes(id)) order.current.push(id)
-  const [sel, setSel] = useState<number | null>(ids[0] ?? null)
+  const [sel, setSel] = useState<number | null>(
+    props.initial !== undefined && ids.includes(props.initial) ? props.initial : (ids[0] ?? null)
+  )
   const current = queue.find((v) => v.entry.nodeId === sel) ?? queue[0]
 
   // NODE_IDs that dropped off the bus while the dialog was open (power-cycle to identify).
@@ -37,7 +41,7 @@ export function AdoptDialog(props: { views: NodeView[]; onClose: () => void }) {
     if (off.some((id) => !dropped.has(id))) setDropped(new Set([...dropped, ...off]))
   }, [queue, dropped])
 
-  // Nothing left to adopt (all adopted, ignored or gone): close.
+  // Nothing left to adopt (all adopted or gone): close.
   const { onClose } = props
   useEffect(() => {
     if (queue.length === 0) onClose()
@@ -69,7 +73,7 @@ export function AdoptDialog(props: { views: NodeView[]; onClose: () => void }) {
             <div className="ad__t">New on the bus</div>
             <div className="ad__s">
               {queue.length} device{queue.length === 1 ? '' : 's'} this computer hasn’t linked yet.
-              Nodes listed in NODE_IDS.md are placed automatically.
+              Boards in NODE_IDS.md join your cockpit by themselves the first time they report.
             </div>
           </div>
           <button className="toolbtn" style={{ marginLeft: 'auto' }} onClick={props.onClose}>
@@ -129,7 +133,7 @@ function AdoptForm(props: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const ev = adoptEvidence(props.view)
-  // Only a node identified as a PDU or a panel group gets the form; anything else can be ignored.
+  // Only a node identified as a PDU or a panel group gets the form; anything else is shown as-is.
   const able = adoptability(e)
   const kind = able.kind
   const spec = kind ? adoptSpec(kind, { name, console: con, pduId }) : null
@@ -254,13 +258,9 @@ function AdoptForm(props: {
         <button
           className="toolbtn"
           style={{ marginLeft: 'auto' }}
-          title="Never show this NODE_ID again (undo in Settings › Cockpit › Ignored nodes)"
           disabled={busy}
-          onClick={() => void run(() => window.skyhawk?.ignoreNode(id, true))}
+          onClick={props.onLater}
         >
-          Ignore
-        </button>
-        <button className="toolbtn" disabled={busy} onClick={props.onLater}>
           Later
         </button>
         <button

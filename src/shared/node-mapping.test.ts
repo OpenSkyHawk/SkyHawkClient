@@ -7,12 +7,13 @@ import {
   EMPTY_MAPPING,
   forgetNode,
   MappingError,
+  markSeen,
   registryDefaults,
   resetMapping,
+  resetNode,
   resetPreview,
   sanitizeNodeMapping,
   setHidden,
-  setIgnored,
   setNodeMapping,
   type AdoptSpec,
   type MappingPatch,
@@ -64,8 +65,8 @@ describe('sanitizeNodeMapping', () => {
     const f = sanitizeNodeMapping({
       version: 9,
       nodes: {
-        1: { name: '  Arm  ', console: 7, pduId: 99, hidden: 'yes' },
-        2: { pduId: null, hidden: true },
+        1: { name: '  Arm  ', console: 7, pduId: 99, hidden: 'yes', lastSeen: 'yesterday' },
+        2: { pduId: null, hidden: true, lastSeen: '2026-10-14T21:14:00.000Z' },
         9: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' },
         64: { name: 'out of range' },
         abc: { name: 'bad key' },
@@ -74,14 +75,23 @@ describe('sanitizeNodeMapping', () => {
       ignored: [12, 12, 0, 70, 'x', 11]
     })
     expect(f).toEqual({
-      version: 1,
+      version: 2,
       nodes: {
         1: { name: 'Arm' },
-        2: { pduId: null, hidden: true },
+        2: { pduId: null, hidden: true, lastSeen: '2026-10-14T21:14:00.000Z' },
         9: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
-      },
-      ignored: [11, 12]
+      }
     })
+  })
+
+  it('reads a v1 file as v2 and discards its ignore list (#93: Ignore never shipped)', () => {
+    const f = sanitizeNodeMapping({
+      version: 1,
+      nodes: { 2: { name: 'Nav' } },
+      ignored: [2, 47],
+      ignoredMeta: { 47: { at: '2026-10-12T10:00:00.000Z' } }
+    })
+    expect(f).toEqual({ version: 2, nodes: { 2: { name: 'Nav' } } })
   })
 })
 
@@ -96,9 +106,32 @@ describe('effectiveMapping / setNodeMapping', () => {
       kind: 'panel',
       source: 'registry',
       differs: false,
-      hidden: false
+      hidden: false,
+      known: false
     })
     expect(differingCount(defaults, EMPTY_MAPPING)).toBe(0)
+  })
+
+  it('known = in your cockpit: reported (lastSeen), placed, renamed or hidden; adopted always', () => {
+    const f: NodeMappingFile = {
+      version: 2,
+      nodes: {
+        1: { lastSeen: '2026-10-14T21:14:00.000Z' },
+        2: { pduId: null },
+        4: { hidden: true },
+        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+      }
+    }
+    const m = effectiveMapping(defaults, f)
+    expect([1, 2, 3, 4, 5, 41].map((id) => m.get(id)?.known)).toEqual([
+      true,
+      true,
+      false, // PDU_Left never reported: a dictionary entry only
+      true,
+      false,
+      true
+    ])
+    expect(m.get(1)).toMatchObject({ lastSeen: '2026-10-14T21:14:00.000Z', differs: false })
   })
 
   it('stores only differences, and a value set back to its default is removed', () => {
@@ -170,53 +203,51 @@ describe('adopt / forget', () => {
     })
     f = setNodeMapping(f, defaults, 41, { name: 'Trim' })
     expect(f.nodes[41]?.name).toBe('Trim')
-    expect(forgetNode(f, 41).nodes[41]).toBeUndefined()
+    expect(forgetNode(f, defaults, 41).nodes[41]).toBeUndefined()
   })
 
-  it('a PDU has no power zone, adopting un-ignores, and registry ids cannot be adopted', () => {
-    const ignored = setIgnored(EMPTY_MAPPING, 42, true)
-    const f = adoptNode(ignored, defaults, 42, {
+  it('a PDU has no power zone, and registry ids cannot be adopted', () => {
+    const f = adoptNode(EMPTY_MAPPING, defaults, 42, {
       name: 'PDU_Aux',
       console: 'Left',
       pduId: 3,
       kind: 'pdu'
     })
     expect(f.nodes[42]?.pduId).toBeNull()
-    expect(f.ignored).toEqual([])
     expect(() =>
       adoptNode(EMPTY_MAPPING, defaults, 1, { name: 'x', console: 'y', pduId: null, kind: 'panel' })
     ).toThrow(/registry/)
   })
 })
 
-describe('reset / ignore / hidden', () => {
+describe('reset / hidden', () => {
+  const seen = '2026-10-14T21:14:00.000Z'
   const busy: NodeMappingFile = {
-    version: 1,
+    version: 2,
     nodes: {
       1: { name: 'Arm', hidden: true },
-      2: { console: 'Left' },
+      2: { console: 'Left', lastSeen: seen },
       41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
-    },
-    ignored: [50]
+    }
   }
 
-  it('reset clears registry overrides but keeps adopted nodes, hidden flags and ignores', () => {
+  it('reset clears registry overrides but keeps adopted nodes, hidden flags and last-seen', () => {
     expect(differingCount(defaults, busy)).toBe(2)
     const f = resetMapping(busy, defaults)
     expect(f).toEqual({
-      version: 1,
-      nodes: { 1: { hidden: true }, 41: busy.nodes[41] },
-      ignored: [50]
+      version: 2,
+      nodes: { 1: { hidden: true }, 2: { lastSeen: seen }, 41: busy.nodes[41] }
     })
     expect(differingCount(defaults, f)).toBe(0)
   })
 
-  it('ignored ids drop out of the effective mapping until un-ignored', () => {
-    const f = setIgnored(busy, 41, true)
-    expect(f.ignored).toEqual([41, 50])
-    expect(effectiveMapping(defaults, f).has(41)).toBe(false)
-    expect(setIgnored(f, 41, true)).toBe(f)
-    expect(effectiveMapping(defaults, setIgnored(f, 41, false)).has(41)).toBe(true)
+  it('resetNode: one registry board back to its defaults, still in your cockpit', () => {
+    expect(resetNode(busy, defaults, 2).nodes[2]).toEqual({ lastSeen: seen })
+    expect(resetNode(busy, defaults, 1).nodes[1]).toEqual({ hidden: true })
+    expect(resetNode(EMPTY_MAPPING, defaults, 3)).toBe(EMPTY_MAPPING) // nothing to reset
+    expect(() => resetNode(busy, defaults, 41)).toThrow(
+      new MappingError('Only a registry board has defaults')
+    )
   })
 
   it('hidden is set, cleared, and cleared again when the node reports', () => {
@@ -229,7 +260,7 @@ describe('reset / ignore / hidden', () => {
 
   it('only registry and adopted nodes can be hidden; un-hiding works for any id', () => {
     expect(() => setHidden(EMPTY_MAPPING, defaults, 41, true)).toThrow(
-      new MappingError('Only a registry or adopted node can be hidden — ignore a new node instead')
+      new MappingError('Only a board in your cockpit can be hidden')
     )
     const adoptedOnly = adoptNode(EMPTY_MAPPING, defaults, 41, {
       name: 'Trim',
@@ -240,45 +271,110 @@ describe('reset / ignore / hidden', () => {
     expect(
       effectiveMapping(defaults, setHidden(adoptedOnly, defaults, 41, true)).get(41)?.hidden
     ).toBe(true)
-    const stray: NodeMappingFile = { version: 1, nodes: { 41: { hidden: true } }, ignored: [] }
+    const stray: NodeMappingFile = { version: 2, nodes: { 41: { hidden: true } } }
     expect(setHidden(stray, defaults, 41, false).nodes).toEqual({})
   })
 })
 
+describe('forget (#93)', () => {
+  const seen = '2026-10-14T21:14:00.000Z'
+
+  it('keeps nothing: a registry board leaves your cockpit until it reports again', () => {
+    const f: NodeMappingFile = {
+      version: 2,
+      nodes: { 2: { name: 'Nav', hidden: true, lastSeen: seen } }
+    }
+    const g = forgetNode(f, defaults, 2)
+    expect(g.nodes).toEqual({})
+    expect(effectiveMapping(defaults, g).get(2)).toMatchObject({
+      known: false,
+      name: 'Right_Navigation'
+    })
+  })
+
+  it('a PDU: the boards in your cockpit it fed lose the link, whatever the default', () => {
+    const f: NodeMappingFile = {
+      version: 2,
+      nodes: {
+        2: { lastSeen: seen }, // registry default zone = PDU_Right (4)
+        4: { lastSeen: seen },
+        41: { name: 'Trim', console: 'Right', pduId: 4, kind: 'panel' },
+        43: { name: 'Lamp', console: 'Right', pduId: 3, kind: 'panel' }
+      }
+    }
+    const g = forgetNode(f, defaults, 4)
+    expect(g.nodes).toEqual({
+      2: { lastSeen: seen, pduId: null },
+      41: { name: 'Trim', console: 'Right', pduId: null, kind: 'panel' },
+      43: f.nodes[43]
+    })
+    expect(effectiveMapping(defaults, g).get(2)?.pduId).toBeNull()
+    // Links are not restored when it comes back.
+    expect(effectiveMapping(defaults, markSeen(g, defaults, [4], seen)).get(2)?.pduId).toBeNull()
+  })
+
+  it('a PDU: a registry board not in your cockpit is left alone', () => {
+    const f: NodeMappingFile = { version: 2, nodes: { 4: { lastSeen: seen } } }
+    expect(forgetNode(f, defaults, 4).nodes).toEqual({}) // Right_Navigation never reported
+  })
+
+  it('uses what the board reports for its kind when given', () => {
+    const f: NodeMappingFile = {
+      version: 2,
+      nodes: { 41: { name: 'Trim', console: 'Right', pduId: 42, kind: 'panel' } }
+    }
+    expect(forgetNode(f, defaults, 42).nodes[41]?.pduId).toBe(42) // nothing says 42 is a PDU
+    expect(forgetNode(f, defaults, 42, () => 'pdu').nodes[41]?.pduId).toBeNull()
+  })
+})
+
+describe('markSeen (#93)', () => {
+  const at = '2026-10-16T12:00:00.000Z'
+
+  it('a registry board joins your cockpit the first time it reports', () => {
+    const f = markSeen(EMPTY_MAPPING, defaults, [2], at)
+    expect(f.nodes).toEqual({ 2: { lastSeen: at } })
+    expect(effectiveMapping(defaults, f).get(2)?.known).toBe(true)
+  })
+
+  it('records adopted boards too, never a new NODE_ID', () => {
+    const adopted = adoptNode(EMPTY_MAPPING, defaults, 41, {
+      name: 'Trim',
+      console: 'Left',
+      pduId: null,
+      kind: 'panel'
+    })
+    const f = markSeen(adopted, defaults, [41, 50], at)
+    expect(f.nodes[41]?.lastSeen).toBe(at)
+    expect(f.nodes[50]).toBeUndefined()
+    expect(markSeen(EMPTY_MAPPING, defaults, [50], at)).toBe(EMPTY_MAPPING)
+  })
+})
+
 describe('renderer input: on/off values and no-op changes', () => {
-  it('ignore and hide accept only a real boolean', () => {
+  it('hide accepts only a real boolean', () => {
     for (const bad of ['no', 'false', 1, undefined, null]) {
       const on = bad as unknown as boolean
-      expect(() => setIgnored(EMPTY_MAPPING, 41, on)).toThrow(
-        new MappingError('Invalid on/off value')
-      )
       expect(() => setHidden(EMPTY_MAPPING, defaults, 2, on)).toThrow(
         new MappingError('Invalid on/off value')
       )
     }
-    expect(setIgnored(EMPTY_MAPPING, 41, true).ignored).toEqual([41])
     expect(setHidden(EMPTY_MAPPING, defaults, 2, true).nodes).toEqual({ 2: { hidden: true } })
   })
 
   it('forget checks the NODE_ID', () => {
     for (const bad of [NaN, 0, 64, '3']) {
-      expect(() => forgetNode(EMPTY_MAPPING, bad as number)).toThrow(MappingError)
+      expect(() => forgetNode(EMPTY_MAPPING, defaults, bad as number)).toThrow(MappingError)
     }
   })
 
   it('a change that changes nothing returns the same object (no write)', () => {
-    const f: NodeMappingFile = {
-      version: 1,
-      nodes: { 1: { name: 'Arm', hidden: true } },
-      ignored: [50]
-    }
-    expect(forgetNode(f, 41)).toBe(f)
+    const f: NodeMappingFile = { version: 2, nodes: { 1: { name: 'Arm', hidden: true } } }
+    expect(forgetNode(f, defaults, 41)).toBe(f)
     expect(setHidden(f, defaults, 1, true)).toBe(f)
     expect(setHidden(f, defaults, 2, false)).toBe(f)
-    expect(setIgnored(f, 50, true)).toBe(f)
-    expect(setIgnored(f, 41, false)).toBe(f)
     expect(setNodeMapping(f, defaults, 1, { name: 'Arm' })).toBe(f)
-    expect(forgetNode(f, 1).nodes).toEqual({})
+    expect(forgetNode(f, defaults, 1).nodes).toEqual({})
   })
 })
 
@@ -301,14 +397,13 @@ describe('power zones', () => {
     expect(setNodeMapping(EMPTY_MAPPING, defaults, 3, { pduId: null })).toBe(EMPTY_MAPPING)
   })
 
-  it('a panel is zoned only to a registry or adopted PDU that is not ignored', () => {
+  it('a panel is zoned only to a registry or adopted PDU', () => {
     const notPdu = new MappingError('Power zone must be a PDU')
     const set = (f: NodeMappingFile, pduId: number) => () =>
       setNodeMapping(f, defaults, 1, { pduId })
     expect(set(EMPTY_MAPPING, 1)).toThrow(notPdu) // itself
     expect(set(EMPTY_MAPPING, 2)).toThrow(notPdu) // another panel
     expect(set(EMPTY_MAPPING, 42)).toThrow(notPdu) // not adopted
-    expect(set(setIgnored(EMPTY_MAPPING, 3, true), 3)).toThrow(notPdu) // ignored PDU
     expect(set(EMPTY_MAPPING, 3)().nodes[1]).toEqual({ pduId: 3 }) // registry PDU
     expect(set(withAux, 42)().nodes[1]).toEqual({ pduId: 42 }) // adopted PDU
     expect(setNodeMapping(EMPTY_MAPPING, defaults, 1, { pduId: null }).nodes[1]).toEqual({
@@ -327,78 +422,32 @@ describe('power zones', () => {
 })
 
 describe('differingCount matches what Reset changes', () => {
-  it('counts an ignored registry node with overrides, since Reset clears it', () => {
-    const f: NodeMappingFile = { version: 1, nodes: { 2: { name: 'Nav' } }, ignored: [2] }
-    expect(differingCount(defaults, f)).toBe(1)
-    const reset = resetMapping(f, defaults)
-    expect(reset.nodes).toEqual({})
-    expect(differingCount(defaults, reset)).toBe(0)
-  })
-
   it('a reset with nothing to reset returns the same object (no write)', () => {
     const f: NodeMappingFile = {
-      version: 1,
+      version: 2,
       nodes: {
-        1: { hidden: true },
+        1: { hidden: true, lastSeen: '2026-10-14T21:14:00.000Z' },
         41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
-      },
-      ignored: [50]
+      }
     }
     expect(differingCount(defaults, f)).toBe(0)
     expect(resetMapping(f, defaults)).toBe(f)
   })
 })
 
-describe('ignore metadata', () => {
-  const at = '2026-10-12T10:00:00.000Z'
-
-  it('is recorded with a new ignore and dropped on un-ignore or adopt', () => {
-    const f = setIgnored(EMPTY_MAPPING, 47, true, { at, kind: 'panel' })
-    expect(f.ignoredMeta).toEqual({ 47: { at, kind: 'panel' } })
-    expect(setIgnored(f, 47, true, { at: '2027-01-01T00:00:00.000Z' })).toBe(f) // first ignore wins
-    expect(setIgnored(f, 47, false)).toEqual({ version: 1, nodes: {}, ignored: [] })
-    const g = adoptNode(f, defaults, 47, {
-      name: 'Trim',
-      console: 'Left',
-      pduId: null,
-      kind: 'panel'
-    })
-    expect(g.ignored).toEqual([])
-    expect(g.ignoredMeta).toBeUndefined()
-  })
-
-  it('sanitize keeps entries only for ignored ids with a real date', () => {
-    const f = sanitizeNodeMapping({
-      version: 1,
-      nodes: {},
-      ignored: [47, 52],
-      ignoredMeta: {
-        47: { at, kind: 'gadget' },
-        52: { at: 'yesterday' },
-        58: { at } // not ignored
-      }
-    })
-    expect(f.ignoredMeta).toEqual({ 47: { at } })
-    expect(sanitizeNodeMapping({ ignored: [47], ignoredMeta: 'x' })).not.toHaveProperty(
-      'ignoredMeta'
-    )
-  })
-})
-
 describe('reset preview and forgetting adopted nodes', () => {
   const file: NodeMappingFile = {
-    version: 1,
+    version: 2,
     nodes: {
       1: { name: 'Arm', pduId: 3, hidden: true },
       2: { console: 'Left' },
       4: { name: 'PDU_R' }, // a PDU renamed: zones pointing at it show the new name
       41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' },
       55: { hidden: true } // stray flag on an unknown id
-    },
-    ignored: [2]
+    }
   }
 
-  it('lists every changed field, ignored registry nodes included, with zones by name', () => {
+  it('lists every changed field, with zones by name', () => {
     const p = resetPreview(defaults, file)
     expect(p.nodeCount).toBe(differingCount(defaults, file))
     expect(p.rows).toEqual([
@@ -417,30 +466,14 @@ describe('reset preview and forgetting adopted nodes', () => {
     expect(resetPreview(defaults, EMPTY_MAPPING)).toEqual({ rows: [], nodeCount: 0, adopted: [] })
   })
 
-  it('forgetAdopted drops the listed adopted nodes only; stray flags and the ignore list stay', () => {
+  it('forgetAdopted drops the listed adopted nodes only; stray flags stay', () => {
     expect(resetMapping(file, defaults, { forgetAdopted: true })).toEqual({
-      version: 1,
-      nodes: { 1: { hidden: true }, 55: { hidden: true } },
-      ignored: [2]
+      version: 2,
+      nodes: { 1: { hidden: true }, 55: { hidden: true } }
     })
-    const adoptedOnly: NodeMappingFile = { version: 1, nodes: { 41: file.nodes[41]! }, ignored: [] }
+    const adoptedOnly: NodeMappingFile = { version: 2, nodes: { 41: file.nodes[41]! } }
     expect(resetMapping(adoptedOnly, defaults)).toBe(adoptedOnly) // nothing to reset
     expect(resetMapping(adoptedOnly, defaults, { forgetAdopted: true }).nodes).toEqual({})
-  })
-
-  it('an ignored adopted node is neither listed nor forgotten', () => {
-    const trim = file.nodes[41]!
-    const both: NodeMappingFile = {
-      version: 1,
-      nodes: { 20: trim, 21: { ...trim, name: 'Trim_B' }, 55: { hidden: true } },
-      ignored: [21]
-    }
-    expect(resetPreview(defaults, both).adopted.map((a) => a.nodeId)).toEqual([20])
-    const after = resetMapping(both, defaults, { forgetAdopted: true })
-    expect(after.nodes).toEqual({ 21: both.nodes[21], 55: { hidden: true } })
-    expect(after.ignored).toEqual([21])
-    // Only ignored / stray entries and nothing differing: no write at all.
-    expect(resetMapping(after, defaults, { forgetAdopted: true })).toBe(after)
   })
 
   it('removes exactly what the preview lists', () => {

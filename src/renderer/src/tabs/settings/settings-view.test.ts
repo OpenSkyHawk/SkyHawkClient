@@ -3,7 +3,6 @@ import type { NodeRegistryInfo } from '@shared/ipc'
 import type { NodeModel, NodeModelEntry } from '@shared/node-rules'
 import {
   hiddenRow,
-  ignoredRow,
   importDoneText,
   importRowKey,
   importSubtitle,
@@ -12,9 +11,6 @@ import {
   resetButtonLabel,
   resetRowDesc
 } from './settings-view'
-
-// Local times, so the expectations hold in any timezone.
-const NOW = new Date(2026, 9, 15, 21, 30).getTime()
 
 describe('reset texts', () => {
   it('describes the row and labels the confirm button', () => {
@@ -25,32 +21,6 @@ describe('reset texts', () => {
     expect(resetButtonLabel(1, 2)).toBe('Reset 1 node + forget 2')
     expect(resetButtonLabel(0, 1)).toBe('Forget 1 adopted node')
     expect(resetButtonLabel(0, 0)).toBe('Reset') // nothing to do: never "Forget 0 …"
-  })
-})
-
-describe('ignoredRow', () => {
-  const at = new Date(2026, 9, 12, 10, 0).toISOString()
-
-  it('names the node and its kind, and when it was ignored', () => {
-    expect(ignoredRow({ nodeId: 3, name: 'PDU_Left', kind: 'pdu', ignoredAt: at }, NOW)).toEqual({
-      nodeId: 3,
-      label: 'PDU_Left · PDU',
-      desc: 'ignored 2026-10-12 · not seen this session'
-    })
-    expect(ignoredRow({ nodeId: 47, kind: 'panel', lastSeen: 'now' }, NOW)).toMatchObject({
-      label: 'Panel group',
-      desc: 'ignored earlier · on the bus now'
-    })
-    expect(ignoredRow({ nodeId: 58 }, NOW).label).toBe('Unknown kind')
-  })
-
-  it('last seen shows a time today and a date before that', () => {
-    const today = new Date(2026, 9, 15, 9, 5).getTime()
-    const before = new Date(2026, 9, 14, 23, 59).getTime()
-    expect(ignoredRow({ nodeId: 47, lastSeen: today }, NOW).desc).toMatch(/offline since 09:05$/)
-    expect(ignoredRow({ nodeId: 47, lastSeen: before }, NOW).desc).toMatch(
-      /offline since 2026-10-14$/
-    )
   })
 })
 
@@ -78,7 +48,6 @@ describe('registry', () => {
       ({ nodeId, availability }) as NodeModelEntry
     const model = {
       nodes: [e(1, 'online'), e(2, 'offline'), e(3, 'unknown')],
-      ignored: [4],
       hidden: [5]
     } as unknown as NodeModel
     const col = (id: number, m?: NodeModel, up = true) => registryOnBus(id, m, up)
@@ -88,7 +57,7 @@ describe('registry', () => {
       'yes',
       'offline',
       '—',
-      'ignored',
+      '—', // never reported: not in your cockpit (#93)
       'hidden'
     ])
     expect(col(1, undefined).text).toBe('—')
