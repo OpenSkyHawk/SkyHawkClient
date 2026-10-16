@@ -163,6 +163,18 @@ describe('NodeEventTracker — changes', () => {
     ])
   })
 
+  it('a new node coming back in a later port session gets an online row (review of #86)', () => {
+    const t = live([st(2)])
+    t.status([st(2), st(41)], NODE_MSG, '', 20) // "new on the bus"
+    t.reset() // port reopens with 41 unplugged
+    t.status([st(2)], NODE_MSG, '', 30)
+    expect(short(t.status([st(2)], NODE_END_MSG, '', 31))).toEqual(['roster: 1 node online [info]'])
+    expect(short(t.status([st(2), st(41)], NODE_MSG, '', 40))).toEqual(['Node 41: online [info]'])
+    expect(short(t.status([st(2), st(41, { present: false })], NODE_MSG, '', 50))).toEqual([
+      'Node 41: offline · no heartbeat [error]'
+    ])
+  })
+
   it('a new node seen at baseline still gets its row', () => {
     const t = new NodeEventTracker(lookup())
     expect(short(t.status([st(41)], NODE_MSG, '', 0))).toEqual([

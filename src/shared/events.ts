@@ -229,8 +229,8 @@ export class NodeEventTracker {
         raw
       })
     }
-    const isNew = this.lookup.isNew(id)
-    if (n.present && isNew && !this.newSeen.has(id)) {
+    const emittedNew = n.present && this.lookup.isNew(id) && !this.newSeen.has(id)
+    if (emittedNew) {
       this.newSeen.add(id)
       ev('new', 'new on the bus', 'not in registry')
     }
@@ -239,9 +239,10 @@ export class NodeEventTracker {
       // A live delta is the bridge's heartbeat timeout; a roster end finds a node missing from it.
       ev('error', 'offline', isEnd ? 'missing from roster' : 'no heartbeat')
     } else if (n.present && !wasPresent) {
-      // A first sighting: the baseline counts it in its summary row, a new node has its own row.
+      // A first sighting the baseline counts in its summary row, or that just made its "new" row,
+      // needs no "online" too. A new node seen in an earlier port session does: it has no other row.
       const first = p === undefined
-      if (!first || !(this.baseline || isNew)) ev('info', 'online')
+      if (!first || !(this.baseline || emittedNew)) ev('info', 'online')
     }
     return this.flagsFrom(wasPresent ? p : undefined, n, ev, out)
   }
