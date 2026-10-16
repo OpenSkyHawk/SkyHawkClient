@@ -14,7 +14,8 @@ import {
   pduBoardRows,
   pduFaultBoxes,
   pduRailRows,
-  powerZoneOptions
+  powerZoneOptions,
+  reportAge
 } from './cockpit-panels'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
@@ -107,6 +108,16 @@ const model = (nodes: NodeModelEntry[]): NodeModel => ({
 })
 
 const view = (e: NodeModelEntry, t: NodeTelemSnapshot[] = []) => nodeViews(model([e]), t)[0]!
+
+describe('reportAge', () => {
+  it('ticks between the bridge’s 5 s reports, and says when it stopped', () => {
+    const e = node(1, { reportedAt: 10_000 })
+    expect(reportAge(e, 13_400)).toBe('updated 3 s ago')
+    expect(reportAge(e, 130_000)).toBe('updated 2 min ago')
+    expect(reportAge({ ...e, availability: 'offline' }, 40_000)).toBe('last report 30 s ago')
+    expect(reportAge(node(1), 40_000)).toBe('') // never reported this session
+  })
+})
 
 describe('boardActions', () => {
   const off = { availability: 'offline' as const }

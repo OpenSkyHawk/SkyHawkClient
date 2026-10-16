@@ -56,6 +56,8 @@ export interface NodeModelEntry {
   lastSeenAt?: number
   /** Last roster entry, when the node has ever reported. */
   status?: NodeStatus
+  /** When `status` last arrived while the node was present (this session). */
+  reportedAt?: number
   /** New nodes: when this session first saw it. Not persisted. */
   firstSeenAt?: number
   /** Online PDUs: 'none' = status but no fresh telemetry (never, or > TELEM_STALE_MS). */
@@ -178,6 +180,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     if (!Number.isNaN(lastSeenAt)) e.lastSeenAt = lastSeenAt
     if (identified) e.identified = identified
     if (st) e.status = st
+    if (seen?.reportedAt !== undefined) e.reportedAt = seen.reportedAt
     if (source === 'new' && seen) e.firstSeenAt = seen.firstSeenAt
     if (kind === 'pdu') {
       e.everHadReadings = t?.isPdu ?? false

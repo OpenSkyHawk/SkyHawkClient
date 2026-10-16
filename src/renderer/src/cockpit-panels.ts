@@ -90,6 +90,18 @@ function notSeenBox(e: NodeModelEntry): FaultBox {
   }
 }
 
+/**
+ * How fresh "Reported by the node" is: the bridge resends the roster every 5 s, so the values
+ * change in steps — this ticks between them instead of inventing values. "updated 3 s ago" while it
+ * reports; "last report 2 min ago" once it stopped; nothing when this session never heard from it.
+ */
+export function reportAge(e: NodeModelEntry, now: number): string {
+  if (e.reportedAt === undefined) return ''
+  const s = Math.max(0, Math.floor((now - e.reportedAt) / 1000))
+  const ago = s < 60 ? `${s} s ago` : `${Math.floor(s / 60)} min ago`
+  return e.availability === 'online' ? `updated ${ago}` : `last report ${ago}`
+}
+
 // ── fault box ───────────────────────────────────────────────────────────────
 
 export interface FaultBox {

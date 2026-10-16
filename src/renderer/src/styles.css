@@ -3529,6 +3529,15 @@ button.tile2:hover {
   font-size: 10px;
   margin-bottom: 4px;
 }
+/* "· updated 3 s ago" after a section heading: how fresh the board's report is (#93) */
+.sh__age {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-3);
+}
 .sh__head {
   display: flex;
   align-items: center;

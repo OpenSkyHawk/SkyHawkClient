@@ -109,14 +109,15 @@ describe('availability', () => {
     expect(entry(after, 1)?.notSeen).toBeUndefined()
   })
 
-  it('a node reported absent is offline with its own timing', () => {
+  it('a node reported absent is offline with its own timing, and its last report kept', () => {
     const seen = new Map<number, NodeSeen>([
-      [1, { firstSeenAt: 0, offlineAt: 900, offlineVia: 'delta' }]
+      [1, { firstSeenAt: 0, reportedAt: 400, offlineAt: 900, offlineVia: 'delta' }]
     ])
     expect(entry(input({ roster: [st(1, false)], seen }), 1)).toMatchObject({
       availability: 'offline',
       offlineAt: 900,
-      offlineVia: 'delta'
+      offlineVia: 'delta',
+      reportedAt: 400
     })
   })
 

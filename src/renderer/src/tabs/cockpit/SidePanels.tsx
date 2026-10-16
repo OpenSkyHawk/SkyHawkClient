@@ -14,6 +14,7 @@ import {
   pduFaultBoxes,
   pduRailRows,
   powerZoneOptions,
+  reportAge,
   type FaultBox
 } from '../../cockpit-panels'
 import { useModalFocus } from '../../useModalFocus'
@@ -310,6 +311,17 @@ function BoardFooter(props: {
 
 const pv = (live: boolean, mv?: number) => (mv !== undefined && live ? (mv / 1000).toFixed(2) : '—')
 
+/** The clock, once a second while `on` — for "updated N s ago". */
+function useNow(on: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!on) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [on])
+  return now
+}
+
 // ── panel group ─────────────────────────────────────────────────────────────
 
 export function NodePanel(props: {
@@ -330,6 +342,8 @@ export function NodePanel(props: {
   const [pduId, setPduId] = useState<number | null>(e.pduId)
   const call = useMappingCall(props.onClose)
   const placed = e.source !== 'new'
+  const now = useNow(props.live && tab === 'status')
+  const age = props.live ? reportAge(e, now) : 'last known'
 
   const where = placed
     ? `${consoleLabel(e.console)} · ${pdu ? pdu.entry.name : 'no power zone'}`
@@ -368,7 +382,9 @@ export function NodePanel(props: {
             <Fault key={b.title} box={b} />
           ))}
           <div className="sh__sec">
-            <div className="section-h">Reported by the node{props.live ? '' : ' · last known'}</div>
+            <div className="section-h">
+              Reported by the node{age && <span className="sh__age">· {age}</span>}
+            </div>
             <Rows rows={nodeStatusRows(v)} />
           </div>
           {placed && (

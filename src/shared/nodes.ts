@@ -124,6 +124,8 @@ export const ROSTER_REPLY_MS = 1000
 /** When a node was first seen and, while it is offline, when and how it went offline. */
 export interface NodeSeen {
   firstSeenAt: number
+  /** When its latest status row arrived while it was present — what "updated N s ago" counts from. */
+  reportedAt?: number
   /** Set while offline: when the client learned of it. */
   offlineAt?: number
   /**
@@ -184,10 +186,10 @@ export class NodeRoster {
       const wasPresent = this.nodes.get(ns.nodeId)?.present ?? true
       this.nodes.set(ns.nodeId, ns) // keep absent nodes too; present flag carries state
       const seen = this.seen.get(ns.nodeId) ?? { firstSeenAt: now }
-      if (ns.present) this.seen.set(ns.nodeId, { firstSeenAt: seen.firstSeenAt })
+      if (ns.present) this.seen.set(ns.nodeId, { firstSeenAt: seen.firstSeenAt, reportedAt: now })
       else if (wasPresent || seen.offlineAt === undefined) {
         this.seen.set(ns.nodeId, {
-          firstSeenAt: seen.firstSeenAt,
+          ...seen,
           offlineAt: now,
           offlineVia: this.inReply(now) ? 'roster' : 'delta'
         })
@@ -200,7 +202,7 @@ export class NodeRoster {
         if (!inBurst.has(id) && node.present) {
           this.nodes.set(id, { ...node, present: false })
           const seen = this.seen.get(id) ?? { firstSeenAt: now }
-          this.seen.set(id, { firstSeenAt: seen.firstSeenAt, offlineAt: now, offlineVia: 'roster' })
+          this.seen.set(id, { ...seen, offlineAt: now, offlineVia: 'roster' })
         }
       }
       this.burst = []
