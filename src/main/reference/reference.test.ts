@@ -7,7 +7,15 @@ import {
 } from './a4ec-controls.generated'
 import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generated'
 import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
-import { NODE_STATUS, NODE_HEALTH_FLAGS, NODE_FAULT_CODES } from './node-status.generated'
+import {
+  NODE_STATUS,
+  NODE_HEALTH_FLAGS,
+  NODE_FAULT_CODES,
+  NODE_TELEM,
+  TELEM_PAGES,
+  PDU_RAIL_FLAGS,
+  PDU_STATUS_FLAGS
+} from './node-status.generated'
 import { NODE_NAMES } from './node-names.generated'
 import { CAL_PROTO, CAL_TYPES, CAL_NACK_REASONS, CAL_PAYLOAD_LEN } from './axis-cal.generated'
 import { ACFT_NAME } from './dcsbios-metadata'
@@ -19,6 +27,13 @@ import {
   NODE_REQ_ADDR,
   SUPPORTED_NODE_PROTO
 } from '@shared/nodes'
+import {
+  NODE_TELEM_MSG,
+  PDU_FLAG,
+  RAIL_FLAG,
+  SUPPORTED_TELEM_PROTO,
+  TELEM_PAGE
+} from '@shared/node-telem'
 import * as cal from '@shared/calibration'
 
 describe('a4ec-controls.generated', () => {
@@ -107,6 +122,26 @@ describe('node-status.generated', () => {
     // an unknown/reserved id (parseNodeStatus passes any faultId through) is undefined, not a crash —
     // the Partial<Record> type forces callers to ?.-guard.
     expect(NODE_FAULT_CODES[0x99]).toBeUndefined()
+  })
+
+  it('fault badge tags are unique (OVER_VOLTAGE and OVER_TEMPERATURE must not both read OVER)', () => {
+    const tags = Object.values(NODE_FAULT_CODES).map((e) => e?.abbr)
+    expect(new Set(tags).size).toBe(tags.length)
+  })
+})
+
+// shared/node-telem.ts restates these so `src/shared` needs no `src/main` import. Compared in both
+// directions, so a page or flag added, removed or renumbered firmware-side fails here.
+describe('node-telem contract', () => {
+  it('matches the shared decoder (fails loudly on a firmware bump)', () => {
+    expect(NODE_TELEM.protoVersion).toBe(SUPPORTED_TELEM_PROTO)
+    expect(NODE_TELEM.msgName).toBe(NODE_TELEM_MSG)
+  })
+
+  it('page ids and flag bits match the decoder exactly', () => {
+    expect(TELEM_PAGES).toEqual(TELEM_PAGE)
+    expect(PDU_RAIL_FLAGS).toEqual(RAIL_FLAG)
+    expect(PDU_STATUS_FLAGS).toEqual(PDU_FLAG)
   })
 })
 
