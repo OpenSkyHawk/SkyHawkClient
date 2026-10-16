@@ -70,8 +70,8 @@ export interface PduOutage {
   fedCount: number
   at: number
   /**
-   * Neither the PDU nor any node in the outage was online since the link opened: they have been
-   * missing from the start. Not connected and a fuse blown before the link opened look the same.
+   * Some node in the outage was never online since the link opened, so it cannot be said to have
+   * lost power: it may not be connected, or its fuse blew before the link opened.
    */
   neverSeen: boolean
 }
@@ -258,7 +258,7 @@ export function pduOutages(nodes: NodeModelEntry[]): PduOutage[] {
         nodeIds: hit.map((n) => n.nodeId),
         fedCount: fed.length,
         at: pdu.offlineAt,
-        neverSeen: !pdu.seenOnline && hit.every((n) => !n.seenOnline)
+        neverSeen: hit.some((n) => !n.seenOnline)
       })
     }
   }

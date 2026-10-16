@@ -219,11 +219,11 @@ describe('pduFaultBoxes', () => {
     expect(pduFaultBoxes(v, o)[0]!.text).toMatch(/a blown 5 V fuse at the PDU looks like this\.$/)
   })
 
-  it('a group missing since the link opened is not said to have dropped', () => {
+  it('nodes not all seen online since the link opened are not said to have dropped', () => {
     const v = view(pdu(6, 'Center', { availability: 'offline', seenOnline: false }))
     const o = { pduId: 6, nodeIds: [7], fedCount: 1, at: 1, neverSeen: true }
     expect(pduFaultBoxes(v, o)[0]!.text).toBe(
-      'no status or readings from this PDU. Neither it nor its nodes have been seen since the link opened — not connected, or a blown 5 V fuse at the PDU.'
+      'no status or readings from this PDU. Not all of its nodes have been seen online since the link opened — not connected, or a blown 5 V fuse at the PDU.'
     )
   })
 

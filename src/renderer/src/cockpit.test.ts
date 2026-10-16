@@ -313,9 +313,12 @@ describe('outageHint', () => {
     )
   })
 
-  it('does not say a group missing since the link opened lost power', () => {
+  it('does not say nodes not all seen online since the link opened lost power', () => {
     expect(outageHint({ pduId: 3, nodeIds: [1], fedCount: 1, at: 0, neverSeen: true })).toBe(
-      'The only node on this PDU and the PDU itself have not been seen since the link opened — not connected, or a blown 5 V fuse at the PDU.'
+      'The only node on this PDU has not been seen online since the link opened — not connected, or a blown 5 V fuse at the PDU.'
+    )
+    expect(outageHint({ pduId: 3, nodeIds: [1, 2, 3], fedCount: 3, at: 0, neverSeen: true })).toBe(
+      'All 3 nodes on this PDU are offline, and not all were seen online since the link opened — not connected, or a blown 5 V fuse at the PDU.'
     )
   })
 })

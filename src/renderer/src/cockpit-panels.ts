@@ -144,7 +144,7 @@ export function pduFaultBoxes(v: NodeView, outage: PduOutage | undefined): Fault
           (!outage
             ? ''
             : outage.neverSeen
-              ? ' Neither it nor its nodes have been seen since the link opened — not connected, or a blown 5 V fuse at the PDU.'
+              ? ' Not all of its nodes have been seen online since the link opened — not connected, or a blown 5 V fuse at the PDU.'
               : ' Its nodes dropped at the same time — a blown 5 V fuse at the PDU looks like this.')
       }
     ]
