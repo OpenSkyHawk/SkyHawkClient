@@ -8,6 +8,9 @@ import {
   type CalResult,
   type CalSnapshot,
   type CaptureState,
+  type ConfigExportResult,
+  type ConfigImportApplyResult,
+  type ConfigImportOpen,
   type DebugDumpResult,
   type ExportResult,
   type HidAvailability,
@@ -35,6 +38,15 @@ const api: SkyhawkApi = {
   },
   getConfig: () => ipcRenderer.invoke(CTRL.configGet) as Promise<AppConfig>,
   setConfig: (patch) => ipcRenderer.invoke(CTRL.configSet, patch) as Promise<AppConfig>,
+  exportConfig: () => ipcRenderer.invoke(CTRL.configExport) as Promise<ConfigExportResult>,
+  openConfigImport: () => ipcRenderer.invoke(CTRL.configImportOpen) as Promise<ConfigImportOpen>,
+  applyConfigImport: (token, sections, backup) =>
+    ipcRenderer.invoke(
+      CTRL.configImportApply,
+      token,
+      sections,
+      backup
+    ) as Promise<ConfigImportApplyResult>,
   startRelay: () => ipcRenderer.invoke(CTRL.relayStart) as Promise<RelayResult>,
   stopRelay: () => ipcRenderer.invoke(CTRL.relayStop) as Promise<RelayResult>,
   getStatus: () => ipcRenderer.invoke(CTRL.relayStatus) as Promise<RelayStatus>,

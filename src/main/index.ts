@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   CTRL,
@@ -7,6 +7,8 @@ import {
   type CalCacheEntry,
   type CalCommitAxis,
   type CaptureState,
+  type ConfigExportResult,
+  type ConfigImportOpen,
   type HidAvailability,
   type PushChannel,
   type PushChannels,
@@ -16,6 +18,8 @@ import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/node-mapping
 import { HID_CONTROLS, HID_ID } from './reference/hid-controls.generated'
 import { Session } from './session'
 import { loadConfig, saveConfig } from './settings'
+import { loadCalCache, saveCalCache } from './cal-cache'
+import { ConfigTransfer } from './config-transfer'
 import { debugLog, debugLogPath, setDebugEnabled } from './debug'
 import { listSerialPorts } from './serial'
 
@@ -48,16 +52,70 @@ function emit<C extends PushChannel>(channel: C, payload: PushChannels[C]): void
 
 const session = new Session(emit)
 
+/** Apply and persist a settings change: the one path for config:set and a config import. */
+function applyConfig(patch: Partial<AppConfig>): AppConfig {
+  const config = session.setConfig(patch)
+  setDebugEnabled(config.debugMode)
+  saveConfig(config)
+  return config
+}
+
+const transfer = new ConfigTransfer({
+  getConfig: () => session.getConfig(),
+  setConfig: (config) => applyConfig(config),
+  nodes: session.link.nodes,
+  loadCalCache,
+  saveCalCache,
+  backupDir: () => join(app.getPath('userData'), 'backups'),
+  clientVersion: () => app.getVersion()
+})
+
+const CONFIG_FILTER = [{ name: 'OpenSkyhawk configuration', extensions: ['json'] }]
+/** Generous: a full export is a few KB. Anything bigger is not one. */
+const CONFIG_MAX_BYTES = 5 * 1024 * 1024
+
 const CAPTURE_FILTER = [{ name: 'DCS-BIOS capture', extensions: ['json'] }]
 
 function registerIpc(): void {
   ipcMain.handle(CTRL.configGet, () => session.getConfig())
-  ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => {
-    const config = session.setConfig(patch)
-    setDebugEnabled(config.debugMode)
-    saveConfig(config)
-    return config
+  ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => applyConfig(patch))
+  ipcMain.handle(CTRL.configExport, async (): Promise<ConfigExportResult> => {
+    const res = await dialog.showSaveDialog({
+      title: 'Export configuration',
+      defaultPath: transfer.defaultFileName(),
+      filters: CONFIG_FILTER
+    })
+    if (res.canceled || !res.filePath) return {}
+    try {
+      writeFileSync(res.filePath, transfer.exportText())
+      return { path: res.filePath }
+    } catch (err) {
+      return { error: `Could not write the file: ${err instanceof Error ? err.message : err}` }
+    }
   })
+  ipcMain.handle(CTRL.configImportOpen, async (): Promise<ConfigImportOpen> => {
+    const res = await dialog.showOpenDialog({
+      title: 'Import configuration',
+      properties: ['openFile'],
+      filters: CONFIG_FILTER
+    })
+    const path = res.filePaths[0]
+    if (res.canceled || !path) return { status: 'canceled' }
+    try {
+      if (statSync(path).size > CONFIG_MAX_BYTES) {
+        return { status: 'error', error: 'This file is too large to be a configuration file.' }
+      }
+      return transfer.preview(readFileSync(path, 'utf8'), path)
+    } catch (err) {
+      return {
+        status: 'error',
+        error: `Could not read the file: ${err instanceof Error ? err.message : err}`
+      }
+    }
+  })
+  ipcMain.handle(CTRL.configImportApply, (_e, token: string, sections: unknown, backup: unknown) =>
+    transfer.apply(token, sections, backup)
+  )
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
   ipcMain.handle(CTRL.relayStatus, () => session.status())
