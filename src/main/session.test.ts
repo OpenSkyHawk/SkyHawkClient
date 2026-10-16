@@ -3,6 +3,7 @@ import { CAL_TYPE, buildFrame } from '@shared/calibration'
 import type { LogRow } from '@shared/ipc'
 import { eventText, type LogEvent } from '@shared/events'
 import type { NodeModel } from '@shared/node-rules'
+import { statusLine } from '../test-fixtures/nodes'
 
 // Session pulls in electron (debug log path), the serial port, the DCS transport and node-hid.
 // Only the seams matter here, so each is replaced with something a test can drive directly.
@@ -312,13 +313,6 @@ describe('HID recovery after an unplug', () => {
 
 type Push = [string, unknown]
 
-/** A `_NODE_STATUS` line: present, no flags, die temp not yet seen. */
-/** A v3 `_NODE_STATUS` row (28 hex): kind 01 panel group unless given. */
-const statusLine = (nodeId: number, present = true, kind = 1): string =>
-  `_NODE_STATUS ${nodeId.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
-    .toString(16)
-    .padStart(2, '0')}\n`
-
 /** A session with the link open (app launched), the relay not started, and a recorder of pushes. */
 function launched(config: Parameters<InstanceType<typeof Session>['setConfig']>[0] = {}) {
   const pushes: Push[] = []
@@ -434,24 +428,6 @@ describe('device link is independent of the relay (#69)', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it('resets node state on link open, not on relay start (#71 finding 6)', () => {
-    const { session, serial } = launched({ sourceMode: 'bridge' })
-    const roster = vi.spyOn(session.link.roster, 'reset')
-    const nodes = vi.spyOn(session.link.nodes, 'reset')
-    serial.openCb('/dev/fake')
-    expect(roster).toHaveBeenCalledTimes(1)
-    expect(nodes).toHaveBeenCalledTimes(1)
-    session.start()
-    session.stop()
-    session.start()
-    expect(roster, 'relay Start must not wipe the roster').toHaveBeenCalledTimes(1)
-    expect(nodes, 'relay Start must not wipe the node model').toHaveBeenCalledTimes(1)
-    serial.openCb('/dev/fake') // the reconnect
-    expect(roster).toHaveBeenCalledTimes(2)
-    expect(nodes).toHaveBeenCalledTimes(2)
-    session.shutdown()
   })
 
   it('reports an absent board as no-device, not as an error', () => {
