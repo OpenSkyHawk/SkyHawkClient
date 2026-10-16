@@ -34,57 +34,69 @@ export interface FaultBox {
   text: string
 }
 
-/** The box at the top of the node panel's Status tab; null when there is nothing to explain. */
-export function nodeFaultBox(v: NodeView): FaultBox | null {
+/**
+ * The boxes at the top of the node panel's Status tab, stacked; empty when there is nothing to
+ * explain. New, no-status-yet and offline each stand alone. Otherwise every flag the node raised
+ * gets its own box — bus-off, then degraded (the fault table's label), overheat, error-passive,
+ * the order the tile and Attention name them in — so a second fault never hides behind the first.
+ */
+export function nodeFaultBoxes(v: NodeView): FaultBox[] {
   const e = v.entry
   const st = e.status
   if (e.source === 'new') {
-    return {
-      tone: 'new',
-      title: 'Not in registry',
-      text: 'this NODE_ID is not in the bundled NODE_IDS.md. Name it and place it on the map.'
-    }
+    return [
+      {
+        tone: 'new',
+        title: 'Not in registry',
+        text: 'this NODE_ID is not in the bundled NODE_IDS.md. Name it and place it on the map.'
+      }
+    ]
   }
   if (e.availability === 'unknown') {
-    return {
-      tone: 'new',
-      title: 'No status yet',
-      text: 'no complete roster has arrived since the link opened, and this node has not reported.'
-    }
+    return [
+      {
+        tone: 'new',
+        title: 'No status yet',
+        text: 'no complete roster has arrived since the link opened, and this node has not reported.'
+      }
+    ]
   }
   if (e.availability === 'offline') {
-    return {
-      tone: 'err',
-      title: 'Offline',
-      text: 'missing from the PanelBridge roster — no heartbeat within its timeout.'
-    }
+    return [
+      {
+        tone: 'err',
+        title: 'Offline',
+        text: 'missing from the PanelBridge roster — no heartbeat within its timeout.'
+      }
+    ]
   }
-  if (!st) return null
+  if (!st) return []
+  const out: FaultBox[] = []
   if (st.boff) {
-    return {
+    out.push({
       tone: 'err',
       title: 'Bus-off',
       text: 'its CAN controller stopped transmitting after too many errors. Reported by the node.'
-    }
+    })
   }
   if (st.degraded) {
-    return {
+    out.push({
       tone: 'warn',
       title: st.faultLabel ?? nodeFaultTag(st),
       text: st.faultDesc || 'reported by the node; this client has no description for this code.'
-    }
+    })
   }
   if (st.overheat) {
-    return { tone: 'warn', title: 'Overheat', text: 'the node raised its own temperature trip.' }
+    out.push({ tone: 'warn', title: 'Overheat', text: 'the node raised its own temperature trip.' })
   }
   if (st.epvf) {
-    return {
+    out.push({
       tone: 'warn',
       title: 'Error-passive',
       text: 'its CAN error counters are high; it still communicates but can only signal errors passively.'
-    }
+    })
   }
-  return null
+  return out
 }
 
 /** Flag meanings as NodeStatus.h states them. */
@@ -117,7 +129,7 @@ export function pduFlagMeanings(v: NodeView): string[] {
 
 /**
  * The boxes at the top of the PDU panel, stacked. Offline says it all on its own. Otherwise the
- * PDU's own node fault (the same as any node's) comes first, then its rail / status flags, then
+ * PDU's own node faults (the same as any node's) come first, then its rail / status flags, then
  * "no readings": each is a separate thing the board told us, so none hides another.
  */
 export function pduFaultBoxes(v: NodeView, outage: boolean): FaultBox[] {
@@ -135,9 +147,7 @@ export function pduFaultBoxes(v: NodeView, outage: boolean): FaultBox[] {
       }
     ]
   }
-  const out: FaultBox[] = []
-  const node = nodeFaultBox(v)
-  if (node) out.push(node)
+  const out: FaultBox[] = nodeFaultBoxes(v)
   const flags = pduAlertFlags(v.readings)
   if (flags.length) {
     const said = pduFlagMeanings(v).join('; ')

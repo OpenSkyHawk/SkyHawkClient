@@ -9,7 +9,7 @@ import {
   firstPduOn,
   mappingPatch,
   nodeActions,
-  nodeFaultBox,
+  nodeFaultBoxes,
   nodeStatusRows,
   pduBoardRows,
   pduFaultBoxes,
@@ -131,16 +131,21 @@ describe('nodeActions', () => {
   })
 })
 
-describe('nodeFaultBox', () => {
+describe('nodeFaultBoxes', () => {
+  const titles = (e: NodeModelEntry) => nodeFaultBoxes(view(e)).map((b) => b.title)
+
   it('nothing to say for a healthy node', () => {
-    expect(nodeFaultBox(view(node(1)))).toBeNull()
+    expect(nodeFaultBoxes(view(node(1)))).toEqual([])
   })
 
-  it('offline is an error box', () => {
-    expect(nodeFaultBox(view(node(1, { availability: 'offline' })))).toMatchObject({
-      tone: 'err',
-      title: 'Offline'
-    })
+  it('offline is a single error box', () => {
+    expect(nodeFaultBoxes(view(node(1, { availability: 'offline' })))).toEqual([
+      {
+        tone: 'err',
+        title: 'Offline',
+        text: 'missing from the PanelBridge roster — no heartbeat within its timeout.'
+      }
+    ])
   })
 
   it('degraded shows the fault table’s label and description', () => {
@@ -152,33 +157,52 @@ describe('nodeFaultBox', () => {
         faultDesc: 'an I2C device tripped its breaker.'
       })
     })
-    expect(nodeFaultBox(view(e))).toEqual({
-      tone: 'warn',
-      title: 'I2C peripheral',
-      text: 'an I2C device tripped its breaker.'
-    })
+    expect(nodeFaultBoxes(view(e))).toEqual([
+      { tone: 'warn', title: 'I2C peripheral', text: 'an I2C device tripped its breaker.' }
+    ])
   })
 
   it('an unknown fault code still gets a box, named by its number', () => {
-    const e = node(2, { status: status(2, { degraded: true, faultId: 77 }) })
-    expect(nodeFaultBox(view(e))).toMatchObject({ tone: 'warn', title: 'Fault 77' })
+    expect(titles(node(2, { status: status(2, { degraded: true, faultId: 77 }) }))).toEqual([
+      'Fault 77'
+    ])
   })
 
-  it('bus-off wins over degraded; error-passive and overheat are warnings', () => {
-    const both = node(2, { status: status(2, { boff: true, degraded: true }) })
-    expect(nodeFaultBox(view(both))?.title).toBe('Bus-off')
-    expect(nodeFaultBox(view(node(3, { status: status(3, { epvf: true }) })))?.title).toBe(
-      'Error-passive'
-    )
-    expect(nodeFaultBox(view(node(3, { status: status(3, { overheat: true }) })))?.title).toBe(
-      'Overheat'
-    )
+  it('names bus-off, error-passive and overheat on their own', () => {
+    expect(titles(node(2, { status: status(2, { boff: true }) }))).toEqual(['Bus-off'])
+    expect(titles(node(3, { status: status(3, { epvf: true }) }))).toEqual(['Error-passive'])
+    expect(titles(node(3, { status: status(3, { overheat: true }) }))).toEqual(['Overheat'])
+  })
+
+  // Review of #85: only the first raised fault showed; a second one vanished from the panel.
+  it('every raised fault gets its own box, in the order the tile names them', () => {
+    const e = node(2, {
+      status: status(2, {
+        boff: true,
+        degraded: true,
+        faultId: 3,
+        faultLabel: 'I2C bus',
+        overheat: true,
+        epvf: true
+      })
+    })
+    expect(nodeFaultBoxes(view(e)).map((b) => [b.tone, b.title])).toEqual([
+      ['err', 'Bus-off'],
+      ['warn', 'I2C bus'],
+      ['warn', 'Overheat'],
+      ['warn', 'Error-passive']
+    ])
+  })
+
+  it('degraded and overheat both show', () => {
+    const e = node(2, { status: status(2, { degraded: true, faultId: 3, overheat: true }) })
+    expect(titles(e)).toEqual(['Fault 3', 'Overheat'])
   })
 
   it('explains a node with no status yet', () => {
-    expect(nodeFaultBox(view(node(1, { availability: 'unknown', status: undefined })))?.title).toBe(
+    expect(titles(node(1, { availability: 'unknown', status: undefined }))).toEqual([
       'No status yet'
-    )
+    ])
   })
 })
 
@@ -233,6 +257,16 @@ describe('pduFaultBoxes', () => {
       pdu(3, 'Left', { readings: 'none', status: status(3, { degraded: true, faultId: 7 }) })
     )
     expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual(['Fault 7', 'No readings received'])
+  })
+
+  it('a PDU with two node faults shows both before its flags', () => {
+    const e = pdu(4, 'Right', { status: status(4, { degraded: true, faultId: 8, epvf: true }) })
+    const v = view(e, [telem(4, { flags5: RAIL_FLAG.UNDER_V })])
+    expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual([
+      'Fault 8',
+      'Error-passive',
+      '5V UNDER-V'
+    ])
   })
 
   it('a degraded PDU keeps its fault label next to a raised rail flag', () => {

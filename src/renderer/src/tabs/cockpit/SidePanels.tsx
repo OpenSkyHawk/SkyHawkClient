@@ -7,7 +7,7 @@ import {
   firstPduOn,
   mappingPatch,
   nodeActions,
-  nodeFaultBox,
+  nodeFaultBoxes,
   nodeStatusRows,
   pduBoardRows,
   pduFaultBoxes,
@@ -51,8 +51,7 @@ function Sheet(props: {
   )
 }
 
-function Fault({ box }: { box: FaultBox | null }) {
-  if (!box) return null
+function Fault({ box }: { box: FaultBox }) {
   return (
     <div className={`sh__fault sh__fault--${box.tone}`}>
       <b>{box.title}</b> — {box.text}
@@ -197,7 +196,9 @@ export function NodePanel(props: {
 
       {tab === 'status' ? (
         <>
-          <Fault box={nodeFaultBox(v)} />
+          {nodeFaultBoxes(v).map((b) => (
+            <Fault key={b.title} box={b} />
+          ))}
           <div className="sh__sec">
             <div className="section-h">Reported by the node{props.live ? '' : ' · last known'}</div>
             <Rows rows={nodeStatusRows(v)} />
