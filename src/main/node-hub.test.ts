@@ -173,6 +173,12 @@ describe('NodeHub', () => {
     expect(disk.saves).toBe(0)
   })
 
+  it('accepts a telemetry line with padding or a trailing CR (Windows-style ending)', () => {
+    const { h } = hub()
+    h.telemetry(' 030100E02E182EBC02\r', 0)
+    expect(h.snapshot(0).telemetry[0]?.rail12V).toMatchObject({ vAvgMv: 12000, iAvgMa: 700 })
+  })
+
   it('drops malformed telemetry and pushes nothing while idle', () => {
     const { h, pushes } = hub()
     h.flush(false, 0) // first tick: initial model

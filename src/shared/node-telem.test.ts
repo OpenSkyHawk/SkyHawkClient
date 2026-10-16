@@ -112,6 +112,30 @@ describe('parseNodeTelem', () => {
     })
   })
 
+  it('INT16_MIN rail current is a real reading, not the temperature sentinel', () => {
+    const t = parse(telem(3, [0x01, 0, ...le(12000), ...le(12000), 0x00, 0x80]))
+    expect(t).toMatchObject({ kind: 'rail', iAvgMa: -32768 })
+  })
+
+  it('u16 fields are unsigned up to 65535', () => {
+    const t = parse(telem(3, [0x02, 0, 0xff, 0xff, 0xff, 0xff, 0, 0]))
+    expect(t).toMatchObject({ vAvgMv: 65535, vMinMv: 65535 })
+    const s = parse(telem(5, [0x03, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]))
+    expect(s).toMatchObject({ i12PeakMa: 65535, i5PeakMa: 65535 })
+  })
+
+  it('temperature unavailable does not depend on NTC_FAULT (boot, before the first sample)', () => {
+    const t = parse(telem(5, [0x03, 0x00, 0x00, 0x80, 0, 0, 0, 0]))
+    expect(t).toMatchObject({ flags: 0, ntcTempC: null })
+  })
+
+  it('rejects odd-length, 0x-prefixed and space-split hex', () => {
+    expect(parseNodeTelem('030100E02E182EBC0')).toBeNull() // 17 chars
+    expect(parseNodeTelem('0x030100E02E182EBC02')).toBeNull()
+    expect(parseNodeTelem('0301 00E02E182EBC0')).toBeNull() // 18 chars with a space
+    expect(parseNodeTelem(' 030100E02E182EBC02')).toBeNull() // the caller trims, not the decoder
+  })
+
   it('rejects page 0, bad length, non-hex and out-of-range node ids', () => {
     expect(parseNodeTelem(telem(3, [0, 0, 0, 0, 0, 0, 0, 0]))).toBeNull()
     expect(parseNodeTelem('030101022fae2ef4')).toBeNull()
