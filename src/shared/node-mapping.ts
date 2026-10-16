@@ -1,10 +1,11 @@
-// Node mapping: display name, console and power zone (PDU) per NODE_ID, plus the ignore list and
-// "hidden until it reports again" flags. Pure, no Node/Electron deps — main persists it as
-// <userData>/node-mapping.json (src/main/node-mapping.ts).
+// Node mapping: display name, console and power zone (PDU) per NODE_ID, when each board was last
+// seen, and "hidden until it reports again" flags. Pure, no Node/Electron deps — main persists it
+// as <userData>/node-mapping.json (src/main/node-mapping.ts).
 //
-// Registry nodes (the bundled NODE_IDS) take their defaults from the registry and store only what
-// differs. Adopted nodes — NODE_IDs the registry does not know, named by the user — are stored in
-// full, since there is nothing to default from.
+// The registry (the bundled NODE_IDS) is a dictionary: a registry board joins your cockpit when you
+// add it in New on the bus (pre-filled with its registry defaults), and the file stores that it was
+// added, only what differs, and when it was last seen. Adopted nodes — NODE_IDs the registry does
+// not know, named by the user — are stored in full, since there is nothing to default from (#93).
 
 import { isAdoptableKind, type NodeIdentity } from './node-kind'
 
@@ -27,23 +28,21 @@ export interface NodeOverride {
   kind?: NodeKind
   /** Replaced / removed board: skip it until it reports again. */
   hidden?: boolean
-}
-
-/** What was known about a NODE_ID when it was ignored, for Settings › Ignored nodes. */
-export interface IgnoredInfo {
-  /** When it was ignored, ISO 8601. */
-  at: string
-  /** What it reported as at the time (a PDU sends `_NODE_TELEM`); absent if unknown. */
-  kind?: NodeKind
+  /**
+   * Registry boards only: you added it to your cockpit (New on the bus › Add to cockpit). Reset to
+   * default keeps it; only Forget removes it. Adopted nodes are in your cockpit by being adopted.
+   */
+  added?: boolean
+  /**
+   * When it was last on the bus, ISO 8601: written for a board in your cockpit when it comes
+   * online, when it drops and when the link closes.
+   */
+  lastSeen?: string
 }
 
 export interface NodeMappingFile {
-  version: 1
+  version: 3
   nodes: Record<number, NodeOverride>
-  /** NODE_IDs the user ignored permanently (never "new"). */
-  ignored: number[]
-  /** Per ignored NODE_ID; absent for ids ignored before this was recorded. */
-  ignoredMeta?: Record<number, IgnoredInfo>
 }
 
 /** Effective defaults for one registry node. */
@@ -65,12 +64,22 @@ export interface MappedNode {
   /** Registry node with at least one stored override (what reset would undo). */
   differs: boolean
   hidden: boolean
+  /**
+   * In your cockpit: adopted, or a registry board you added. A registry board that was never added
+   * is only a dictionary entry — when it reports it waits in New on the bus, pre-filled.
+   */
+  known: boolean
+  lastSeen?: string
 }
 
-/** File format this build writes. A file with a higher version came from a newer client. */
-export const NODE_MAPPING_VERSION = 1
+/**
+ * File format this build writes. A file with a higher version came from a newer client.
+ * v3 (#93): `added` and `lastSeen` per node, read exactly as written; no ignore list. Older files
+ * (v1, and early v2 dev builds without the marker) are upgraded on read — see sanitizeNodeMapping.
+ */
+export const NODE_MAPPING_VERSION = 3
 
-export const EMPTY_MAPPING: NodeMappingFile = { version: 1, nodes: {}, ignored: [] }
+export const EMPTY_MAPPING: NodeMappingFile = { version: 3, nodes: {} }
 
 const MAX_TEXT = 64
 
@@ -110,7 +119,7 @@ export function registryDefaults(
   return out
 }
 
-function sanitizeOverride(raw: unknown): NodeOverride | undefined {
+function sanitizeOverride(raw: unknown, legacy: boolean): NodeOverride | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const r = raw as Record<string, unknown>
   const o: NodeOverride = {}
@@ -121,45 +130,36 @@ function sanitizeOverride(raw: unknown): NodeOverride | undefined {
   if (r.pduId === null || isNodeId(r.pduId)) o.pduId = r.pduId
   if (r.kind === 'pdu' || r.kind === 'panel') o.kind = r.kind
   if (r.hidden === true) o.hidden = true
+  if (typeof r.lastSeen === 'string' && !Number.isNaN(Date.parse(r.lastSeen))) {
+    o.lastSeen = r.lastSeen
+  }
+  if (r.added === true) o.added = true
+  // Before v3 a board was in your cockpit by having been seen, placed, renamed or hidden.
+  else if (legacy && !o.kind && (o.lastSeen || o.hidden || hasOverride(o))) o.added = true
   return Object.keys(o).length ? o : undefined
 }
 
-function sanitizeIgnoredInfo(raw: unknown): IgnoredInfo | undefined {
-  if (!raw || typeof raw !== 'object') return undefined
-  const r = raw as Record<string, unknown>
-  if (typeof r.at !== 'string' || Number.isNaN(Date.parse(r.at))) return undefined
-  const info: IgnoredInfo = { at: r.at }
-  if (r.kind === 'pdu' || r.kind === 'panel') info.kind = r.kind
-  return info
-}
-
-/** Tolerant read: anything malformed is dropped field by field, never thrown. */
+/**
+ * Tolerant read: anything malformed is dropped field by field, never thrown. Upgrading a file from
+ * before v3 (no version counts as old): its ignore list is dropped — Ignore never shipped and is
+ * gone (#93) — and a registry entry seen, placed, renamed or hidden is marked added, since that is
+ * how it was in your cockpit then. A v3 file is read as written: an entry without `added` (say,
+ * one a config import brought) never becomes added by a reload.
+ */
 export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
-  if (!raw || typeof raw !== 'object') return { ...EMPTY_MAPPING, nodes: {}, ignored: [] }
+  if (!raw || typeof raw !== 'object') return { ...EMPTY_MAPPING, nodes: {} }
   const r = raw as Record<string, unknown>
   const nodes: Record<number, NodeOverride> = {}
   if (r.nodes && typeof r.nodes === 'object') {
-    for (const [k, v] of Object.entries(r.nodes as Record<string, unknown>)) {
+    const raws = Object.entries(r.nodes as Record<string, unknown>)
+    const legacy = typeof r.version !== 'number' || r.version < NODE_MAPPING_VERSION
+    for (const [k, v] of raws) {
       const id = Number(k)
-      const o = isNodeId(id) ? sanitizeOverride(v) : undefined
+      const o = isNodeId(id) ? sanitizeOverride(v, legacy) : undefined
       if (o) nodes[id] = o
     }
   }
-  const ignored = Array.isArray(r.ignored)
-    ? [...new Set(r.ignored.filter(isNodeId))].sort((a, b) => a - b)
-    : []
-  const file: NodeMappingFile = { version: 1, nodes, ignored }
-  // Kept only for ids still on the ignore list, so a stray entry cannot outlive its ignore.
-  const meta: Record<number, IgnoredInfo> = {}
-  const rawMeta = (
-    r.ignoredMeta && typeof r.ignoredMeta === 'object' ? r.ignoredMeta : {}
-  ) as Record<string, unknown>
-  for (const id of ignored) {
-    const info = sanitizeIgnoredInfo(rawMeta[id])
-    if (info) meta[id] = info
-  }
-  if (Object.keys(meta).length) file.ignoredMeta = meta
-  return file
+  return { version: 3, nodes }
 }
 
 /** An adopted node is a non-registry entry complete enough to place: name, console and kind. */
@@ -169,31 +169,45 @@ function adopted(
   return !!o?.name && !!o.kind
 }
 
-/** Registry defaults + overrides, plus adopted nodes. Ignored ids are left out. */
+/**
+ * In your cockpit: a registry board you added, or a board you adopted — and an adopted board stays
+ * in it even once its NODE_ID is in NODE_IDS.md (a later registry); the registry is only where
+ * names come from, never what decides membership (#93 re-review F). The one rule every check uses.
+ */
+const inCockpit = (o: NodeOverride | undefined): boolean => o?.added === true || adopted(o)
+
+const hasOverride = (o: NodeOverride): boolean =>
+  o.name !== undefined || o.console !== undefined || o.pduId !== undefined
+
+/**
+ * Registry defaults + overrides, plus adopted nodes. Every registry entry is listed (it is the
+ * dictionary names and power zones resolve against); `known` says which are in your cockpit.
+ */
 export function effectiveMapping(
   defaults: Map<number, NodeDefaults>,
   file: NodeMappingFile
 ): Map<number, MappedNode> {
-  const ignored = new Set(file.ignored)
   const out = new Map<number, MappedNode>()
   for (const [nodeId, d] of defaults) {
-    if (ignored.has(nodeId)) continue
     const o = file.nodes[nodeId] ?? {}
-    out.set(nodeId, {
+    const m: MappedNode = {
       nodeId,
       name: o.name ?? d.name,
       console: o.console ?? d.console,
       pduId: o.pduId !== undefined ? o.pduId : d.pduId,
       kind: d.kind,
       source: 'registry',
-      differs: o.name !== undefined || o.console !== undefined || o.pduId !== undefined,
-      hidden: o.hidden === true
-    })
+      differs: hasOverride(o),
+      hidden: o.hidden === true,
+      known: inCockpit(o)
+    }
+    if (o.lastSeen) m.lastSeen = o.lastSeen
+    out.set(nodeId, m)
   }
   for (const [k, o] of Object.entries(file.nodes)) {
     const nodeId = Number(k)
-    if (defaults.has(nodeId) || ignored.has(nodeId) || !adopted(o)) continue
-    out.set(nodeId, {
+    if (defaults.has(nodeId) || !adopted(o)) continue
+    const m: MappedNode = {
       nodeId,
       name: o.name,
       console: o.console ?? '',
@@ -201,25 +215,23 @@ export function effectiveMapping(
       kind: o.kind,
       source: 'adopted',
       differs: false,
-      hidden: o.hidden === true
-    })
+      hidden: o.hidden === true,
+      known: true
+    }
+    if (o.lastSeen) m.lastSeen = o.lastSeen
+    out.set(nodeId, m)
   }
   return new Map([...out].sort((a, b) => a[0] - b[0]))
 }
 
 /** How many registry nodes differ from their defaults — what "Reset all" would change. */
 export function differingCount(defaults: Map<number, NodeDefaults>, file: NodeMappingFile): number {
-  // Counted from the file, not effectiveMapping: an ignored registry node is left out of the
-  // effective mapping, but Reset still clears its overrides — and this must match what Reset does.
   let n = 0
   for (const [k, o] of Object.entries(file.nodes)) {
     if (defaults.has(Number(k)) && hasOverride(o)) n++
   }
   return n
 }
-
-const hasOverride = (o: NodeOverride): boolean =>
-  o.name !== undefined || o.console !== undefined || o.pduId !== undefined
 
 export type MappingPatch = Partial<Pick<NodeOverride, 'name' | 'console' | 'pduId'>>
 export interface AdoptSpec {
@@ -265,9 +277,9 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
 
 /**
  * A power zone names the PDU feeding a node: a PDU has none, and a panel's must be a registry or
- * adopted PDU that is not ignored — never itself or another panel. Checked on set only; a stored
- * zone that later stops pointing at a PDU (a registry change) still loads, since rewriting user
- * data on read is worse than one odd zone, and grouping only ever starts from a real PDU.
+ * adopted PDU — never itself or another panel. Checked on set only; a stored zone that later stops
+ * pointing at a PDU (a registry change) still loads, since rewriting user data on read is worse
+ * than one odd zone, and grouping only ever starts from a real PDU.
  */
 function checkPowerZone(
   file: NodeMappingFile,
@@ -294,6 +306,18 @@ function checkPatch(p: MappingPatch): void {
   }
 }
 
+/** Apply name / console / power zone to an entry; a registry default is stored as absent. */
+function patched(cur: NodeOverride | undefined, d: NodeDefaults | undefined, patch: MappingPatch) {
+  const next: NodeOverride = { ...cur }
+  for (const key of ['name', 'console', 'pduId'] as const) {
+    if (!(key in patch)) continue
+    const v = key === 'pduId' ? patch.pduId : text(patch[key])
+    if (d && v === d[key]) delete next[key]
+    else (next as Record<string, unknown>)[key] = v
+  }
+  return next
+}
+
 /**
  * Change name / console / power zone. For a registry node a value equal to its default is
  * stored as absent, so the file holds only real differences.
@@ -310,21 +334,20 @@ export function setNodeMapping(
   checkPatch(patch)
   const d = defaults.get(nodeId)
   const cur = file.nodes[nodeId]
-  if (!d && !adopted(cur)) throw new MappingError(`Node ${nodeId} is not mapped — adopt it first`)
+  if (!inCockpit(cur)) {
+    throw new MappingError(`Node ${nodeId} is not in your cockpit — add it first`)
+  }
   if ('pduId' in patch) {
     checkPowerZone(file, defaults, nodeId, d ? d.kind : cur!.kind!, patch.pduId, kindOf)
   }
-  const next: NodeOverride = { ...cur }
-  for (const key of ['name', 'console', 'pduId'] as const) {
-    if (!(key in patch)) continue
-    const v = key === 'pduId' ? patch.pduId : text(patch[key])
-    if (d && v === d[key]) delete next[key]
-    else (next as Record<string, unknown>)[key] = v
-  }
-  return withNode(file, nodeId, next)
+  return withNode(file, nodeId, patched(cur, d, patch))
 }
 
-/** Place a NODE_ID the registry does not know. It stops being "new" from here on. */
+/**
+ * Add a board to your cockpit (New on the bus). A registry board keeps its NODE_IDS.md defaults
+ * where the form left them and stores only what differs; a NODE_ID the registry does not know is
+ * adopted and stored in full. Either way it stops being "new" from here on.
+ */
 export function adoptNode(
   file: NodeMappingFile,
   defaults: Map<number, NodeDefaults>,
@@ -334,7 +357,8 @@ export function adoptNode(
 ): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
   if (!isPlainObject(spec)) throw new MappingError('Invalid adopt request')
-  if (defaults.has(nodeId)) throw new MappingError(`Node ${nodeId} is in the registry`)
+  const d = defaults.get(nodeId)
+  if (d) return addRegistryBoard(file, defaults, nodeId, d, spec, kindOf)
   // Name and console are required here, not just validated when present: an entry without a
   // name is not an adopted node (effectiveMapping skips it), so it would stay "new" after an ok.
   const name = text(spec.name)
@@ -359,13 +383,91 @@ export function adoptNode(
     pduId: spec.kind === 'pdu' ? null : (spec.pduId ?? null),
     kind: spec.kind
   }
-  return withNode(unignore(file, nodeId), nodeId, o)
+  return withNode(file, nodeId, o)
 }
 
-/** Drop an adopted node (it is "new" again if it reports), or a registry node's overrides. */
-export function forgetNode(file: NodeMappingFile, nodeId: number): NodeMappingFile {
+/** A registry board into your cockpit: the form's values, stored as differences from its defaults. */
+function addRegistryBoard(
+  file: NodeMappingFile,
+  defaults: Map<number, NodeDefaults>,
+  nodeId: number,
+  d: NodeDefaults,
+  spec: AdoptSpec,
+  kindOf?: KindOf
+): NodeMappingFile {
+  const name = text(spec.name)
+  if (!name) throw new MappingError('Name cannot be empty')
+  const console = text(spec.console)
+  if (!console) throw new MappingError('Console cannot be empty')
+  checkPatch(spec)
+  // Added only once the board has said what it is — a PDU or a panel group — like any new board
+  // (#344): a registry entry is never taken as its kind.
+  let kind = d.kind
+  if (kindOf) {
+    const k = kindOf(nodeId)
+    if (k === undefined) throw new MappingError('Its board type is not known yet')
+    if (!isAdoptableKind(k)) throw new MappingError('This board cannot be adopted')
+    kind = k
+  }
+  const patch: MappingPatch = { name, console }
+  if (kind !== 'pdu') {
+    checkPowerZone(file, defaults, nodeId, d.kind, spec.pduId, kindOf)
+    patch.pduId = spec.pduId ?? null
+  }
+  return withNode(file, nodeId, { ...patched(file.nodes[nodeId], d, patch), added: true })
+}
+
+/**
+ * Remove a board from your cockpit, keeping nothing (#93): its name, placement, hidden flag and
+ * last-seen time all go. If it reports again it starts fresh in New on the bus — a registry board
+ * pre-filled from NODE_IDS.md, an unregistered one blank. Forgetting a PDU also unlinks the boards in
+ * your cockpit it fed: they show under their console's No power zone, and the links are not
+ * restored if it comes back. main refuses this while the board is online.
+ */
+export function forgetNode(
+  file: NodeMappingFile,
+  defaults: Map<number, NodeDefaults>,
+  nodeId: number,
+  kindOf?: KindOf
+): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
-  return withNode(file, nodeId, undefined)
+  const mapped = effectiveMapping(defaults, file)
+  const self = mapped.get(nodeId)
+  let next = withNode(file, nodeId, undefined)
+  if ((kindOf?.(nodeId) ?? self?.kind) === 'pdu') {
+    for (const m of mapped.values()) {
+      if (m.nodeId === nodeId || !m.known || m.pduId !== nodeId) continue
+      const d = defaults.get(m.nodeId)
+      // Registry default pointing at the forgotten PDU: stored as an explicit "none".
+      const o = patched(next.nodes[m.nodeId], d, { pduId: null })
+      if (d && d.pduId === nodeId) o.pduId = null
+      next = withNode(next, m.nodeId, o)
+    }
+  }
+  return next
+}
+
+/**
+ * One registry board back to its NODE_IDS.md name, console and power zone. It stays in your
+ * cockpit: being added, hidden and last seen are not overrides.
+ */
+export function resetNode(
+  file: NodeMappingFile,
+  defaults: Map<number, NodeDefaults>,
+  nodeId: number
+): NodeMappingFile {
+  if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
+  if (!defaults.has(nodeId)) throw new MappingError('Only a registry board has defaults')
+  return withNode(file, nodeId, keptOnReset(file.nodes[nodeId]))
+}
+
+/** What a reset keeps of a registry board's entry: everything that is not an override. */
+function keptOnReset(o: NodeOverride | undefined): NodeOverride {
+  const kept: NodeOverride = {}
+  if (inCockpit(o)) kept.added = true // an adopted one stays in your cockpit, as a registry one
+  if (o?.hidden) kept.hidden = true
+  if (o?.lastSeen) kept.lastSeen = o.lastSeen
+  return kept
 }
 
 export interface ResetOptions {
@@ -373,23 +475,18 @@ export interface ResetOptions {
   forgetAdopted?: boolean
 }
 
-/**
- * The NODE_IDs "Also forget adopted nodes" drops: adopted and not ignored — exactly the ones the
- * review lists. An ignored adopted node keeps its entry (the ignore list is untouched by a reset),
- * and a stray flag on an unknown id is not an adopted node, so neither is dropped unseen.
- */
+/** The NODE_IDs "Also forget adopted nodes" drops — exactly the ones the review lists. */
 function forgettable(defaults: Map<number, NodeDefaults>, file: NodeMappingFile): number[] {
-  const ignored = new Set(file.ignored)
   return Object.keys(file.nodes)
     .map(Number)
-    .filter((id) => !defaults.has(id) && !ignored.has(id) && adopted(file.nodes[id]))
+    .filter((id) => !defaults.has(id) && adopted(file.nodes[id]))
     .sort((a, b) => a - b)
 }
 
 /**
- * Every registry node back to its defaults. Adopted nodes, the ignore list and hidden flags are
- * not registry overrides, so they stay — unless `forgetAdopted`, which also drops the adopted nodes
- * `resetPreview` lists (see `forgettable`). The ignore list always stays.
+ * Every registry node back to its defaults. Adopted nodes, being added, hidden flags and last-seen
+ * times are not registry overrides, so they stay — unless `forgetAdopted`, which also drops the adopted nodes
+ * `resetPreview` lists (see `forgettable`).
  */
 export function resetMapping(
   file: NodeMappingFile,
@@ -409,7 +506,10 @@ export function resetMapping(
     const id = Number(k)
     if (!defaults.has(id)) {
       if (!drop.has(id)) nodes[id] = o
-    } else if (o.hidden) nodes[id] = { hidden: true }
+      continue
+    }
+    const kept = keptOnReset(o)
+    if (Object.keys(kept).length) nodes[id] = kept
   }
   return { ...file, nodes }
 }
@@ -440,10 +540,7 @@ export interface ResetPreview {
   adopted: AdoptedRow[]
 }
 
-/**
- * What `resetMapping` would change, field by field. Counted from the file like `differingCount`,
- * so an ignored registry node with overrides is listed too — Reset clears it as well.
- */
+/** What `resetMapping` would change, field by field. Counted from the file like `differingCount`. */
 export function resetPreview(
   defaults: Map<number, NodeDefaults>,
   file: NodeMappingFile
@@ -484,40 +581,36 @@ export function resetPreview(
   return { rows, nodeCount, adopted }
 }
 
-function unignore(file: NodeMappingFile, nodeId: number): NodeMappingFile {
-  if (!file.ignored.includes(nodeId)) return file
-  const next: NodeMappingFile = { ...file, ignored: file.ignored.filter((id) => id !== nodeId) }
-  if (file.ignoredMeta?.[nodeId]) {
-    const meta = { ...file.ignoredMeta }
-    delete meta[nodeId]
-    if (Object.keys(meta).length) next.ignoredMeta = meta
-    else delete next.ignoredMeta
+/**
+ * A config import (#93): what you set — names, consoles, power zones, adopted boards, hidden flags —
+ * comes from the file; what this computer observed stays. Each board keeps its current `added`
+ * (registry boards in your cockpit) and `lastSeen`, so an import, which may come from another
+ * setup or an older export, never drops a board from your cockpit or forgets when it was seen.
+ */
+export function importMapping(
+  current: NodeMappingFile,
+  imported: NodeMappingFile,
+  /** Boards on the bus now: an import never hides one — Hide is for offline boards only. */
+  online: Iterable<number> = []
+): NodeMappingFile {
+  const onBus = new Set(online)
+  const nodes: Record<number, NodeOverride> = {}
+  const ids = new Set([...Object.keys(current.nodes), ...Object.keys(imported.nodes)].map(Number))
+  for (const id of [...ids].sort((a, b) => a - b)) {
+    const { added: _added, lastSeen: _seen, ...set } = imported.nodes[id] ?? {}
+    const cur = current.nodes[id]
+    const o: NodeOverride = { ...set }
+    if (onBus.has(id)) delete o.hidden
+    if (cur?.added) o.added = true
+    if (cur?.lastSeen && (o.added || adopted(o))) o.lastSeen = cur.lastSeen
+    if (Object.keys(o).length) nodes[id] = o
   }
-  return next
+  return { version: 3, nodes }
 }
 
 /** An on/off from the renderer must be a real boolean: 'no' or 'false' is truthy. */
 function checkOnOff(on: unknown): void {
   if (typeof on !== 'boolean') throw new MappingError('Invalid on/off value')
-}
-
-/** Ignore permanently, or un-ignore. `info` is recorded with a new ignore (main supplies it). */
-export function setIgnored(
-  file: NodeMappingFile,
-  nodeId: number,
-  on: boolean,
-  info?: IgnoredInfo
-): NodeMappingFile {
-  if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
-  checkOnOff(on)
-  if (!on) return unignore(file, nodeId)
-  if (file.ignored.includes(nodeId)) return file
-  const next: NodeMappingFile = {
-    ...file,
-    ignored: [...file.ignored, nodeId].sort((a, b) => a - b)
-  }
-  if (info) next.ignoredMeta = { ...file.ignoredMeta, [nodeId]: info }
-  return next
 }
 
 function withoutHidden(file: NodeMappingFile, nodeId: number): NodeMappingFile {
@@ -528,23 +621,22 @@ function withoutHidden(file: NodeMappingFile, nodeId: number): NodeMappingFile {
 
 /**
  * Set or clear "hidden until it reports again" — for a replaced / removed board, so only a
- * registry or adopted node can be hidden. A new NODE_ID has nothing to hide (it is in the
- * roster because it reports); Ignore is its action. Clearing is allowed for any id, so a stray
- * flag can always be removed.
+ * registry or adopted node can be hidden (main also refuses it while the board is online: a board
+ * on the bus is active, so it always shows). Clearing is allowed for any id, so a stray flag can
+ * always be removed.
  */
 export function setHidden(
   file: NodeMappingFile,
-  defaults: Map<number, NodeDefaults>,
+  _defaults: Map<number, NodeDefaults>, // kept for the mutators' common shape
   nodeId: number,
   on: boolean
 ): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
   checkOnOff(on)
   if (!on) return withoutHidden(file, nodeId)
-  if (!defaults.has(nodeId) && !adopted(file.nodes[nodeId])) {
-    throw new MappingError(
-      'Only a registry or adopted node can be hidden — ignore a new node instead'
-    )
+  const cur = file.nodes[nodeId]
+  if (!inCockpit(cur)) {
+    throw new MappingError('Only a board in your cockpit can be hidden')
   }
   return withNode(file, nodeId, { ...file.nodes[nodeId], hidden: true })
 }
@@ -560,6 +652,25 @@ export function clearReportedHidden(
   let next = file
   for (const id of presentIds) {
     if (next.nodes[id]?.hidden) next = withoutHidden(next, id)
+  }
+  return next
+}
+
+/**
+ * Record that these boards were on the bus at `at` (ISO 8601) — only boards in your cockpit
+ * (added or adopted). One still waiting in New on the bus is not, until it is added.
+ */
+export function markSeen(
+  file: NodeMappingFile,
+  _defaults: Map<number, NodeDefaults>, // kept for the mutators' common shape
+  ids: Iterable<number>,
+  at: string
+): NodeMappingFile {
+  let next = file
+  for (const id of ids) {
+    const cur = next.nodes[id]
+    if (!inCockpit(cur)) continue
+    next = withNode(next, id, { ...cur, lastSeen: at })
   }
   return next
 }

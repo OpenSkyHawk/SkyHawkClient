@@ -100,6 +100,8 @@ export interface NewDevices {
   count: number
   panels: number
   pdus: number
+  /** Of them, boards in NODE_IDS.md waiting to be added (#93: pre-filled in New on the bus). */
+  registry: number
 }
 
 /**
@@ -109,20 +111,29 @@ export interface NewDevices {
  */
 export function newDevices(views: NodeView[], live: boolean): NewDevices | null {
   if (!live) return null
-  const kinds = views.filter((v) => isReportableNew(v.entry)).map((v) => reportedKind(v.entry))
+  const fresh = views.filter((v) => isReportableNew(v.entry))
+  const kinds = fresh.map((v) => reportedKind(v.entry))
   const panels = kinds.filter((k) => k === 'panel').length
   const pdus = kinds.filter((k) => k === 'pdu').length
-  return panels + pdus ? { count: panels + pdus, panels, pdus } : null
+  const registry = fresh.filter((v) => v.entry.registry).length
+  return panels + pdus ? { count: panels + pdus, panels, pdus, registry } : null
 }
 
-/** `2 new devices on the bus` + `1 panel group, 1 PDU, not in NODE_IDS.md.` */
+/**
+ * `2 new devices on the bus` + what they are. Since #93 a registry board is new too until you add
+ * it: `1 panel group from NODE_IDS.md, not added to your cockpit yet.`; unregistered ones are
+ * `… not in NODE_IDS.md.`; a mix says how many are from NODE_IDS.md.
+ */
 export function newDevicesText(d: NewDevices): { head: string; detail: string } {
   const kinds = [
     ...(d.panels ? [plural(d.panels, 'panel group')] : []),
     ...(d.pdus ? [plural(d.pdus, 'PDU')] : [])
-  ]
-  return {
-    head: `${plural(d.count, 'new device')} on the bus`,
-    detail: `${kinds.join(', ')}, not in NODE_IDS.md.`
-  }
+  ].join(', ')
+  const detail =
+    d.registry === 0
+      ? `${kinds}, not in NODE_IDS.md.`
+      : d.registry === d.count
+        ? `${kinds} from NODE_IDS.md, not added to your cockpit yet.`
+        : `${kinds}, not added to your cockpit yet — ${d.registry} from NODE_IDS.md.`
+  return { head: `${plural(d.count, 'new device')} on the bus`, detail }
 }

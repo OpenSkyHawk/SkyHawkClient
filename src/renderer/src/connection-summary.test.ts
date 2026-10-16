@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { NodeModel, NodeModelEntry, PduOutage } from '@shared/node-rules'
 import type { NodeStatus } from '@shared/nodes'
 import { TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
-import { STATE_SYMBOL, attentionItems, nodeViews } from './cockpit'
+import { STATE_SYMBOL, attentionItems, lastSeenLabel, nodeViews } from './cockpit'
 import { nodesSummary } from './connection-summary'
 import { fmtTime } from './store'
 
@@ -63,8 +63,6 @@ const model = (nodes: NodeModelEntry[], outages: PduOutage[] = []): NodeModel =>
   nodes,
   outages,
   differingCount: 0,
-  ignored: [],
-  ignoredNodes: [],
   hidden: [],
   hiddenNodes: [],
   rosterComplete: true
@@ -138,6 +136,23 @@ describe('nodesSummary rows', () => {
     ])
     expect(s.more).toBe(1)
     expect(s.footer).toBe('+1 more · healthy nodes hidden')
+  })
+
+  it('a board not seen this session: no false "offline since", but when it was last seen (#93)', () => {
+    const t = Date.UTC(2026, 9, 14, 21, 13)
+    const s = summary([
+      pdu(4, 'Right', { availability: 'online' }),
+      node(34, {
+        name: 'Right_TACAN',
+        pduId: 4,
+        availability: 'offline',
+        notSeen: true,
+        lastSeenAt: t
+      })
+    ])
+    expect(s.rows.map((r) => [r.chip, r.meta])).toEqual([
+      ['OFFLINE', `#34 · PDU_Right · not seen this session · last seen ${lastSeenLabel(t)}`]
+    ])
   })
 
   it('names the feeding PDU and when the client learned the node went offline', () => {

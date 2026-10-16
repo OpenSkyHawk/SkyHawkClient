@@ -1,29 +1,111 @@
-// Cockpit side panels (#76): the pure decisions behind the node and PDU panels — which actions a
-// node offers, what its fault box says, the rows each panel shows and the mapping patch Save
+// Cockpit side panels (#76, one design for every board since #93): the pure decisions behind the
+// panel group and PDU panels — which actions a board offers, what its fault box says, the rows each panel shows and the mapping patch Save
 // sends. Every value is something a board reported or the client computed, labelled as such.
 import type { MappingPatch } from '@shared/node-mapping'
 import type { NodeModelEntry } from '@shared/node-rules'
 import { PDU_FLAG, RAIL_FLAG, displayCurrentMa, type PduRailPage } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
-import { pduAlertFlags, type NodeView } from './cockpit'
+import { lastSeenLabel, pduAlertFlags, type NodeView } from './cockpit'
 import { fmtUptime } from './store'
 
 const DASH = '—'
 
-// ── node actions ────────────────────────────────────────────────────────────
+// ── board actions ───────────────────────────────────────────────────────────
 
-/** reset / forget = forgetNode, hide = hideNode, ignore = ignoreNode. */
-export type NodeAction = 'reset' | 'forget' | 'hide' | 'ignore'
+/** A footer button: shown, and when it can't be used, why (its tooltip). */
+export interface BoardAction {
+  disabled: boolean
+  tip: string
+}
+
+/** The footer every board panel shares (#93), besides Save. */
+export interface BoardActions {
+  /** Registry boards only: back to the NODE_IDS.md name, console and power zone. */
+  reset?: BoardAction
+  forget: BoardAction
+  hide: BoardAction
+  /** The line under the footer: what Forget and Hide do here, or why they can't. */
+  note: string
+}
+
+const ONLINE_NOTE =
+  'Online — it’s active on the bus, so it can’t be removed. Forget and Hide work once it’s offline.'
+/** No complete roster yet: whether it is on the bus is not known — not "online" (#93 review). */
+const NO_ROSTER_NOTE =
+  'No roster yet — connect the SimGateway. Forget and Hide work once the board shows offline.'
 
 /**
- * The node panel's footer, besides Save. A registry node resets to its NODE_IDS defaults; an
- * adopted node is forgotten (it shows as new again), since it has no defaults; either can be
- * hidden while it is offline (a replaced or removed board). A new node can only be ignored.
+ * Same rules for a panel group and a PDU (#93). Hide and Forget only tidy the display, and a board
+ * that is online is active on the bus, so both wait until it is offline (main refuses them too).
+ * `fed` = boards in your cockpit this PDU feeds (Forget unlinks them; Hide keeps the links).
  */
-export function nodeActions(e: NodeModelEntry): NodeAction[] {
-  if (e.source === 'new') return ['ignore']
-  const hide: NodeAction[] = e.availability === 'offline' ? ['hide'] : []
-  return [e.source === 'adopted' ? 'forget' : 'reset', ...hide]
+export function boardActions(e: NodeModelEntry, fed = 0): BoardActions {
+  const offline = e.availability === 'offline'
+  const why = e.availability === 'unknown' ? NO_ROSTER_NOTE : ONLINE_NOTE
+  const off = (tip: string): BoardAction => ({
+    disabled: !offline,
+    tip: offline ? tip : why
+  })
+  const a: BoardActions = {
+    forget: off(
+      e.kind === 'pdu'
+        ? 'Remove it from your cockpit; its boards lose the link'
+        : 'Remove it from your cockpit and the saved mapping'
+    ),
+    hide: off(
+      e.kind === 'pdu'
+        ? 'Hide until it reports again; its boards keep the link'
+        : 'Hide until it reports again'
+    ),
+    note: why
+  }
+  if (e.source === 'registry') {
+    a.reset = e.differs
+      ? {
+          disabled: false,
+          tip:
+            e.kind === 'pdu'
+              ? 'Restore the name and console from NODE_IDS.md'
+              : 'Restore the name, console and power zone from NODE_IDS.md'
+        }
+      : { disabled: true, tip: 'Already at the NODE_IDS.md defaults' }
+  }
+  if (!offline) return a
+  if (e.kind === 'pdu') {
+    const boards = fed
+      ? `Its ${fed} board${fed === 1 ? '' : 's'} move to No power zone and keep no link to it, even if it comes back. `
+      : ''
+    a.note = `Forget removes this PDU from your cockpit. ${boards}Hide keeps the links: they return under it when it reports.`
+  } else {
+    const back =
+      e.source === 'adopted'
+        ? 'it shows as new'
+        : 'it waits in New on the bus, pre-filled from NODE_IDS.md'
+    a.note = `Forget removes it from your cockpit and the saved mapping; if it reports again ${back}. Hide takes it off the Cockpit until it reports again.`
+  }
+  return a
+}
+
+/** The box for a board remembered from an earlier session but not listed since the link opened. */
+function notSeenBox(e: NodeModelEntry): FaultBox {
+  const when = e.lastSeenAt !== undefined ? `last seen ${lastSeenLabel(e.lastSeenAt)}. ` : ''
+  return {
+    tone: 'err',
+    title: 'Not seen this session',
+    text: `${when}It’s remembered from an earlier session. Forget or Hide it if it’s no longer part of your cockpit.`
+  }
+}
+
+/**
+ * How fresh "Reported by the node" is: the bridge resends the roster every 5 s, so the values
+ * change in steps — this ticks between them instead of inventing values. "updated 3 s ago" while it
+ * reports; "last report 2 min ago" once it stopped; nothing when this session never heard from it.
+ */
+export function reportAge(e: NodeModelEntry, now: number): string {
+  if (e.reportedAt === undefined) return ''
+  const s = Math.max(0, Math.floor((now - e.reportedAt) / 1000))
+  const ago = s < 60 ? `${s} s ago` : `${Math.floor(s / 60)} min ago`
+  return e.availability === 'online' ? `updated ${ago}` : `last report ${ago}`
 }
 
 // ── fault box ───────────────────────────────────────────────────────────────
@@ -61,6 +143,7 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
       }
     ]
   }
+  if (e.notSeen) return [notSeenBox(e)]
   if (e.availability === 'offline') {
     return [
       {
@@ -134,6 +217,7 @@ export function pduFlagMeanings(v: NodeView): string[] {
  */
 export function pduFaultBoxes(v: NodeView, outage: boolean): FaultBox[] {
   const e = v.entry
+  if (e.notSeen) return [notSeenBox(e)]
   if (e.availability === 'offline') {
     return [
       {
@@ -315,13 +399,11 @@ export interface PlacementForm {
   pduId: number | null
 }
 
-/** Only what changed, so Save writes nothing when nothing did. */
+/** Only what changed, so Save writes nothing when nothing did. A PDU has no power zone. */
 export function mappingPatch(e: NodeModelEntry, f: PlacementForm): MappingPatch {
   const p: MappingPatch = {}
   if (f.name.trim() !== e.name) p.name = f.name.trim()
-  if (e.kind === 'panel') {
-    if (f.console !== (e.console ?? '')) p.console = f.console
-    if (f.pduId !== e.pduId) p.pduId = f.pduId
-  }
+  if (f.console !== (e.console ?? '')) p.console = f.console
+  if (e.kind === 'panel' && f.pduId !== e.pduId) p.pduId = f.pduId
   return p
 }

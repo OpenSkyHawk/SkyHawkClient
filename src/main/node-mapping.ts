@@ -1,6 +1,6 @@
 // Persist the node mapping to <userData>/node-mapping.json (shape and rules: shared/node-mapping.ts).
 //
-// Unlike config.json, a lost write here is user work gone (names, adopted boards, ignores), so
+// Unlike config.json, a lost write here is user work gone (names, adopted boards, hidden boards), so
 // failures are reported rather than swallowed, writes are atomic, and a file this build cannot
 // safely overwrite — unreadable, or from a newer client — is loaded read-only.
 import { app } from 'electron'
@@ -26,7 +26,7 @@ function mappingPath(): string {
   return join(app.getPath('userData'), 'node-mapping.json')
 }
 
-const empty = (): NodeMappingFile => ({ ...EMPTY_MAPPING, nodes: {}, ignored: [] })
+const empty = (): NodeMappingFile => ({ ...EMPTY_MAPPING, nodes: {} })
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 export function loadNodeMapping(): LoadedMapping {

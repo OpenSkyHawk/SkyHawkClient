@@ -3,12 +3,14 @@ import { isLinkUp } from '@shared/ipc'
 import type { NodeModel } from '@shared/node-rules'
 import { effectivePsuLimits, type PsuLimits } from '@shared/psu'
 import { useStore } from '../store'
-import { unidentifiedNew } from '../cockpit-adopt'
+import { strayFlag, strayNew } from '../cockpit-adopt'
 import {
   ATTENTION_SHOWN,
   STAGE_W,
   STATE_SYMBOL,
   attentionItems,
+  canErrorsSub,
+  canErrorsWorst,
   fmtPct,
   headroom,
   healthBand,
@@ -72,10 +74,29 @@ export function Cockpit() {
   const views = useMemo(() => (model ? nodeViews(model, telemetry) : []), [model, telemetry])
   const outages = useMemo(() => model?.outages ?? [], [model])
   const layout = useMemo(() => planLayout(views, outages), [views, outages])
-  const band = useMemo(() => healthBand(views), [views])
-  const items = useMemo(() => (live ? attentionItems(views, outages) : []), [live, views, outages])
+  // New boards that can't be adopted are active on the bus, so they are warnings (#93) — once an
+  // unidentified one has had IDENTIFY_WAIT_MS to report its kind, so a normal board never flashes.
+  const [now, setNow] = useState(() => Date.now())
+  const stray = useMemo(() => strayNew(views, now), [views, now])
+  useEffect(() => {
+    if (stray.nextAt === undefined) return
+    const t = setTimeout(() => setNow(Date.now()), Math.max(0, stray.nextAt - Date.now()) + 50)
+    return () => clearTimeout(t)
+  }, [stray.nextAt])
+  const strays = useMemo(
+    () =>
+      live ? stray.strays.map((v) => ({ nodeId: v.entry.nodeId, flag: strayFlag(v.entry) })) : [],
+    [live, stray]
+  )
+  const band = useMemo(() => healthBand(views, strays.length), [views, strays])
+  const items = useMemo(
+    () => (live ? attentionItems(views, outages, strays) : []),
+    [live, views, outages, strays]
+  )
+  /** The Adopt dialog opened on this NODE_ID (a stray's cog), else on the first in its queue. */
+  const [adoptAt, setAdoptAt] = useState<number>()
   const openView = open === null ? undefined : views.find((v) => v.entry.nodeId === open)
-  // A node can leave the model while its panel is open (hidden, ignored, forgotten): close it.
+  // A node can leave the model while its panel is open (hidden, forgotten): close it.
   useEffect(() => {
     if (open !== null && !openView) setOpen(null)
   }, [open, openView])
@@ -157,7 +178,6 @@ export function Cockpit() {
           <div className="cv__side">
             <Attention
               model={model}
-              views={views}
               live={live}
               items={items}
               onShowOutage={(pduId) => {
@@ -167,14 +187,19 @@ export function Cockpit() {
               }}
               onShowAll={() => filter('', true)}
               onOpen={setOpen}
-              onAdopt={() => setAdopting(true)}
+              onAdopt={(nodeId) => {
+                setAdoptAt(nodeId)
+                setAdopting(true)
+              }}
             />
             <BoardEvents />
           </div>
         </div>
       </div>
 
-      {adopting && <AdoptDialog views={views} onClose={() => setAdopting(false)} />}
+      {adopting && (
+        <AdoptDialog views={views} initial={adoptAt} onClose={() => setAdopting(false)} />
+      )}
       {openView &&
         (openView.entry.kind === 'pdu' ? (
           <PduPanel
@@ -183,6 +208,7 @@ export function Cockpit() {
             views={views}
             outage={outages.some((o) => o.pduId === openView.entry.nodeId)}
             live={live}
+            onOpen={setOpen}
             onClose={() => setOpen(null)}
           />
         ) : (
@@ -191,6 +217,7 @@ export function Cockpit() {
             view={openView}
             views={views}
             live={live}
+            onOpen={setOpen}
             onClose={() => setOpen(null)}
           />
         ))}
@@ -327,8 +354,11 @@ function Band(props: {
         <div className="hcard__value">
           {live && can ? (can.rec > can.tec ? `REC ${can.rec}` : `TEC ${can.tec}`) : dash}
         </div>
-        <div className="ring__sub" title={live && can ? `worst: ${can.name}` : undefined}>
-          {live ? `${can ? `worst #${can.nodeId} · ` : ''}${b.busOff} bus-off` : noLive}
+        <div
+          className="ring__sub"
+          title={live && canErrorsWorst(b) ? `worst: ${canErrorsWorst(b)}` : undefined}
+        >
+          {live ? canErrorsSub(b) : noLive}
         </div>
       </div>
 
@@ -550,26 +580,17 @@ function Group(props: {
 
 function Attention(props: {
   model?: NodeModel
-  views: NodeView[]
   live: boolean
   items: AttentionItem[]
   onShowOutage: (pduId: number) => void
   onShowAll: () => void
   onOpen: (nodeId: number) => void
-  onAdopt: () => void
+  /** Open the Adopt dialog, on this NODE_ID when given. */
+  onAdopt: (nodeId?: number) => void
 }) {
   const { items, live } = props
   const fresh = props.model ? newCount(props.model) : 0
   const more = Math.max(0, items.length - ATTENTION_SHOWN)
-  // New nodes that can't be adopted (still unknown after the wait, a bridge, an unknown type) are
-  // not news, but must stay reachable to be ignored: a quiet line when nothing adoptable waits.
-  const [now, setNow] = useState(() => Date.now())
-  const odd = useMemo(() => unidentifiedNew(props.views, now), [props.views, now])
-  useEffect(() => {
-    if (odd.nextAt === undefined) return
-    const t = setTimeout(() => setNow(Date.now()), Math.max(0, odd.nextAt - Date.now()) + 50)
-    return () => clearTimeout(t)
-  }, [odd.nextAt])
   return (
     <div className="card field">
       <div className="panel-h">
@@ -586,23 +607,8 @@ function Attention(props: {
             <br />
             <span>not linked yet</span>
           </div>
-          <button className="browse adopt-cta__btn" onClick={props.onAdopt}>
+          <button className="browse adopt-cta__btn" onClick={() => props.onAdopt()}>
             Adopt…
-          </button>
-        </div>
-      )}
-      {fresh === 0 && odd.count > 0 && (
-        <div className="adopt-cta adopt-cta--quiet">
-          <span className="node__dot" aria-hidden="true" />
-          <div>
-            <b>
-              {odd.count} unidentified device{odd.count === 1 ? '' : 's'} on the bus
-            </b>
-            <br />
-            <span>can’t be adopted yet</span>
-          </div>
-          <button className="toolbtn adopt-cta__btn" onClick={props.onAdopt}>
-            Review…
           </button>
         </div>
       )}
@@ -622,13 +628,15 @@ function Attention(props: {
                   {i.flag} · #{i.nodeId}
                 </span>
               </span>
-              {/* The cog always opens the node's panel. For a PDU outage it opens the PDU's, and
-                  the plan also outlines that PDU's group: the nodes that dropped with it. */}
+              {/* The cog opens the board's panel. For a PDU outage it opens the PDU's, and the
+                  plan also outlines that PDU's group: the nodes that dropped with it. A board that
+                  can't be adopted has no panel: its cog opens the Adopt dialog on it. */}
               <button
                 className="cog"
-                title="Details"
-                aria-label={`${i.name} details`}
+                title={i.stray ? 'Review' : 'Details'}
+                aria-label={`${i.name} ${i.stray ? 'review' : 'details'}`}
                 onClick={() => {
+                  if (i.stray) return props.onAdopt(i.nodeId)
                   if (i.outage) props.onShowOutage(i.nodeId)
                   props.onOpen(i.nodeId)
                 }}

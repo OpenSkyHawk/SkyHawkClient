@@ -16,23 +16,24 @@ import {
   clearReportedHidden,
   effectiveMapping,
   forgetNode,
+  importMapping,
   MappingError,
+  markSeen,
   registryDefaults,
   resetMapping,
+  resetNode,
   resetPreview,
   setHidden,
-  setIgnored,
   setNodeMapping,
   type AdoptSpec,
   type MappedNode,
   type MappingPatch,
   type NodeDefaults,
-  type NodeKind,
   type NodeMappingFile,
   type ResetOptions,
   type ResetPreview
 } from '@shared/node-mapping'
-import { buildNodeModel, cameOnline, type NodeModel } from '@shared/node-rules'
+import { buildNodeModel, type NodeModel } from '@shared/node-rules'
 import { NODE_NAMES, NODE_REGISTRY_SOURCE } from './reference/node-names.generated'
 import { NODE_FAULT_CODES } from './reference/node-status.generated'
 import {
@@ -83,15 +84,13 @@ export class NodeHub {
   /** Node changes for the event log (#64), named by the mapping. */
   private readonly events = new NodeEventTracker({
     name: (id) => this.mapped().get(id)?.name ?? `Node ${id}`,
-    ignored: (id) => this.mapping().ignored.includes(id),
-    // "New on the bus" once a node has identified as something adoptable — not at first sight,
-    // and never for the bridge's own row (node 0, our link).
-    unmapped: (id) => !this.mapped().has(id),
+    // "New on the bus" once a node not in your cockpit has identified as something adoptable — not
+    // at first sight, and never for the bridge's own row (node 0, our link). A registry board not
+    // added yet is new too (#93); its kind comes from the registry, so it is news at once.
+    unmapped: (id) => !this.mapped().get(id)?.known,
+    inRegistry: (id) => this.defaults.has(id),
     isNew: (id) =>
-      id !== BRIDGE_NODE_ID &&
-      !this.mapped().has(id) &&
-      !this.mapping().ignored.includes(id) &&
-      isAdoptableKind(this.kindOf(id))
+      id !== BRIDGE_NODE_ID && !this.mapped().get(id)?.known && isAdoptableKind(this.kindOf(id))
   })
   private mappedFor?: NodeMappingFile
   private mappedCache = new Map<number, MappedNode>()
@@ -156,8 +155,20 @@ export class NodeHub {
       this.emit('nodes:telemetry', this.telem.snapshot(now))
       changed = true
     }
-    if (rosterChanged) this.clearHiddenThatReported()
+    if (rosterChanged) this.rosterTransitions(now)
     if (changed) this.pushModel(now)
+  }
+
+  /**
+   * The link is closing (unplug, Disconnect, app quit): every board still on the bus was last seen
+   * now (#93). Called before the roster and this hub are reset.
+   */
+  linkClosed(now = Date.now()): void {
+    if (!this.wasPresent.size) return
+    this.persist(
+      markSeen(this.mapping(), this.defaults, this.wasPresent, new Date(now).toISOString())
+    )
+    this.wasPresent.clear()
   }
 
   /** Everything the renderer needs to rehydrate after a reload. */
@@ -173,8 +184,27 @@ export class NodeHub {
     return this.update((f) => adoptNode(f, this.defaults, nodeId, spec, this.kindOf))
   }
 
+  /** One registry board back to its NODE_IDS.md defaults. */
+  resetBoard(nodeId: number): NodeMappingResult {
+    return this.update((f) => resetNode(f, this.defaults, nodeId))
+  }
+
+  /** Remove a board from your cockpit (#93). Offline only: a board on the bus is active. */
   forget(nodeId: number): NodeMappingResult {
-    return this.update((f) => forgetNode(f, nodeId))
+    const online = this.onlineRefusal(nodeId, 'forgotten')
+    if (online) return online
+    return this.update((f) => forgetNode(f, this.defaults, nodeId, this.kindOf))
+  }
+
+  /**
+   * Hide and Forget only tidy the display, and a board that is online is active on the bus — its
+   * controls reach DCS, it draws power, it affects bus health — so it always shows (#93).
+   */
+  private onlineRefusal(nodeId: number, what: string): NodeMappingResult | undefined {
+    const online = this.roster.snapshot().some((n) => n.nodeId === nodeId && n.present)
+    return online
+      ? { ok: false, error: `It is online — a board on the bus can’t be ${what}` }
+      : undefined
   }
 
   /** The stored mapping and the registry defaults it applies to — for config export / import. */
@@ -186,9 +216,21 @@ export class NodeHub {
     return this.defaults
   }
 
-  /** Replace the whole mapping (config import). Same save path and read-only guard as any edit. */
-  replaceMapping(file: NodeMappingFile): NodeMappingResult {
-    return this.update(() => file)
+  /**
+   * Config import: the file's settings over the current mapping, keeping what this computer
+   * observed — each board's `added` and `lastSeen` — and never hiding a board on the bus (#93).
+   * Same save path and read-only guard as any edit.
+   */
+  importMapping(file: NodeMappingFile): NodeMappingResult {
+    return this.update((cur) => importMapping(cur, file, this.onlineIds()))
+  }
+
+  /** NODE_IDs present in the roster now (the bridge's own row excluded). */
+  onlineIds(): number[] {
+    return this.roster
+      .snapshot()
+      .filter((n) => n.present && n.nodeId !== BRIDGE_NODE_ID)
+      .map((n) => n.nodeId)
   }
 
   resetAll(opts?: ResetOptions): NodeMappingResult {
@@ -200,13 +242,6 @@ export class NodeHub {
     return resetPreview(this.defaults, this.mapping())
   }
 
-  /** Ignoring records when, and what the node reported as, for Settings › Ignored nodes. */
-  ignore(nodeId: number, on: boolean, now = Date.now()): NodeMappingResult {
-    const kind = on ? this.knownKind(nodeId, now) : undefined
-    const at = new Date(now).toISOString()
-    return this.update((f) => setIgnored(f, nodeId, on, kind ? { at, kind } : { at }))
-  }
-
   /**
    * What a node is, by the one resolver the model uses (node-kind.ts): its own announcement, then
    * PDU telemetry, then the registry or an adoption. undefined = nothing solid yet — the model's
@@ -216,14 +251,10 @@ export class NodeHub {
     resolveKind({
       reported: this.roster.snapshot().find((n) => n.nodeId === nodeId)?.nodeKind,
       pduTelemetry: this.telem.snapshot(now).some((t) => t.nodeId === nodeId && t.isPdu),
-      stored: this.defaults.get(nodeId)?.kind ?? this.mapping().nodes[nodeId]?.kind
+      // Only a board in your cockpit has a stored kind; a new one (registry included) is what it
+      // reports, never what its NODE_ID suggests (#93).
+      stored: this.mapped().get(nodeId)?.known ? this.mapped().get(nodeId)?.kind : undefined
     })
-
-  /** The kind Ignore records: only an adoptable one (a bridge or unknown kind records none). */
-  private knownKind(nodeId: number, now: number): NodeKind | undefined {
-    const k = this.kindOf(nodeId, now)
-    return isAdoptableKind(k) ? k : undefined
-  }
 
   /** The bundled NODE_IDS registry, PanelBridge included, and where it came from. */
   registry(): NodeRegistryInfo {
@@ -238,6 +269,10 @@ export class NodeHub {
   }
 
   hide(nodeId: number, on: boolean): NodeMappingResult {
+    if (on) {
+      const online = this.onlineRefusal(nodeId, 'hidden')
+      if (online) return online
+    }
     return this.update((f) => setHidden(f, this.defaults, nodeId, on))
   }
 
@@ -260,17 +295,36 @@ export class NodeHub {
   }
 
   /**
-   * A replaced / removed board that comes back online is no longer hidden. Only a transition
-   * counts: a board the bridge still lists (within its 3 s heartbeat timeout, or about to be
-   * removed) stays hidden through later polls. If the save fails the
-   * board is still shown — it is reporting, so hiding it would be wrong — and the flag may come
-   * back after a restart, which is the lesser problem.
+   * What a roster change means for the saved mapping:
+   * - a board that came (back) online is no longer hidden, and it was seen now — that is how a
+   *   registry board joins your cockpit the first time it reports;
+   * - a board that dropped off was last seen now.
+   * Only transitions count: a board the bridge still lists (within its 3 s heartbeat timeout, or
+   * about to be removed) stays hidden through later polls, and steady polls write nothing.
    */
-  private clearHiddenThatReported(): void {
-    const roster = this.roster.snapshot()
-    const back = cameOnline(this.wasPresent, roster)
-    this.wasPresent = new Set(roster.filter((n) => n.present).map((n) => n.nodeId))
-    const next = clearReportedHidden(this.mapping(), back)
+  private rosterTransitions(now: number): void {
+    const present = new Set(
+      this.roster
+        .snapshot()
+        .filter((n) => n.present)
+        .map((n) => n.nodeId)
+    )
+    const came = [...present].filter((id) => !this.wasPresent.has(id))
+    const went = [...this.wasPresent].filter((id) => !present.has(id))
+    this.wasPresent = present
+    if (!came.length && !went.length) return
+    const at = new Date(now).toISOString()
+    this.persist(
+      markSeen(clearReportedHidden(this.mapping(), came), this.defaults, [...came, ...went], at)
+    )
+  }
+
+  /**
+   * Save a change main made on its own (not a user edit). If the save fails the change still
+   * applies in memory — a reporting board must show, so un-hiding it is right — and may be lost
+   * after a restart, which is the lesser problem.
+   */
+  private persist(next: NodeMappingFile): void {
     try {
       this.save(next)
     } catch (err) {

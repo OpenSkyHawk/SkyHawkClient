@@ -144,15 +144,21 @@ describe('NodeRoster', () => {
     expect(r.takeDirty()).toBe(true)
   })
 
-  it('records first-seen and when / how a node went offline, clearing it when it returns', () => {
+  it('records first-seen, the last report, and when / how a node went offline', () => {
     const r = new NodeRoster()
     r.applyMessage(NODE_MSG, '0101000000000000008000000000', 1000)
+    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, reportedAt: 1000 })
     r.applyMessage(NODE_MSG, '0100000000000000008000000000', 5000) // live delta: offline
-    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, offlineAt: 5000, offlineVia: 'delta' })
+    expect(r.seenInfo().get(1)).toEqual({
+      firstSeenAt: 1000,
+      reportedAt: 1000, // its last report stays: "last report N s ago"
+      offlineAt: 5000,
+      offlineVia: 'delta'
+    })
     r.applyMessage(NODE_MSG, '0100000000000000008000000000', 6000) // repeat keeps the first time
     expect(r.seenInfo().get(1)?.offlineAt).toBe(5000)
     r.applyMessage(NODE_MSG, '0101000000000000008000000000', 7000)
-    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000 })
+    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, reportedAt: 7000 })
   })
 
   it('an offline found by a roster reply is marked roster, and the first END is remembered', () => {

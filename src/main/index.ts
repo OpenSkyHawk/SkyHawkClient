@@ -145,14 +145,12 @@ function registerIpc(): void {
     session.link.nodes.adopt(id, spec)
   )
   ipcMain.handle(CTRL.nodeMappingForget, (_e, id: number) => session.link.nodes.forget(id))
+  ipcMain.handle(CTRL.nodeMappingResetNode, (_e, id: number) => session.link.nodes.resetBoard(id))
   ipcMain.handle(CTRL.nodeMappingReset, (_e, opts?: ResetOptions) =>
     session.link.nodes.resetAll(opts)
   )
   ipcMain.handle(CTRL.nodeMappingResetPreview, () => session.link.nodes.previewReset())
   ipcMain.handle(CTRL.nodeRegistry, () => session.link.nodes.registry())
-  ipcMain.handle(CTRL.nodeMappingIgnore, (_e, id: number, on: boolean) =>
-    session.link.nodes.ignore(id, on)
-  )
   ipcMain.handle(CTRL.nodeMappingHide, (_e, id: number, on: boolean) =>
     session.link.nodes.hide(id, on)
   )

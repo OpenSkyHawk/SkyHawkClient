@@ -6,10 +6,13 @@ import {
   STATE_SYMBOL,
   affected,
   attentionItems,
+  canErrorsSub,
+  canErrorsWorst,
   consoleKey,
   fmtPct,
   headroom,
   healthBand,
+  lastSeenLabel,
   newCount,
   nodeHealth,
   nodeViews,
@@ -17,7 +20,9 @@ import {
   pduAlertFlags,
   planLayout,
   psuName,
+  shortName,
   tileMatches,
+  tileWidth,
   totalWatts
 } from './cockpit'
 
@@ -100,8 +105,6 @@ const model = (nodes: NodeModelEntry[], outages: PduOutage[] = []): NodeModel =>
   nodes,
   outages,
   differingCount: 0,
-  ignored: [],
-  ignoredNodes: [],
   hidden: [],
   hiddenNodes: [],
   rosterComplete: true
@@ -221,6 +224,16 @@ describe('consoleKey', () => {
   })
 })
 
+describe('shortName', () => {
+  it('drops the console prefix however it is joined, never the whole name', () => {
+    expect(shortName('Center_Armament')).toBe('Armament')
+    expect(shortName('Center Armament')).toBe('Armament')
+    expect(shortName('Left-Fuel')).toBe('Fuel')
+    expect(shortName('Centerline')).toBe('Centerline')
+    expect(shortName('Center')).toBe('Center')
+  })
+})
+
 describe('planLayout', () => {
   const nodes = [
     node(1, { name: 'Center_Armament', console: 'Center', pduId: 5 }),
@@ -256,6 +269,49 @@ describe('planLayout', () => {
     )
     expect(l.groups).toHaveLength(1)
     expect(l.groups[0]!.tiles[0]!.view.entry.nodeId).toBe(1)
+  })
+
+  it('tiles fit their names, from the column width up to ~2 columns, then "…" (#93)', () => {
+    expect(tileWidth('Armament', 99, 206)).toBe(99) // short: the column width
+    expect(tileWidth('Fuel_Quantity_Gauge', 99, 206)).toBe(172) // room for the symbol always kept
+    expect(tileWidth('Angle_Of_Attack_Indexer_Lights', 99, 206)).toBe(206) // capped
+  })
+
+  it('a board changing state never moves a tile (#93 re-review I)', () => {
+    const names = ['Left_ARC51_UHF', 'Left_Fuel', 'Left_Trim']
+    const at = (state: Partial<NodeModelEntry>) =>
+      planLayout(
+        nodeViews(
+          model([
+            pdu(3, 'Left'),
+            ...names.map((name, i) => node(10 + i, { name, pduId: 3, ...(i === 0 ? state : {}) }))
+          ]),
+          []
+        ),
+        []
+      ).groups[0]!.tiles.map((t) => [t.x, t.y, t.w])
+    expect(at({ availability: 'offline' })).toEqual(at({})) // ✕ appears: same places, same widths
+  })
+
+  it('tiles flow left to right and wrap inside their group', () => {
+    const names = ['Left_Engine', 'Left_ARC51_UHF_Radio', 'Left_Fuel', 'Left_Trim', 'Left_Gear']
+    const l = planLayout(
+      nodeViews(
+        model([pdu(3, 'Left'), ...names.map((name, i) => node(10 + i, { name, pduId: 3 }))]),
+        []
+      ),
+      []
+    )
+    const g = l.groups[0]!
+    // Left console: 200 wide, two 96-px columns. ARC51 needs 145, so it takes its row.
+    expect(g.tiles.map((t) => [t.short, t.x - g.x, t.y - g.tiles[0]!.y, t.w])).toEqual([
+      ['Engine', 0, 0, 96],
+      ['ARC51_UHF_Radio', 0, 42, 145],
+      ['Fuel', 0, 84, 96],
+      ['Trim', 104, 84, 96],
+      ['Gear', 0, 126, 96]
+    ])
+    for (const t of g.tiles) expect(t.x + t.w).toBeLessThanOrEqual(g.x + g.w)
   })
 
   it('never places new nodes', () => {
@@ -349,6 +405,24 @@ describe('attentionItems', () => {
       attentionItems(nodeViews(model([pdu(3, 'Left', { readings: 'none' })]), []), [])
     ).toEqual([])
   })
+
+  it('a remembered board not seen this session says so, and when it last was (#93)', () => {
+    const t = Date.UTC(2026, 9, 14, 21, 14)
+    const nodes = [node(2, { availability: 'offline', notSeen: true, lastSeenAt: t })]
+    expect(attentionItems(nodeViews(model(nodes), []), []).map((i) => i.flag)).toEqual([
+      `NOT SEEN THIS SESSION · last seen ${lastSeenLabel(t)}`
+    ])
+  })
+
+  it('new boards that can’t be adopted are warnings after the rest; their cog reviews (#93)', () => {
+    const nodes = [node(1, { status: status(1, { epvf: true }) }), node(41, { source: 'new' })]
+    const strays = [{ nodeId: 44, flag: 'SECOND SIMGATEWAY · can’t be adopted' }]
+    const items = attentionItems(nodeViews(model(nodes), []), [], strays)
+    expect(items.map((i) => [i.name, i.state, i.flag, !!i.stray])).toEqual([
+      ['Node_1', 'warn', 'ERR-PASSIVE', false],
+      ['NODE_ID 44', 'warn', 'SECOND SIMGATEWAY · can’t be adopted', true]
+    ])
+  })
 })
 
 describe('healthBand', () => {
@@ -371,6 +445,11 @@ describe('healthBand', () => {
     expect([b.online, b.total, b.warn, b.off, b.unknown]).toEqual([4, 6, 1, 2, 0])
   })
 
+  it('a new board that can’t be adopted is on the bus and a warning (#93)', () => {
+    const s = healthBand(nodeViews(model(nodes), telemetry), 1)
+    expect([s.online, s.total, s.warn, s.off]).toEqual([5, 7, 2, 2])
+  })
+
   it('sums amps and watts over PDUs with readings; a negative offset reads as 0', () => {
     expect(b.amps12).toBeCloseTo(3)
     expect(b.amps5).toBeCloseTo(0.5)
@@ -382,6 +461,25 @@ describe('healthBand', () => {
   it('finds the lowest 5 V rail, worst CAN counters, bus-off count and the hottest PDU', () => {
     expect(b.low5).toEqual({ volts: 4.7, nodeId: 4, name: 'PDU_Right' })
     expect(b.worstCan).toMatchObject({ nodeId: 1, tec: 8 })
+    expect(canErrorsSub(b)).toBe('worst #7 · 1 bus-off') // the bus-off board is named first
+    const quiet = healthBand(
+      nodeViews(model([node(1, { status: status(1, { tec: 0, rec: 0 }) })]), [])
+    )
+    expect(canErrorsSub(quiet)).toBe('no errors · 0 bus-off') // no board named when all are 0
+    expect(canErrorsSub(healthBand([]))).toBe('0 bus-off')
+    // A bus-off board can read TEC 0: never "no errors" while one is bus-off — it is named first.
+    const off = healthBand(
+      nodeViews(
+        model([
+          node(1, { status: status(1, { tec: 40 }) }),
+          node(7, { name: 'Center_Clock', status: status(7, { boff: true, tec: 0, rec: 0 }) })
+        ]),
+        []
+      )
+    )
+    expect(canErrorsSub(off)).toBe('worst #7 · 1 bus-off')
+    expect(canErrorsWorst(off)).toBe('Center_Clock')
+    expect(canErrorsWorst(quiet)).toBeUndefined()
     expect(b.busOff).toBe(1)
     expect(b.hottest).toEqual({ tempC: 41.3, nodeId: 4, name: 'PDU_Right', level: 'warn' })
   })

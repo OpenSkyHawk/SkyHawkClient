@@ -63,12 +63,12 @@ export function isProblem(e: Pick<LogEvent, 'severity'>): boolean {
 export interface NodeLookup {
   /** Effective name; `Node <id>` when the id has none. */
   name(nodeId: number): string
-  /** Ignored ids get no events at all. */
-  ignored(nodeId: number): boolean
   /** Neither in the registry nor adopted, and identified as something adoptable: news. */
   isNew(nodeId: number): boolean
-  /** Neither in the registry nor adopted, whatever it has identified as. */
+  /** Not in your cockpit (not added, not adopted), whatever it has identified as. */
   unmapped(nodeId: number): boolean
+  /** In NODE_IDS.md — a new one is waiting to be added, pre-filled (#93). Absent = never. */
+  inRegistry?(nodeId: number): boolean
 }
 
 type StatusFlag = 'boff' | 'epvf' | 'degraded' | 'overheat'
@@ -156,7 +156,7 @@ export class NodeEventTracker {
       if (n.nodeId === BRIDGE_NODE_ID) continue
       const p = this.prev.get(n.nodeId)
       this.prev.set(n.nodeId, n)
-      if (!this.lookup.ignored(n.nodeId)) out.push(...this.diff(p, n, raw, isEnd, now))
+      out.push(...this.diff(p, n, raw, isEnd, now))
     }
     if (isEnd && this.baseline) out.push(this.endBaseline(raw, now))
     return out
@@ -164,7 +164,7 @@ export class NodeEventTracker {
 
   /** One decoded `_NODE_TELEM` frame: PDU rail / status flags raised and cleared. */
   telemetry(t: NodeTelem, raw: string, now: number): LogEventInput[] {
-    if (t.kind === 'unknown' || this.lookup.ignored(t.nodeId)) return []
+    if (t.kind === 'unknown') return []
     const key = `${t.nodeId}:${t.page}`
     const was = this.pages.get(key) ?? 0
     this.pages.set(key, t.flags)
@@ -201,7 +201,7 @@ export class NodeEventTracker {
   private endBaseline(raw: string, now: number): LogEventInput {
     this.baseline = false
     let online = 0
-    for (const n of this.prev.values()) if (n.present && !this.lookup.ignored(n.nodeId)) online++
+    for (const n of this.prev.values()) if (n.present) online++
     return {
       t: now,
       source: 'node',
@@ -236,7 +236,11 @@ export class NodeEventTracker {
     const emittedNew = n.present && this.lookup.isNew(id) && !this.newSeen.has(id)
     if (emittedNew) {
       this.newSeen.add(id)
-      ev('new', 'new on the bus', 'not in registry')
+      ev(
+        'new',
+        'new on the bus',
+        this.lookup.inRegistry?.(id) ? 'in NODE_IDS.md' : 'not in registry'
+      )
     }
     const wasPresent = p?.present ?? false
     if (!n.present && (p === undefined || wasPresent)) {

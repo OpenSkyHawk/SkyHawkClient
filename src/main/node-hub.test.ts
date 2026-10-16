@@ -8,7 +8,7 @@ const disk: {
   readOnly?: string
   fail?: boolean
 } = {
-  file: { version: 1, nodes: {}, ignored: [] },
+  file: { version: 3, nodes: {} },
   saves: 0
 }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } })) // debug log path
@@ -27,6 +27,19 @@ vi.mock('./node-mapping', () => {
 
 const { NodeHub } = await import('./node-hub')
 
+const T0 = '1970-01-01T00:00:00.000Z'
+/** The registry boards added to your cockpit (#93): the setup most tests assume. */
+const added = (): NodeMappingFile => ({
+  version: 3,
+  nodes: {
+    1: { added: true },
+    2: { added: true },
+    3: { added: true },
+    4: { added: true },
+    5: { added: true }
+  }
+})
+
 function hub() {
   const pushes: [string, unknown][] = []
   const roster = new NodeRoster()
@@ -36,13 +49,14 @@ function hub() {
 
 describe('NodeHub', () => {
   beforeEach(() => {
-    disk.file = { version: 1, nodes: {}, ignored: [] }
+    disk.file = added()
     disk.saves = 0
     disk.readOnly = undefined
     disk.fail = false
   })
 
   it('a failed save is reported, and the change is not applied', () => {
+    disk.file = { version: 3, nodes: { 1: { added: true, lastSeen: T0 } } }
     const { h, pushes } = hub()
     disk.fail = true
     expect(h.setMapping(1, { name: 'Armament' })).toEqual({
@@ -56,7 +70,7 @@ describe('NodeHub', () => {
   it('a read-only mapping (newer client, unreadable) refuses every save', () => {
     disk.readOnly = 'node-mapping.json was written by a newer client'
     const { h } = hub()
-    expect(h.ignore(41, true)).toEqual({
+    expect(h.hide(2, true)).toEqual({
       ok: false,
       error: 'Not saved: node-mapping.json was written by a newer client'
     })
@@ -64,41 +78,87 @@ describe('NodeHub', () => {
   })
 
   it('a reporting board is un-hidden even when that save fails', () => {
-    disk.file = { version: 1, nodes: { 2: { hidden: true } }, ignored: [] }
+    disk.file = { version: 3, nodes: { 2: { hidden: true, added: true } } }
     disk.fail = true
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '0201000000000000008000000000', 0)
     h.flush(roster.takeDirty(), 0)
     expect(h.snapshot(0).model.hidden).toEqual([])
-    expect(disk.file.nodes).toEqual({ 2: { hidden: true } }) // not on disk
+    expect(disk.file.nodes).toEqual({ 2: { hidden: true, added: true } }) // not on disk
   })
 
   it('clears "hidden until it reports again" once the node reports, and saves it', () => {
-    disk.file = { version: 1, nodes: { 2: { hidden: true } }, ignored: [] }
+    disk.file = { version: 3, nodes: { 1: { added: true }, 2: { hidden: true, added: true } } }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '0101000000000000008000000000', 0) // node 1 present
     roster.applyMessage(NODE_END_MSG, '1', 0)
     h.flush(roster.takeDirty(), 0)
-    expect(disk.saves).toBe(0)
+    expect(disk.file.nodes).toEqual({
+      1: { added: true, lastSeen: T0 },
+      2: { hidden: true, added: true }
+    })
     expect(h.snapshot(0).model.hidden).toEqual([2]) // skipped, not offline
 
     roster.applyMessage(NODE_MSG, '0201000000000000008000000000', 100) // node 2 reports
     h.flush(roster.takeDirty(), 100)
-    expect(disk.file.nodes).toEqual({})
-    expect(disk.saves).toBe(1)
+    expect(disk.file.nodes[2]).toEqual({ added: true, lastSeen: '1970-01-01T00:00:00.100Z' })
+    expect(disk.saves).toBe(2)
     expect(h.snapshot(100).model.nodes.find((n) => n.nodeId === 2)?.availability).toBe('online')
+  })
+
+  it('last seen (#93): written when a board comes online, drops, and when the link closes', () => {
+    const { h, roster } = hub()
+    const row = (id: number, present: boolean) =>
+      `0${id}${present ? '01' : '00'}000000000000008000000000`
+    roster.applyMessage(NODE_MSG, row(1, true), 1000)
+    roster.applyMessage(NODE_MSG, row(2, true), 1000)
+    h.flush(roster.takeDirty(), 1000)
+    expect([disk.file.nodes[1], disk.file.nodes[2]]).toEqual([
+      { added: true, lastSeen: '1970-01-01T00:00:01.000Z' },
+      { added: true, lastSeen: '1970-01-01T00:00:01.000Z' }
+    ])
+    const saves = disk.saves
+    roster.applyMessage(NODE_MSG, row(1, true), 5000) // still there: no write
+    h.flush(roster.takeDirty(), 5000)
+    expect(disk.saves).toBe(saves)
+    roster.applyMessage(NODE_MSG, row(2, false), 6000) // 2 drops
+    h.flush(roster.takeDirty(), 6000)
+    expect(disk.file.nodes[2]?.lastSeen).toBe('1970-01-01T00:00:06.000Z')
+    h.linkClosed(9000) // unplug: 1 was still on the bus
+    expect(disk.file.nodes[1]?.lastSeen).toBe('1970-01-01T00:00:09.000Z')
+    expect(disk.file.nodes[2]?.lastSeen).toBe('1970-01-01T00:00:06.000Z')
+    const after = disk.saves
+    h.linkClosed(9500) // nothing on the bus any more: no write
+    expect(disk.saves).toBe(after)
+  })
+
+  it('a board not in your cockpit is never written until added or adopted (#93)', () => {
+    disk.file = { version: 3, nodes: {} }
+    const { h, roster } = hub()
+    roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 0) // node 41
+    roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // registry board 1
+    h.flush(roster.takeDirty(), 0)
+    expect(disk.saves).toBe(0)
+    expect(h.snapshot(0).model.nodes.map((n) => [n.nodeId, n.source])).toEqual([
+      [1, 'new'],
+      [41, 'new']
+    ])
+    const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
+    expect(h.adopt(1, spec).ok).toBe(true) // Add to cockpit
+    expect(disk.file.nodes[1]).toEqual({ added: true })
+    expect(h.snapshot(0).model.nodes[0]).toMatchObject({ nodeId: 1, source: 'registry' })
   })
 
   it('a mapping change persists and pushes the new model; bad input writes nothing', () => {
     const { h, pushes } = hub()
     const ok = h.setMapping(1, { name: 'Armament' })
     expect(ok.ok && ok.model.nodes.find((n) => n.nodeId === 1)?.name).toBe('Armament')
-    expect(disk.file.nodes).toEqual({ 1: { name: 'Armament' } })
+    expect(disk.file.nodes[1]).toEqual({ added: true, name: 'Armament' })
     expect(pushes.at(-1)?.[0]).toBe('nodes:model')
 
     const before = disk.saves
     expect(h.setMapping(1, { name: ' ' })).toEqual({ ok: false, error: 'Name cannot be empty' })
-    expect(h.adopt(1, { name: 'x', console: 'y', pduId: null, kind: 'panel' })).toMatchObject({
+    expect(h.adopt(1, { name: ' ', console: 'y', pduId: null, kind: 'panel' })).toMatchObject({
       ok: false
     })
     expect(disk.saves).toBe(before)
@@ -130,44 +190,62 @@ describe('NodeHub', () => {
     expect(node41()).toMatchObject({ source: 'adopted', name: 'Left_Trim', pduId: 3 })
   })
 
-  it('a board hidden while still listed stays hidden until it actually comes back', () => {
+  it('Hide and Forget wait until a board is offline (#93): online, it is active on the bus', () => {
     const { h, roster } = hub()
     const node2 = (present: boolean) =>
       present ? '0201000000000000008000000000' : '0200000000000000008000000000'
     roster.applyMessage(NODE_MSG, node2(true), 0)
     h.flush(roster.takeDirty(), 0)
-    expect(h.hide(2, true).ok).toBe(true) // still listed (bridge has not timed it out)
+    const saves = disk.saves
+    expect(h.hide(2, true)).toEqual({
+      ok: false,
+      error: 'It is online — a board on the bus can’t be hidden'
+    })
+    expect(h.forget(2)).toEqual({
+      ok: false,
+      error: 'It is online — a board on the bus can’t be forgotten'
+    })
+    expect(disk.saves).toBe(saves)
 
-    roster.applyMessage(NODE_MSG, '0101000000000000008000000000', 100) // another node's delta
-    h.flush(roster.takeDirty(), 100)
-    roster.beginBurst(5000) // poll reply still lists node 2
-    roster.applyMessage(NODE_MSG, node2(true), 5000)
-    roster.applyMessage(NODE_END_MSG, '2', 5000)
+    roster.applyMessage(NODE_MSG, node2(false), 3000) // timed out
+    h.flush(roster.takeDirty(), 3000)
+    expect(h.hide(2, true).ok).toBe(true)
+    roster.beginBurst(5000) // the poll reply still lists it, absent: stays hidden
+    roster.applyMessage(NODE_MSG, node2(false), 5000)
+    roster.applyMessage(NODE_END_MSG, '1', 5000)
     h.flush(roster.takeDirty(), 5000)
-    expect(disk.file.nodes[2]).toEqual({ hidden: true })
-
-    roster.applyMessage(NODE_MSG, node2(false), 6000) // timed out
-    h.flush(roster.takeDirty(), 6000)
-    expect(disk.file.nodes[2]).toEqual({ hidden: true })
+    expect(disk.file.nodes[2]?.hidden).toBe(true)
 
     roster.applyMessage(NODE_MSG, node2(true), 9000) // board is back
     h.flush(roster.takeDirty(), 9000)
-    expect(disk.file.nodes[2]).toBeUndefined()
+    expect(disk.file.nodes[2]).toEqual({ added: true, lastSeen: '1970-01-01T00:00:09.000Z' })
   })
 
   it('hiding a new node is refused and writes nothing', () => {
     const { h } = hub()
     expect(h.hide(41, true)).toEqual({
       ok: false,
-      error: 'Only a registry or adopted node can be hidden — ignore a new node instead'
+      error: 'Only a board in your cockpit can be hidden'
     })
     expect(disk.saves).toBe(0)
     expect(h.hide(2, true).ok).toBe(true)
   })
 
+  it('forgetting an offline PDU (#93) unlinks the boards it fed; resetBoard restores a default', () => {
+    disk.file = {
+      version: 3,
+      nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' }, 4: { added: true, lastSeen: T0 } }
+    }
+    const { h } = hub()
+    expect(h.forget(4).ok).toBe(true)
+    expect(disk.file.nodes).toEqual({ 2: { added: true, lastSeen: T0, name: 'Nav', pduId: null } })
+    expect(h.resetBoard(2).ok).toBe(true)
+    expect(disk.file.nodes).toEqual({ 2: { added: true, lastSeen: T0 } }) // still in your cockpit
+  })
+
   it('a non-boolean on/off is refused; a no-op change writes and pushes nothing', () => {
     const { h, pushes } = hub()
-    expect(h.ignore(5, 'no' as never)).toEqual({ ok: false, error: 'Invalid on/off value' })
+    expect(h.hide(5, 'no' as never)).toEqual({ ok: false, error: 'Invalid on/off value' })
     expect(h.forget(NaN)).toEqual({ ok: false, error: 'Not a NODE_ID: NaN' })
     const forgot = h.forget(41) // nothing mapped
     expect(forgot.ok).toBe(true)
@@ -182,34 +260,6 @@ describe('NodeHub', () => {
     expect(disk.saves).toBe(0)
   })
 
-  it('ignoring records when and what the node reported as; un-ignoring forgets it', () => {
-    const { h, roster } = hub()
-    roster.applyMessage(NODE_MSG, '2F01000000000000008000000000', 0) // node 47 reports
-    h.telemetry('2F0100E02E182EBC02', 0) // ... and sends PDU pages
-    expect(h.ignore(47, true, 1000).ok).toBe(true)
-    expect(disk.file.ignoredMeta).toEqual({ 47: { at: '1970-01-01T00:00:01.000Z', kind: 'pdu' } })
-    expect(h.snapshot().model.ignoredNodes).toMatchObject([{ nodeId: 47, kind: 'pdu' }])
-    h.ignore(47, false)
-    expect(disk.file).toEqual({ version: 1, nodes: {}, ignored: [] })
-  })
-
-  it('stores a kind only when known, so an early-ignored PDU is not kept as a panel', () => {
-    const { h, roster } = hub()
-    roster.applyMessage(NODE_MSG, '2F01000000000000008000000000', 0) // node 47: status only
-    h.ignore(47, true, 1000)
-    expect(disk.file.ignoredMeta?.[47]).toEqual({ at: '1970-01-01T00:00:01.000Z' }) // no guess
-    expect(h.snapshot(1000).model.ignoredNodes[0]).not.toHaveProperty('kind')
-    h.telemetry('2F0100E02E182EBC02', 2000) // ... then its first PDU page
-    expect(h.snapshot(2000).model.ignoredNodes[0]?.kind).toBe('pdu')
-
-    h.ignore(3, true, 3000) // registry PDU, never reported
-    roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 3000) // node 41: a panel group
-    h.adopt(41, { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' })
-    h.ignore(41, true, 3000) // adopted panel
-    expect(disk.file.ignoredMeta?.[3]?.kind).toBe('pdu')
-    expect(disk.file.ignoredMeta?.[41]?.kind).toBe('panel')
-  })
-
   it('reset can also forget adopted nodes, and previews what it changes', () => {
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 0) // node 41: a panel group
@@ -217,10 +267,30 @@ describe('NodeHub', () => {
     h.adopt(41, { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' })
     expect(h.previewReset()).toMatchObject({ nodeCount: 1, adopted: [{ nodeId: 41 }] })
     expect(h.resetAll().ok).toBe(true)
-    expect(Object.keys(disk.file.nodes)).toEqual(['41'])
+    expect(disk.file.nodes[1]).toEqual({ added: true }) // back to its defaults, still added
+    expect(disk.file.nodes[41]).toBeDefined()
     expect(h.resetAll({ forgetAdopted: true }).ok).toBe(true)
-    expect(disk.file.nodes).toEqual({})
+    expect(disk.file.nodes).toEqual(added().nodes)
     expect(h.resetAll(null as never)).toEqual({ ok: false, error: 'Invalid reset request' })
+  })
+
+  it('a config import never hides a board that is on the bus (#93 re-review K)', () => {
+    const { h, roster } = hub()
+    roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // node 1 online
+    h.flush(roster.takeDirty(), 0)
+    expect(h.onlineIds()).toEqual([1])
+    expect(
+      h.importMapping({ version: 3, nodes: { 1: { hidden: true }, 2: { hidden: true } } }).ok
+    ).toBe(true)
+    expect(disk.file.nodes[1]?.hidden).toBeUndefined()
+    expect(disk.file.nodes[2]?.hidden).toBe(true)
+  })
+
+  it('a config import keeps what this computer observed: added and last seen (#93 review)', () => {
+    disk.file = { version: 3, nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' } } }
+    const { h } = hub()
+    expect(h.importMapping({ version: 3, nodes: { 2: { name: 'Nav_2' } } }).ok).toBe(true)
+    expect(disk.file.nodes).toEqual({ 2: { name: 'Nav_2', added: true, lastSeen: T0 } })
   })
 
   it('serves the bundled registry with PanelBridge and its source commit', () => {
@@ -249,7 +319,7 @@ describe('NodeHub', () => {
 
 describe('board kind (#344)', () => {
   beforeEach(() => {
-    disk.file = { version: 1, nodes: {}, ignored: [] }
+    disk.file = added()
     disk.saves = 0
     disk.readOnly = undefined
     disk.fail = false
@@ -282,9 +352,8 @@ describe('board kind (#344)', () => {
   it('a board that reports PDU is one, whatever was stored: no power zone, and a zone for others', () => {
     // Adopted earlier as a panel group fed by PDU 3.
     disk.file = {
-      version: 1,
-      nodes: { 41: { name: 'Aft', console: 'Left', kind: 'panel', pduId: 3 } },
-      ignored: []
+      version: 3,
+      nodes: { 1: { added: true }, 41: { name: 'Aft', console: 'Left', kind: 'panel', pduId: 3 } }
     }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(41, 0x02), 0)
@@ -294,20 +363,35 @@ describe('board kind (#344)', () => {
   })
 
   it('a registry panel ID that reports PDU is a PDU; a registry PDU that says nothing stays one', () => {
+    disk.file = { version: 3, nodes: { 3: { added: true, lastSeen: T0 } } }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(2, 0x02), 0) // Right_Navigation's ID, on a PDU
     expect(node(h, 2)).toMatchObject({ kind: 'pdu', identified: 'pdu' })
     expect(node(h, 3)).toMatchObject({ kind: 'pdu', identified: 'pdu' }) // PDU_Left, no report
   })
 
-  it('a bridge is never adoptable, only ignorable, and is not news', () => {
+  it('a bridge is never adoptable, and on the bus it can’t be hidden either (#93)', () => {
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(41, 0x03), 0)
     const spec = { name: 'GW2', console: 'Left', pduId: null, kind: 'panel' } as const
     expect(h.adopt(41, spec)).toEqual({ ok: false, error: 'This board cannot be adopted' })
     expect(node(h, 41)).toMatchObject({ source: 'new', identified: 'bridge' })
-    expect(h.ignore(41, true).ok).toBe(true)
-    expect(disk.file.ignoredMeta?.[41]).not.toHaveProperty('kind')
+    expect(h.hide(41, true)).toMatchObject({ ok: false })
+    expect(disk.saves).toBe(0)
+  })
+
+  it('a registry board is added only once it says it is a PDU or a panel group (#93 re-review C, G)', () => {
+    disk.file = { version: 3, nodes: {} }
+    const { h, roster } = hub()
+    const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
+    roster.applyMessage(NODE_MSG, row(1, 0x00), 0) // kind not reported yet
+    expect(node(h, 1)?.identified).toBeUndefined()
+    expect(h.adopt(1, spec)).toEqual({ ok: false, error: 'Its board type is not known yet' })
+    roster.applyMessage(NODE_MSG, row(1, 0x03), 10) // a bridge on a registry panel's ID
+    expect(h.adopt(1, spec)).toEqual({ ok: false, error: 'This board cannot be adopted' })
+    roster.applyMessage(NODE_MSG, row(1, 0x01), 20) // a panel group
+    expect(h.adopt(1, spec).ok).toBe(true)
+    expect(disk.file.nodes[1]).toEqual({ added: true })
   })
 
   it('a kind this client does not know is not adoptable either', () => {

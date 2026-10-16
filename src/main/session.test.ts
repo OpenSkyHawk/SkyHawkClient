@@ -84,7 +84,10 @@ vi.mock('./serial', () => ({
 vi.mock('./net', () => ({ createTransport: () => new FakeTransport() }))
 // Keep the node mapping off the real disk.
 vi.mock('./node-mapping', () => ({
-  loadNodeMapping: () => ({ file: { version: 1, nodes: {}, ignored: [] } }),
+  // Center_Armament and Right_Navigation are in this cockpit (#93: added).
+  loadNodeMapping: () => ({
+    file: { version: 3, nodes: { 1: { added: true }, 2: { added: true } } }
+  }),
   saveNodeMapping: () => {},
   MappingSaveError: class extends Error {}
 }))

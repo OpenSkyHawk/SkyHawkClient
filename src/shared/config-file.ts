@@ -13,6 +13,7 @@ import { DEFAULT_CONFIG, sanitizeConfig, type AppConfig } from './ipc'
 import { sanitizeCache, type CachedAxis, type CalCache } from './cal-cache'
 import {
   effectiveMapping,
+  importMapping,
   sanitizeNodeMapping,
   type MappedNode,
   type NodeDefaults,
@@ -201,42 +202,37 @@ function diffPsu(cur: PsuSetting, next: PsuSetting): DiffRow[] {
 function diffNodes(
   defaults: Map<number, NodeDefaults>,
   cur: NodeMappingFile,
-  next: NodeMappingFile
+  next: NodeMappingFile,
+  online: number[]
 ): { rows: DiffRow[]; nodes: number } {
+  // What applying it would leave: the import keeps each board's observed state and never hides a
+  // board on the bus (#93).
   const a = effectiveMapping(defaults, cur)
-  const b = effectiveMapping(defaults, next)
-  const curIgnored = new Set(cur.ignored)
-  const nextIgnored = new Set(next.ignored)
+  const b = effectiveMapping(defaults, importMapping(cur, next, online))
   const zone = (map: Map<number, MappedNode>, pduId: number | null) =>
     pduId === null ? '—' : (map.get(pduId)?.name ?? defaults.get(pduId)?.name ?? `Node ${pduId}`)
   const where = (map: Map<number, MappedNode>, m: MappedNode) =>
     `${m.console} · ${zone(map, m.pduId)}`
   const rows: DiffRow[] = []
   const changed = new Set<number>()
-  const ids = [...new Set([...a.keys(), ...b.keys(), ...cur.ignored, ...next.ignored])].sort(
-    (x, y) => x - y
-  )
+  const ids = [...new Set([...a.keys(), ...b.keys()])].sort((x, y) => x - y)
   for (const id of ids) {
     const push = (k: string, from: string, to: string) => {
       rows.push({ k, from, to })
       changed.add(id)
     }
-    const wasIgnored = curIgnored.has(id)
-    const isIgnored = nextIgnored.has(id)
-    if (wasIgnored !== isIgnored)
-      push(`#${id}`, wasIgnored ? 'ignored' : 'not ignored', isIgnored ? 'ignored' : 'not ignored')
     const x = a.get(id)
     const y = b.get(id)
     if (!defaults.has(id)) {
-      // Adopted (or not) as a whole: name, console and power zone together.
+      // Adopted (or not) as a whole: name, console and power zone together — a board entering or
+      // leaving your cockpit.
       const show = (map: Map<number, MappedNode>, m?: MappedNode) =>
-        m ? `${m.name} · ${where(map, m)}` : 'not adopted'
-      if (wasIgnored || isIgnored) continue // an ignored id is shown by its ignore row only
+        m ? `${m.name} · ${where(map, m)}` : 'not in your cockpit'
       if (show(a, x) !== show(b, y)) push(`#${id}`, show(a, x), show(b, y))
       continue
     }
     const d = defaults.get(id)!
-    if (!x || !y) continue // ignored registry node: its overrides are not shown
+    if (!x || !y) continue
     if (x.name !== y.name) push(`${d.name} · name`, x.name, y.name)
     if (x.console !== y.console) push(`${d.name} · console`, x.console, y.console)
     if (zone(a, x.pduId) !== zone(b, y.pduId))
@@ -287,7 +283,9 @@ function diffCalibration(cur: CalCache, next: CalCache): { rows: DiffRow[]; boar
 export function diffImport(
   defaults: Map<number, NodeDefaults>,
   current: ConfigSnapshot,
-  imported: Partial<ConfigSnapshot>
+  imported: Partial<ConfigSnapshot>,
+  /** Boards on the bus now (the node mapping section never hides one). */
+  online: number[] = []
 ): SectionDiff[] {
   const out: SectionDiff[] = []
   for (const id of SECTION_IDS) {
@@ -301,7 +299,7 @@ export function diffImport(
       rows = diffPsu(current.powerSupply, imported.powerSupply!)
       summary = plural(rows.length, 'change')
     } else if (id === 'nodeMapping') {
-      const d = diffNodes(defaults, current.nodeMapping, imported.nodeMapping!)
+      const d = diffNodes(defaults, current.nodeMapping, imported.nodeMapping!, online)
       rows = d.rows
       summary = plural(d.nodes, 'node')
     } else {

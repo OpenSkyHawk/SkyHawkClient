@@ -44,7 +44,7 @@ export function ResetDialog({ model, onClose }: { model?: NodeModel; onClose: ()
       footer={
         <>
           <span className={error ? 'set-err' : 'hint'} style={{ margin: 0 }}>
-            {error ?? 'Ignored nodes and the power supply are not changed.'}
+            {error ?? 'Hidden boards and the power supply are not changed.'}
           </span>
           <button className="toolbtn" style={{ marginLeft: 'auto' }} onClick={onClose}>
             Cancel

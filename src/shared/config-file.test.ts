@@ -34,7 +34,7 @@ const cal = (boards: CalCache['boards']): CalCache => ({ version: 1, boards })
 
 const current: ConfigSnapshot = {
   app: DEFAULT_APP_SETTINGS,
-  nodeMapping: { version: 1, nodes: {}, ignored: [] },
+  nodeMapping: { version: 3, nodes: {} },
   powerSupply: DEFAULT_PSU,
   calibration: cal({
     A7: { confirmedAt: '2026-10-01T00:00:00Z', axes: { 2: axis(120, 2000, 3980) } }
@@ -124,22 +124,57 @@ describe('parseConfigFile', () => {
     )
     expect(r.ok && r.config.sections).toEqual({
       app: { ...DEFAULT_APP_SETTINGS, debugMode: true }, // no psu inside the app section
-      nodeMapping: { version: 1, nodes: {}, ignored: [3] },
+      nodeMapping: { version: 3, nodes: {} }, // a v1 ignore list is dropped (#93)
       calibration: cal({}) // min < centre < max or nothing
     })
   })
 })
 
 describe('diffImport', () => {
+  it('the review matches the apply: no "hidden" row for a board on the bus (#93 re-review K)', () => {
+    const cur: ConfigSnapshot = {
+      ...current,
+      nodeMapping: { version: 3, nodes: { 2: { added: true } } }
+    }
+    const next = { nodeMapping: { version: 3 as const, nodes: { 2: { hidden: true } } } }
+    expect(diffImport(defaults, cur, next, [2])[0]!.rows).toEqual([])
+    expect(diffImport(defaults, cur, next, [])[0]!.rows).toEqual([
+      { k: 'Right_Navigation · hidden', from: 'no', to: 'yes' }
+    ])
+  })
+
+  it('an import keeps each board’s observed state: nothing to review for it (#93)', () => {
+    const seen = '2026-10-14T21:14:00.000Z'
+    const cur: ConfigSnapshot = {
+      ...current,
+      nodeMapping: { version: 3, nodes: { 2: { added: true, lastSeen: seen } } }
+    }
+    // An older export without the marker or last-seen: applying it keeps 2 in your cockpit.
+    const diff = diffImport(defaults, cur, { nodeMapping: { version: 3, nodes: {} } })
+    expect(diff).toEqual([
+      { id: 'nodeMapping', title: 'Node mapping', summary: '0 nodes', rows: [] }
+    ])
+    // An adopted board leaving your cockpit is listed.
+    const withTrim: ConfigSnapshot = {
+      ...cur,
+      nodeMapping: {
+        version: 3,
+        nodes: { 41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen } }
+      }
+    }
+    expect(
+      diffImport(defaults, withTrim, { nodeMapping: { version: 3, nodes: {} } })[0]!.rows
+    ).toEqual([{ k: '#41', from: 'Trim · Left · —', to: 'not in your cockpit' }])
+  })
+
   it('lists each change as key  from → to, per section', () => {
     const mapping: NodeMappingFile = {
-      version: 1,
+      version: 3,
       nodes: {
         1: { pduId: 3 },
         2: { name: 'Right_TACAN' },
         41: { name: 'Right_Oxygen', console: 'Right', pduId: 4, kind: 'panel' }
-      },
-      ignored: [52]
+      }
     }
     const diff = diffImport(defaults, current, {
       app: {
@@ -171,12 +206,11 @@ describe('diffImport', () => {
       {
         id: 'nodeMapping',
         title: 'Node mapping',
-        summary: '4 nodes',
+        summary: '3 nodes',
         rows: [
           { k: 'Center_Armament · power zone', from: 'PDU_Center', to: 'PDU_Left' },
           { k: 'Right_Navigation · name', from: 'Right_Navigation', to: 'Right_TACAN' },
-          { k: '#41', from: 'not adopted', to: 'Right_Oxygen · Right · PDU_Right' },
-          { k: '#52', from: 'not ignored', to: 'ignored' }
+          { k: '#41', from: 'not in your cockpit', to: 'Right_Oxygen · Right · PDU_Right' }
         ]
       },
       {

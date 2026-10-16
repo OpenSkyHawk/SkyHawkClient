@@ -1490,7 +1490,7 @@ button.devind[aria-expanded='true'] {
   line-height: 1.5;
   color: var(--gold);
 }
-/* card group heading with a count / action (Cockpit › Power supply, Ignored nodes) */
+/* card group heading with a count / action (Cockpit › Power supply, Hidden boards) */
 .ig__head {
   display: flex;
   align-items: center;
@@ -3484,7 +3484,40 @@ button.tile2:hover {
   background: var(--panel);
   border-left: 1px solid var(--line);
   outline-offset: -6px;
+  /* #93: a column — header, board line and tabs stay put; only .sh__body scrolls */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sheet > * {
+  flex: 0 0 auto;
+}
+.sheet > .sh__body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  margin: 0 -22px -22px;
+  padding: 0 22px 22px;
+}
+/* The PDU's Feeds tab: the body stays still and the list takes what is left, scrolling itself. */
+.sh__body--fill {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.sh__body--fill > .sh__sec--fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sh__list {
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 .sheet__h {
   margin-bottom: 10px;
@@ -3495,6 +3528,15 @@ button.tile2:hover {
 .sh__sec > .section-h {
   font-size: 10px;
   margin-bottom: 4px;
+}
+/* "· updated 3 s ago" after a section heading: how fresh the board's report is (#93) */
+.sh__age {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted-3);
 }
 .sh__head {
   display: flex;
@@ -3801,6 +3843,13 @@ select.input {
 .ad__err {
   margin-top: 12px;
 }
+/* #93: a registry board's form is pre-filled; a default PDU not in your cockpit yet is explained */
+.ad__pre {
+  margin: 0 0 8px;
+}
+.ad__pdu {
+  margin-top: 6px;
+}
 .ad__ft {
   grid-column: 1 / -1;
   display: flex;
@@ -3832,12 +3881,4 @@ select.input {
   color: var(--blue-2);
   font-size: 12px;
   line-height: 1.5;
-}
-/* new nodes that can't be adopted (yet): reachable for Ignore, never news (#87 review) */
-.adopt-cta--quiet {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: var(--line);
-}
-.adopt-cta--quiet b {
-  color: var(--muted);
 }

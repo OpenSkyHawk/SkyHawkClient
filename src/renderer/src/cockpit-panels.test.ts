@@ -2,19 +2,20 @@ import { describe, expect, it } from 'vitest'
 import type { NodeModel, NodeModelEntry } from '@shared/node-rules'
 import type { NodeStatus } from '@shared/nodes'
 import { PDU_FLAG, RAIL_FLAG, TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
-import { nodeViews } from './cockpit'
+import { lastSeenLabel, nodeViews } from './cockpit'
 import {
+  boardActions,
   CONSOLE_OPTIONS,
   consoleLabel,
   firstPduOn,
   mappingPatch,
-  nodeActions,
   nodeFaultBoxes,
   nodeStatusRows,
   pduBoardRows,
   pduFaultBoxes,
   pduRailRows,
-  powerZoneOptions
+  powerZoneOptions,
+  reportAge
 } from './cockpit-panels'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
@@ -101,8 +102,6 @@ const model = (nodes: NodeModelEntry[]): NodeModel => ({
   nodes,
   outages: [],
   differingCount: 0,
-  ignored: [],
-  ignoredNodes: [],
   hidden: [],
   hiddenNodes: [],
   rosterComplete: true
@@ -110,26 +109,63 @@ const model = (nodes: NodeModelEntry[]): NodeModel => ({
 
 const view = (e: NodeModelEntry, t: NodeTelemSnapshot[] = []) => nodeViews(model([e]), t)[0]!
 
-describe('nodeActions', () => {
-  it('registry: reset, plus hide while offline', () => {
-    expect(nodeActions(node(1))).toEqual(['reset'])
-    expect(nodeActions(node(1, { availability: 'offline' }))).toEqual(['reset', 'hide'])
+describe('reportAge', () => {
+  it('ticks between the bridge’s 5 s reports, and says when it stopped', () => {
+    const e = node(1, { reportedAt: 10_000 })
+    expect(reportAge(e, 13_400)).toBe('updated 3 s ago')
+    expect(reportAge(e, 130_000)).toBe('updated 2 min ago')
+    expect(reportAge({ ...e, availability: 'offline' }, 40_000)).toBe('last report 30 s ago')
+    expect(reportAge(node(1), 40_000)).toBe('') // never reported this session
+  })
+})
+
+describe('boardActions', () => {
+  const off = { availability: 'offline' as const }
+
+  it('Forget and Hide wait until the board is offline, with the reason', () => {
+    const on = boardActions(node(1))
+    expect(on.forget.disabled).toBe(true)
+    expect(on.hide.disabled).toBe(true)
+    expect(on.forget.tip).toMatch(/^Online — it’s active on the bus/)
+    expect(on.note).toBe(on.forget.tip)
+    const a = boardActions(node(1, off))
+    expect(a.forget.disabled).toBe(false)
+    expect(a.hide.disabled).toBe(false)
   })
 
-  it('adopted: forget instead of reset, plus hide while offline', () => {
-    expect(nodeActions(node(9, { source: 'adopted' }))).toEqual(['forget'])
-    expect(nodeActions(node(9, { source: 'adopted', availability: 'offline' }))).toEqual([
-      'forget',
-      'hide'
-    ])
+  it('never before the roster says offline — and says so, not "online" (#93 review)', () => {
+    const a = boardActions(node(1, { availability: 'unknown', status: undefined }))
+    expect(a.forget.disabled).toBe(true)
+    expect(a.hide.disabled).toBe(true)
+    expect(a.forget.tip).toBe(
+      'No roster yet — connect the SimGateway. Forget and Hide work once the board shows offline.'
+    )
+    expect(a.note).toBe(a.forget.tip)
   })
 
-  it('new: ignore only', () => {
-    expect(nodeActions(node(41, { source: 'new', console: null }))).toEqual(['ignore'])
+  it('Reset is for registry boards, greyed out at the defaults', () => {
+    expect(boardActions(node(1)).reset).toEqual({
+      disabled: true,
+      tip: 'Already at the NODE_IDS.md defaults'
+    })
+    expect(boardActions(node(1, { differs: true })).reset?.disabled).toBe(false)
+    expect(boardActions(node(9, { source: 'adopted' })).reset).toBeUndefined()
   })
 
-  it('never offers hide before the roster says offline', () => {
-    expect(nodeActions(node(1, { availability: 'unknown', status: undefined }))).toEqual(['reset'])
+  it('the note says where a forgotten board comes back', () => {
+    expect(boardActions(node(1, off)).note).toMatch(/waits in New on the bus, pre-filled/)
+    expect(boardActions(node(9, { ...off, source: 'adopted' })).note).toMatch(/shows as new/)
+  })
+
+  it('a PDU: Forget unlinks its boards, Hide keeps the links', () => {
+    const p = node(4, { ...off, kind: 'pdu', pduId: null })
+    expect(boardActions(p, 3).note).toBe(
+      'Forget removes this PDU from your cockpit. Its 3 boards move to No power zone and keep no link to it, even if it comes back. Hide keeps the links: they return under it when it reports.'
+    )
+    expect(boardActions(p, 0).note).toBe(
+      'Forget removes this PDU from your cockpit. Hide keeps the links: they return under it when it reports.'
+    )
+    expect(boardActions(p).hide.tip).toMatch(/keep the link/)
   })
 })
 
@@ -138,6 +174,17 @@ describe('nodeFaultBoxes', () => {
 
   it('nothing to say for a healthy node', () => {
     expect(nodeFaultBoxes(view(node(1)))).toEqual([])
+  })
+
+  it('a remembered board not seen this session says so, with when it last was (#93)', () => {
+    const t = Date.UTC(2026, 9, 14, 21, 14)
+    const [box] = nodeFaultBoxes(
+      view(node(2, { availability: 'offline', notSeen: true, lastSeenAt: t, status: undefined }))
+    )
+    expect(box!.title).toBe('Not seen this session')
+    expect(box!.text).toBe(
+      `last seen ${lastSeenLabel(t)}. It’s remembered from an earlier session. Forget or Hide it if it’s no longer part of your cockpit.`
+    )
   })
 
   it('offline is a single error box', () => {
@@ -417,10 +464,12 @@ describe('placement', () => {
     })
   })
 
-  it('a PDU only renames', () => {
+  it('a PDU renames and moves console, never takes a power zone (#93)', () => {
     const p = pdu(3, 'Left')
     expect(mappingPatch(p, { name: 'PDU_Port', console: 'Right', pduId: 4 })).toEqual({
-      name: 'PDU_Port'
+      name: 'PDU_Port',
+      console: 'Right'
     })
+    expect(mappingPatch(p, { name: p.name, console: 'Left', pduId: 4 })).toEqual({})
   })
 })

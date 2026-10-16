@@ -5,13 +5,18 @@ import { TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
 import { nodeViews } from './cockpit'
 import {
   adoptEvidence,
+  adoptPduChoices,
   adoptability,
   adoptQueue,
   adoptSpec,
   identState,
+  keptQueue,
   nextSelection,
+  prefill,
+  registrySpecs,
   seenAgo,
-  unidentifiedNew
+  strayFlag,
+  strayNew
 } from './cockpit-adopt'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({
@@ -49,8 +54,6 @@ const model = (nodes: NodeModelEntry[]): NodeModel => ({
   nodes,
   outages: [],
   differingCount: 0,
-  ignored: [],
-  ignoredNodes: [],
   hidden: [],
   hiddenNodes: [],
   rosterComplete: true
@@ -219,7 +222,7 @@ describe('adoptability', () => {
   it('still identifying: no kind, an "Identifying…" note', () => {
     expect(adoptability(fresh(41))).toEqual({
       badge: 'IDENTIFYING',
-      note: 'Identifying… waiting for the board to report its type.'
+      note: 'Identifying… waiting for the board to report its type. If it doesn’t within a few seconds, it shows in Attention as an issue.'
     })
   })
 
@@ -236,23 +239,176 @@ describe('adoptability', () => {
   })
 })
 
-describe('unidentifiedNew', () => {
-  const at = (nodes: NodeModelEntry[]) => nodeViews(model(nodes), [])
-
-  it('counts a node still unknown after the wait, and says when the next one is due', () => {
-    const views = at([fresh(41, { firstSeenAt: 0 }), fresh(43, { firstSeenAt: 3000 })])
-    expect(unidentifiedNew(views, 4000)).toEqual({ count: 0, nextAt: 5000 })
-    expect(unidentifiedNew(views, 5000)).toEqual({ count: 1, nextAt: 8000 })
-    expect(unidentifiedNew(views, 8000)).toEqual({ count: 2 })
+describe('adoptPduChoices (#93 re-review J)', () => {
+  const pduIn = (id: number, console: string, name: string) =>
+    fresh(id, { source: 'registry', kind: 'pdu', identified: 'pdu', console, name })
+  const views = nodeViews(
+    model([pduIn(5, 'Center', 'PDU_Center'), pduIn(4, 'Right', 'PDU_Right')]),
+    []
+  )
+  const board = fresh(1, {
+    registry: { name: 'Center_Armament', console: 'Center', pduId: 3, pduName: 'PDU_Left' }
   })
 
-  it('counts a bridge or an unknown type at once; never an adoptable or offline node', () => {
+  it('a PDU in your cockpit on another console is "(other console)", never "not added"', () => {
+    expect(adoptPduChoices(views, 'Center', 4, board)).toEqual({
+      zones: [
+        { value: 5, label: 'PDU_Center' },
+        { value: 4, label: 'PDU_Right (other console)' }
+      ]
+    })
+  })
+
+  it('only a PDU not in your cockpit at all is pending ("not added"), by its registry name', () => {
+    expect(adoptPduChoices(views, 'Center', 3, board).pending).toBe('PDU_Left')
+    expect(adoptPduChoices(views, 'Center', 5, board).pending).toBeUndefined()
+    expect(adoptPduChoices(views, 'Center', null, board).pending).toBeUndefined()
+  })
+})
+
+describe('keptQueue (#93 re-review)', () => {
+  const at = (nodes: NodeModelEntry[]) => nodeViews(model(nodes), [])
+  const ids = (q: ReturnType<typeof keptQueue>) =>
+    q.map((v) => [v.entry.nodeId, v.entry.availability])
+
+  it('keeps a row it showed that dropped out of the model — offline, in its place', () => {
+    const first = at([fresh(1, { firstSeenAt: 0 }), fresh(41, { firstSeenAt: 500 })])
+    const shown = new Map(first.map((v) => [v.entry.nodeId, v]))
+    // Board 1 is power-cycled: a registry board not added leaves the model while it is off.
+    const now = at([fresh(41, { firstSeenAt: 500 })])
+    expect(ids(keptQueue(now, shown, new Set()))).toEqual([
+      [1, 'offline'],
+      [41, 'online']
+    ])
+    // It comes back: live again.
+    expect(ids(keptQueue(first, shown, new Set()))).toEqual([
+      [1, 'online'],
+      [41, 'online']
+    ])
+  })
+
+  it('drops a row once it was added, whether it is still in the model or not', () => {
+    const live = at([fresh(1), fresh(41)])
+    const shown = new Map(live.map((v) => [v.entry.nodeId, v]))
+    expect(ids(keptQueue(live, shown, new Set([1])))).toEqual([[41, 'online']])
+    expect(ids(keptQueue(at([fresh(41)]), shown, new Set([1])))).toEqual([[41, 'online']])
+  })
+})
+
+describe('registry onboarding (#93)', () => {
+  const reg = (id: number, over: Partial<NodeModelEntry> = {}) =>
+    fresh(id, {
+      name: 'Center_Armament',
+      identified: 'panel',
+      registry: { name: 'Center_Armament', console: 'Center', pduId: 5, pduName: 'PDU_Center' },
+      ...over
+    })
+
+  it('pre-fills name, console and default PDU from NODE_IDS.md; a PDU takes no zone', () => {
+    expect(prefill(reg(1), 'panel')).toEqual({
+      name: 'Center_Armament',
+      console: 'Center',
+      pduId: 5
+    })
+    const pdu = reg(5, {
+      identified: 'pdu',
+      registry: { name: 'PDU_Center', console: 'Center', pduId: null }
+    })
+    expect(prefill(pdu, 'pdu')).toEqual({ name: 'PDU_Center', console: 'Center', pduId: null })
+    expect(prefill(fresh(41), 'panel')).toEqual({ name: '', console: '', pduId: '' }) // unregistered
+  })
+
+  it('says where it comes from: what it reported, and its NODE_IDS.md entry', () => {
+    const ev = adoptEvidence(
+      nodeViews(model([reg(1, { status: status(1, { nodeKind: 1 }) })]), [])[0]!
+    )
+    expect(ev.detected).toBe('panel group (reported by the board)')
+    expect(ev.registry).toBe('NODE_IDS.md: Center_Armament, Instrument panel')
+  })
+
+  it('"Add all": registry panel groups only, linked only to a PDU already in your cockpit', () => {
+    const pduIn = fresh(5, {
+      source: 'registry',
+      kind: 'pdu',
+      identified: 'pdu',
+      name: 'PDU_Center'
+    })
+    const nav = reg(2, {
+      name: 'Right_Navigation',
+      registry: { name: 'Right_Navigation', console: 'Right', pduId: 4, pduName: 'PDU_Right' }
+    })
+    const newPdu = reg(3, {
+      kind: 'pdu',
+      identified: 'pdu',
+      registry: { name: 'PDU_Left', console: 'Left', pduId: null }
+    })
+    const queue = nodeViews(model([reg(1), nav, newPdu, fresh(41, { identified: 'panel' })]), [])
+    const views = nodeViews(model([pduIn, reg(1), nav, newPdu]), [])
+    expect(registrySpecs(queue, views)).toEqual([
+      { nodeId: 1, spec: { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } },
+      // PDU_Right isn't in your cockpit: no silent link.
+      {
+        nodeId: 2,
+        spec: { name: 'Right_Navigation', console: 'Right', pduId: null, kind: 'panel' }
+      }
+    ]) // the PDU (3) and the unregistered board (41) are added one by one
+  })
+
+  it('"Add all" takes a form you changed — None, a name, even a PDU not added', () => {
+    const queue = nodeViews(model([reg(1), reg(2, { name: 'Right_Navigation' })]), [])
+    const views = nodeViews(
+      model([fresh(5, { source: 'registry', kind: 'pdu', name: 'PDU_Center' })]),
+      []
+    )
+    const edits = new Map([
+      [1, { name: 'Arm', console: 'Center', pduId: null }], // None, on purpose
+      [2, { name: 'Nav', console: 'Right', pduId: 4 }] // its PDU, chosen though not added
+    ])
+    expect(
+      registrySpecs(queue, views, edits).map((b) => [b.nodeId, b.spec.name, b.spec.pduId])
+    ).toEqual([
+      [1, 'Arm', null],
+      [2, 'Nav', 4]
+    ])
+    // A form left unfinished ("Choose…") is not added in bulk.
+    const half = new Map([[1, { name: 'Arm', console: 'Center', pduId: '' as const }]])
+    expect(registrySpecs(queue, views, half).map((b) => b.nodeId)).toEqual([2])
+  })
+})
+
+describe('strayNew', () => {
+  const at = (nodes: NodeModelEntry[]) => nodeViews(model(nodes), [])
+  const ids = (r: ReturnType<typeof strayNew>) => r.strays.map((v) => v.entry.nodeId)
+
+  it('waits IDENTIFY_WAIT_MS for an unknown board, and says when the next one is due', () => {
+    const views = at([fresh(41, { firstSeenAt: 0 }), fresh(43, { firstSeenAt: 3000 })])
+    expect(strayNew(views, 4000)).toEqual({ strays: [], nextAt: 5000 })
+    const r = strayNew(views, 5000)
+    expect(ids(r)).toEqual([41])
+    expect(r.nextAt).toBe(8000)
+    expect(strayNew(views, 8000).nextAt).toBeUndefined()
+    expect(ids(strayNew(views, 8000))).toEqual([41, 43])
+  })
+
+  it('takes a bridge or an unknown type at once; never an adoptable or offline node', () => {
     const views = at([
       fresh(44, { identified: 'bridge', firstSeenAt: 1000 }),
       fresh(45, { identified: 'other', firstSeenAt: 1000 }),
       fresh(41, { identified: 'panel', firstSeenAt: 0 }),
       fresh(46, { availability: 'offline', firstSeenAt: 0 })
     ])
-    expect(unidentifiedNew(views, 1000)).toEqual({ count: 2 })
+    expect(ids(strayNew(views, 1000))).toEqual([44, 45])
+  })
+})
+
+describe('strayFlag', () => {
+  it('says what it is and that it can’t be adopted', () => {
+    expect(strayFlag(fresh(44, { identified: 'bridge' }))).toBe(
+      'SECOND SIMGATEWAY · can’t be adopted'
+    )
+    expect(strayFlag(fresh(45, { identified: 'other' }))).toBe(
+      'UNKNOWN BOARD TYPE · can’t be adopted'
+    )
+    expect(strayFlag(fresh(43))).toBe('UNIDENTIFIED · can’t be adopted')
   })
 })
