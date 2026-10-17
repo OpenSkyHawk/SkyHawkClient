@@ -14,12 +14,22 @@ const disk: {
 }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } })) // debug log path
 vi.mock('./mapping-file', () => {
-  class MappingSaveError extends Error {}
+  class MappingSaveError extends Error {
+    constructor(
+      message: string,
+      readonly reason: string
+    ) {
+      super(message)
+    }
+  }
   return {
     MappingSaveError,
     loadNodeMapping: () => ({ file: disk.file, readOnly: disk.readOnly }),
     saveNodeMapping: (f: NodeMappingFile) => {
-      if (disk.fail) throw new MappingSaveError('Could not save node mapping: EROFS')
+      if (disk.fail) {
+        const reason = 'the disk is read-only in /u'
+        throw new MappingSaveError(`Node mapping could not be saved (${reason})`, reason)
+      }
       disk.file = f
       disk.saves++
     }
@@ -62,7 +72,7 @@ describe('NodeHub', () => {
     disk.fail = true
     expect(h.setMapping(1, { name: 'Armament' })).toEqual({
       ok: false,
-      error: 'Could not save node mapping: EROFS'
+      error: 'Node mapping could not be saved (the disk is read-only in /u)'
     })
     expect(h.snapshot().model.nodes.find((n) => n.nodeId === 1)?.name).toBe('Center_Armament')
     expect(pushes.filter(([c]) => c === 'nodes:model')).toEqual([])
@@ -374,11 +384,18 @@ describe('NodeHub', () => {
     const { h } = hub()
     const before = h.mappingFile()
     disk.fail = true
+    // The reason alone: the import names the section itself ("Node mapping could not be saved").
     expect(h.replaceMapping({ version: 3, nodes: {} })).toEqual({
       ok: false,
-      error: 'Could not save node mapping: EROFS'
+      error: 'the disk is read-only in /u'
     })
     expect(h.mappingFile()).toBe(before)
+    disk.fail = false
+    disk.readOnly = 'node-mapping.json was written by a newer client'
+    expect(hub().h.replaceMapping({ version: 3, nodes: {} })).toEqual({
+      ok: false,
+      error: 'node-mapping.json was written by a newer client'
+    })
   })
 
   it('serves the bundled registry with PanelBridge and its source commit', () => {

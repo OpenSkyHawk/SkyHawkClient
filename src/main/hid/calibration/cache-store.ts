@@ -10,12 +10,13 @@
 // a bad file falls back to its backup and is moved aside).
 import { emptyCache, sanitizeCache } from './cache-rules'
 import type { CalCache } from '@shared/hid/calibration'
-import { errorText } from '@shared/format'
+import { fileErrorText } from '@shared/format'
 
 /**
  * Port: calibration-cache.json. `read` resolves the path and reports what it found, `note` saying
- * what went wrong (a throw means the path could not be resolved); `write` returns the failure's
- * `note` when the file did not reach the disk (a throw means the path could not be resolved).
+ * what went wrong (a throw means the path could not be resolved); `write` returns the failure —
+ * its error and its `note` — when the file did not reach the disk (a throw means the path could
+ * not be resolved).
  */
 export interface CacheFileIO {
   read():
@@ -23,7 +24,7 @@ export interface CacheFileIO {
     | { kind: 'missing' }
     | { kind: 'fallback'; data: unknown; note: string }
     | { kind: 'failed'; note: string }
-  write(cache: CalCache): { note: string } | undefined
+  write(cache: CalCache): { error: unknown; note: string } | undefined
 }
 
 /**
@@ -64,22 +65,23 @@ export function loadCalCache(io: CacheFileIO, events = NO_EVENTS): CalCache {
 
 /**
  * Never throws; see the note at the top of this file. One row per failure until a write works.
- * Says what went wrong when the file did not reach the disk (a config import, which must not
- * report a section saved that was not, reads it; the calibration flow ignores it).
+ * Says why, in plain words, when the file did not reach the disk — the reason alone, which a config
+ * import (it must not report a section saved that was not) puts after its section's title; the
+ * calibration flow ignores it.
  */
 export function saveCalCache(
   cache: CalCache,
   io: CacheFileIO,
   events = NO_EVENTS
 ): string | undefined {
-  let failed: { note: string } | undefined
+  let failed: { error: unknown; note: string } | undefined
   try {
     failed = io.write(cache)
   } catch (err) {
     // the path could not be resolved: nothing was written
-    return `${CACHE_FILE_TAG} could not be saved: ${errorText(err)}`
+    return fileErrorText(err)
   }
   if (failed) events.error(CACHE_FILE_TAG, failed.note)
   else events.forget(CACHE_FILE_TAG)
-  return failed?.note
+  return failed && fileErrorText(failed.error)
 }

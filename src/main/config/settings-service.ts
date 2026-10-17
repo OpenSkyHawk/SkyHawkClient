@@ -24,7 +24,7 @@ import { resolvePsu } from '../nodes'
 import { sanitizeConfig } from './settings-schema'
 import { savedEdit } from './settings-form'
 import { jsonFile, type JsonWriteError } from './json-store'
-import { errorText } from '@shared/format'
+import { fileErrorText } from '@shared/format'
 
 /** Port: where config.json lives. app provides it; resolved at each use, as before. */
 export interface SettingsPaths {
@@ -72,8 +72,9 @@ export function loadConfig(paths: SettingsPaths, events = NO_EVENTS): AppConfig 
 
 /**
  * Never throws: a read-only userData dir must not crash the app, and the change stays in memory.
- * A failed write is an event row, one per failure until a write succeeds again. Says what went
- * wrong when the file did not reach the disk (a config import reads it; see `replace`).
+ * A failed write is an event row, one per failure until a write succeeds again. Says why, in plain
+ * words, when the file did not reach the disk — the reason alone (`permission denied in
+ * <folder>`), which a config import puts after its section's title; see `replace`.
  */
 export function saveConfig(
   config: AppConfig,
@@ -85,11 +86,11 @@ export function saveConfig(
     failed = configFile(paths).write(config)
   } catch (err) {
     // the path could not be resolved (no <userData>): nothing was written
-    return `${CONFIG_FILE_TAG} could not be saved: ${errorText(err)}`
+    return fileErrorText(err)
   }
   if (failed) events.error(CONFIG_FILE_TAG, failed.note)
   else events.forget(CONFIG_FILE_TAG)
-  return failed?.note
+  return failed && fileErrorText(failed.error)
 }
 
 /** What came of `replace`: the settings now live, or why config.json was not written. */

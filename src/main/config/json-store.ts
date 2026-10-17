@@ -19,7 +19,7 @@
 // CacheFileIO), which a JsonFile satisfies.
 import * as nodeFs from 'node:fs'
 import { basename, dirname } from 'node:path'
-import { errorText, stamp } from '@shared/format'
+import { errorText, fileErrorText, stamp } from '@shared/format'
 
 /** What was wrong with the file itself. */
 export type JsonDamage = { kind: 'unreadable'; error: unknown } | { kind: 'damaged' }
@@ -49,7 +49,10 @@ export type JsonRead =
       note: string
     }
 
-/** A write that did not reach the disk: the error, and a line saying so. */
+/**
+ * A write that did not reach the disk: the error, and a line saying so in plain words
+ * (`config.json could not be saved (permission denied in <folder>)`, fileErrorText).
+ */
 export interface JsonWriteError {
   error: unknown
   note: string
@@ -114,7 +117,7 @@ export function jsonFile(path: () => string, opts: JsonFileOptions = {}): JsonFi
       try {
         io.write(p, JSON.stringify(value, null, 2))
       } catch (error) {
-        return { error, note: `${basename(p)} could not be saved: ${errorText(error)}` }
+        return { error, note: `${basename(p)} could not be saved (${fileErrorText(error)})` }
       }
       return undefined
     },
@@ -128,7 +131,7 @@ export function jsonFile(path: () => string, opts: JsonFileOptions = {}): JsonFi
         io.put(`${p}.bak`, snapshot.bak)
         io.put(p, snapshot.file)
       } catch (error) {
-        return { error, note: `${basename(p)} could not be put back: ${errorText(error)}` }
+        return { error, note: `${basename(p)} could not be put back (${fileErrorText(error)})` }
       }
       return undefined
     }

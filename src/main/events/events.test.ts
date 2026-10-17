@@ -260,10 +260,36 @@ describe('client events', () => {
     )
   })
 
-  it('a warn row (recovered, nothing lost) is the same row apart from its severity', () => {
-    expect(clientErrorEvent('config.json', 'loaded the backup', 5, 'warn')).toEqual({
-      ...clientErrorEvent('config.json', 'loaded the backup', 5),
-      severity: 'warn'
+  it('a warn row (recovered, nothing lost) is labelled a warning, never an error', () => {
+    const msg = 'node-mapping.json is damaged. Loaded the backup, node-mapping.json.bak.'
+    const row = clientErrorEvent('node-mapping.json', msg, 5, 'warn')
+    expect(row).toEqual({
+      t: 5,
+      source: 'client',
+      name: 'node-mapping.json',
+      severity: 'warn',
+      event: 'warning',
+      detail: msg,
+      raw: `node-mapping.json Warning: ${msg}`
+    })
+    // What Log › Events prints, and the TSV export's severity / event / raw columns.
+    expect(eventText(row)).toBe(`warning · ${msg}`)
+    expect(
+      eventsToTsv([{ ...row, id: 1 }])
+        .split('\n')[1]!
+        .split('\t')
+        .slice(4)
+    ).toEqual(['warn', 'warning', msg, `node-mapping.json Warning: ${msg}`])
+    // A tag with its own error label still reads as a warning at warn.
+    expect(clientErrorEvent('SERIAL', 'x', 5, 'warn')).toMatchObject({
+      event: 'warning',
+      raw: 'SERIAL Warning: x'
+    })
+    // An error row is unchanged.
+    expect(clientErrorEvent('config.json', 'x', 5)).toMatchObject({
+      severity: 'error',
+      event: 'error',
+      raw: 'config.json Error: x'
     })
   })
 
@@ -279,10 +305,10 @@ describe('client events', () => {
     j.error('config.json', 'b')
     j.forget('config.json')
     j.warn('config.json', 'b') // forgotten: news again
-    expect(j.snapshot().map((e) => `${e.severity}:${e.detail}`)).toEqual([
-      'warn:a',
-      'error:b',
-      'warn:b'
+    expect(j.snapshot().map((e) => `${e.severity}:${e.event}:${e.detail}`)).toEqual([
+      'warn:warning:a',
+      'error:error:b',
+      'warn:warning:b'
     ])
     expect(logged).toEqual([
       'warn.config.json',

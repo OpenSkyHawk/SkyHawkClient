@@ -145,7 +145,9 @@ describe('B97 config.json load / save round trip', () => {
     expect(() => saveConfig(custom, nowhere, log.events)).not.toThrow()
     expect(readdirSync(dir)).toEqual([])
     expect(log.rows).toHaveLength(1)
-    expect(log.rows[0]).toMatch(/^error config\.json: config\.json could not be saved: ENOENT: /)
+    expect(log.rows[0]).toBe(
+      `error config.json: config.json could not be saved (the folder ${join(dir, 'missing')} is missing)`
+    )
   })
 
   it.skipIf(process.getuid?.() === 0)(
@@ -157,7 +159,9 @@ describe('B97 config.json load / save round trip', () => {
       expect(() => saveConfig(DEFAULT_CONFIG, paths, log.events)).not.toThrow()
       saveConfig({ ...DEFAULT_CONFIG, host: 'x' }, paths, log.events) // the same failure again
       expect(log.rows).toHaveLength(1) // deduped per file
-      expect(log.rows[0]).toMatch(/^error config\.json: config\.json could not be saved: EACCES: /)
+      expect(log.rows[0]).toBe(
+        `error config.json: config.json could not be saved (permission denied in ${dir})`
+      )
       expect(loadConfig(paths)).toEqual(custom)
       // A write that works makes the next failure news again.
       chmodSync(dir, 0o700)
@@ -202,7 +206,8 @@ describe('B97 config.json load / save round trip', () => {
       chmodSync(dir, 0o500)
       const r = service.replace(custom)
       expect(r.ok).toBe(false)
-      expect(!r.ok && r.error).toMatch(/^config\.json could not be saved: EACCES: /)
+      // The reason alone: a config import puts it after its section's title.
+      expect(r).toEqual({ ok: false, error: `permission denied in ${dir}` })
       expect(service.get()).toEqual(DEFAULT_CONFIG) // not live: it never reached the disk
       expect(debug).toEqual([false]) // only load() set the debug log
       expect(log.rows).toHaveLength(1)
@@ -214,10 +219,7 @@ describe('B97 config.json load / save round trip', () => {
         },
         debugMode: () => {}
       })
-      expect(broken.replace(custom)).toEqual({
-        ok: false,
-        error: 'config.json could not be saved: no userData'
-      })
+      expect(broken.replace(custom)).toEqual({ ok: false, error: 'no userData' })
       expect(broken.get()).toEqual(DEFAULT_CONFIG)
     }
   )

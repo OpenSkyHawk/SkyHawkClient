@@ -130,21 +130,22 @@ describe('a write', () => {
     writeFileSync(file(), text({ v: 1 }))
     mkdirSync(join(dir, 'store.json.bak')) // a folder: the rename over it fails
     const failed = jsonFile(file).write({ v: 2 })
-    expect(failed?.note).toMatch(/^store\.json could not be saved: /)
+    // EISDIR has no plain wording: the error's own message, in brackets.
+    expect(failed?.note).toMatch(/^store\.json could not be saved \(EISDIR: .*\)$/)
     expect(onDisk('store.json')).toBe(text({ v: 1 }))
     expect(listing()).toEqual(['store.json', 'store.json.bak']) // no temp file left behind
   })
 
-  it('reports a failed write with a note, and removes its temp file', () => {
+  it('reports a failed write with a note in plain words, and removes its temp file', () => {
     const rec = recordingFs({
-      renameSync: () => {
-        throw errno('EACCES')
+      renameSync: (from) => {
+        throw Object.assign(errno('EACCES'), { path: String(from) })
       }
     })
     const failed = jsonFile(file, { fs: rec.fs }).write({ a: 1 })
     expect(failed).toEqual({
       error: expect.objectContaining({ code: 'EACCES' }),
-      note: 'store.json could not be saved: EACCES: test'
+      note: `store.json could not be saved (permission denied in ${dir})` // the folder, not .tmp
     })
     expect(rec.ops.at(-1)).toBe('rm store.json.tmp')
     expect(listing()).toEqual([])
@@ -205,7 +206,7 @@ describe('a write', () => {
         }
       })
       expect(jsonFile(file, { fs: rec.fs, platform: 'linux' }).write({ a: 1 })?.note).toBe(
-        'store.json could not be saved: EIO: test'
+        'store.json could not be saved (EIO: test)'
       )
     })
   })
@@ -376,7 +377,7 @@ describe('a copy (snapshot / restore: an import rollback, C2/M10)', () => {
     store.write({ a: 2 })
     fs.chmodSync(dir, 0o500)
     const failed = store.restore(copy)
-    expect(failed?.note).toMatch(/^store\.json could not be put back: EACCES/)
+    expect(failed?.note).toBe(`store.json could not be put back (permission denied in ${dir})`)
   })
 
   it('a file that exists but cannot be read cannot be copied: the snapshot throws', () => {

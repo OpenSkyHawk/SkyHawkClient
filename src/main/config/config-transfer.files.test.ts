@@ -143,10 +143,16 @@ describe.skipIf(process.getuid?.() === 0)('an import is one transaction, on real
     ])
   })
 
-  for (const [target, title] of [
-    ['mapping', 'Node mapping'],
-    ['cache', 'Axis calibration'],
-    ['config', 'App settings and Power supply']
+  // The answer, in plain words: the section, why (EACCES: permission denied) and in which folder
+  // — said once, never the internal `.tmp` / `.bak.tmp` path — then what was put back.
+  for (const [target, title, putBack] of [
+    ['mapping', 'Node mapping', ''],
+    ['cache', 'Axis calibration', ' Node mapping was put back as before'],
+    [
+      'config',
+      'App settings and Power supply',
+      ' Node mapping and Axis calibration were put back as before'
+    ]
   ] as const) {
     it(`${target} cannot be written: every file is as before, and the answer says which`, () => {
       const { transfer, settings, nodes } = launch()
@@ -154,10 +160,12 @@ describe.skipIf(process.getuid?.() === 0)('an import is one transaction, on real
       const before = onDisk()
       chmodSync(dirs[target], 0o500) // read-only: its write fails, the others' work
       const r = transfer.apply(p.token, ALL, false)
-      expect(r.ok).toBe(false)
-      expect(!r.ok && r.error).toMatch(
-        new RegExp(`^Nothing was changed — ${title} could not be saved: `)
-      )
+      expect(r).toEqual({
+        ok: false,
+        error:
+          `Nothing was changed — ${title} could not be saved (permission denied in ` +
+          `${dirs[target]}).${putBack}${putBack && '.'}`
+      })
       expect(onDisk()).toEqual(before) // byte for byte, `.bak` too: nothing half-applied
       expect(settings.get()).toEqual(CONFIG)
       expect(nodes.mappingFile()).toEqual(MAPPING)

@@ -27,17 +27,17 @@ import {
   type ParsedConfig
 } from './config-file'
 import type { CalCache } from '@shared/hid/calibration'
-import { errorText, stamp } from '@shared/format'
+import { errorText, fileErrorText, stamp } from '@shared/format'
 import { mergeCalibration } from '../hid/calibration'
 import { importMapping } from '../nodes'
 import type { SettingsReplace } from './settings-service'
-import type { JsonFile, JsonSnapshot } from './json-store'
+import type { JsonFile, JsonSnapshot, JsonWriteError } from './json-store'
 
 export interface ConfigTransferDeps {
   getConfig(): AppConfig
   /**
    * Save a whole AppConfig, then make it live — only once it is on disk (SettingsService.replace).
-   * Says why when config.json was not written; nothing changed then.
+   * Says why (the reason alone) when config.json was not written; nothing changed then.
    */
   replaceConfig(config: AppConfig): SettingsReplace
   /**
@@ -48,13 +48,16 @@ export interface ConfigTransferDeps {
   nodes: {
     mappingFile(): NodeMappingFile
     registryDefaults(): Map<number, NodeDefaults>
-    /** Save this whole mapping: an import's staged result, or its rollback (NodeHub). */
+    /**
+     * Save this whole mapping: an import's staged result, or its rollback (NodeHub). A save that
+     * fails answers with its reason alone.
+     */
     replaceMapping(file: NodeMappingFile): NodeMappingResult
     /** NODE_IDs on the bus now — an import never hides one. */
     onlineIds(): number[]
   }
   loadCalCache(): CalCache
-  /** Save the calibration copy; says why when it did not reach the disk. */
+  /** Save the calibration copy; says why (the reason alone) when it did not reach the disk. */
   saveCalCache(cache: CalCache): string | undefined
   /**
    * The three files an import writes, copied byte for byte with their `.bak` before it and put
@@ -167,7 +170,7 @@ export class ConfigTransfer {
       targets = this.stage(imported, picked)
     } catch (err) {
       if (!(err instanceof StageError)) throw err
-      return { ok: false, error: `Nothing was changed — ${err.message}` }
+      return { ok: false, error: `Nothing was changed — ${err.message}.` }
     }
 
     let backupPath: string | undefined
@@ -191,7 +194,7 @@ export class ConfigTransfer {
       }
       return {
         ok: false,
-        error: rolledBack(`${t.title} could not be saved: ${failed}`, done, backupPath)
+        error: rolledBack(`${t.title} could not be saved (${failed})`, done, backupPath)
       }
     }
     this.pending = undefined
@@ -226,7 +229,7 @@ export class ConfigTransfer {
       targets.push({
         title: SECTION_TITLES.nodeMapping,
         commit: () => write(next),
-        rollback: () => write(before) ?? files.mapping.restore(copy)?.note
+        rollback: () => write(before) ?? why(files.mapping.restore(copy))
       })
     }
     if (picked.has('calibration')) {
@@ -236,7 +239,7 @@ export class ConfigTransfer {
         title: SECTION_TITLES.calibration,
         commit: () => this.deps.saveCalCache(next),
         // Nothing held in memory: the copy is read from the file on each use.
-        rollback: () => files.calibration.restore(copy)?.note
+        rollback: () => why(files.calibration.restore(copy))
       })
     }
     if (picked.has('app') || picked.has('powerSupply')) {
@@ -252,7 +255,7 @@ export class ConfigTransfer {
       targets.push({
         title,
         commit: () => write(next),
-        rollback: () => write(before) ?? files.config.restore(copy)?.note
+        rollback: () => write(before) ?? why(files.config.restore(copy))
       })
     }
     return targets
@@ -267,14 +270,21 @@ function snapshot(file: FileCopy, title: string): JsonSnapshot {
   try {
     return file.snapshot()
   } catch (err) {
-    throw new StageError(`${title} could not be copied for a rollback: ${errorText(err)}`)
+    throw new StageError(`${title} could not be copied for a rollback (${fileErrorText(err)})`)
   }
 }
+
+/** Why a byte copy could not be put back, in plain words; undefined when it was. */
+const why = (failed: JsonWriteError | undefined): string | undefined =>
+  failed && fileErrorText(failed.error)
 
 /** Staging an import failed: nothing has been written. The message is ready to show. */
 class StageError extends Error {}
 
-/** One store an import writes: its sections' title, and its write and rollback (each: why not). */
+/**
+ * One store an import writes: its sections' title, and its write and rollback — each answering
+ * why not, as the reason alone in plain words (the answer puts it after the title).
+ */
 interface Target {
   title: string
   commit(): string | undefined
@@ -296,7 +306,7 @@ function rolledBack(failed: string, done: readonly Target[], backupPath?: string
   const back = restored.length
     ? `. ${and(restored)} ${restored.length === 1 ? 'was' : 'were'} put back as before`
     : ''
-  if (stuck.length === 0) return `Nothing was changed — ${failed}${back}`
+  if (stuck.length === 0) return `Nothing was changed — ${failed}${back}.`
   const keep = stuck.length === 1 ? 'it keeps' : 'they keep'
   const copy = backupPath ? ` Your previous setup is in ${basename(backupPath)}.` : ''
   const left = `${stuck.join('; ')}, so ${keep} the imported settings`

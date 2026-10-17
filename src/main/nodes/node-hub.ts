@@ -443,10 +443,15 @@ export class NodeHub implements NodeLineSink {
    * Config import (C2/M10): save this whole mapping — the import's staged result, which
    * ConfigTransfer builds with importMapping over mappingFile() and onlineIds(), or, when a later
    * section of the import fails, the mapping from before it (the rollback). Same save path and
-   * read-only guard as any edit: nothing is adopted in memory unless it reached the disk.
+   * read-only guard as any edit: nothing is adopted in memory unless it reached the disk. A save
+   * that fails answers with its reason alone (`permission denied in <folder>`): the import names
+   * the section itself ("Node mapping could not be saved (…)").
    */
   replaceMapping(file: NodeMappingFile): NodeMappingResult {
-    return this.update(() => file)
+    return this.update(
+      () => file,
+      (err) => (err instanceof MappingSaveError ? err.reason : err.message)
+    )
   }
 
   /** NODE_IDs present in the roster now (the bridge's own row excluded). */
@@ -544,8 +549,14 @@ export class NodeHub implements NodeLineSink {
     )
   }
 
-  /** Apply one mapping change, persist it, and push the new model straight away. */
-  private update(fn: (f: NodeMappingFile) => NodeMappingFile): NodeMappingResult {
+  /**
+   * Apply one mapping change, persist it, and push the new model straight away. A refused change
+   * answers with `why` of its error: the message, ready to show, unless the caller words it.
+   */
+  private update(
+    fn: (f: NodeMappingFile) => NodeMappingFile,
+    why: (err: MappingError | MappingSaveError) => string = (err) => err.message
+  ): NodeMappingResult {
     const before = this.mapping()
     let next: NodeMappingFile
     try {
@@ -553,7 +564,7 @@ export class NodeHub implements NodeLineSink {
       this.store.save(next)
     } catch (err) {
       if (err instanceof MappingError || err instanceof MappingSaveError) {
-        return { ok: false, error: err.message }
+        return { ok: false, error: why(err) }
       }
       throw err
     }
