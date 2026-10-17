@@ -1,10 +1,14 @@
 // gateway: the SimGateway USB link. Exports only what other topics use (arch-phase0-v2 §2.1).
 export {
-  DeviceLink,
+  GatewayConnection,
   type CalFrameFilter,
-  type DeviceLinkDeps,
+  type GatewayConnectionDeps,
   type LinkRider,
   type LinkTimer
-} from './device-link'
+} from './gateway-connection'
+export { DeviceLineTap, type DeviceLine, type NodeLineSink } from './device-line-tap'
+export { SerialTrafficMonitor } from './serial-traffic-monitor'
+export { GatewayWatch } from './gateway-health'
+export { encodeExportFrame } from './link-framing'
 export { deviceEvent } from './link-events'
-export { findSimGatewayPort, listSerialPorts } from './serial-bridge'
+export { listSerialPorts } from './serial-bridge'

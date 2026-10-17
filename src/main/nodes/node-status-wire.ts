@@ -15,9 +15,7 @@ import {
   NODE_STATUS_ROW_BYTES
 } from '@shared/firmware'
 import type { NodeSeen, NodeStatus } from '@shared/nodes'
-// Deep import, not '../gateway': the gateway index reaches back into nodes through DeviceLink
-// until R2.2 splits it, so going through the index would close an import cycle.
-import { encodeExportFrame } from '../gateway/link-framing'
+import { encodeExportFrame } from '../gateway'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_NODE_PROTO = 3

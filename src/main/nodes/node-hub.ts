@@ -1,6 +1,8 @@
-// Node data layer in main: taps `_NODE_TELEM`, holds the node mapping (through MappingStore), and
-// pushes the combined node picture. Kept out of app/session.ts so the session only feeds it lines
-// and ticks.
+// Node data layer in main: the node roster and its 5 s poll, the node lines the Gateway's line
+// tap hands it (`_NODE_STATUS`, `_NODE_TELEM`), the Gateway's own health (it drives GatewayWatch,
+// UD-C), the node mapping (through MappingStore), and the combined node picture it pushes. It
+// rides on the Gateway connection (its `rider`, a gateway LinkRider) and writes the roster request
+// through the connection's write (R2.2b).
 import type {
   AdoptSpec,
   MappedNode,
@@ -18,6 +20,8 @@ import type {
 } from '@shared/nodes'
 import type { PushChannel, PushChannels } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
+import { isLinkUp, type DeviceStatus, type GatewayStatus } from '@shared/gateway'
+import { GatewayWatch, type LinkRider, type NodeLineSink } from '../gateway'
 import {
   adoptNode,
   clearReportedHidden,
@@ -42,8 +46,17 @@ import { isAdoptableKind } from '@shared/nodes/legacy-rules'
 import { buildNodeModel } from './node-model'
 import { NodeEventTracker } from './node-events'
 import { resolveKind } from './node-kind'
-import { BRIDGE_NODE_ID, type NodeRoster } from './node-status-wire'
-import { NodeTelemStore, parseNodeTelem } from './node-telem'
+import {
+  BRIDGE_NODE_ID,
+  cleanNodeLine,
+  isLegacyNodeStatus,
+  NODE_END_MSG,
+  NODE_MSG,
+  nodeRosterRequest,
+  parseNodeStatus,
+  type NodeRoster
+} from './node-status-wire'
+import { NODE_TELEM_MSG, NodeTelemStore, parseNodeTelem } from './node-telem'
 import { registryDefaults } from './registry'
 import { MappingSaveError, MappingStore, type MappingFileIO } from './mapping-store'
 
@@ -52,14 +65,41 @@ type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => voi
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
 
-/** What NodeHub needs from app, through DeviceLink: the node-mapping.json port, and the log. */
+/**
+ * What NodeHub needs of the Gateway link (gateway GatewayConnection): whether a port is held and
+ * the link is up, the write the roster request goes out through, whether a calibration exchange
+ * holds the link, and where the Gateway's health is pushed.
+ */
+export interface NodeHubLink {
+  readonly attached: boolean
+  deviceStatus(): DeviceStatus
+  write(data: Buffer): void
+  readonly exportGated: boolean
+  pushGatewayHealth(gateway: GatewayStatus | undefined): void
+}
+
+/** No link (a hub on its own, as the unit tests build one): nothing is requested. */
+const NO_LINK: NodeHubLink = {
+  attached: false,
+  deviceStatus: () => ({ state: 'disconnected' }),
+  write: () => {},
+  exportGated: false,
+  pushGatewayHealth: () => {}
+}
+
+/** What NodeHub needs from app: the node-mapping.json port, the log, and the Gateway link. */
 export interface NodeHubDeps {
   mappingFile?: MappingFileIO
   log?: Log
+  link?: NodeHubLink
 }
 
 /** Shortest gap between `nodes:telemetry` pushes. ~3 PDUs send ~3 frames/s between them. */
 const NODE_TELEM_PUSH_MS = 1000
+/** The roster poll. */
+const NODES_REFRESH_MS = 5000
+
+type Unsubscribe = () => void
 
 /** Fault-dictionary enrichment: the abbr, label and description for the node's faultId. */
 /**
@@ -85,8 +125,15 @@ export function withFaultInfo(n: NodeStatus): NodeStatus {
   }
 }
 
-export class NodeHub {
+export class NodeHub implements NodeLineSink {
   private readonly telem = new NodeTelemStore()
+  /** The Gateway's own health (#94): its node-0 row, and whether it still answers. */
+  private readonly gateway = new GatewayWatch()
+  /** A v2 (pre-#344) PanelBridge was reported this link: say it once, not on every row. */
+  private legacyNodesWarned = false
+  private readonly link: NodeHubLink
+  private readonly log: Log
+  private readonly errorCbs = new Set<(tag: string, message: string) => void>()
   private readonly defaults = registryDefaults(NODE_NAMES)
   private telemPushedAt = 0
   private modelDirty = true
@@ -114,6 +161,8 @@ export class NodeHub {
     private readonly onEvents: (events: LogEventInput[]) => void = () => {},
     deps: NodeHubDeps = {}
   ) {
+    this.link = deps.link ?? NO_LINK
+    this.log = deps.log ?? (() => {})
     this.store = new MappingStore({
       file: deps.mappingFile,
       log: deps.log,
@@ -125,6 +174,100 @@ export class NodeHub {
 
   private mapping(): NodeMappingFile {
     return this.store.mapping()
+  }
+
+  /** Faults worth showing the user: a v2 Gateway (the same path as the link's own). */
+  onError(cb: (tag: string, message: string) => void): Unsubscribe {
+    this.errorCbs.add(cb)
+    return () => this.errorCbs.delete(cb)
+  }
+
+  // ── the link's moments (gateway LinkRider) ────────────────────────────────
+
+  /** NodeHub's part of the Gateway connection's moments. Session rides it after HID. */
+  readonly rider: LinkRider = {
+    // Poll the node roster so silent deaths get reconciled — relaying or not.
+    timers: (every) => every(NODES_REFRESH_MS, () => this.requestNodes()),
+    // Shutdown, Disconnect, unplug: the boards on the bus were last seen now (#93).
+    closing: () => this.linkClosed(),
+    released: () => this.gateway.reset(),
+    // A port open: the roster, the node data and the Gateway's health start over, together.
+    opening: () => {
+      this.roster.reset()
+      this.reset()
+      this.gateway.reset()
+      this.legacyNodesWarned = false
+    },
+    connected: () => {
+      this.gateway.takeChanged() // just sent, on the connected status
+      this.requestNodes() // seed the roster as soon as the device is up
+    },
+    // The link's push tick, while it is up: node pushes, then the Gateway's health.
+    tick: () => {
+      this.flush(this.roster.takeDirty())
+      this.onEvents(this.gateway.tick(Date.now(), this.link.exportGated))
+      if (this.gateway.takeChanged()) this.link.pushGatewayHealth(this.gateway.status())
+    }
+  }
+
+  /** The Gateway's health as it stands, for the connected status. */
+  gatewayHealth(): GatewayStatus | undefined {
+    return this.gateway.status()
+  }
+
+  /** Ask PanelBridge for the full node roster (inject the request export to the serial). */
+  requestNodes(): void {
+    if (!this.link.attached || !isLinkUp(this.link.deviceStatus().state)) return
+    this.roster.beginBurst() // isolate the reply burst so prior deltas don't block pruning
+    this.gateway.asked(Date.now())
+    this.link.write(Buffer.from(nodeRosterRequest()))
+  }
+
+  // ── node lines (gateway NodeLineSink) ─────────────────────────────────────
+
+  cleanLine(raw: string): string {
+    return cleanNodeLine(raw)
+  }
+
+  /** One line from the Gateway's line tap. True for a node line: tapped here, not a command. */
+  nodeLine(identifier: string, arg: string, line: string, t: number): boolean {
+    if (identifier === NODE_MSG && !this.legacyNodesWarned && isLegacyNodeStatus(arg.trim())) {
+      // Every v2 row would be dropped as malformed, leaving the Cockpit silently empty.
+      this.legacyNodesWarned = true
+      this.raise(
+        'NODES',
+        'The Gateway sends node status v2; this client needs v3 — update the Gateway firmware (OpenSkyhawk#344)'
+      )
+    }
+    // Node-status messages are tapped to the roster, not logged as panel commands.
+    if (identifier === NODE_MSG || identifier === NODE_END_MSG) {
+      this.log('node', `${identifier} ${arg}`.trim())
+      this.roster.applyMessage(identifier, arg, t)
+      this.statusLine(identifier, line, t)
+      this.gatewayLine(identifier, arg, line, t)
+      return true
+    }
+    if (identifier === NODE_TELEM_MSG) {
+      // Node telemetry (~1/s per PDU) likewise: tapped, never logged as a panel command.
+      this.telemetry(arg, t, line)
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Any node-status line answers the roster request; the Gateway's own row (node 0) is its health.
+   * That row stays out of the cockpit model (node-model); this is where it is shown instead (#94).
+   */
+  private gatewayLine(identifier: string, arg: string, raw: string, t: number): void {
+    this.onEvents(this.gateway.answered(raw, t))
+    if (identifier !== NODE_MSG) return
+    const n = parseNodeStatus(arg.trim())
+    if (n?.nodeId === BRIDGE_NODE_ID) this.onEvents(this.gateway.report(withFaultInfo(n), raw, t))
+  }
+
+  private raise(tag: string, message: string): void {
+    for (const cb of this.errorCbs) cb(tag, message)
   }
 
   /** New session: telemetry and first-seen times start over; the mapping persists. */
