@@ -12,6 +12,7 @@ import type {
   StrayItem
 } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
+import { shownHealth } from '../../gateway'
 import { isReportableNew } from '../node-model'
 import { adoptability } from './adopt'
 
@@ -116,15 +117,14 @@ export function strayFlag(e: NodeModelEntry): string {
 
 /**
  * The Gateway's own problem (#94), as its Attention item: none while the link is down (the link
- * state says it all) or while it is healthy; err → off, else warn. The same reading as the
- * renderer's gatewayView, for the Cockpit.
+ * state says it all — gateway-health's shownHealth) or while it is healthy; err → off, else warn.
  */
 function gatewayAttention(
-  g: GatewayStatus | undefined,
+  gateway: GatewayStatus | undefined,
   linkUp: boolean
 ): CockpitAttention['gateway'] {
-  if (!linkUp || !g) return undefined
-  if (g.severity === 'ok') return undefined
+  const g = shownHealth(gateway, linkUp)
+  if (!g || g.severity === 'ok') return undefined
   return { flag: g.label, state: g.severity === 'err' ? 'off' : 'warn' }
 }
 

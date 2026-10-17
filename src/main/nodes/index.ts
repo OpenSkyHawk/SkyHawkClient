@@ -4,6 +4,11 @@ export { NodeHub } from './node-hub'
 export type { MappingFileIO } from './mapping-store'
 export { NodeRoster } from './node-status-wire'
 // The mapping and PSU rules config's file format reads a section back through.
-export { effectiveMapping, importMapping, sanitizeNodeMapping } from './mapping-rules'
+export {
+  effectiveMapping,
+  importMapping,
+  isPlainObject,
+  sanitizeNodeMapping
+} from './mapping-rules'
 export { PSU_PRESETS, resolvePsu, sanitizePsu } from './psu-limits'
 export { registerNodesIpc } from './ipc'
