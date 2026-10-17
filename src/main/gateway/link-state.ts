@@ -105,14 +105,10 @@ export class LinkDownClock {
   }
 }
 
-/**
- * What `device:status` carries besides the status itself. `canRefresh` is NodeHub's (its roster
- * request guard), handed in: none without a node layer.
- */
+/** What `device:status` carries besides the status itself. */
 export function linkFacts(
   status: DeviceStatus,
-  page: { linkDownAt?: number; serialMonitor: boolean },
-  canRefresh = false
+  page: { linkDownAt?: number; serialMonitor: boolean }
 ): DeviceLinkFacts {
   return {
     linkUp: isLinkUp(status.state),
@@ -120,7 +116,6 @@ export function linkFacts(
     busy: isBusy(status.detail),
     ...(page.linkDownAt !== undefined ? { linkDownAt: page.linkDownAt } : {}),
     serialMonitor: page.serialMonitor,
-    action: linkAction(status.state),
-    canRefresh
+    action: linkAction(status.state)
   }
 }

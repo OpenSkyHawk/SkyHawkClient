@@ -98,7 +98,6 @@ import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-hos
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
 import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
 import { shownStatus } from '../../main/gateway/gateway-health'
-import { canRequestRoster } from '../../main/nodes/node-status-wire'
 import { captureView, relayFacts, replayView } from '../../main/dcs/relay-rules'
 import { savedEdit } from '../../main/config/settings-form'
 import { resolvePsu } from '../../main/nodes/psu-limits'
@@ -350,7 +349,6 @@ export function installSkyhawkMock(): SkyhawkMock {
         pushFacts()
       }
     ),
-    refreshNodes: vi.fn(() => resolve(undefined)),
     setNodeMapping: vi.fn(() => resolve(mapped())),
     adoptNode: vi.fn(() => resolve(mapped())),
     forgetNode: vi.fn(() => resolve(mapped())),
@@ -452,22 +450,12 @@ export function installSkyhawkMock(): SkyhawkMock {
   const linkDown = new LinkDownClock()
   let monitorShown = false
   /**
-   * NodeHub's roster guard, for Refresh (R3.4a). A port is held from connect() until it is
-   * released — every state but `disconnected` (GatewayConnection.attached).
-   */
-  const canRefresh = (): boolean =>
-    canRequestRoster(device().state !== 'disconnected', device().state)
-  /**
    * The status with what main concludes from it, as the last push carried it: the Gateway's
    * health only while the link is up (shownStatus, R3.4a).
    */
   const devicePush = (): DeviceStatusPush => ({
     ...shownStatus(device()),
-    ...linkFacts(
-      device(),
-      { linkDownAt: linkDown.value, serialMonitor: monitorShown },
-      canRefresh()
-    )
+    ...linkFacts(device(), { linkDownAt: linkDown.value, serialMonitor: monitorShown })
   })
   /** One `device:status` push, judged as GatewayConnection judges each. */
   const statusPush = (): DeviceStatusPush => {

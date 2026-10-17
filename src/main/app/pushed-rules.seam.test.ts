@@ -94,32 +94,29 @@ describe('relay:facts: what the relay’s surfaces show', () => {
 })
 
 describe('R3.4a: the last renderer decisions, pushed by their owners', () => {
-  it('device:status: the link’s action, and Refresh only while a roster request can go', () => {
+  it('device:status: the link’s action, and no Refresh fact (#132: the button is gone)', () => {
     const app = makeServices(monitor)
     expect(app.lastPush('device:status')).toMatchObject({
       state: 'scanning',
-      action: { offer: 'disconnect', intent: 'disconnect', disabled: true },
-      canRefresh: false
+      action: { offer: 'disconnect', intent: 'disconnect', disabled: true }
     })
     app.serial.open()
     expect(app.lastPush('device:status')).toMatchObject({
       state: 'connected',
-      action: { offer: 'disconnect', intent: 'disconnect' },
-      canRefresh: true
+      action: { offer: 'disconnect', intent: 'disconnect' }
     })
     app.serial.close()
     app.serial.fail('EIO')
     expect(app.lastPush('device:status')).toMatchObject({
       state: 'error',
-      action: { offer: 'retry', intent: 'connect' },
-      canRefresh: false
+      action: { offer: 'retry', intent: 'connect' }
     })
     app.invoke(CTRL.deviceDisconnect)
     expect(app.lastPush('device:status')).toMatchObject({
       state: 'disconnected',
-      action: { offer: 'connect', intent: 'connect' },
-      canRefresh: false
+      action: { offer: 'connect', intent: 'connect' }
     })
+    for (const push of app.pushesOf('device:status')) expect(push).not.toHaveProperty('canRefresh')
   })
 
   it('relay:facts: Record hidden and Capture shown in Replay, together; Settings’ row always', () => {

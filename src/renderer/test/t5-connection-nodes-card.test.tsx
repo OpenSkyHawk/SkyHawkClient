@@ -97,21 +97,17 @@ describe('T5 Connection › nodes summary card (B63, B14, B37, X2)', () => {
     expect(screen.getByText('+1 more · 1 no status yet · healthy nodes hidden')).toBeInTheDocument()
   })
 
-  it('Refresh asks main for the roster while the link is up', async () => {
-    const { sky, user } = await renderScenario(<Connection />, {
-      device: connected(),
-      model: scene()
-    })
-    await user.click(screen.getByRole('button', { name: 'Refresh' }))
-    expect(sky.refreshNodes).toHaveBeenCalledTimes(1)
+  it('has no Refresh button: the roster poll and every reconnect ask for it (#132)', async () => {
+    await renderScenario(<Connection />, { device: connected(), model: scene() })
+    expect(screen.getByText('Connected nodes')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
   })
 
-  it('Refresh is disabled and the rows give way to a hint while the link is down', async () => {
+  it('the rows give way to a hint while the link is down', async () => {
     await renderScenario(<Connection />, {
       device: link('disconnected'),
       model: scene()
     })
-    expect(screen.getByRole('button', { name: 'Refresh' })).toBeDisabled()
     expect(
       screen.getByText('Device link released — press Connect to see node status.')
     ).toBeInTheDocument()

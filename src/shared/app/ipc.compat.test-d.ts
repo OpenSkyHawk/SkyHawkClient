@@ -86,6 +86,12 @@
 // `CockpitSnapshot.panels` holds only boards in your cockpit, and `BoardPanel.placed` (always true
 // for those) was removed.
 //
+// Fix track #132 (remove Refresh, user 2026-10-17): Connection › Connected nodes lost its Refresh
+// button — the 5 s roster poll, its re-ask and every reconnect already ask for the roster. The
+// intent `nodes:refresh` (CTRL.nodesRefresh, `refreshNodes`) was removed from the frozen copy
+// below, and `DeviceStatusPush` lost `canRefresh` (its only reader was that button; a type change
+// only, no channel renamed).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -227,7 +233,6 @@ interface OldCTRL {
   readonly captureToggle: 'capture:toggle'
   readonly replayOpen: 'replay:open'
   readonly hidAvailability: 'hid:availability'
-  readonly nodesRefresh: 'nodes:refresh'
   readonly nodesGet: 'nodes:get'
   readonly nodeMappingSet: 'node-mapping:set'
   readonly nodeMappingAdopt: 'node-mapping:adopt'
@@ -288,7 +293,6 @@ interface OldSkyhawkApi {
   toggleCapture(): Promise<OldCaptureState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
-  refreshNodes(): Promise<void>
   getNodes(): Promise<NodeSnapshot>
   setNodeMapping(nodeId: number, patch: MappingPatch): Promise<NodeMappingResult>
   adoptNode(nodeId: number, spec: AdoptSpec): Promise<NodeMappingResult>

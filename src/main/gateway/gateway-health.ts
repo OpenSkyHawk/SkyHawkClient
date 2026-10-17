@@ -8,6 +8,8 @@
 // popover, Overview alert, Cockpit Attention, event log — only reads it. Every alert is a flag the
 // Gateway raised itself; the one client-side rule is "not responding": once it has answered since
 // the port opened, a roster request unanswered for GATEWAY_NO_ANSWER_MS while the port is open.
+// The re-ask that goes with it lives here too (G1): an unanswered request is asked again every
+// GATEWAY_REASK_MS, so one lost reply is answered long before the deadline and never trips it.
 import type { LogEventInput } from '@shared/events'
 import { NODE_FAULT_CODES, type NodeFaultName } from '@shared/firmware'
 import { title } from '@shared/format'
@@ -18,6 +20,14 @@ import { isLinkUp } from './link-state'
 
 /** How long a roster request may go unanswered, with the port open, before the Gateway is "not responding". */
 export const GATEWAY_NO_ANSWER_MS = 5000
+
+/**
+ * How long a roster request may go unanswered before it is asked again (G1), and again after each
+ * re-ask. PanelBridge answers in milliseconds (the roster reply window is 1 s), so a request still
+ * unanswered after this was lost. Inside the not-responding window that is four re-asks after the
+ * first request: "not responding" takes five lost replies in a row, never one.
+ */
+export const GATEWAY_REASK_MS = 1000
 
 const SECS = GATEWAY_NO_ANSWER_MS / 1000
 
@@ -202,11 +212,13 @@ export function gatewayEvents(
 /**
  * Follows the Gateway for one open port: its own row, and whether it still answers roster
  * requests. Driven by the device link (asked / answered / report / tick); hands back log rows for
- * what changed, and says when the status worth pushing changed.
+ * what changed, says when the status worth pushing changed, and when to ask again (reaskDue).
  */
 export class GatewayWatch {
   /** The oldest roster request still unanswered. */
   private askedAt?: number
+  /** The latest roster request: a re-ask is timed from it. */
+  private lastAskAt?: number
   private row?: NodeStatus
   private noAnswer = false
   /**
@@ -220,6 +232,7 @@ export class GatewayWatch {
   /** A port open or close: a different board, or the same one after an outage. */
   reset(): void {
     this.askedAt = undefined
+    this.lastAskAt = undefined
     this.row = undefined
     this.noAnswer = false
     this.answeredOnce = false
@@ -230,6 +243,22 @@ export class GatewayWatch {
   /** A roster request went out. A later one doesn't restart the clock. */
   asked(now: number): void {
     this.askedAt ??= now
+    this.lastAskAt = now
+  }
+
+  /**
+   * Ask again now (G1): a request has gone unanswered for GATEWAY_REASK_MS since the latest ask.
+   * Only once it has answered since the port opened, as "not responding" is: a Gateway built
+   * without node status is left to the regular poll. Nothing is pending through a calibration
+   * pause (tick), so there is no re-ask then either.
+   */
+  reaskDue(now: number): boolean {
+    return (
+      this.answeredOnce &&
+      this.askedAt !== undefined &&
+      this.lastAskAt !== undefined &&
+      now - this.lastAskAt >= GATEWAY_REASK_MS
+    )
   }
 
   /** Any `_NODE_STATUS` / `_NODE_STATUS_END` line: it answers. */

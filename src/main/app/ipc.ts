@@ -30,7 +30,6 @@ const IPC_ORDER = [
   'device:connect',
   'device:disconnect',
   'hid:availability',
-  'nodes:refresh',
   'nodes:get',
   'node-mapping:set',
   'node-mapping:adopt',

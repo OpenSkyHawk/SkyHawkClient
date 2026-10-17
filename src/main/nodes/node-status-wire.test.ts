@@ -12,7 +12,7 @@ import {
 } from './node-status-wire'
 import { nodeFaultTag } from './faults'
 import type { NodeStatus } from '@shared/nodes'
-import { nodeStatus } from '../../test-fixtures/nodes'
+import { nodeStatus, statusRow } from '../../test-fixtures/nodes'
 
 const node = (over: Partial<NodeStatus>): NodeStatus =>
   nodeStatus(1, { uptimeSec: 0, rxCount: 0, ...over })
@@ -104,7 +104,7 @@ describe('nodeRosterRequest', () => {
   })
 })
 
-describe('canRequestRoster (R3.4a: Connection’s Refresh)', () => {
+describe('canRequestRoster (the poll, its re-ask and the seed on connect)', () => {
   it('only with a port held and the link up', () => {
     expect(canRequestRoster(true, 'connected')).toBe(true)
     expect(canRequestRoster(false, 'connected'), 'released at shutdown').toBe(false)
@@ -188,6 +188,106 @@ describe('NodeRoster', () => {
     r.applyMessage(NODE_MSG, '0200000000000000008000000000', 1001 + ROSTER_REPLY_MS)
     expect(r.seenInfo().get(2)?.offlineVia).toBe('delta') // after it: a live delta
     expect(r.rosterCompleteAt()).toBeUndefined() // registry nodes stay unknown, honestly
+  })
+})
+
+describe('NodeRoster — a new request never cuts a reply short (M2)', () => {
+  const row = (id: number) => statusRow(id, true, id === 0 ? 3 : 1)
+  /** One v3 reply's lines: the bridge's node-0 row first, then a row per board. */
+  const reply = (r: NodeRoster, ids: number[], t: number) => {
+    for (const id of [0, ...ids]) r.applyMessage(NODE_MSG, row(id), t)
+  }
+  const states = (r: NodeRoster) =>
+    r
+      .snapshot()
+      .filter((n) => n.nodeId !== 0)
+      .map((n) => [n.nodeId, n.present])
+
+  it('a reply arriving across a new request is kept: no board reads offline', () => {
+    const r = new NodeRoster()
+    r.beginBurst(0) // the first poll's roster: boards 1, 2 and 3
+    reply(r, [1, 2, 3], 10)
+    r.applyMessage(NODE_END_MSG, '4', 10)
+    r.beginBurst(5000) // the next poll
+    reply(r, [1], 5010)
+    r.beginBurst(5011) // a request lands while that reply is still arriving
+    r.applyMessage(NODE_MSG, row(2), 5012)
+    r.applyMessage(NODE_MSG, row(3), 5013)
+    r.applyMessage(NODE_END_MSG, '4', 5014)
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, true],
+      [3, true]
+    ])
+    for (const id of [1, 2, 3]) expect(r.seenInfo().get(id)?.offlineAt, `${id}`).toBeUndefined()
+  })
+
+  it('replies queued behind each other: a request in the second one keeps it whole', () => {
+    const r = new NodeRoster()
+    r.beginBurst(0)
+    r.beginBurst(1000) // asked again before the first reply came
+    reply(r, [1, 2], 1500) // the first reply, whole
+    r.applyMessage(NODE_END_MSG, '3', 1500)
+    reply(r, [1], 1510) // the second reply starts
+    r.beginBurst(1520) // and the next request lands inside it
+    r.applyMessage(NODE_MSG, row(2), 1530)
+    r.applyMessage(NODE_END_MSG, '3', 1530)
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, true]
+    ])
+    expect(r.seenInfo().get(1)?.offlineAt).toBeUndefined()
+  })
+
+  it('a board missing from a whole reply is still offline by it', () => {
+    const r = new NodeRoster()
+    r.beginBurst(0)
+    reply(r, [1, 2], 1)
+    r.applyMessage(NODE_END_MSG, '3', 1)
+    r.beginBurst(5000)
+    r.beginBurst(5001) // a second request changes nothing about what the reply says
+    reply(r, [1], 5002)
+    r.applyMessage(NODE_END_MSG, '2', 5002)
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, false]
+    ])
+    expect(r.seenInfo().get(2)).toMatchObject({ offlineAt: 5002, offlineVia: 'roster' })
+  })
+
+  it('with no reply arriving, a request still isolates the next reply from earlier deltas', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, row(1), 0) // a live delta: board 1 joined
+    r.beginBurst(5000)
+    reply(r, [3], 5001) // the reply no longer lists it
+    r.applyMessage(NODE_END_MSG, '2', 5001)
+    expect(states(r)).toEqual([
+      [1, false],
+      [3, true]
+    ])
+  })
+})
+
+describe('NodeRoster — a v2 bridge’s END completes nothing (M3)', () => {
+  const V2 = '01010000000000000080000000' // 26 hex: a v2 row, dropped
+
+  it('with a v2 bridge the roster never completes, so no board reads offline', () => {
+    const r = new NodeRoster()
+    r.beginBurst(0)
+    r.applyMessage(NODE_MSG, V2, 1)
+    r.applyMessage(NODE_END_MSG, '1', 1)
+    expect(r.legacyBridge()).toBe(true)
+    expect(r.rosterCompleteAt(), 'unknown, not a complete empty roster').toBeUndefined()
+    expect(r.snapshot()).toEqual([])
+  })
+
+  it('a reset (a port open) forgets it: a v3 bridge on the new link completes as before', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, V2, 1)
+    r.reset()
+    expect(r.legacyBridge()).toBe(false)
+    r.applyMessage(NODE_END_MSG, '0', 2)
+    expect(r.rosterCompleteAt()).toBe(2)
   })
 })
 

@@ -74,8 +74,7 @@ export class AppServices {
       log: debugLog,
       frames: this.calibration,
       health: () => this.nodes.gatewayHealth(),
-      serialMonitor: () => this.serialMonitor.shown,
-      canRefresh: () => this.nodes.canRefresh()
+      serialMonitor: () => this.serialMonitor.shown
     })
     this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,
@@ -106,7 +105,8 @@ export class AppServices {
     //                    `connected`: roster request → `opened`: calibration read, HID reopen
     //   port closes      `closing`: nodes' last seen → `closed`: calibration → reconnect/disconnect
     //   teardown         `release`: calibration → port stop → `released`: the Gateway's health
-    //   200 ms tick      `flush`: HID → (link up) `tick`: node pushes, Gateway health
+    //   200 ms tick      `flush`: HID → (link up) `tick`: node pushes, Gateway health, re-ask
+    //   Retry            `closing`: nodes' last seen → teardown → a fresh port (M7)
     //   shutdown         `closing`: nodes → timers cleared → teardown → `stop`: HID
     // The DCS side keeps its order from before the split too (R2.3a). None of its constructors has
     // a side effect.

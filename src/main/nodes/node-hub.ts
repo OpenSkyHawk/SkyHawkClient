@@ -1,9 +1,10 @@
-// Node data layer in main: the node roster and its 5 s poll, the node lines the Gateway's line
-// tap hands it (`_NODE_STATUS`, `_NODE_TELEM`), the Gateway's own health (it drives GatewayWatch,
-// UD-C), the node mapping (through MappingStore), and the combined node picture it pushes. It
-// rides on the Gateway connection (its `rider`, a gateway LinkRider) and writes the roster request
-// through the connection's write (R2.2b). It also hosts the Cockpit snapshot (R3.2): built from
-// each node push and the link, and pushed with them on `cockpit:snapshot`.
+// Node data layer in main: the node roster and its 5 s poll (and the re-ask GatewayWatch times),
+// the node lines the Gateway's line tap hands it (`_NODE_STATUS`, `_NODE_TELEM`), the Gateway's
+// own health (it drives GatewayWatch, UD-C), the node mapping (through MappingStore), and the
+// combined node picture it pushes. It rides on the Gateway connection (its `rider`, a gateway
+// LinkRider) and writes the roster request through the connection's write (R2.2b). It also hosts
+// the Cockpit snapshot (R3.2): built from each node push and the link, and pushed with them on
+// `cockpit:snapshot`.
 import type {
   AdoptRequest,
   AdoptSpec,
@@ -61,7 +62,6 @@ import {
   BRIDGE_NODE_ID,
   canRequestRoster,
   cleanNodeLine,
-  isLegacyNodeStatus,
   NODE_END_MSG,
   NODE_MSG,
   nodeRosterRequest,
@@ -117,8 +117,11 @@ export interface NodeHubDeps {
 
 /** Shortest gap between takes of the PDU pages. ~3 PDUs send ~3 frames/s between them. */
 const NODE_TELEM_PUSH_MS = 1000
-/** The roster poll. */
-const NODES_REFRESH_MS = 5000
+/**
+ * The roster poll. Also the health channel: PanelBridge answers from its cache and does not forward
+ * HEALTH, so an unanswered request is asked again sooner (GatewayWatch.reaskDue, G1).
+ */
+const NODES_POLL_MS = 5000
 
 type Unsubscribe = () => void
 
@@ -216,7 +219,7 @@ export class NodeHub implements NodeLineSink {
   /** NodeHub's part of the Gateway connection's moments. AppServices rides it after HID. */
   readonly rider: LinkRider = {
     // Poll the node roster so silent deaths get reconciled — relaying or not.
-    timers: (every) => every(NODES_REFRESH_MS, () => this.requestNodes()),
+    timers: (every) => every(NODES_POLL_MS, () => this.requestNodes()),
     // Shutdown, Disconnect, unplug: the boards on the bus were last seen now (#93).
     closing: () => this.linkClosed(),
     released: () => this.gateway.reset(),
@@ -231,10 +234,13 @@ export class NodeHub implements NodeLineSink {
       this.gateway.takeChanged() // just sent, on the connected status
       this.requestNodes() // seed the roster as soon as the device is up
     },
-    // The link's push tick, while it is up: node pushes, then the Gateway's health.
+    // The link's push tick, while it is up: node pushes, then the Gateway's health, then a re-ask
+    // of a roster request gone unanswered (G1: one lost reply never reads as "not responding").
     tick: () => {
+      const now = Date.now()
       this.flush(this.roster.takeDirty())
-      this.onEvents(this.gateway.tick(Date.now(), this.link.exportGated))
+      this.onEvents(this.gateway.tick(now, this.link.exportGated))
+      if (this.gateway.reaskDue(now)) this.requestNodes()
       if (this.gateway.takeChanged()) {
         this.link.pushGatewayHealth(this.gateway.status())
         this.cockpit.linkChanged()
@@ -266,16 +272,15 @@ export class NodeHub implements NodeLineSink {
     return this.gateway.status()
   }
 
-  /** A roster request can go out now (canRequestRoster): Connection's Refresh (R3.4a). */
-  canRefresh(): boolean {
-    return canRequestRoster(this.link.attached, this.link.deviceStatus().state)
-  }
-
-  /** Ask PanelBridge for the full node roster (inject the request export to the serial). */
+  /**
+   * Ask PanelBridge for the full node roster (inject the request export to the serial): the poll,
+   * its re-ask and the seed on connect. A reply still arriving is kept (NodeRoster.beginBurst, M2).
+   */
   requestNodes(): void {
-    if (!this.canRefresh()) return
-    this.roster.beginBurst() // isolate the reply burst so prior deltas don't block pruning
-    this.gateway.asked(Date.now())
+    if (!canRequestRoster(this.link.attached, this.link.deviceStatus().state)) return
+    const now = Date.now()
+    this.roster.beginBurst(now)
+    this.gateway.asked(now)
     this.link.write(Buffer.from(nodeRosterRequest()))
   }
 
@@ -287,18 +292,19 @@ export class NodeHub implements NodeLineSink {
 
   /** One line from the Gateway's line tap. True for a node line: tapped here, not a command. */
   nodeLine(identifier: string, arg: string, line: string, t: number): boolean {
-    if (identifier === NODE_MSG && !this.legacyNodesWarned && isLegacyNodeStatus(arg.trim())) {
-      // Every v2 row would be dropped as malformed, leaving the Cockpit silently empty.
-      this.legacyNodesWarned = true
-      this.raise(
-        'NODES',
-        'The Gateway sends node status v2; this client needs v3 — update the Gateway firmware (OpenSkyhawk#344)'
-      )
-    }
     // Node-status messages are tapped to the roster, not logged as panel commands.
     if (identifier === NODE_MSG || identifier === NODE_END_MSG) {
       this.log('node', `${identifier} ${arg}`.trim())
       this.roster.applyMessage(identifier, arg, t)
+      if (!this.legacyNodesWarned && this.roster.legacyBridge()) {
+        // Every v2 row is dropped as malformed (and its END ignored, M3): say why the Cockpit is
+        // empty, once.
+        this.legacyNodesWarned = true
+        this.raise(
+          'NODES',
+          'The Gateway sends node status v2; this client needs v3 — update the Gateway firmware (OpenSkyhawk#344)'
+        )
+      }
       this.statusLine(identifier, line, t)
       this.gatewayLine(identifier, arg, line, t)
       return true

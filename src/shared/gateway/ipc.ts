@@ -99,11 +99,6 @@ export interface DeviceLinkFacts {
   serialMonitor: boolean
   /** The device card's and the Device popover's button (R3.4a). */
   action: LinkAction
-  /**
-   * A roster request can go out, so Connection's Refresh is available: NodeHub's own guard on it
-   * (main/nodes/node-status-wire.ts canRequestRoster, R3.4a).
-   */
-  canRefresh: boolean
 }
 
 /** `device:status` as main pushes it: the link's status and what it concludes from it. */
@@ -119,8 +114,7 @@ export const DEVICE_IDLE: DeviceStatusPush = {
   boardPresent: false,
   busy: false,
   serialMonitor: false,
-  action: { offer: 'disconnect', intent: 'disconnect' },
-  canRefresh: false
+  action: { offer: 'disconnect', intent: 'disconnect' }
 }
 
 /** One raw serial chunk for the live serial monitor. */
