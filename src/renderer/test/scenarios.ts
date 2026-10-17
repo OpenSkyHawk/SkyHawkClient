@@ -11,9 +11,26 @@ import {
 import { DEFAULT_CONFIG, type ConfigSnapshot, type ImportPreview } from '@shared/config'
 import { gatewayStatus } from '../../main/gateway/gateway-health'
 import type { DeviceState, DeviceStatus, GatewayStatus } from '@shared/gateway'
-import type { NodeDefaults, NodeModel, NodeModelEntry, NodeStatus, PduOutage } from '@shared/nodes'
+import type {
+  NodeDefaults,
+  NodeModel,
+  NodeModelEntry,
+  NodeStatus,
+  NodeTelemSnapshot,
+  PduOutage,
+  PduRailPage,
+  PduStatusPage
+} from '@shared/nodes'
+import type { LogEvent } from '@shared/events'
+import type { LogRow } from '@shared/dcs'
+import type { SerialFrame } from '@shared/gateway'
+import type { CalCache, CalHello, CalRawSample, CalSnapshot } from '@shared/hid/calibration'
+import { CAL_PROTO, TELEM_PAGES } from '@shared/firmware'
 import { NODE_KIND } from '../../main/nodes/node-status-wire'
+import { NodeTelemStore } from '../../main/nodes/node-telem'
+import { withFaultInfo } from '../../main/nodes/node-hub'
 import { modelNode, nodeModel, nodeStatus } from '../../test-fixtures/nodes'
+import type { CalDevice } from './skyhawk-mock'
 
 export { modelNode, nodeModel, nodeStatus }
 
@@ -163,4 +180,187 @@ export function importPreview(
     skipped: config.skipped,
     identical: sections.every((s) => s.rows.length === 0)
   }
+}
+
+// ── node status rows, as main enriches them (`nodes:model` entry `status`) ─────────────────
+
+/**
+ * A panel group's status row as main hands it over: kind 01, plus `over`, with the fault table's
+ * abbr / label / description filled in for a `faultId` the way NodeHub does (withFaultInfo).
+ */
+export const reported = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
+  withFaultInfo(nodeStatus(nodeId, { nodeKind: NODE_KIND.PANEL_GROUP, ...over }))
+
+// ── PDU telemetry (`nodes:telemetry`), from main's own telemetry store ─────────────────────
+
+export interface PduPages {
+  rail12V?: Partial<Omit<PduRailPage, 'kind' | 'page'>>
+  rail5V?: Partial<Omit<PduRailPage, 'kind' | 'page'>>
+  status?: Partial<Omit<PduStatusPage, 'kind' | 'page'>>
+}
+
+/**
+ * What main pushes for a PDU's pages that arrived `ageMs` ago (NodeTelemStore.snapshot): rails
+ * default to a healthy 12.00 V / 5.00 V at 0 A, the status page to 30.0 °C, calibrated, no peaks.
+ */
+export function pduTelemetry(nodeId: number, pages: PduPages, ageMs = 0): NodeTelemSnapshot {
+  const store = new NodeTelemStore()
+  const rail = (page: PduRailPage['page'], mv: number, over: PduPages['rail12V']) =>
+    store.apply(
+      { nodeId, kind: 'rail', page, flags: 0, vAvgMv: mv, vMinMv: mv, iAvgMa: 0, ...over },
+      0
+    )
+  if (pages.rail12V) rail(TELEM_PAGES.PDU_RAIL_12V, 12_000, pages.rail12V)
+  if (pages.rail5V) rail(TELEM_PAGES.PDU_RAIL_5V, 5_000, pages.rail5V)
+  if (pages.status) {
+    store.apply(
+      {
+        nodeId,
+        kind: 'status',
+        page: TELEM_PAGES.PDU_STATUS,
+        flags: 0,
+        ntcTempC: 30,
+        i12PeakMa: 0,
+        i5PeakMa: 0,
+        ...pages.status
+      },
+      0
+    )
+  }
+  return store.snapshot(ageMs)[0]!
+}
+
+// ── the session's event log (`events:batch`) ────────────────────────────────
+
+/** One event-log row: node #1 Center_Armament went offline, `id` seconds past 12:00 local. */
+export const logEvent = (id: number, over: Partial<LogEvent> = {}): LogEvent => ({
+  id,
+  t: new Date(2026, 9, 16, 12, 0, id).getTime(),
+  source: 'node',
+  nodeId: 1,
+  name: 'Center_Armament',
+  severity: 'error',
+  event: 'offline',
+  detail: 'no heartbeat',
+  raw: `_NODE_STATUS 01000000000000000080000000${id.toString(16).padStart(2, '0')}`,
+  ...over
+})
+
+// ── the DCS-BIOS stream (`log:batch`) and raw serial (`serial:traffic`) ─────────────────────
+
+/** One stream row: an export from DCS (in) at `address`, at 12:00:00 local unless `over` says. */
+export const streamRow = (address: number, over: Partial<LogRow> = {}): LogRow => ({
+  t: new Date(2026, 9, 16, 12, 0, 0).getTime(),
+  dir: 'in',
+  address,
+  value: 0,
+  ...over
+})
+
+/** One raw serial chunk, `hex` as main forwards it. */
+export const serialFrame = (dir: SerialFrame['dir'], hex: string, t = 0): SerialFrame => ({
+  t: t || new Date(2026, 9, 16, 12, 0, 0).getTime(),
+  dir,
+  hex
+})
+
+// ── axis calibration (#46): the Gateway's calibration channel ─────────────────────────────
+
+export const CAL_SERIAL = 'E6614103E7452D2F'
+
+/** HELLO_ACK from today's SimGateway firmware. */
+export const CAL_HELLO: CalHello = {
+  proto: CAL_PROTO.version,
+  blobVersion: CAL_PROTO.blobVersion,
+  axisSlots: CAL_PROTO.axisSlots,
+  fw: { major: 0, minor: 2, patch: 0 }
+}
+
+export interface CalAxis {
+  idx: number
+  calibrated?: boolean
+  min?: number
+  centre?: number
+  max?: number
+}
+
+/**
+ * What GET_CAL reads back: `axes` declared present (uncalibrated unless they say so; a calibrated
+ * one defaults to 10000 … 32768 … 55000), every other slot absent; the board's USB serial.
+ */
+export function calSnapshot(axes: CalAxis[], serialNumber: string = CAL_SERIAL): CalSnapshot {
+  const rows = Array.from({ length: CAL_PROTO.axisSlots }, (_, idx) => {
+    const a = axes.find((x) => x.idx === idx)
+    return {
+      idx,
+      controlId: 0x10 + idx,
+      min: a?.min ?? (a?.calibrated ? 10_000 : 0),
+      centre: a?.centre ?? (a?.calibrated ? 32_768 : 0),
+      max: a?.max ?? (a?.calibrated ? 55_000 : 0),
+      deadzone: 0,
+      present: !!a,
+      calibrated: !!a?.calibrated
+    }
+  })
+  const mask = (f: (r: (typeof rows)[number]) => boolean) =>
+    rows.reduce((m, r) => (f(r) ? m | (1 << r.idx) : m), 0)
+  return {
+    presentMask: mask((r) => r.present),
+    calibratedMask: mask((r) => r.calibrated),
+    axes: rows,
+    serialNumber
+  }
+}
+
+/** A calibration-capable Gateway holding `stored`, with the client's cache file as given. */
+export const calDevice = (stored: CalSnapshot, over: Partial<CalDevice> = {}): CalDevice => ({
+  hello: CAL_HELLO,
+  stored,
+  ...over
+})
+
+/** cal-cache.json holding `axes` for the board `serial`, confirmed at `confirmedAt`. */
+export const calCache = (
+  axes: Record<number, { min: number; centre: number; max: number; selfCentring: boolean }>,
+  confirmedAt = '2026-10-12T21:02:00.000Z',
+  serial = CAL_SERIAL
+): CalCache => ({ version: 1, boards: { [serial]: { confirmedAt, axes } } })
+
+/**
+ * The RAW samples of `count` full sweeps on axis `idx`, from rest to stop `a`, held, then to stop
+ * `b`, held — each hold corroborated by a second in-band sample 1.6 s later (the capture needs
+ * 1.5 s and a confirming sample). With `rest`, each sweep also releases to `rest` and settles
+ * there for the 5 s centre hold. Stamped from `t0`, 100 ms apart where nothing is held.
+ */
+export function sweeps(
+  idx: number,
+  t0: number,
+  a: number,
+  b: number,
+  count = 3,
+  rest?: number
+): CalRawSample[] {
+  const out: CalRawSample[] = []
+  let t = t0
+  const at = (raw: number, dt = 100) => {
+    t += dt
+    out.push({ t, idx, raw, cal: raw })
+  }
+  let from = 32_768
+  for (let i = 0; i < count; i++) {
+    // Each step times the value it lands on, so it starts from where the last one left off.
+    at(from)
+    at(a)
+    at(a + 10, 1600)
+    at(a + 10)
+    at(b)
+    at(b + 10, 1600)
+    if (rest !== undefined) {
+      at(b + 10)
+      at(rest)
+      at(rest + 10, 5100)
+    }
+    from = rest !== undefined ? rest + 10 : b + 10
+  }
+  return out
 }
