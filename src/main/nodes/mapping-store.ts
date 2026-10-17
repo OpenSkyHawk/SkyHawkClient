@@ -127,7 +127,9 @@ export class MappingStore {
   save(next: NodeMappingFile): void {
     const loaded = this.store() // one access: a failed load is tried again once, here
     if (next === loaded.file) return
-    if (loaded.readOnly) throw new MappingSaveError(`Not saved: ${loaded.readOnly}`)
+    if (loaded.readOnly) {
+      throw new MappingSaveError(`Not saved: ${loaded.readOnly}`, loaded.readOnly)
+    }
     saveNodeMapping(next, this.io)
     this.commit(next)
   }

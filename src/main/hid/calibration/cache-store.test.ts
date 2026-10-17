@@ -97,8 +97,9 @@ describe('calibration-cache.json', () => {
       expect(() => saveCalCache(cache(20), io, log.events)).not.toThrow()
       saveCalCache(cache(30), io, log.events)
       expect(log.rows).toHaveLength(1)
-      expect(log.rows[0]).toMatch(
-        /^error calibration-cache\.json: calibration-cache\.json could not be saved: EACCES: /
+      expect(log.rows[0]).toBe(
+        `error calibration-cache.json: calibration-cache.json could not be saved (permission ` +
+          `denied in ${dir})`
       )
       expect(loadCalCache(io)).toEqual(cache(10))
       chmodSync(dir, 0o700)
@@ -114,18 +115,15 @@ describe('calibration-cache.json', () => {
     () => {
       expect(saveCalCache(cache(10), io)).toBeUndefined()
       chmodSync(dir, 0o500)
-      expect(saveCalCache(cache(20), io)).toMatch(
-        /^calibration-cache\.json could not be saved: EACCES: /
-      )
+      // The reason alone: a config import puts it after its section's title.
+      expect(saveCalCache(cache(20), io)).toBe(`permission denied in ${dir}`)
       chmodSync(dir, 0o700)
       const broken = storeFiles(
         storePaths(() => {
           throw new Error('no userData')
         })
       ).cacheFile
-      expect(saveCalCache(cache(1), broken)).toBe(
-        'calibration-cache.json could not be saved: no userData'
-      )
+      expect(saveCalCache(cache(1), broken)).toBe('no userData')
     }
   )
 

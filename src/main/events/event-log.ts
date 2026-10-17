@@ -8,7 +8,8 @@ import { fmtDateTime } from '@shared/format'
 
 /**
  * A client diagnostic — the `SERIAL` / `DCS` errors the Stream used to show as `! SYS`. A warn row
- * (a problem the client recovered from, nothing lost) has the same shape apart from `severity`.
+ * (a problem the client recovered from, nothing lost) is labelled as one: its event reads
+ * `warning` and its raw text `<tag> Warning: …`, so nothing on it says "error".
  */
 export function clientErrorEvent(
   tag: string,
@@ -16,14 +17,21 @@ export function clientErrorEvent(
   now: number,
   severity: 'error' | 'warn' = 'error'
 ): LogEventInput {
+  const warn = severity === 'warn'
   return {
     t: now,
     source: 'client',
     name: tag,
     severity,
-    event: tag === 'SERIAL' ? 'serial port error' : tag === 'DCS' ? 'link error' : 'error',
+    event: warn
+      ? 'warning'
+      : tag === 'SERIAL'
+        ? 'serial port error'
+        : tag === 'DCS'
+          ? 'link error'
+          : 'error',
     detail: message,
-    raw: `${tag} Error: ${message}`
+    raw: `${tag} ${warn ? 'Warning' : 'Error'}: ${message}`
   }
 }
 

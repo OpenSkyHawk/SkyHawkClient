@@ -53,7 +53,11 @@ function fileCopy(target: Target, key: 'mapping' | 'cache' | 'config') {
     },
     restore: (copy: { file: Buffer | null }) => {
       if (state.copyFails?.[target] === 'restore') {
-        return { error: new Error('x'), note: `${target} could not be put back: EROFS` }
+        const error = Object.assign(new Error('EROFS: read-only file system, open'), {
+          code: 'EROFS',
+          path: `/u/${target}.json.tmp`
+        })
+        return { error, note: `${target}.json could not be put back (the disk is read-only in /u)` }
       }
       state.calls.push(`restore ${target}`)
       ;(state as Record<string, unknown>)[key] = JSON.parse(copy.file!.toString())
@@ -212,12 +216,13 @@ describe('ConfigTransfer', () => {
   it('a node mapping that cannot be saved stops the whole import', () => {
     const t = transfer()
     const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
-    state.mappingRefuses = 'Not saved: node-mapping.json was written by a newer client'
+    // NodeHub.replaceMapping answers with the reason alone (MappingSaveError.reason).
+    state.mappingRefuses = 'node-mapping.json was written by a newer client'
     expect(t.apply(p.token, ['app', 'nodeMapping', 'calibration'], false)).toEqual({
       ok: false,
       error:
-        'Nothing was changed — Node mapping could not be saved: Not saved: node-mapping.json was ' +
-        'written by a newer client'
+        'Nothing was changed — Node mapping could not be saved (node-mapping.json was written by ' +
+        'a newer client).'
     })
     expect(state.calls).toEqual([])
   })
@@ -262,21 +267,21 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
   const cases: { target: Target; error: string; calls: string[] }[] = [
     {
       target: 'mapping',
-      error: 'Nothing was changed — Node mapping could not be saved: mapping write 1 failed',
+      error: 'Nothing was changed — Node mapping could not be saved (mapping write 1 failed).',
       calls: []
     },
     {
       target: 'calibration',
       error:
-        'Nothing was changed — Axis calibration could not be saved: calibration write 1 failed. ' +
-        'Node mapping was put back as before',
+        'Nothing was changed — Axis calibration could not be saved (calibration write 1 failed). ' +
+        'Node mapping was put back as before.',
       calls: ['mapping', 'mapping', 'restore mapping']
     },
     {
       target: 'config',
       error:
-        'Nothing was changed — App settings and Power supply could not be saved: config write 1 ' +
-        'failed. Node mapping and Axis calibration were put back as before',
+        'Nothing was changed — App settings and Power supply could not be saved (config write 1 ' +
+        'failed). Node mapping and Axis calibration were put back as before.',
       calls: ['mapping', 'calibration', 'restore calibration', 'mapping', 'restore mapping']
     }
   ]
@@ -310,8 +315,8 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
     expect(t.apply(p.token, ['powerSupply', 'nodeMapping'], false)).toEqual({
       ok: false,
       error:
-        'Nothing was changed — Power supply could not be saved: config write 1 failed. Node ' +
-        'mapping was put back as before'
+        'Nothing was changed — Power supply could not be saved (config write 1 failed). Node ' +
+        'mapping was put back as before.'
     })
     expect(state.config).toEqual(DEFAULT_CONFIG)
   })
@@ -325,8 +330,8 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
     expect(r).toEqual({
       ok: false,
       error:
-        'The import is only partly applied — App settings and Power supply could not be saved: ' +
-        'config write 1 failed. Node mapping could not be put back (mapping write 2 failed), so ' +
+        'The import is only partly applied — App settings and Power supply could not be saved ' +
+        '(config write 1 failed). Node mapping could not be put back (mapping write 2 failed), so ' +
         'it keeps the imported settings. Axis calibration was put back as before. Your previous ' +
         'setup is in skyhawk-config-2026-10-16T10-00-00-000Z.json.'
     })
@@ -343,9 +348,9 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
     expect(t.apply(p.token, ALL, false)).toEqual({
       ok: false,
       error:
-        'The import is only partly applied — App settings and Power supply could not be saved: ' +
-        'config write 1 failed. Axis calibration could not be put back (calibration could not be ' +
-        'put back: EROFS), so it keeps the imported settings. Node mapping was put back as before.'
+        'The import is only partly applied — App settings and Power supply could not be saved ' +
+        '(config write 1 failed). Axis calibration could not be put back (the disk is read-only ' +
+        'in /u), so it keeps the imported settings. Node mapping was put back as before.'
     })
   })
 
@@ -358,7 +363,7 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
       ok: false,
       error:
         'Nothing was changed — App settings and Power supply could not be copied for a ' +
-        'rollback: config unreadable'
+        'rollback (config unreadable).'
     })
     expect(state.calls).toEqual([])
     expect(stores()).toEqual(before)

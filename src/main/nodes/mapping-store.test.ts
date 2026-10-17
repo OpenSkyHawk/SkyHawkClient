@@ -177,9 +177,15 @@ describe('node-mapping.json', () => {
     saveNodeMapping(sample)
     chmodSync(userData.dir, 0o500) // read-only userData
     expect(() => saveNodeMapping({ ...sample, nodes: {} })).toThrow(MappingSaveError)
-    expect(() => saveNodeMapping({ ...sample, nodes: {} })).toThrow(
-      /^Could not save node mapping: /
-    )
+    let err: unknown
+    try {
+      saveNodeMapping({ ...sample, nodes: {} })
+    } catch (e) {
+      err = e
+    }
+    // Plain words, naming the folder (not node-mapping.json.tmp); `reason` alone for an import.
+    const reason = `permission denied in ${userData.dir}`
+    expect(err).toMatchObject({ message: `Node mapping could not be saved (${reason})`, reason })
     chmodSync(userData.dir, 0o700)
     expect(loadNodeMapping().file).toEqual(sample) // the old file is intact
   })

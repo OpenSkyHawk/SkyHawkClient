@@ -9,10 +9,20 @@
 // loaded read-only. A newer client's file is valid, not damaged: it is never replaced by `.bak`.
 import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from './mapping-rules'
 import type { NodeMappingFile } from '@shared/nodes'
-import { errorText } from '@shared/format'
+import { fileErrorText } from '@shared/format'
 
-/** A save that did not reach the disk. The message is ready to show. */
-export class MappingSaveError extends Error {}
+/**
+ * A save that did not reach the disk. The message is ready to show; `reason` is why, alone, for a
+ * caller that names the mapping itself (a config import: "Node mapping could not be saved (…)").
+ */
+export class MappingSaveError extends Error {
+  constructor(
+    message: string,
+    readonly reason: string
+  ) {
+    super(message)
+  }
+}
 
 export interface LoadedMapping {
   file: NodeMappingFile
@@ -55,9 +65,10 @@ export interface MappingFileIO {
 
 const empty = (): NodeMappingFile => ({ ...EMPTY_MAPPING, nodes: {} })
 
-const UNREADABLE = (error: unknown) => `node-mapping.json could not be read: ${errorText(error)}`
+const UNREADABLE = (error: unknown) =>
+  `node-mapping.json could not be read: ${fileErrorText(error)}`
 const STUCK = (error: unknown) =>
-  `node-mapping.json is damaged and could not be moved aside: ${errorText(error)}`
+  `node-mapping.json is damaged and could not be moved aside: ${fileErrorText(error)}`
 const NOT_SAVED = ' Cockpit changes are not saved until it can be loaded.'
 
 /** A file that parsed: as written, or read-only when a newer client wrote it. */
@@ -125,5 +136,7 @@ export function loadNodeMapping(io: MappingFileIO): LoadedMapping {
  */
 export function saveNodeMapping(file: NodeMappingFile, io: MappingFileIO): void {
   const failed = io.write(file)
-  if (failed) throw new MappingSaveError(`Could not save node mapping: ${errorText(failed.error)}`)
+  if (!failed) return
+  const reason = fileErrorText(failed.error)
+  throw new MappingSaveError(`Node mapping could not be saved (${reason})`, reason)
 }
