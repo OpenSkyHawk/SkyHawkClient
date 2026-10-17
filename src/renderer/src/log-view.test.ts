@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { LogEvent } from '@shared/events/ipc'
+import type { LogEvent } from '@shared/events'
 import { fileName } from '@shared/format'
 import {
   boardEventLine,

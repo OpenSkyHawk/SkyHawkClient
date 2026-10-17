@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import {
-  applyToConfig,
-  buildConfigFile,
-  diffImport,
-  mergeCalibration,
-  parseConfigFile
-} from './config-file'
-import { CONFIG_FORMAT, DEFAULT_CONFIG, type ConfigSnapshot, type SectionId } from './config/ipc'
-import { registryDefaults } from './node-mapping'
-import { DEFAULT_PSU, type NodeMappingFile } from './nodes/ipc'
-import type { CalCache } from './hid/calibration/ipc'
-import { DEFAULT_APP_SETTINGS } from '../test-fixtures/config'
+import { applyToConfig, buildConfigFile, diffImport, parseConfigFile } from './config-file'
+import { mergeCalibration } from '../hid/calibration/cache-rules'
+import { CONFIG_FORMAT, DEFAULT_CONFIG, type ConfigSnapshot, type SectionId } from '@shared/config'
+import { registryDefaults } from '../nodes/registry'
+import { DEFAULT_PSU, type NodeMappingFile } from '@shared/nodes'
+import type { CalCache } from '@shared/hid/calibration'
+import { DEFAULT_APP_SETTINGS } from '../../test-fixtures/config'
 
 const defaults = registryDefaults({
   0: { name: 'PanelBridge', console: '—' },

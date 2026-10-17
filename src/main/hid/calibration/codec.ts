@@ -29,7 +29,7 @@ import {
   CAL_STREAM_SELECT_FIELD,
   CAL_TYPES,
   type CalNackName
-} from './firmware'
+} from '@shared/firmware'
 
 /**
  * Constants from the generated firmware reference (shared/firmware, AxisCal.h), under the names

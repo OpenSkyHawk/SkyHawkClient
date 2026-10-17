@@ -1,21 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import {
-  clientErrorEvent,
-  deviceEvent,
-  EventLog,
-  EVENTS_TSV_HEADER,
-  eventsToTsv,
-  isProblem,
-  NodeEventTracker,
-  relayEvents,
-  type NodeLookup
-} from './events'
-import type { LogEventInput } from './events/ipc'
-import { eventText } from './format'
-import { NODE_END_MSG, NODE_MSG, ROSTER_REPLY_MS } from './nodes'
-import type { NodeStatus, NodeTelem } from './nodes/ipc'
-import { PDU_FLAG, RAIL_FLAG } from './node-telem'
-import { nodeStatus } from '../test-fixtures/nodes'
+import { clientErrorEvent, EventLog, EVENTS_TSV_HEADER, eventsToTsv } from './event-log'
+import { isProblem } from '@shared/events/legacy-rules'
+import { relayEvents } from '../dcs/relay-events'
+import { deviceEvent } from '../gateway/link-events'
+import { NodeEventTracker, type NodeLookup } from '../nodes/node-events'
+import type { LogEventInput } from '@shared/events'
+import { eventText } from '@shared/format'
+import { NODE_END_MSG, NODE_MSG, ROSTER_REPLY_MS } from '../nodes/node-status-wire'
+import type { NodeStatus, NodeTelem } from '@shared/nodes'
+import { PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
+import { nodeStatus } from '../../test-fixtures/nodes'
 
 const st = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
   nodeStatus(nodeId, { uptimeSec: 0, rxCount: 0, dieTempC: null, ...over })

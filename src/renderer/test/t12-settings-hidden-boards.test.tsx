@@ -1,7 +1,7 @@
 // T12 — Settings › Cockpit › Hidden boards.
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import type { NodeModel } from '@shared/nodes/ipc'
+import type { NodeModel } from '@shared/nodes'
 import { Settings } from '../src/tabs/Settings'
 import { renderScenario, settle } from './render'
 import { connected, model, panel } from './scenarios'

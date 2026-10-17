@@ -2,7 +2,7 @@
 // most severe nodes come from the same helpers as the Cockpit health band and Attention, so the
 // two tabs always agree; the full picture lives in the Cockpit tab.
 import { hhmmss, lastSeenLabel } from '@shared/format'
-import type { PduOutage } from '@shared/nodes/ipc'
+import type { PduOutage } from '@shared/nodes'
 import {
   affected,
   ATTENTION_SHOWN,

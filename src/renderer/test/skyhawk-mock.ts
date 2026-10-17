@@ -24,14 +24,14 @@
 // `SkyhawkApi`, so an IPC change breaks the mock at typecheck, not at run time.
 import { act } from '@testing-library/react'
 import { vi, type Mock } from 'vitest'
-import { DEFAULT_CONFIG, type AppConfig } from '@shared/config/ipc'
-import type { AircraftStatus, RelayState } from '@shared/dcs/ipc'
-import type { CalSnapshot } from '@shared/hid/calibration/ipc'
-import type { DeviceStatus } from '@shared/gateway/ipc'
-import type { HidSnapshot } from '@shared/hid/ipc'
-import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes/ipc'
-import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app/ipc'
-import type { LogEvent } from '@shared/events/ipc'
+import { DEFAULT_CONFIG, type AppConfig } from '@shared/config'
+import type { AircraftStatus, RelayState } from '@shared/dcs'
+import type { CalSnapshot } from '@shared/hid/calibration'
+import type { DeviceStatus } from '@shared/gateway'
+import type { HidSnapshot } from '@shared/hid'
+import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
+import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app'
+import type { LogEvent } from '@shared/events'
 
 /** What main knows right now. Every field is optional: absent = main's state at launch. */
 export interface Scenario {

@@ -9,15 +9,15 @@ import {
   importMapping,
   MappingError,
   markSeen,
-  registryDefaults,
   resetMapping,
   resetNode,
   resetPreview,
   sanitizeNodeMapping,
   setHidden,
   setNodeMapping
-} from './node-mapping'
-import type { AdoptSpec, MappingPatch, NodeMappingFile } from './nodes/ipc'
+} from './mapping-rules'
+import { registryDefaults } from './registry'
+import type { AdoptSpec, MappingPatch, NodeMappingFile } from '@shared/nodes'
 
 // Mirrors the bundled NODE_IDS at the #216 pin.
 const REGISTRY = {

@@ -19,13 +19,17 @@ import {
   type DiffRow,
   type SectionDiff,
   type SectionId
-} from './config/ipc'
-import { sanitizeCache } from './cal-cache'
-import type { CachedAxis, CalCache } from './hid/calibration/ipc'
-import { effectiveMapping, importMapping, sanitizeNodeMapping } from './node-mapping'
-import type { MappedNode, NodeDefaults, NodeMappingFile, PsuSetting } from './nodes/ipc'
-import { PSU_PRESETS, sanitizePsu } from './psu'
-import { onOff, plural, PSU_LIMITS } from './format'
+} from '@shared/config'
+import type { CachedAxis, CalCache } from '@shared/hid/calibration'
+import type { MappedNode, NodeDefaults, NodeMappingFile, PsuSetting } from '@shared/nodes'
+import { PSU_PRESETS } from '@shared/nodes/legacy-rules'
+import { onOff, plural, PSU_LIMITS } from '@shared/format'
+// Deep imports of pure models, not the topic indexes: those also export services (NodeHub,
+// CalLink) that need Node types, and the renderer's test helpers import this file (and typecheck
+// it without them).
+import { sanitizeCache } from '../hid/calibration/cache-rules'
+import { effectiveMapping, importMapping, sanitizeNodeMapping } from '../nodes/mapping-rules'
+import { sanitizePsu } from '../nodes/psu-limits'
 
 /** File format this build writes. A higher version came from a newer client. */
 export const CONFIG_FILE_VERSION = 1
@@ -276,21 +280,6 @@ export function diffImport(
 }
 
 // ── apply ────────────────────────────────────────────────────────────────────
-
-/**
- * Calibration merges into the client's copy per board serial: the axes the file has replace the
- * same axes, every other cached axis and board is kept. The board's date is the newer of the two.
- */
-export function mergeCalibration(cache: CalCache, imported: CalCache): CalCache {
-  const boards = { ...cache.boards }
-  for (const [serial, board] of Object.entries(imported.boards)) {
-    const cur = boards[serial]
-    const confirmedAt =
-      cur && cur.confirmedAt > board.confirmedAt ? cur.confirmedAt : board.confirmedAt
-    boards[serial] = { confirmedAt, axes: { ...cur?.axes, ...board.axes } }
-  }
-  return { ...cache, boards }
-}
 
 /** The AppConfig after applying the picked sections of an import: PSU and the rest separately. */
 export function applyToConfig(

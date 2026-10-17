@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CalSnapshot } from '@shared/hid/calibration/ipc'
-import type { NodeModel, NodeSnapshot, NodeTelemSnapshot } from '@shared/nodes/ipc'
-import type { PushChannel, PushChannels, RelayStatus } from '@shared/app/ipc'
-import type { LogEvent } from '@shared/events/ipc'
+import type { CalSnapshot } from '@shared/hid/calibration'
+import type { NodeModel, NodeSnapshot, NodeTelemSnapshot } from '@shared/nodes'
+import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
+import type { LogEvent } from '@shared/events'
 
 // The store talks to main through window.skyhawk. Only the calls initBridge() makes need to be
 // real here; the rest exist so subscription setup does not throw.

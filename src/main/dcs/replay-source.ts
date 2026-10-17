@@ -1,14 +1,9 @@
 // Capture a live DCS-BIOS session to disk, and replay one as a synthetic export
-// source (drive the parser/UI with no DCS running). Reuses the @shared/capture
+// source (drive the parser/UI with no DCS running). Reuses the capture-file.ts
 // format so captures are portable.
 import { readFileSync, writeFileSync } from 'node:fs'
-import {
-  captureDurationMs,
-  parseCapture,
-  serializeCapture,
-  type CaptureFile
-} from '@shared/capture'
-import type { CaptureEvent, CaptureMeta } from '@shared/dcs/ipc'
+import { captureDurationMs, parseCapture, serializeCapture, type CaptureFile } from './capture-file'
+import type { CaptureEvent, CaptureMeta } from '@shared/dcs'
 
 export class Recorder {
   private events: CaptureEvent[] = []

@@ -9,12 +9,10 @@ import {
   NODE_TELEM_ROW_BYTES,
   NTC_TEMP_UNAVAILABLE,
   PDU_RAIL_FIELD,
-  PDU_RAIL_FLAGS,
   PDU_STATUS_FIELD,
-  PDU_STATUS_FLAGS,
   TELEM_PAGES
-} from './firmware'
-import type { NodeTelem, NodeTelemSnapshot, TelemPageData } from './nodes/ipc'
+} from '@shared/firmware'
+import type { NodeTelem, NodeTelemSnapshot, TelemPageData } from '@shared/nodes'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_TELEM_PROTO = 1
@@ -24,12 +22,6 @@ export const NODE_TELEM_MSG = NODE_TELEM.msgName
 
 /** TelemPage ids (TELEM_PAGES). Global and append-only; 0x00 is invalid. */
 export const TELEM_PAGE = TELEM_PAGES
-
-/** PDU_RAIL_* byte 1 bits (PDU_RAIL_FLAGS). All zero = healthy. */
-export const RAIL_FLAG = PDU_RAIL_FLAGS
-
-/** PDU_STATUS byte 1 bits (PDU_STATUS_FLAGS). All zero = healthy, calibrated. */
-export const PDU_FLAG = PDU_STATUS_FLAGS
 
 /**
  * A page older than this is stale. Each PDU page refreshes every 3 s (one TELEM_n frame per
@@ -49,11 +41,6 @@ export function isPduPage(page: number): boolean {
     page === TELEM_PAGE.PDU_RAIL_5V ||
     page === TELEM_PAGE.PDU_STATUS
   )
-}
-
-/** iAvgMa for display: residual negative offset reads as 0. */
-export function displayCurrentMa(ma: number): number {
-  return Math.max(0, ma)
 }
 
 /** Decode the 18-hex `_NODE_TELEM` argument; null if malformed, nodeId out of range or page 0. */

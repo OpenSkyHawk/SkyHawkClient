@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decodeAxis, isButtonPressed, decodeHat, decodeReport, HID_REPORT_SIZE } from './hid'
+import { decodeAxis, isButtonPressed, decodeHat, decodeReport, HID_REPORT_SIZE } from './hid-report'
 
 describe('HID decode', () => {
   it('decodeAxis sign-extends a 16-bit field', () => {

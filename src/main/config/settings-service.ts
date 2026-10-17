@@ -1,8 +1,8 @@
 // Persist AppConfig to <userData>/config.json so settings survive restarts.
 // Where that file lives is handed in by app (SettingsPaths): this module never asks electron.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { DEFAULT_CONFIG, type AppConfig } from '@shared/config/ipc'
-import { sanitizeConfig } from '@shared/settings-schema'
+import { DEFAULT_CONFIG, type AppConfig } from '@shared/config'
+import { sanitizeConfig } from './settings-schema'
 
 /** Port: where config.json lives. app provides it; resolved at each use, as before. */
 export interface SettingsPaths {

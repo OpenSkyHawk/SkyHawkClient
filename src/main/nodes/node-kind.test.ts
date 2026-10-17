@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isAdoptableKind, reportedIdentity, resolveKind } from './node-kind'
+import { resolveKind } from './node-kind'
+import { isAdoptableKind, reportedIdentity } from '@shared/nodes/legacy-rules'
 
 describe('reportedIdentity', () => {
   it('maps the v3 nodeKind byte; 0 (or no row) is not a report', () => {

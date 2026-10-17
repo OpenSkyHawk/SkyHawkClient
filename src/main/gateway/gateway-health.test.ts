@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { GATEWAY_NO_ANSWER_MS, GatewayWatch, gatewayEvents, gatewayStatus } from './gateway'
-import { eventText } from './format'
-import type { LogEventInput } from './events/ipc'
-import type { NodeStatus } from './nodes/ipc'
-import { nodeStatus } from '../test-fixtures/nodes'
+import { GATEWAY_NO_ANSWER_MS, GatewayWatch, gatewayEvents, gatewayStatus } from './gateway-health'
+import { eventText } from '@shared/format'
+import type { LogEventInput } from '@shared/events'
+import type { NodeStatus } from '@shared/nodes'
+import { nodeStatus } from '../../test-fixtures/nodes'
 
 const node0 = (over: Partial<NodeStatus> = {}): NodeStatus =>
   nodeStatus(0, { rxCount: 5, dieTempC: 42, nodeKind: 3, ...over })

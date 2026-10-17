@@ -1,6 +1,5 @@
 // Node status rules (pure): combines the roster, telemetry and node mapping into the one picture
 // the UI shows — availability, new-node detection, PDU-offline grouping and PDU readings.
-import { BRIDGE_NODE_ID } from './nodes'
 import type {
   HiddenNode,
   NodeAvailability,
@@ -11,24 +10,13 @@ import type {
   NodeModelEntry,
   NodeSeen,
   NodeStatus,
-  NodeTelemSnapshot,
-  PduOutage
-} from './nodes/ipc'
-import { isAdoptableKind, resolveKind } from './node-kind'
+  NodeTelemSnapshot
+} from '@shared/nodes'
+import { differingCount, effectiveMapping } from './mapping-rules'
+import { resolveKind } from './node-kind'
+import { BRIDGE_NODE_ID } from './node-status-wire'
 import { hasFreshPduPage } from './node-telem'
-import { differingCount, effectiveMapping } from './node-mapping'
-
-/**
- * Nodes that lose power together stop heartbeating together, so the bridge's 3 s timeout fires
- * for all of them within one 500 ms heartbeat period and each arrives as a live delta. 2 s
- * covers that with margin.
- */
-export const PDU_GROUP_WINDOW_MS = 2000
-/**
- * A drop whose delta was lost is found by the next roster poll instead (every 5 s), so it can
- * arrive up to a poll plus the window after the PDU's.
- */
-export const PDU_GROUP_POLL_CATCH_MS = 7000
+import { pduOutages } from './power-zone'
 
 export interface NodeModelInput {
   roster: NodeStatus[]
@@ -139,39 +127,6 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   }
 }
 
-/** Did `n` drop together with `pdu`? Both must be offline with a known time. */
-export function droppedTogether(n: NodeModelEntry, pdu: NodeModelEntry): boolean {
-  if (n.offlineAt === undefined || pdu.offlineAt === undefined) return false
-  const d = n.offlineAt - pdu.offlineAt
-  if (Math.abs(d) <= PDU_GROUP_WINDOW_MS) return true
-  // One side was found late by a roster poll: it was still listed online when the other dropped.
-  if (n.offlineVia === 'roster' && d > 0 && d <= PDU_GROUP_POLL_CATCH_MS) return true
-  if (pdu.offlineVia === 'roster' && d < 0 && -d <= PDU_GROUP_POLL_CATCH_MS) return true
-  return false
-}
-
-/** An offline PDU plus more than half of the nodes it feeds dropping with it → one outage. */
-export function pduOutages(nodes: NodeModelEntry[]): PduOutage[] {
-  const out: PduOutage[] = []
-  for (const pdu of nodes) {
-    if (pdu.kind !== 'pdu' || pdu.availability !== 'offline' || pdu.offlineAt === undefined) {
-      continue
-    }
-    // A board not seen this session could not have dropped with it: it counts for neither side.
-    const fed = nodes.filter((n) => n.pduId === pdu.nodeId && n.nodeId !== pdu.nodeId && !n.notSeen)
-    const hit = fed.filter((n) => n.availability === 'offline' && droppedTogether(n, pdu))
-    if (fed.length > 0 && hit.length * 2 > fed.length) {
-      out.push({
-        pduId: pdu.nodeId,
-        nodeIds: hit.map((n) => n.nodeId),
-        fedCount: fed.length,
-        at: pdu.offlineAt
-      })
-    }
-  }
-  return out
-}
-
 /**
  * NODE_IDs present now that were not present at the previous roster change: the nodes that just
  * came (back) online. A node that stays present across updates is not in the list, which is what
@@ -179,14 +134,4 @@ export function pduOutages(nodes: NodeModelEntry[]): PduOutage[] {
  */
 export function cameOnline(previous: ReadonlySet<number>, roster: NodeStatus[]): number[] {
   return roster.filter((n) => n.present && !previous.has(n.nodeId)).map((n) => n.nodeId)
-}
-
-/**
- * A new device worth telling the user about: not in the registry or adopted, on the bus now, and
- * identified as something that can be adopted. Until then it is not news — not on the Cockpit
- * count, the Overview notice or the event log. One predicate for every tab (node 0 is never in the
- * model).
- */
-export function isReportableNew(e: NodeModelEntry): boolean {
-  return e.source === 'new' && e.availability === 'online' && isAdoptableKind(e.identified)
 }

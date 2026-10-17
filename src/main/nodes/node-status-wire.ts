@@ -1,7 +1,6 @@
 // PanelBridge node-status decode + roster (pure, no Node/Electron deps).
 // Wire contract: NodeStatus.h NODE_STATUS_* (generated into shared/firmware; reference.test
 // asserts the decoder's protoVersion matches).
-import { encodeExportFrame } from './dcsbios'
 import {
   DIE_TEMP_UNAVAILABLE,
   GATEWAY_NODE_ID,
@@ -14,8 +13,11 @@ import {
   NODE_STATUS,
   NODE_STATUS_FIELD,
   NODE_STATUS_ROW_BYTES
-} from './firmware'
-import type { NodeSeen, NodeStatus } from './nodes/ipc'
+} from '@shared/firmware'
+import type { NodeSeen, NodeStatus } from '@shared/nodes'
+// Deep import, not '../gateway': the gateway index reaches back into nodes through DeviceLink
+// until R2.2 splits it, so going through the index would close an import cycle.
+import { encodeExportFrame } from '../gateway/link-framing'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_NODE_PROTO = 3
@@ -46,11 +48,6 @@ const HEX_LEN = NODE_STATUS_ROW_BYTES * 2
 // The legacy v2 row (26 hex), detected client-side only to say "this bridge is too old". The
 // firmware no longer describes it, so it has nothing to sync from: it stays a client constant.
 const V2_HEX_LEN = 26
-
-/** Short degraded-badge tag — the fault abbr, or `Fault N` for an unknown/reserved id. */
-export function nodeFaultTag(n: NodeStatus): string {
-  return n.faultAbbr ?? `Fault ${n.faultId}`
-}
 
 /** Decode the 28-hex v3 `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
 export function parseNodeStatus(hex: string): NodeStatus | null {

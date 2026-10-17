@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CAL_AXIS_NONE, CAL_NACK, CAL_TYPE, buildFrame } from '@shared/calibration'
+import { CAL_AXIS_NONE, CAL_NACK, CAL_TYPE, buildFrame } from './codec'
 
 // debug.ts imports electron for its log path; nothing here needs the real thing.
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))

@@ -7,8 +7,10 @@ import {
   type AppConfig,
   type DcsTransport,
   type SourceMode
-} from './config/ipc'
-import { sanitizePsu } from './psu'
+} from '@shared/config'
+// Deep import of a pure model, not '../nodes': that index also exports NodeHub, which needs Node
+// types, and the renderer's test helpers reach this file through config-file.
+import { sanitizePsu } from '../nodes/psu-limits'
 
 /** Coerce arbitrary (e.g. persisted/untrusted) data into a valid AppConfig. */
 export function sanitizeConfig(raw: unknown): AppConfig {

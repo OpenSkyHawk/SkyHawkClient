@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { isLinkUp } from '@shared/gateway/ipc'
-import type { NodeRegistryInfo } from '@shared/nodes/ipc'
+import { isLinkUp } from '@shared/gateway'
+import type { NodeRegistryInfo } from '@shared/nodes'
 import { useStore } from '../../store'
 import { Dialog } from './Dialog'
 import { Row, SectionHead } from './Row'

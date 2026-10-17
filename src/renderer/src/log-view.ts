@@ -1,7 +1,7 @@
 // Log tab › Events (#64): what the view shows of the session's events (pure, no React).
-import { isProblem } from '@shared/events'
+import { isProblem } from '@shared/events/legacy-rules'
 import { eventText } from '@shared/format'
-import { MAX_EVENTS, type EventSource, type LogEvent } from '@shared/events/ipc'
+import { MAX_EVENTS, type EventSource, type LogEvent } from '@shared/events'
 
 export type LogView = 'stream' | 'events'
 export type EventSourceFilter = 'all' | EventSource

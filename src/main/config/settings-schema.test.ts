@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG } from './config/ipc'
+import { DEFAULT_CONFIG } from '@shared/config'
 import { sanitizeConfig } from './settings-schema'
 
 describe('sanitizeConfig', () => {

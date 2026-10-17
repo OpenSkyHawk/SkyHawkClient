@@ -12,8 +12,8 @@ import {
   retrySweep,
   sweepsRemaining,
   tick
-} from './axis-capture'
-import type { CaptureState } from './hid/calibration/ipc'
+} from './legacy-rules'
+import type { CaptureState } from './ipc'
 
 const C = DEFAULT_CAPTURE_CONFIG
 

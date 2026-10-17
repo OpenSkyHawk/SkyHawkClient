@@ -1,19 +1,19 @@
 // The Gateway's own health (#94), pure (no Node/Electron deps). The Gateway is the SimGateway +
 // PanelBridge board: the client's own link, never a cockpit node. Since firmware v3
 // (OpenSkyhawk#344) it reports itself as the node-0 row of `_NODE_STATUS`; the cockpit model leaves
-// that row out (node-rules), and this module carries it instead.
+// that row out (nodes/node-model), and this module carries it instead.
 //
 // The one owner of the Gateway's health: `gatewayStatus` decides severity, label, note and alert,
 // main computes it (GatewayWatch) and sends it on `device:status`, and every surface — pill,
 // popover, Overview alert, Cockpit Attention, event log — only reads it. Every alert is a flag the
 // Gateway raised itself; the one client-side rule is "not responding": once it has answered since
 // the port opened, a roster request unanswered for GATEWAY_NO_ANSWER_MS while the port is open.
-import { faultLabel, STATUS_FLAGS, type StatusFlag } from './events'
-import type { LogEventInput } from './events/ipc'
-import { NODE_FAULT_CODES, type NodeFaultName } from './firmware'
-import { title } from './format'
-import type { NodeStatus } from './nodes/ipc'
-import type { GatewayKind, GatewayStatus } from './gateway/ipc'
+import type { LogEventInput } from '@shared/events'
+import { NODE_FAULT_CODES, type NodeFaultName } from '@shared/firmware'
+import { title } from '@shared/format'
+import type { NodeStatus } from '@shared/nodes'
+import type { GatewayKind, GatewayStatus } from '@shared/gateway'
+import { faultLabel, STATUS_FLAGS, type StatusFlag } from '../events'
 
 /** How long a roster request may go unanswered, with the port open, before the Gateway is "not responding". */
 export const GATEWAY_NO_ANSWER_MS = 5000

@@ -1,6 +1,6 @@
 // Configuration export / import (#67) in main: gathers the four stores into one file, previews a
 // file against them, and applies the sections the user picked. The rules are in
-// shared/config-file.ts; this file only reads and writes. Dialogs stay in index.ts.
+// config-file.ts; this file only reads and writes. Dialogs stay in index.ts.
 //
 // Calibration is written to the client's copy only (calibration-cache.json). The device is never
 // touched here: if it has lost calibration, the HID tab's Review & restore offer picks up the copy.
@@ -13,20 +13,20 @@ import type {
   ConfigImportOpen,
   ConfigSnapshot,
   SectionId
-} from '@shared/config/ipc'
-import type { NodeDefaults, NodeMappingFile, NodeMappingResult } from '@shared/nodes/ipc'
+} from '@shared/config'
+import type { NodeDefaults, NodeMappingFile, NodeMappingResult } from '@shared/nodes'
 import {
   applyToConfig,
   appSettings,
   buildConfigFile,
   diffImport,
-  mergeCalibration,
   parseConfigFile,
   SECTION_IDS,
   type ParsedConfig
-} from '@shared/config-file'
-import type { CalCache } from '@shared/hid/calibration/ipc'
+} from './config-file'
+import type { CalCache } from '@shared/hid/calibration'
 import { errorText, stamp } from '@shared/format'
+import { mergeCalibration } from '../hid/calibration'
 
 export interface ConfigTransferDeps {
   getConfig(): AppConfig

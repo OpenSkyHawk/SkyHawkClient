@@ -4,20 +4,20 @@
 // Main and shared only; the probes that read renderer helpers are in
 // src/renderer/src/phase0-probes.test.ts (main never imports renderer code).
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_PSU, type NodeMappingFile } from '@shared/nodes/ipc'
-import { NODE_END_MSG, NODE_MSG, NodeRoster } from '@shared/nodes'
+import { DEFAULT_PSU, type NodeMappingFile } from '@shared/nodes'
+import { NODE_END_MSG, NODE_MSG, NodeRoster } from './node-status-wire'
 import {
-  registryDefaults,
   importMapping,
   setNodeMapping,
   adoptNode,
   effectiveMapping,
   EMPTY_MAPPING
-} from '@shared/node-mapping'
-import { diffImport, parseConfigFile } from '@shared/config-file'
-import { CONFIG_FORMAT } from '@shared/config/ipc'
-import { buildNodeModel } from '@shared/node-rules'
-import { GatewayWatch, GATEWAY_NO_ANSWER_MS } from '@shared/gateway'
+} from './mapping-rules'
+import { registryDefaults } from './registry'
+import { diffImport, parseConfigFile } from '../config/config-file'
+import { CONFIG_FORMAT } from '@shared/config'
+import { buildNodeModel } from './node-model'
+import { GatewayWatch, GATEWAY_NO_ANSWER_MS } from '../gateway/gateway-health'
 import { DEFAULT_APP_SETTINGS } from '../../test-fixtures/config'
 
 const disk: { file: NodeMappingFile } = { file: { version: 3, nodes: {} } }

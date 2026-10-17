@@ -13,7 +13,7 @@
 // reverts to identity passthrough, reporting `calibratedMask = 0` rather than serving garbage. The
 // loss is always visible.
 
-import type { CachedAxis, CachedBoard, CalCache, CalSnapshot } from './hid/calibration/ipc'
+import type { CachedAxis, CachedBoard, CalCache, CalSnapshot } from '@shared/hid/calibration'
 
 export const CAL_CACHE_VERSION = 1
 
@@ -133,4 +133,19 @@ export function regressedAxes(cache: CalCache, snapshot?: CalSnapshot): number[]
       return !!a?.present && !a.calibrated
     })
     .sort((a, b) => a - b)
+}
+
+/**
+ * Calibration merges into the client's copy per board serial: the axes the file has replace the
+ * same axes, every other cached axis and board is kept. The board's date is the newer of the two.
+ */
+export function mergeCalibration(cache: CalCache, imported: CalCache): CalCache {
+  const boards = { ...cache.boards }
+  for (const [serial, board] of Object.entries(imported.boards)) {
+    const cur = boards[serial]
+    const confirmedAt =
+      cur && cur.confirmedAt > board.confirmedAt ? cur.confirmedAt : board.confirmedAt
+    boards[serial] = { confirmedAt, axes: { ...cur?.axes, ...board.axes } }
+  }
+  return { ...cache, boards }
 }

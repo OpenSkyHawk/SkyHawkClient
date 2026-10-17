@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { seenAgo } from '@shared/format'
-import type { NodeMappingResult } from '@shared/nodes/ipc'
+import type { NodeMappingResult } from '@shared/nodes'
 import type { NodeView } from '../../cockpit'
 import {
   adoptability,

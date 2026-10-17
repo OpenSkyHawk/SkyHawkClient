@@ -14,13 +14,9 @@ import type {
   NodeStatus,
   ResetOptions,
   ResetPreview
-} from '@shared/nodes/ipc'
-import type { PushChannel, PushChannels } from '@shared/app/ipc'
-import { BRIDGE_NODE_ID, type NodeRoster } from '@shared/nodes'
-import { isAdoptableKind, resolveKind } from '@shared/node-kind'
-import { NodeTelemStore, parseNodeTelem } from '@shared/node-telem'
-import { NodeEventTracker } from '@shared/events'
-import type { LogEventInput } from '@shared/events/ipc'
+} from '@shared/nodes'
+import type { PushChannel, PushChannels } from '@shared/app'
+import type { LogEventInput } from '@shared/events'
 import {
   adoptNode,
   clearReportedHidden,
@@ -29,20 +25,25 @@ import {
   importMapping,
   MappingError,
   markSeen,
-  registryDefaults,
   resetMapping,
   resetNode,
   resetPreview,
   setHidden,
   setNodeMapping
-} from '@shared/node-mapping'
-import { buildNodeModel } from '@shared/node-rules'
+} from './mapping-rules'
 import {
   NODE_FAULT_CODES,
   NODE_NAMES,
   NODE_REGISTRY_SOURCE,
   type NodeFaultName
 } from '@shared/firmware'
+import { isAdoptableKind } from '@shared/nodes/legacy-rules'
+import { buildNodeModel } from './node-model'
+import { NodeEventTracker } from './node-events'
+import { resolveKind } from './node-kind'
+import { BRIDGE_NODE_ID, type NodeRoster } from './node-status-wire'
+import { NodeTelemStore, parseNodeTelem } from './node-telem'
+import { registryDefaults } from './registry'
 import {
   loadNodeMapping,
   MappingSaveError,

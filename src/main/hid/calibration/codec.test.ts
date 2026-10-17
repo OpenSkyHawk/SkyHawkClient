@@ -18,7 +18,7 @@ import {
   encodeHello,
   encodeReset,
   encodeSessionOpen
-} from './calibration'
+} from './codec'
 
 const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)))
 const cat = (...parts: Uint8Array[]) => {

@@ -5,7 +5,7 @@
 //   int16_t axes[8]      // X Y Z Rx Ry Rz Slider Dial (little-endian)
 // => 34 bytes, no report id. The numbers come from HID_REPORT_LAYOUT (shared/firmware), which the
 // sync asserts against that struct.
-import { HID_REPORT_LAYOUT } from './firmware'
+import { HID_REPORT_LAYOUT } from '@shared/firmware'
 
 export const HID_REPORT_SIZE = HID_REPORT_LAYOUT.size
 export const HID_AXIS_COUNT = HID_REPORT_LAYOUT.axes.count

@@ -1,15 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-  displayCurrentMa,
   hasFreshPduPage,
   NodeTelemStore,
   parseNodeTelem,
-  PDU_FLAG,
-  RAIL_FLAG,
   TELEM_PAGE,
   TELEM_STALE_MS
 } from './node-telem'
-import type { NodeTelem } from './nodes/ipc'
+import { displayCurrentMa, PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
+import type { NodeTelem } from '@shared/nodes'
 
 /** `_NODE_TELEM` argument: nodeId + the 8 frame bytes, as the bridge forwards them. */
 const telem = (nodeId: number, bytes: number[]) =>

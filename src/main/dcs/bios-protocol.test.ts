@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  DcsBiosProtocol,
-  LineAssembler,
-  StringRegion,
-  formatCommand,
-  parseCommand,
-  ACFT_NAME_ADDRESS
-} from './dcsbios'
+import { DcsBiosProtocol, StringRegion, formatCommand, ACFT_NAME_ADDRESS } from './bios-protocol'
+import { LineAssembler, parseCommand } from '../gateway/link-framing'
 
 /** Build a sync + one write block: addr, then count bytes of data words. */
 function frame(address: number, words: number[]): number[] {

@@ -1,4 +1,4 @@
-import type { DeviceState } from '@shared/gateway/ipc'
+import type { DeviceState } from '@shared/gateway'
 
 /**
  * How recently the device last said anything, as a colour.

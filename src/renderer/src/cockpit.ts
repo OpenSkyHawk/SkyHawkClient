@@ -2,7 +2,6 @@
 // here is computed from what main pushes (`nodes:model`, `nodes:telemetry`); the client applies no
 // thresholds — a warning is always a flag a board raised itself.
 import { lastSeenLabel } from '@shared/format'
-import { isReportableNew } from '@shared/node-rules'
 import type {
   NodeModel,
   NodeModelEntry,
@@ -11,10 +10,15 @@ import type {
   PduRailPage,
   PduStatusPage,
   PsuSetting
-} from '@shared/nodes/ipc'
-import { displayCurrentMa, PDU_FLAG, RAIL_FLAG } from '@shared/node-telem'
-import { nodeFaultTag } from '@shared/nodes'
-import { PSU_PRESETS } from '@shared/psu'
+} from '@shared/nodes'
+import {
+  displayCurrentMa,
+  isReportableNew,
+  nodeFaultTag,
+  PDU_FLAG,
+  PSU_PRESETS,
+  RAIL_FLAG
+} from '@shared/nodes/legacy-rules'
 
 /** How a node reads on the plan. 'unknown' = no complete roster yet and it has not reported. */
 export type NodeState = 'on' | 'warn' | 'off' | 'new' | 'unknown'

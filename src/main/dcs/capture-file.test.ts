@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { CAPTURE_FORMAT, captureDurationMs, parseCapture, serializeCapture } from './capture'
-import type { CaptureEvent } from './dcs/ipc'
+import { CAPTURE_FORMAT, captureDurationMs, parseCapture, serializeCapture } from './capture-file'
+import type { CaptureEvent } from '@shared/dcs'
 
 const events: CaptureEvent[] = [
   { t: 0, dir: 'in', hex: '5555' },

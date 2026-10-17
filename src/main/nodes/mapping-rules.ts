@@ -7,8 +7,7 @@
 // added, only what differs, and when it was last seen. Adopted nodes — NODE_IDs the registry does
 // not know, named by the user — are stored in full, since there is nothing to default from (#93).
 
-import { MAX_NODE_ID } from './firmware'
-import { isAdoptableKind } from './node-kind'
+import { MAX_NODE_ID } from '@shared/firmware'
 import type {
   AdoptedRow,
   AdoptSpec,
@@ -22,7 +21,9 @@ import type {
   ResetOptions,
   ResetPreview,
   ResetRow
-} from './nodes/ipc'
+} from '@shared/nodes'
+import { isAdoptableKind } from '@shared/nodes/legacy-rules'
+import { adopted, forgettable, inCockpit } from './membership'
 
 /**
  * A NODE_ID's type from live signals (node-kind.ts resolveKind over the roster's reported kind and
@@ -42,40 +43,13 @@ export const EMPTY_MAPPING: NodeMappingFile = { version: 3, nodes: {} }
 
 const MAX_TEXT = 64
 
-const isNodeId = (v: unknown): v is number =>
+export const isNodeId = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= MAX_NODE_ID
 
 const text = (v: unknown): string | undefined => {
   if (typeof v !== 'string') return undefined
   const t = v.trim().slice(0, MAX_TEXT)
   return t || undefined
-}
-
-/** PDUs are named `PDU_<console>` in NODE_IDS.md, which has no type column. */
-export const isPduName = (name: string): boolean => /^PDU_/.test(name)
-
-/**
- * Registry defaults, keyed by NODE_ID. NODE_ID 0 (PanelBridge) never appears on the bus and is
- * left out. A panel's default power zone is the PDU on its console when there is exactly one;
- * with none or several there is no safe guess, so it is left unmapped.
- */
-export function registryDefaults(
-  registry: Record<number, { name: string; console: string }>
-): Map<number, NodeDefaults> {
-  const ids = Object.keys(registry)
-    .map(Number)
-    .filter(isNodeId)
-    .sort((a, b) => a - b)
-  const pdusOn = (console: string) =>
-    ids.filter((id) => isPduName(registry[id]!.name) && registry[id]!.console === console)
-  const out = new Map<number, NodeDefaults>()
-  for (const id of ids) {
-    const { name, console } = registry[id]!
-    const kind: NodeKind = isPduName(name) ? 'pdu' : 'panel'
-    const pdus = kind === 'panel' ? pdusOn(console) : []
-    out.set(id, { name, console, kind, pduId: pdus.length === 1 ? pdus[0]! : null })
-  }
-  return out
 }
 
 function sanitizeOverride(raw: unknown, legacy: boolean): NodeOverride | undefined {
@@ -120,20 +94,6 @@ export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
   }
   return { version: 3, nodes }
 }
-
-/** An adopted node is a non-registry entry complete enough to place: name, console and kind. */
-function adopted(
-  o: NodeOverride | undefined
-): o is NodeOverride & { name: string; kind: NodeKind } {
-  return !!o?.name && !!o.kind
-}
-
-/**
- * In your cockpit: a registry board you added, or a board you adopted — and an adopted board stays
- * in it even once its NODE_ID is in NODE_IDS.md (a later registry); the registry is only where
- * names come from, never what decides membership (#93 re-review F). The one rule every check uses.
- */
-const inCockpit = (o: NodeOverride | undefined): boolean => o?.added === true || adopted(o)
 
 const hasOverride = (o: NodeOverride): boolean =>
   o.name !== undefined || o.console !== undefined || o.pduId !== undefined
@@ -419,14 +379,6 @@ function keptOnReset(o: NodeOverride | undefined): NodeOverride {
   if (o?.hidden) kept.hidden = true
   if (o?.lastSeen) kept.lastSeen = o.lastSeen
   return kept
-}
-
-/** The NODE_IDs "Also forget adopted nodes" drops — exactly the ones the review lists. */
-function forgettable(defaults: Map<number, NodeDefaults>, file: NodeMappingFile): number[] {
-  return Object.keys(file.nodes)
-    .map(Number)
-    .filter((id) => !defaults.has(id) && adopted(file.nodes[id]))
-    .sort((a, b) => a - b)
 }
 
 /**

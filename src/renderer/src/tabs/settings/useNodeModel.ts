@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { NodeModel } from '@shared/nodes/ipc'
+import type { NodeModel } from '@shared/nodes'
 
 /**
  * The latest `nodes:model` while the caller is mounted: fetched once, then followed. Settings

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ImportPreview } from '@shared/config/ipc'
+import type { ImportPreview } from '@shared/config'
 import { configState, useStore } from '../../store'
 import { ImportDialog } from './ImportDialog'
 import { Row, SectionHead } from './Row'

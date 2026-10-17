@@ -1,7 +1,7 @@
 // Calibration control channel over the SimGateway's CDC port (main process).
 //
 // Owns the request/response half of the protocol in FirmwarePlan/03-uart-usb-hid-protocol.md
-// § Calibration Protocol (USB CDC). The codec itself is in @shared/calibration; this adds SEQ
+// § Calibration Protocol (USB CDC). The codec itself is in codec.ts; this adds SEQ
 // matching, timeouts, session upkeep, and the export-gate signal Session consumes.
 //
 // It does NOT own the serial port. Session does, and hands bytes in via ingest(); this returns
@@ -25,7 +25,7 @@ import {
   type CalFrame,
   type HelloAck,
   type RawSample
-} from '@shared/calibration'
+} from './codec'
 import { CAL_PROTO } from '@shared/firmware'
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */

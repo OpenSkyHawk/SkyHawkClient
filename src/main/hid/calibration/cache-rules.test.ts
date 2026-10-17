@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CachedAxis, CalCache, CalSnapshot } from './hid/calibration/ipc'
+import type { CachedAxis, CalCache, CalSnapshot } from '@shared/hid/calibration'
 import {
   boardFor,
   dropAxis,
@@ -7,7 +7,7 @@ import {
   regressedAxes,
   sanitizeCache,
   storeAxes
-} from './cal-cache'
+} from './cache-rules'
 
 const SERIAL = '50031327805E871C'
 const axis = (over: Partial<CachedAxis> = {}): CachedAxis => ({

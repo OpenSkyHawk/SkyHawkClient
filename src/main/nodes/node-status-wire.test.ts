@@ -4,14 +4,14 @@ import {
   isLegacyNodeStatus,
   NODE_END_MSG,
   NODE_MSG,
-  nodeFaultTag,
   NodeRoster,
   nodeRosterRequest,
   parseNodeStatus,
   ROSTER_REPLY_MS
-} from './nodes'
-import type { NodeStatus } from './nodes/ipc'
-import { nodeStatus } from '../test-fixtures/nodes'
+} from './node-status-wire'
+import { nodeFaultTag } from '@shared/nodes/legacy-rules'
+import type { NodeStatus } from '@shared/nodes'
+import { nodeStatus } from '../../test-fixtures/nodes'
 
 const node = (over: Partial<NodeStatus>): NodeStatus =>
   nodeStatus(1, { uptimeSec: 0, rxCount: 0, ...over })

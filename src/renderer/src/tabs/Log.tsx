@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { SEVERITY_GLYPH } from '@shared/events'
-import type { EventSeverity } from '@shared/events/ipc'
+import { SEVERITY_GLYPH } from '@shared/events/legacy-rules'
+import type { EventSeverity } from '@shared/events'
 import { eventText, fileName, fmtTime } from '@shared/format'
 import { useStore, type DirFilter } from '../store'
 import { eventSourceLabel, filterEvents, type EventSourceFilter, type LogView } from '../log-view'

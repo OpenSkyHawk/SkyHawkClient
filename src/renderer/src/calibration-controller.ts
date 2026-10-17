@@ -10,7 +10,7 @@ import {
   restartSweep,
   retrySweep,
   tick
-} from '@shared/axis-capture'
+} from '@shared/hid/calibration/legacy-rules'
 import type {
   CachedBoard,
   CalCacheEntry,
@@ -21,7 +21,7 @@ import type {
   CalSnapshot,
   CaptureResult,
   CaptureState
-} from '@shared/hid/calibration/ipc'
+} from '@shared/hid/calibration'
 
 /** Only the calls this controller makes — narrower than SkyhawkApi, and trivial to fake. */
 export interface CalibrationApi {

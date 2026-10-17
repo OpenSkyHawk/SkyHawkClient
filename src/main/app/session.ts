@@ -6,35 +6,31 @@
 // The device link is not started or stopped here. It is up whenever the board is plugged in
 // (gateway/device-link.ts); a source mode only chooses where the stream comes from and whether it
 // reaches the device.
-import { DcsBiosProtocol } from '@shared/dcsbios'
 import {
   EXPORT_MULTICAST_ADDR,
   EXPORT_PORT,
   type LogRow,
   type RelayResult,
   type RelayState
-} from '@shared/dcs/ipc'
-import {
-  clientErrorEvent,
-  deviceEvent,
-  EventLog,
-  relayEvents,
-  type RelayContext
-} from '@shared/events'
-import { DEFAULT_CONFIG, type AppConfig } from '@shared/config/ipc'
-import { isLinkUp, type DeviceState, type DeviceStatus } from '@shared/gateway/ipc'
-import type { PushChannel, PushChannels, RelayStatus } from '@shared/app/ipc'
+} from '@shared/dcs'
+import { DEFAULT_CONFIG, type AppConfig } from '@shared/config'
+import { isLinkUp, type DeviceState, type DeviceStatus } from '@shared/gateway'
+import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import { app } from 'electron'
 import {
   createTransport,
+  DcsBiosProtocol,
   Decoder,
   Recorder,
+  relayEvents,
   ReplaySource,
   Stats,
+  type RelayContext,
   type ReplayInfo,
   type Transport
 } from '../dcs'
-import { DeviceLink } from '../gateway'
+import { clientErrorEvent, EventLog } from '../events'
+import { deviceEvent, DeviceLink } from '../gateway'
 import { debugLog } from './debug-log'
 import { storePaths, type StorePaths } from './user-data'
 
