@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { gatewayStatus } from '../../main/gateway/gateway-health'
+import { gatewayStatus, shownHealth } from '../../main/gateway/gateway-health'
+import type { GatewayStatus } from '@shared/gateway'
 import type { NodeStatus } from '@shared/nodes'
-import { gatewayView } from './gateway-view'
+import { gatewayView as viewOf } from './gateway-view'
 import { nodeStatus } from '../../test-fixtures/nodes'
 
 const PORT = '/dev/cu.usbmodem1101'
+
+/** The Gateway as the surfaces show it: main's health, shown only while the link is up (R3.4a). */
+const gatewayView = (g: GatewayStatus | undefined, linkUp: boolean, port?: string) =>
+  viewOf(shownHealth(g, linkUp), port)
 
 const node0 = (over: Partial<NodeStatus> = {}): NodeStatus =>
   nodeStatus(0, { uptimeSec: 0, rxCount: 0, dieTempC: 42, nodeKind: 3, ...over })

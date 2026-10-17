@@ -3,7 +3,6 @@
   "crossProcess": "error",
   "electron": "error",
   "rendererShared": "error",
-  "legacyRules": "warn",
   "contracts": "error",
   "cycles": "error",
   "firmwareLeaf": "error",

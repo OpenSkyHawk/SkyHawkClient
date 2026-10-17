@@ -25,7 +25,8 @@ import type {
   PduOutage,
   SummaryRow
 } from '@shared/nodes'
-import { isAdoptableKind, isReportableNew } from '@shared/nodes/legacy-rules'
+import { isAdoptableKind } from '../node-kind'
+import { isReportableNew } from '../node-model'
 import { affected, ATTENTION_SHOWN, attentionItems } from './attention'
 import { healthBand } from './band'
 

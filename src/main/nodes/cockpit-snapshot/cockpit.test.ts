@@ -7,7 +7,7 @@ import {
   nodeModel as model,
   nodeStatus as status
 } from '../../../test-fixtures/nodes'
-import { PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
+import { PDU_RAIL_FLAGS as RAIL_FLAG, PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
 import { TELEM_PAGE } from '../node-telem'
 import { lastSeenLabel } from '@shared/format'
 import { pduAlertFlags } from '../faults'

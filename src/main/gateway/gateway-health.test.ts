@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { GATEWAY_NO_ANSWER_MS, GatewayWatch, gatewayEvents, gatewayStatus } from './gateway-health'
+import {
+  GATEWAY_NO_ANSWER_MS,
+  GatewayWatch,
+  gatewayEvents,
+  gatewayStatus,
+  shownHealth,
+  shownStatus
+} from './gateway-health'
 import { eventText } from '@shared/format'
 import type { LogEventInput } from '@shared/events'
 import type { NodeStatus } from '@shared/nodes'
@@ -238,5 +245,28 @@ describe('GatewayWatch — its own row', () => {
     const [e] = w.report(node0({ boff: true }), '_NODE_STATUS 0001…', 2)
     expect(e).toMatchObject({ t: 2, source: 'client', name: 'Gateway', raw: '_NODE_STATUS 0001…' })
     expect(short(w.report(node0(), 'r', 3))).toEqual(['Gateway: bus-off cleared [info]'])
+  })
+})
+
+describe('what the surfaces may show (R3.4a: gateway-view.ts before)', () => {
+  it('not responding is about the link; nothing else is', () => {
+    expect(gatewayStatus(undefined, true)?.aboutLink).toBe(true)
+    for (const over of [{}, { boff: true }, { overheat: true }, { epvf: true }, { faultId: 9 }]) {
+      expect(st(over).aboutLink, JSON.stringify(over)).toBeUndefined()
+    }
+  })
+
+  it('the health only while the link is up; device:status leaves it out while down', () => {
+    const g = st({ boff: true })
+    expect(shownHealth(g, true)).toBe(g)
+    expect(shownHealth(g, false)).toBeUndefined()
+    const up = { state: 'connected' as const, portPath: '/dev/x', gateway: g }
+    expect(shownStatus(up)).toBe(up)
+    expect(shownStatus({ ...up, state: 'reconnecting' })).toEqual({
+      state: 'reconnecting',
+      portPath: '/dev/x'
+    })
+    const none = { state: 'no-device' as const }
+    expect(shownStatus(none)).toBe(none)
   })
 })

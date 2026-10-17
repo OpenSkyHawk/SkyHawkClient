@@ -6,12 +6,12 @@
 import type { PsuView } from '@shared/config'
 import {
   DEFAULT_PSU,
+  isLimit,
   type PsuLimits,
   type PsuPreset,
   type PsuPresetId,
   type PsuSetting
 } from '@shared/nodes'
-import { isLimit } from '@shared/nodes/legacy-rules'
 
 /** Supplies bundled with the client. Limits are read-only in Settings. */
 export const PSU_PRESETS: Record<PsuPresetId, PsuPreset> = {

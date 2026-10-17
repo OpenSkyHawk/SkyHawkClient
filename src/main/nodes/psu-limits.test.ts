@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { effectivePsuLimits, PSU_PRESETS, psuName, resolvePsu, sanitizePsu } from './psu-limits'
-import { parsePsuLimit } from '@shared/nodes/legacy-rules'
-import { DEFAULT_PSU } from '@shared/nodes'
+import { DEFAULT_PSU, parsePsuLimit } from '@shared/nodes'
 import { PSU_VIEW_DEFAULT } from '@shared/config'
 
 describe('sanitizePsu', () => {

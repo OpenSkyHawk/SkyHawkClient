@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from './store'
-import { deviceView } from './device-view'
+import { deviceView, linkButton } from './device-view'
 import { gatewayView } from './gateway-view'
 
 /**
@@ -14,7 +14,7 @@ export function DevicePopover() {
   const devicePort = useStore((s) => s.devicePort)
   const deviceDetail = useStore((s) => s.deviceDetail)
   const deviceGateway = useStore((s) => s.deviceGateway)
-  const linkUp = useStore((s) => s.linkUp)
+  const deviceAction = useStore((s) => s.deviceAction)
   const deviceBusy = useStore((s) => s.deviceBusy)
   const autoConnect = useStore((s) => s.autoConnect)
   const connectDevice = useStore((s) => s.connectDevice)
@@ -29,7 +29,8 @@ export function DevicePopover() {
     busy: deviceBusy,
     autoConnect
   })
-  const gw = gatewayView(deviceGateway, linkUp, devicePort)
+  const button = linkButton(deviceAction)
+  const gw = gatewayView(deviceGateway, devicePort)
   const cls = gw.pill?.cls ?? dev.cls
   const meta = gw.meta ?? dev.popMeta
 
@@ -91,15 +92,15 @@ export function DevicePopover() {
             )}
             <div className="devpop__acts">
               <button
-                className={dev.button.action === 'disconnect' ? 'toolbtn' : 'browse'}
-                disabled={dev.button.disabled}
+                className={button.action === 'disconnect' ? 'toolbtn' : 'browse'}
+                disabled={button.disabled}
                 // Focus lands on the action, so Enter/Space work straight after opening.
                 autoFocus
                 onClick={() =>
-                  dev.button.action === 'disconnect' ? disconnectDevice() : connectDevice()
+                  button.action === 'disconnect' ? disconnectDevice() : connectDevice()
                 }
               >
-                {dev.button.label}
+                {button.label}
               </button>
               <button
                 className="devpop__link"

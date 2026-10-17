@@ -1,6 +1,8 @@
 // R3.3 SESSION-seam tests: the rules the renderer used to work out from main's pushes, now pushed
 // by their owners — the link's facts (device:status), the relay's (relay:facts), the HID report's
-// (hid:report) and the settings (config:changed) — through the services harness.
+// (hid:report) and the settings (config:changed) — through the services harness. R3.4a adds the
+// link's action and Refresh (device:status), the Record visibility (relay:facts) and the PSU mode
+// switch (config:edit).
 import { describe, expect, it } from 'vitest'
 import { CTRL } from '@shared/app'
 import { makeServices } from '../test-harness/services'
@@ -88,5 +90,70 @@ describe('relay:facts: what the relay’s surfaces show', () => {
       commandPort: 7778
     })
     expect(app.invoke(CTRL.configGet).config.commandPort).toBe(7778)
+  })
+})
+
+describe('R3.4a: the last renderer decisions, pushed by their owners', () => {
+  it('device:status: the link’s action, and Refresh only while a roster request can go', () => {
+    const app = makeServices(monitor)
+    expect(app.lastPush('device:status')).toMatchObject({
+      state: 'scanning',
+      action: { offer: 'disconnect', intent: 'disconnect', disabled: true },
+      canRefresh: false
+    })
+    app.serial.open()
+    expect(app.lastPush('device:status')).toMatchObject({
+      state: 'connected',
+      action: { offer: 'disconnect', intent: 'disconnect' },
+      canRefresh: true
+    })
+    app.serial.close()
+    app.serial.fail('EIO')
+    expect(app.lastPush('device:status')).toMatchObject({
+      state: 'error',
+      action: { offer: 'retry', intent: 'connect' },
+      canRefresh: false
+    })
+    app.invoke(CTRL.deviceDisconnect)
+    expect(app.lastPush('device:status')).toMatchObject({
+      state: 'disconnected',
+      action: { offer: 'connect', intent: 'connect' },
+      canRefresh: false
+    })
+  })
+
+  it('relay:facts: Record hidden and Capture shown in Replay, together; Settings’ row always', () => {
+    const app = makeServices(monitor)
+    expect(app.lastPush('relay:facts')).toMatchObject({
+      recordShown: { connection: true, settings: true },
+      captureShown: false
+    })
+    app.invoke(CTRL.configEdit, { sourceMode: 'replay' })
+    expect(app.lastPush('relay:facts')).toMatchObject({
+      recordShown: { connection: false, settings: true },
+      captureShown: true
+    })
+  })
+
+  it('config:edit: a PSU mode switch and a typed limit over the setting held; refused = nothing', () => {
+    const custom = { a12: 40, w: 500 }
+    const app = makeServices({
+      paths: {
+        files: {
+          'config.json': { sourceMode: 'monitor', psu: { mode: 'preset', preset: 'nx650', custom } }
+        }
+      }
+    })
+    app.invoke(CTRL.configEdit, { psuMode: 'custom' })
+    const psu = { mode: 'custom', preset: 'nx650', custom }
+    expect(app.files.json('config.json')).toMatchObject({ psu })
+    expect(app.lastPush('config:changed')).toMatchObject({ source: 'edit', config: { psu } })
+    const n = app.pushesOf('config:changed').length
+    app.invoke(CTRL.configEdit, { psuLimit: { key: 'a5', text: '15' } })
+    expect(app.files.json('config.json')).toMatchObject({
+      psu: { custom: { a12: 40, a5: 15, w: 500 } }
+    })
+    app.invoke(CTRL.configEdit, { psuLimit: { key: 'a5', text: '15x' } })
+    expect(app.pushesOf('config:changed'), 'a refused limit pushes nothing').toHaveLength(n + 1)
   })
 })

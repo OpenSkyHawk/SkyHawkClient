@@ -22,7 +22,7 @@ import type {
   ResetPreview,
   ResetRow
 } from '@shared/nodes'
-import { isAdoptableKind } from '@shared/nodes/legacy-rules'
+import { isAdoptableKind } from './node-kind'
 import { adopted, forgettable, inCockpit } from './membership'
 
 /**

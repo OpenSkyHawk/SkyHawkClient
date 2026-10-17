@@ -2,8 +2,9 @@
 // called in an event row and on the Cockpit, what it means, and the reading that goes with it.
 import type { EventSeverity } from '@shared/events'
 import { amps, volts } from '@shared/format'
-import type { NodeView, PduRailPage, PduReadings } from '@shared/nodes'
-import { displayCurrentMa, PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
+import { PDU_RAIL_FLAGS as RAIL_FLAG, PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
+import type { NodeStatus, NodeView, PduRailPage, PduReadings } from '@shared/nodes'
+import { displayCurrentMa } from './node-telem'
 
 /** Rail flag text, as the Cockpit prints it (`5V UNDER-V`). */
 export const RAIL_FLAGS: [number, string][] = [
@@ -30,6 +31,11 @@ export function railReading(bit: number, p: PduRailPage): string {
   if (bit === RAIL_FLAG.UNDER_V) return volts(p.vMinMv)
   if (bit === RAIL_FLAG.OVER_CURRENT) return amps(displayCurrentMa(p.iAvgMa))
   return volts(p.vAvgMv)
+}
+
+/** Short degraded-badge tag — the fault abbr, or `Fault N` for an unknown/reserved id. */
+export function nodeFaultTag(n: NodeStatus): string {
+  return n.faultAbbr ?? `Fault ${n.faultId}`
 }
 
 // ── the Cockpit's flag text (moved from the renderer's cockpit.ts / cockpit-panels.ts, R3.2) ──

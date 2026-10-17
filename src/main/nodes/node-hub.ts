@@ -24,7 +24,7 @@ import type {
 import type { Emit } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
 import type { DeviceStatus, GatewayStatus } from '@shared/gateway'
-import { GatewayWatch, isLinkUp, type LinkRider, type NodeLineSink } from '../gateway'
+import { GatewayWatch, type LinkRider, type NodeLineSink } from '../gateway'
 import {
   adoptNode,
   clearReportedHidden,
@@ -45,12 +45,12 @@ import {
   NODE_REGISTRY_SOURCE,
   type NodeFaultName
 } from '@shared/firmware'
-import { isAdoptableKind } from '@shared/nodes/legacy-rules'
 import { buildNodeModel } from './node-model'
 import { NodeEventTracker } from './node-events'
-import { resolveKind } from './node-kind'
+import { isAdoptableKind, resolveKind } from './node-kind'
 import {
   BRIDGE_NODE_ID,
+  canRequestRoster,
   cleanNodeLine,
   isLegacyNodeStatus,
   NODE_END_MSG,
@@ -246,9 +246,14 @@ export class NodeHub implements NodeLineSink {
     return this.gateway.status()
   }
 
+  /** A roster request can go out now (canRequestRoster): Connection's Refresh (R3.4a). */
+  canRefresh(): boolean {
+    return canRequestRoster(this.link.attached, this.link.deviceStatus().state)
+  }
+
   /** Ask PanelBridge for the full node roster (inject the request export to the serial). */
   requestNodes(): void {
-    if (!this.link.attached || !isLinkUp(this.link.deviceStatus().state)) return
+    if (!this.canRefresh()) return
     this.roster.beginBurst() // isolate the reply burst so prior deltas don't block pruning
     this.gateway.asked(Date.now())
     this.link.write(Buffer.from(nodeRosterRequest()))

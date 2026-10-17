@@ -7,7 +7,7 @@ import type { LogEventInput } from '@shared/events'
 import { eventText } from '@shared/format'
 import { NODE_END_MSG, NODE_MSG, ROSTER_REPLY_MS } from '../nodes/node-status-wire'
 import type { NodeStatus, NodeTelem } from '@shared/nodes'
-import { PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
+import { PDU_RAIL_FLAGS as RAIL_FLAG, PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
 import { nodeStatus } from '../../test-fixtures/nodes'
 
 const st = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>

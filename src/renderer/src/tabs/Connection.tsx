@@ -1,6 +1,6 @@
 import { useStore, type SourceMode, type Transport } from '../store'
 import { USB_IDENTITY } from '@shared/firmware'
-import { deviceView, relayNote, relaySide, startBlockedReason } from '../device-view'
+import { deviceView, linkButton, relayNote, relaySide, startBlockedReason } from '../device-view'
 import { Dot } from './cockpit/Dot'
 
 /** `0x2E8A`: a USB id as the device card prints it, four upper-case hex digits. */
@@ -35,12 +35,14 @@ function NodesCard() {
   const set = useStore((x) => x.set)
   // Node status rides on the device link, which is up in every source mode (#69).
   const linkUp = useStore((x) => x.linkUp)
+  // Whether a roster request can go out, as NodeHub decides it (`device:status`, R3.4a).
+  const canRefresh = useStore((x) => x.canRefresh)
 
   return (
     <div className="card field ncard">
       <div className="panel-h">
         <span className="section-h">Connected nodes</span>
-        <button className="toolbtn" onClick={() => refreshNodes()} disabled={!linkUp}>
+        <button className="toolbtn" onClick={() => refreshNodes()} disabled={!canRefresh}>
           Refresh
         </button>
       </div>
@@ -150,6 +152,8 @@ export function Connection() {
     busy: s.deviceBusy,
     autoConnect: s.autoConnect
   })
+  // Connect / Disconnect / Retry, as main offers it for the link's state (R3.4a).
+  const button = linkButton(s.deviceAction)
   // The relay controls as main decides them (relay:facts, R3.3), for the on/off as shown.
   const facts = s.relayFacts
   const side = relaySide(facts, s.relaying)
@@ -194,14 +198,14 @@ export function Connection() {
               {dev.chip}
             </span>
             <button
-              className={dev.button.action === 'disconnect' ? 'toolbtn' : 'browse'}
+              className={button.action === 'disconnect' ? 'toolbtn' : 'browse'}
               style={{ padding: '7px 14px' }}
-              disabled={dev.button.disabled}
+              disabled={button.disabled}
               onClick={() =>
-                dev.button.action === 'disconnect' ? disconnectDevice() : connectDevice()
+                button.action === 'disconnect' ? disconnectDevice() : connectDevice()
               }
             >
-              {dev.button.label}
+              {button.label}
             </button>
           </div>
           <div className="dev__body">
@@ -250,7 +254,8 @@ export function Connection() {
           <div className="hint">{HINTS[s.sourceMode]}</div>
         </div>
 
-        {s.sourceMode === 'replay' && (
+        {/* The Capture and Record cards flip together, in the same relay:facts push (R3.4a). */}
+        {facts.captureShown && (
           <div className="card field">
             <div className="card-h" style={{ marginBottom: 12 }}>
               Capture
@@ -336,7 +341,7 @@ export function Connection() {
           </div>
         </div>
 
-        {s.sourceMode !== 'replay' && (
+        {facts.recordShown.connection && (
           <div className="card field">
             <div className="card-h" style={{ marginBottom: 12 }}>
               Record

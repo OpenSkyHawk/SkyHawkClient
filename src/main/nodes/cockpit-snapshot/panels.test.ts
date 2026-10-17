@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeStatus, NodeTelemSnapshot } from '@shared/nodes'
 import { CONSOLE_OPTIONS, consoleLabel } from '@shared/nodes'
 import { modelNode, nodeModel as model, nodeStatus } from '../../../test-fixtures/nodes'
-import { PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
+import { PDU_RAIL_FLAGS as RAIL_FLAG, PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
 import { TELEM_PAGE } from '../node-telem'
 import { lastSeenLabel } from '@shared/format'
 import {

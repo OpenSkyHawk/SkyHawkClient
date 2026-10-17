@@ -66,7 +66,8 @@ export class AppServices {
       log: debugLog,
       frames: this.calibration,
       health: () => this.nodes.gatewayHealth(),
-      serialMonitor: () => this.serialMonitor.shown
+      serialMonitor: () => this.serialMonitor.shown,
+      canRefresh: () => this.nodes.canRefresh()
     })
     this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,

@@ -9,8 +9,7 @@ import type {
   NodeView,
   PduReadings
 } from '@shared/nodes'
-import { nodeFaultTag } from '@shared/nodes/legacy-rules'
-import { pduAlertFlags } from '../faults'
+import { nodeFaultTag, pduAlertFlags } from '../faults'
 
 /** A PDU's pages that are fresh right now. A stale page is not a reading. */
 export function freshReadings(t: NodeTelemSnapshot | undefined): PduReadings {

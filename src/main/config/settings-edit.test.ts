@@ -12,7 +12,7 @@ import {
 } from '@shared/config'
 import { storePaths } from '../app/user-data'
 import { withSectionNotes } from './config-file'
-import { buildConfig, editedConfig, formOf } from './settings-form'
+import { buildConfig, editedConfig, formOf, savedEdit, withPsuLimit } from './settings-form'
 import { SettingsService } from './settings-service'
 
 describe('the forms’ save (buildConfig)', () => {
@@ -47,6 +47,36 @@ describe('the forms’ save (buildConfig)', () => {
     expect(editedConfig(current, { port: '77a' }).commandPort).toBe(7778)
     expect(editedConfig(current, {})).toEqual(buildConfig(formOf(current)))
   })
+
+  it('a PSU mode switch keeps the preset and the custom limits (R3.4a: `{ ...psu, mode }`)', () => {
+    const psu = { mode: 'preset' as const, preset: 'nx650' as const, custom: { a12: 40, w: 500 } }
+    const current = { ...DEFAULT_CONFIG, psu }
+    expect(editedConfig(current, { psuMode: 'custom' }).psu).toEqual({ ...psu, mode: 'custom' })
+    const custom = { ...current, psu: { ...psu, mode: 'custom' as const } }
+    expect(editedConfig(custom, { psuMode: 'preset' }).psu).toEqual(psu)
+    expect(Object.keys(editedConfig(current, { psuMode: 'custom' }))).not.toContain('psuMode')
+  })
+
+  it('a PSU limit as typed: refused, removed when empty, set otherwise (R3.4a: onType)', () => {
+    const psu = { mode: 'custom' as const, preset: 'nx650' as const, custom: { a12: 40, w: 500 } }
+    expect(withPsuLimit(psu, 'a5', '15')).toEqual({ ...psu, custom: { a12: 40, a5: 15, w: 500 } })
+    expect(withPsuLimit(psu, 'a12', '')).toEqual({ ...psu, custom: { w: 500 } })
+    expect(withPsuLimit(psu, 'a12', '  ')).toEqual({ ...psu, custom: { w: 500 } })
+    for (const junk of ['abc', '-5', '0', '20000', '1e3', '4.']) {
+      expect(withPsuLimit(psu, 'w', junk), junk).toBeUndefined()
+    }
+    expect(psu.custom, 'the setting held is never changed in place').toEqual({ a12: 40, w: 500 })
+    const current = { ...DEFAULT_CONFIG, psu }
+    expect(savedEdit(current, { psuLimit: { key: 'w', text: '400' } })?.psu).toEqual({
+      ...psu,
+      custom: { a12: 40, w: 400 }
+    })
+    expect(
+      savedEdit(current, { psuLimit: { key: 'w', text: 'x' } }),
+      'nothing to save'
+    ).toBeUndefined()
+    expect(savedEdit(current, { host: 'h' })).toEqual(editedConfig(current, { host: 'h' }))
+  })
 })
 
 describe('SettingsService: edits saved and pushed back (config:changed)', () => {
@@ -75,6 +105,17 @@ describe('SettingsService: edits saved and pushed back (config:changed)', () => 
       commandPort: 7781
     })
     expect(pushed).toEqual([{ config: cfg, psu: PSU_VIEW_DEFAULT, source: 'edit' }])
+  })
+
+  it('a refused PSU limit saves nothing and pushes nothing (R3.4a)', () => {
+    const { s, pushed } = service()
+    s.edit({ psu: { mode: 'custom', preset: 'nx650', custom: { w: 400 } } })
+    const before = readFileSync(join(dir, 'config.json'), 'utf8')
+    expect(s.edit({ psuLimit: { key: 'w', text: '40x' } })).toBe(s.get())
+    expect(pushed).toHaveLength(1)
+    expect(readFileSync(join(dir, 'config.json'), 'utf8')).toBe(before)
+    s.edit({ psuLimit: { key: 'w', text: '' } })
+    expect(pushed.at(-1)?.config.psu.custom).toEqual({})
   })
 
   it('the power supply comes back resolved; an import says so, once it is applied', () => {

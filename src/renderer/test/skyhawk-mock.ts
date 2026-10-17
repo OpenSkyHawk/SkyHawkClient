@@ -84,8 +84,10 @@ import type { CalibrationCommands } from '../../main/hid/calibration/calibration
 import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
 import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { shownStatus } from '../../main/gateway/gateway-health'
+import { canRequestRoster } from '../../main/nodes/node-status-wire'
 import { captureView, relayFacts, replayView } from '../../main/dcs/relay-rules'
-import { editedConfig } from '../../main/config/settings-form'
+import { savedEdit } from '../../main/config/settings-form'
 import { resolvePsu } from '../../main/nodes/psu-limits'
 import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
@@ -275,7 +277,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     // ── a form's settings change: main's SettingsService builds the save (settings-form.ts) and
     //    applies it — `setConfig`, the spy, stands for that apply — then pushes `config:changed` ──
     editConfig: vi.fn((edit: ConfigEdit) => editSettings(edit)),
-    exportConfig: vi.fn(() => resolve({})),
+    exportConfig: vi.fn(() => resolve({ outcome: 'canceled' as const })),
     openConfigImport: vi.fn(() => resolve({ status: 'canceled' as const })),
     // An applied import: main's settings are what it answered, and its forms start over from them.
     applyConfigImport: after(
@@ -415,10 +417,23 @@ export function installSkyhawkMock(): SkyhawkMock {
   /** The Cockpit's "last known" time and the serial monitor's flag: the page's, kept in main. */
   const linkDown = new LinkDownClock()
   let monitorShown = false
-  /** The status with what main concludes from it, as the last push carried it. */
+  /**
+   * NodeHub's roster guard, for Refresh (R3.4a). A port is held from connect() until it is
+   * released — every state but `disconnected` (GatewayConnection.attached).
+   */
+  const canRefresh = (): boolean =>
+    canRequestRoster(device().state !== 'disconnected', device().state)
+  /**
+   * The status with what main concludes from it, as the last push carried it: the Gateway's
+   * health only while the link is up (shownStatus, R3.4a).
+   */
   const devicePush = (): DeviceStatusPush => ({
-    ...device(),
-    ...linkFacts(device(), { linkDownAt: linkDown.value, serialMonitor: monitorShown })
+    ...shownStatus(device()),
+    ...linkFacts(
+      device(),
+      { linkDownAt: linkDown.value, serialMonitor: monitorShown },
+      canRefresh()
+    )
   })
   /** One `device:status` push, judged as GatewayConnection judges each. */
   const statusPush = (): DeviceStatusPush => {
@@ -433,7 +448,9 @@ export function installSkyhawkMock(): SkyhawkMock {
    * `setConfig`, the spy, stands for that apply — the relay's facts follow, then `config:changed`.
    */
   const editSettings = (edit: ConfigEdit): Promise<AppConfig> => {
-    const built = editedConfig(config(), edit)
+    const built = savedEdit(config(), edit)
+    // A refused PSU limit: nothing saved, nothing pushed (SettingsService.edit).
+    if (built === undefined) return resolve(config())
     const saved = fns.setConfig(built)
     state = { ...state, config: { ...config(), ...built } }
     act(() => {

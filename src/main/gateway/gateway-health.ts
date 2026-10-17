@@ -12,8 +12,9 @@ import type { LogEventInput } from '@shared/events'
 import { NODE_FAULT_CODES, type NodeFaultName } from '@shared/firmware'
 import { title } from '@shared/format'
 import type { NodeStatus } from '@shared/nodes'
-import type { GatewayKind, GatewayStatus } from '@shared/gateway'
+import type { DeviceStatus, GatewayKind, GatewayStatus } from '@shared/gateway'
 import { faultLabel, STATUS_FLAGS, type StatusFlag } from '../events'
+import { isLinkUp } from './link-state'
 
 /** How long a roster request may go unanswered, with the port open, before the Gateway is "not responding". */
 export const GATEWAY_NO_ANSWER_MS = 5000
@@ -63,7 +64,9 @@ export function gatewayStatus(
       alert: {
         head: 'Gateway not responding',
         text: `no answer for ${SECS} s while its port is open. Unplug its USB cable and plug it back in.`
-      }
+      },
+      // Not responding is about the link, not something it reports: the popover's title says it.
+      aboutLink: true
     }
   }
   if (!row) return undefined
@@ -110,6 +113,27 @@ export function gatewayStatus(
   }
   if (!health) return undefined
   return { severity: 'ok', kind: 'ok', label: withTemp('OK', row) }
+}
+
+/**
+ * The Gateway's health as the surfaces may show it (R3.4a: gateway-view.ts's gate before). Nothing
+ * while the link is down: the link state says it all, and the last report would describe a board
+ * that may be gone.
+ */
+export function shownHealth(
+  gateway: GatewayStatus | undefined,
+  linkUp: boolean
+): GatewayStatus | undefined {
+  return linkUp ? gateway : undefined
+}
+
+/** The status as `device:status` carries it: the Gateway's health left out while the link is down. */
+export function shownStatus(status: DeviceStatus): DeviceStatus {
+  if (status.gateway === undefined || shownHealth(status.gateway, isLinkUp(status.state))) {
+    return status
+  }
+  const { gateway: _down, ...link } = status
+  return link
 }
 
 // ── event log ───────────────────────────────────────────────────────────────

@@ -166,6 +166,23 @@ export function canRecord(relaying: boolean): RelaySurfaces['canRecord'] {
   return { connection: relaying, settings: true }
 }
 
+/**
+ * Is a Record control shown at all (R3.4a, each surface its own variant like canRecord): the
+ * Connection tab's Record card is hidden in Replay (Connection.tsx before); Settings › Connection's
+ * Record row always shows.
+ */
+export function recordShown(mode: SourceMode): RelayFacts['recordShown'] {
+  return { connection: mode !== 'replay', settings: true }
+}
+
+/**
+ * Is the Connection tab's Capture card shown (R3.4a: Connection.tsx before): Replay only. The
+ * mirror of the Record card's rule, beside it, so both come from the same mode in the same push.
+ */
+export function captureShown(mode: SourceMode): boolean {
+  return mode === 'replay'
+}
+
 /** The Record control as this page last set it: from the capture toggle's answer. */
 export function captureView(state: CaptureState): RelayFacts['recording'] {
   return { on: state.recording, events: state.events }
@@ -219,6 +236,8 @@ export function relayFacts(i: RelayInputs): RelayFacts {
       overview: overviewEndpoint(i.config.transport)
     },
     recording: i.recording,
+    recordShown: recordShown(i.config.sourceMode),
+    captureShown: captureShown(i.config.sourceMode),
     ...(i.replay ? { replay: i.replay } : {})
   }
 }

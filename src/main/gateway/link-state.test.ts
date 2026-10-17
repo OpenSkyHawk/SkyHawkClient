@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { DEVICE_IDLE, type DeviceState } from '@shared/gateway'
-import { isBoardPresent, isBusy, isLinkUp, LinkDownClock, linkFacts } from './link-state'
+import {
+  isBoardPresent,
+  isBusy,
+  isLinkUp,
+  linkAction,
+  LinkDownClock,
+  linkFacts
+} from './link-state'
 
 const STATES: DeviceState[] = [
   'connected',
@@ -64,5 +71,27 @@ describe('the Cockpit’s "last known" time (store.ts before R3.3)', () => {
     clock.pageLoaded('connected')
     now = 3000
     expect(clock.pushed('error')).toBe(3000)
+  })
+})
+
+describe('the link’s action (R3.4a: the renderer’s deviceView table before)', () => {
+  it('Connect when released, Retry on error, Disconnect otherwise — not while mid-open', () => {
+    expect(Object.fromEntries(STATES.map((s) => [s, linkAction(s)]))).toEqual({
+      connected: { offer: 'disconnect', intent: 'disconnect' },
+      scanning: { offer: 'disconnect', intent: 'disconnect', disabled: true },
+      reconnecting: { offer: 'disconnect', intent: 'disconnect' },
+      'no-device': { offer: 'disconnect', intent: 'disconnect' },
+      disconnected: { offer: 'connect', intent: 'connect' },
+      error: { offer: 'retry', intent: 'connect' }
+    })
+  })
+
+  it('every push carries it, and Refresh’s availability as the node layer hands it in', () => {
+    const up = { state: 'connected' as const }
+    expect(linkFacts(up, { serialMonitor: false }, true)).toMatchObject({
+      action: { offer: 'disconnect', intent: 'disconnect' },
+      canRefresh: true
+    })
+    expect(linkFacts(up, { serialMonitor: false }).canRefresh, 'no node layer').toBe(false)
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canRequestRoster,
   cleanNodeLine,
   isLegacyNodeStatus,
   NODE_END_MSG,
@@ -9,7 +10,7 @@ import {
   parseNodeStatus,
   ROSTER_REPLY_MS
 } from './node-status-wire'
-import { nodeFaultTag } from '@shared/nodes/legacy-rules'
+import { nodeFaultTag } from './faults'
 import type { NodeStatus } from '@shared/nodes'
 import { nodeStatus } from '../../test-fixtures/nodes'
 
@@ -100,6 +101,16 @@ describe('nodeRosterRequest', () => {
     expect([...nodeRosterRequest()]).toEqual([
       0x55, 0x55, 0x55, 0x55, 0xfe, 0x86, 0x02, 0x00, 0x01, 0x00
     ])
+  })
+})
+
+describe('canRequestRoster (R3.4a: Connection’s Refresh)', () => {
+  it('only with a port held and the link up', () => {
+    expect(canRequestRoster(true, 'connected')).toBe(true)
+    expect(canRequestRoster(false, 'connected'), 'released at shutdown').toBe(false)
+    for (const s of ['scanning', 'reconnecting', 'no-device', 'error', 'disconnected'] as const) {
+      expect(canRequestRoster(true, s), s).toBe(false)
+    }
   })
 })
 

@@ -4,6 +4,7 @@ import {
   type DeviceState,
   type DeviceStatusPush,
   type GatewayStatus,
+  type LinkAction,
   type SerialFrame
 } from '@shared/gateway'
 import { HID_CONTROLS_BY_ID, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
@@ -33,6 +34,7 @@ import {
   type CockpitSnapshot,
   type NodeModel,
   type NodeTelemSnapshot,
+  type PsuLimits,
   type PsuSetting
 } from '@shared/nodes'
 import type { LogEvent } from '@shared/events'
@@ -129,6 +131,10 @@ export interface AppState {
   boardPresent: boolean
   /** The port would not open because another program holds it. */
   deviceBusy: boolean
+  /** The device card's and the popover's button, as main offers it (`device:status`, R3.4a). */
+  deviceAction: LinkAction
+  /** A roster request can go out: Connection's Refresh (`device:status`, R3.4a). */
+  canRefresh: boolean
   /** The title-bar Device popover is open — also opened by Overview's Details and Attention's cog (#94). */
   devicePopOpen: boolean
   aircraft: AircraftStatus
@@ -227,6 +233,10 @@ export interface AppState {
       >
     >
   ) => void
+  /** Settings › Cockpit's PSU switch: main switches the mode over the setting it holds (R3.4a). */
+  setPsuMode: (mode: PsuSetting['mode']) => void
+  /** Settings › Cockpit's PSU limit, as typed: main refuses, deletes or sets it (R3.4a). */
+  setPsuLimit: (key: keyof PsuLimits, text: string) => void
   toggleRelay: () => void
   /** Open the device link now (also the Retry after an error). */
   connectDevice: () => void
@@ -318,6 +328,8 @@ function linkState(
   | 'linkUp'
   | 'boardPresent'
   | 'deviceBusy'
+  | 'deviceAction'
+  | 'canRefresh'
   | 'linkDownAt'
   | 'serialMonitor'
 > {
@@ -329,6 +341,8 @@ function linkState(
     linkUp: d.linkUp,
     boardPresent: d.boardPresent,
     deviceBusy: d.busy,
+    deviceAction: d.action,
+    canRefresh: d.canRefresh,
     linkDownAt: d.linkDownAt,
     serialMonitor: d.serialMonitor
   }
@@ -353,6 +367,9 @@ function configEdit(patch: Partial<ConfigFields>): ConfigEdit {
   const { transport, ...rest } = patch
   return { ...rest, ...(transport !== undefined && { transport: TRANSPORT_TO_IPC[transport] }) }
 }
+
+/** A form's change, to main (`config:edit`): main builds the settings and saves them (R3.3). */
+const editConfig = (edit: ConfigEdit): void => void window.skyhawk?.editConfig(edit)
 
 export const useStore = create<AppState>((set, get) => ({
   tab: 'overview',
@@ -421,7 +438,17 @@ export const useStore = create<AppState>((set, get) => ({
   // What is typed stays as typed; main builds and saves the settings (`config:edit`, R3.3).
   setConfigField: (patch) => {
     set(patch as Partial<AppState>)
-    void window.skyhawk?.editConfig(configEdit(patch))
+    editConfig(configEdit(patch))
+  },
+
+  // The switched setting comes back on `config:changed` (R3.4a).
+  setPsuMode: (mode) => {
+    editConfig({ psuMode: mode })
+  },
+
+  // The setting comes back on `config:changed` (R3.4a); the field keeps its own text.
+  setPsuLimit: (key, text) => {
+    editConfig({ psuLimit: { key, text } })
   },
 
   // Main stops, or saves the settings and starts (`relay:toggle`, R3.3); the click shows at once.
@@ -557,9 +584,14 @@ export const useStore = create<AppState>((set, get) => ({
       api.on('nodes:telemetry', (t) => setNodes(get().nodeModel, t)),
       api.on('cockpit:snapshot', (c) => set({ cockpit: c })),
       // An import replaced the settings: the forms start over from them. A form's own change
-      // leaves what is typed alone (the port as typed, N5).
+      // leaves what is typed alone (the port as typed, N5); the PSU setting is main's either way,
+      // since main switches its mode (R3.4a).
       api.on('config:changed', (c) =>
-        set({ psuView: c.psu, ...(c.source === 'import' ? configState(c.config) : {}) })
+        set({
+          psuView: c.psu,
+          psu: c.config.psu,
+          ...(c.source === 'import' ? configState(c.config) : {})
+        })
       ),
       api.on('serial:traffic', (frames) => {
         const s = get()

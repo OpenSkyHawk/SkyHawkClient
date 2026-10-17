@@ -110,6 +110,17 @@ describe('ConfigTransfer', () => {
     expect(t.defaultFileName()).toBe('skyhawk-config-2026-10-16.json')
   })
 
+  it('an export says what came of it: saved, cancelled or failed (R3.4a)', () => {
+    const t = transfer()
+    const file = join(dir, 'out.json')
+    expect(t.exportTo(file)).toEqual({ outcome: 'saved', path: file })
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toMatchObject({ client: '0.2.0' })
+    expect(t.exportTo(undefined)).toEqual({ outcome: 'canceled' })
+    const r = t.exportTo(join(dir, 'missing', 'out.json'))
+    expect(r.outcome).toBe('failed')
+    expect(r.outcome === 'failed' && r.error).toMatch(/^Could not write the file: ENOENT/)
+  })
+
   it('an invalid file is refused and leaves nothing to apply', () => {
     const t = transfer()
     expect(t.preview('{}', '/x/a.json')).toEqual({

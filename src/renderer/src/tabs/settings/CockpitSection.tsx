@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { PSU_LIMITS } from '@shared/format'
-import { parsePsuLimit } from '@shared/nodes/legacy-rules'
-import type { PsuLimits } from '@shared/nodes'
+import { parsePsuLimit, type PsuLimits } from '@shared/nodes'
 import { useStore } from '../../store'
 import { ResetDialog } from './ResetDialog'
 import { Row, SectionHead } from './Row'
@@ -14,7 +13,8 @@ const text = (v: number | undefined) => (v === undefined ? '' : String(v))
 
 function PowerSupply() {
   const psu = useStore((s) => s.psu)
-  const setConfigField = useStore((s) => s.setConfigField)
+  const setPsuMode = useStore((s) => s.setPsuMode)
+  const setPsuLimit = useStore((s) => s.setPsuLimit)
   // The preset as main resolves it (`config:changed`, R3.3).
   const preset = useStore((s) => s.psuView.preset)
   const isPreset = psu.mode === 'preset'
@@ -25,14 +25,11 @@ function PowerSupply() {
     w: text(psu.custom.w)
   }))
 
+  // Main refuses, deletes or sets the limit over the setting it holds (R3.4a); the text stays as
+  // typed, and the outline below judges it per keystroke.
   const onType = (k: LimitKey, value: string) => {
     setTyped({ ...typed, [k]: value })
-    const n = parsePsuLimit(value)
-    if (n === null) return
-    const custom = { ...psu.custom }
-    if (n === undefined) delete custom[k]
-    else custom[k] = n
-    setConfigField({ psu: { ...psu, custom } })
+    setPsuLimit(k, value)
   }
 
   return (
@@ -47,14 +44,14 @@ function PowerSupply() {
             <button
               className={isPreset ? 'on' : ''}
               aria-pressed={isPreset}
-              onClick={() => setConfigField({ psu: { ...psu, mode: 'preset' } })}
+              onClick={() => setPsuMode('preset')}
             >
               {preset.label}
             </button>
             <button
               className={isPreset ? '' : 'on'}
               aria-pressed={!isPreset}
-              onClick={() => setConfigField({ psu: { ...psu, mode: 'custom' } })}
+              onClick={() => setPsuMode('custom')}
             >
               Custom
             </button>

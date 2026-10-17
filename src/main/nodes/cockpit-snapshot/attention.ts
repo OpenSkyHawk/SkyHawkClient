@@ -12,7 +12,7 @@ import type {
   StrayItem
 } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
-import { isReportableNew } from '@shared/nodes/legacy-rules'
+import { isReportableNew } from '../node-model'
 import { adoptability } from './adopt'
 
 /** "1 node affected" / "3 nodes affected" — a PDU outage, wherever it is shown. */

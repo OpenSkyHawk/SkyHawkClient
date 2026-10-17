@@ -13,7 +13,9 @@ import {
   type NodeView
 } from '@shared/nodes'
 import { amps, fmtUptime, volts } from '@shared/format'
-import { displayCurrentMa, nodeFaultTag, reportedIdentity } from '@shared/nodes/legacy-rules'
+import { nodeFaultTag } from '../faults'
+import { reportedIdentity } from '../node-kind'
+import { displayCurrentMa } from '../node-telem'
 import { powerZoneOptions } from './panels'
 
 /**
