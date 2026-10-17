@@ -26,8 +26,7 @@ import {
   CAL_RESET_FIELD,
   CAL_SESSION_ACK_FIELD,
   CAL_SESSION_OPEN_FIELD,
-  CAL_TYPES,
-  type CalNackName
+  CAL_TYPES
 } from '@shared/firmware'
 
 /**
@@ -74,27 +73,13 @@ export const CAL_TYPE = byName(CAL_TYPES)
  */
 export const CAL_NACK = byName(CAL_NACK_REASONS)
 
-/** The five NACK reasons that can actually reach a client (see CAL_NACK). */
-const REACHABLE_NACK: ReadonlySet<CalNackName> = new Set<CalNackName>([
-  'BAD_INDEX',
-  'BAD_ORDER',
-  'NO_SESSION',
-  'NO_STORAGE',
-  'BAD_DEADZONE'
-])
-
 /**
- * A NACK reason as CalLink's refusal message names it: one of the five reachable reasons by
- * name, anything else as `reason 0x…`.
+ * A NACK reason's name (X11): the synced firmware table's name for any reason it lists, the five
+ * reachable ones and the three that never reach a client alike; anything else as `reason 0x…`.
+ * The one name both CalLink's refusal message and a calibration failure's `reasonName` carry.
  */
-export function nackRefusalName(reason: number): string {
-  const name = CAL_NACK_REASONS[reason]?.name
-  return name !== undefined && REACHABLE_NACK.has(name) ? name : `reason 0x${reason.toString(16)}`
-}
-
-/** A NACK reason as a calibration failure reports it: any known reason by name, else `0x…`. */
-export function nackReasonName(reason: number): string {
-  return CAL_NACK_REASONS[reason]?.name ?? `0x${reason.toString(16)}`
+export function nackName(reason: number): string {
+  return CAL_NACK_REASONS[reason]?.name ?? `reason 0x${reason.toString(16)}`
 }
 
 /**
