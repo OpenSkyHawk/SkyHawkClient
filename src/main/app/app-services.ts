@@ -53,7 +53,7 @@ export class AppServices {
    */
   constructor(emit: Emit, paths: StorePaths = storePaths(() => app.getPath('userData'))) {
     const { mappingFile, cacheFile } = storeFiles(paths)
-    this.settings = new SettingsService({ paths, debugMode: (on) => setDebugEnabled(on) })
+    this.settings = new SettingsService({ paths, debugMode: (on) => setDebugEnabled(on), emit })
     this.journal = new EventJournal(emit, debugLog)
     this.calibration = new HidCalibrationService(emit, {
       write: (data) => this.connection.write(data),

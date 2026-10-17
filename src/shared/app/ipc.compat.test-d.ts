@@ -21,16 +21,23 @@
 // R3.3 (link, relay, HID and settings rules pushed from main): `device:status` and the rehydrate
 // bundle's `device` became `DeviceStatusPush` — the status plus what main concludes from it
 // (linkUp, boardPresent, busy, linkDownAt, serialMonitor; additive fields). `hid:report` became
-// `HidReport` — the report plus its band, present axis count and live axis slots (additive).
+// `HidReport` — the report plus its band, present axis count and live axis slots (additive). The
+// push `config:changed` → `ConfigChanged` was added (the settings after each change, and what the
+// power supply resolves to), `config:get` answers `ConfigView` (the settings with the resolved
+// power supply) instead of `AppConfig`, and the intent `config:edit` (editConfig) was added: a
+// form's change, as typed, built into the save in main.
 //
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
 import type {
   AppConfig,
+  ConfigChanged,
+  ConfigEdit,
   ConfigExportResult,
   ConfigImportApplyResult,
   ConfigImportOpen,
+  ConfigView,
   SectionId,
   SettingsStore
 } from '../config/ipc'
@@ -92,6 +99,7 @@ interface OldPushChannels {
   'cal:data': CalSnapshot
   'cal:workflow': CalibrationState
   'cockpit:snapshot': CockpitSnapshot
+  'config:changed': ConfigChanged
 }
 
 type OldPushChannel = keyof OldPushChannels
@@ -111,6 +119,7 @@ interface OldIPC {
   readonly calData: 'cal:data'
   readonly calWorkflow: 'cal:workflow'
   readonly cockpitSnapshot: 'cockpit:snapshot'
+  readonly configChanged: 'config:changed'
 }
 
 interface OldCTRL {
@@ -157,12 +166,14 @@ interface OldCTRL {
   readonly calAttach: 'cal:attach'
   readonly nodeMappingAddAll: 'node-mapping:add-all'
   readonly nodeMappingUnhide: 'node-mapping:unhide'
+  readonly configEdit: 'config:edit'
 }
 
 interface OldSkyhawkApi {
   on<C extends OldPushChannel>(channel: C, cb: (data: OldPushChannels[C]) => void): () => void
-  getConfig(): Promise<AppConfig>
+  getConfig(): Promise<ConfigView>
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
+  editConfig(edit: ConfigEdit): Promise<AppConfig>
   exportConfig(): Promise<ConfigExportResult>
   openConfigImport(): Promise<ConfigImportOpen>
   applyConfigImport(

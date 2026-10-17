@@ -9,8 +9,18 @@
 // Subscribers run synchronously, inside the change, in the order they subscribed.
 import { createStore } from 'zustand/vanilla'
 import { subscribeWithSelector } from 'zustand/middleware'
-import { DEFAULT_CONFIG, type AppConfig, type SettingsStore } from '@shared/config'
+import type { Emit } from '@shared/app'
+import {
+  DEFAULT_CONFIG,
+  type AppConfig,
+  type ConfigChanged,
+  type ConfigEdit,
+  type ConfigView,
+  type SettingsStore
+} from '@shared/config'
+import { resolvePsu } from '../nodes'
 import { sanitizeConfig } from './settings-schema'
+import { editedConfig } from './settings-form'
 import { JSON_POLICY, jsonFile } from './json-store'
 
 /** Port: where config.json lives. app provides it; resolved at each use, as before. */
@@ -43,6 +53,8 @@ export interface SettingsServiceDeps {
   paths: SettingsPaths
   /** The debug log's switch (app's debug-log), set from each applied or loaded config. */
   debugMode(on: boolean): void
+  /** The renderer push (`config:changed`, R3.3); none, for an owner that only stores settings. */
+  emit?: Emit<'config:changed'>
 }
 
 export class SettingsService {
@@ -57,6 +69,12 @@ export class SettingsService {
     return this.live.getState()
   }
 
+  /** The settings and what they resolve to (`config:get`, R3.3). */
+  view(): ConfigView {
+    const config = this.get()
+    return { config, psu: resolvePsu(config.psu) }
+  }
+
   /**
    * Merge a change into the live settings. The store's subscribers react inside the call, with
    * the new and the previous settings; nothing is saved.
@@ -68,12 +86,34 @@ export class SettingsService {
     return this.live.getState()
   }
 
-  /** Apply and persist a settings change: the one path for config:set and a config import. */
-  apply(patch: Partial<AppConfig>): AppConfig {
+  /**
+   * Apply and persist a settings change: the one path for config:set, a form's edit and a config
+   * import. The renderer is told (`config:changed`) unless `push` is off — an import tells it once
+   * it is done (imported()).
+   */
+  apply(patch: Partial<AppConfig>, push = true): AppConfig {
     const config = this.update(patch)
     this.deps.debugMode(config.debugMode)
     saveConfig(config, this.deps.paths)
+    if (push) this.changed('edit')
     return config
+  }
+
+  /**
+   * A form's change (`config:edit`, R3.3): what the renderer's store rebuilt into a save before —
+   * read-modify-write over the settings held here, the port as typed (settings-form.ts).
+   */
+  edit(edit: ConfigEdit): AppConfig {
+    return this.apply(editedConfig(this.get(), edit))
+  }
+
+  /** A config import is applied: the forms start over from the settings, as from its answer. */
+  imported(): void {
+    this.changed('import')
+  }
+
+  private changed(source: ConfigChanged['source']): void {
+    this.deps.emit?.('config:changed', { ...this.view(), source })
   }
 
   /** App launch: seed from config.json. Not written back. */

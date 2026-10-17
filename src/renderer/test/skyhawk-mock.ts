@@ -50,7 +50,7 @@
 // `SkyhawkApi`, so an IPC change breaks the mock at typecheck, not at run time.
 import { act } from '@testing-library/react'
 import { vi, type Mock } from 'vitest'
-import { DEFAULT_CONFIG, type AppConfig } from '@shared/config'
+import { DEFAULT_CONFIG, type AppConfig, type ConfigChanged, type ConfigEdit } from '@shared/config'
 import type {
   AircraftStatus,
   LogRow,
@@ -81,6 +81,8 @@ import type { CalibrationCommands } from '../../main/hid/calibration/calibration
 import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
 import { LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { editedConfig } from '../../main/config/settings-form'
+import { resolvePsu } from '../../main/nodes/psu-limits'
 import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app'
@@ -195,6 +197,23 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel } = {
 /** Main's answer to any calibration exchange while the port is closed (HidCalibrationService). */
 const OFFLINE = { ok: false, kind: 'offline', message: 'Gateway is not connected' } as const
 
+/**
+ * `spy`, and what main does once its answer is in (`then`): a spy a test can still drive
+ * (`mockResolvedValueOnce`), whose answer main acts on as well — the push that follows it.
+ */
+function after<F extends (...a: never[]) => Promise<unknown>>(
+  spy: Mock<F>,
+  then: (r: Awaited<ReturnType<F>>) => void
+): Mock<F> {
+  return new Proxy(spy, {
+    apply(target, self, args) {
+      const p = Reflect.apply(target, self, args) as Promise<Awaited<ReturnType<F>>>
+      void p.then((r: Awaited<ReturnType<F>>) => then(r))
+      return p
+    }
+  })
+}
+
 /** Install a fresh mock as `window.skyhawk` (the setup file does this before every test). */
 export function installSkyhawkMock(): SkyhawkMock {
   const listeners = new Map<PushChannel, Set<(d: never) => void>>()
@@ -213,7 +232,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     }),
 
     // ── pulls: answered from the scenario ──
-    getConfig: vi.fn(() => resolve({ ...DEFAULT_CONFIG, ...state.config })),
+    getConfig: vi.fn(() => resolve({ config: config(), psu: resolvePsu(config().psu) })),
     getStatus: vi.fn(() => {
       host.rendererLoaded() // main's relay:status handler: a renderer (re)loaded
       // …and the Cockpit snapshot starts over from what main holds. Main's push reaches a page that
@@ -244,9 +263,26 @@ export function installSkyhawkMock(): SkyhawkMock {
     setConfig: vi.fn((p: Partial<AppConfig>) =>
       resolve({ ...DEFAULT_CONFIG, ...state.config, ...p })
     ),
+    // ── a form's settings change: main's SettingsService builds the save (settings-form.ts) and
+    //    applies it — `setConfig`, the spy, stands for that apply — then pushes `config:changed` ──
+    editConfig: vi.fn((edit: ConfigEdit) => {
+      const built = editedConfig(config(), edit)
+      const saved = fns.setConfig(built)
+      state = { ...state, config: { ...config(), ...built } }
+      act(() => push('config:changed', configChanged('edit')))
+      return saved
+    }),
     exportConfig: vi.fn(() => resolve({})),
     openConfigImport: vi.fn(() => resolve({ status: 'canceled' as const })),
-    applyConfigImport: vi.fn(() => resolve({ ok: false as const, error: 'mock' })),
+    // An applied import: main's settings are what it answered, and its forms start over from them.
+    applyConfigImport: after(
+      vi.fn<SkyhawkApi['applyConfigImport']>(() => resolve({ ok: false as const, error: 'mock' })),
+      (r: Awaited<ReturnType<SkyhawkApi['applyConfigImport']>>) => {
+        if (!r.ok) return
+        state = { ...state, config: r.config }
+        push('config:changed', configChanged('import'))
+      }
+    ),
     startRelay: vi.fn(() => resolve({ ok: true })),
     stopRelay: vi.fn(() => resolve({ ok: true })),
     connectDevice: vi.fn(() => resolve(undefined)),
@@ -367,6 +403,14 @@ export function installSkyhawkMock(): SkyhawkMock {
     linkDown.pushed(device().state)
     return devicePush()
   }
+
+  // ── the settings, as main's SettingsService holds and pushes them ──
+  const config = (): AppConfig => ({ ...DEFAULT_CONFIG, ...state.config })
+  const configChanged = (source: ConfigChanged['source']): ConfigChanged => ({
+    config: config(),
+    psu: resolvePsu(config().psu),
+    source
+  })
 
   /** A mapping intent main accepted: it answers with the model (and would push it). */
   const mapped = () => ({ ok: true as const, model: state.model ?? EMPTY_MODEL })

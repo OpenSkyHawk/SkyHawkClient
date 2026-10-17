@@ -5,6 +5,7 @@ import type { IpcRegistrar } from '@shared/app'
 import {
   CONFIG_CTRL,
   type AppConfig,
+  type ConfigEdit,
   type ConfigExportResult,
   type ConfigImportOpen
 } from '@shared/config'
@@ -27,8 +28,9 @@ export interface ConfigIpcDeps {
 
 export function registerConfigIpc(ipc: IpcRegistrar, deps: ConfigIpcDeps): void {
   const { settings, transfer, dialogs } = deps
-  ipc.handle(CONFIG_CTRL.configGet, () => settings.get())
+  ipc.handle(CONFIG_CTRL.configGet, () => settings.view())
   ipc.handle(CONFIG_CTRL.configSet, (_e, patch: Partial<AppConfig>) => settings.apply(patch))
+  ipc.handle(CONFIG_CTRL.configEdit, (_e, edit: ConfigEdit) => settings.edit(edit))
   ipc.handle(CONFIG_CTRL.configExport, async (): Promise<ConfigExportResult> => {
     const filePath = await dialogs.saveConfig(transfer.defaultFileName())
     if (!filePath) return {}

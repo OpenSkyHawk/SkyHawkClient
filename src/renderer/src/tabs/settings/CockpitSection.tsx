@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { PSU_LIMITS } from '@shared/format'
-import { parsePsuLimit, PSU_PRESETS } from '@shared/nodes/legacy-rules'
+import { parsePsuLimit } from '@shared/nodes/legacy-rules'
 import type { PsuLimits } from '@shared/nodes'
 import { useStore } from '../../store'
 import { ResetDialog } from './ResetDialog'
@@ -15,7 +15,8 @@ const text = (v: number | undefined) => (v === undefined ? '' : String(v))
 function PowerSupply() {
   const psu = useStore((s) => s.psu)
   const setConfigField = useStore((s) => s.setConfigField)
-  const preset = PSU_PRESETS[psu.preset]
+  // The preset as main resolves it (`config:changed`, R3.3).
+  const preset = useStore((s) => s.psuView.preset)
   const isPreset = psu.mode === 'preset'
   // What is typed, per field: a refused value stays visible (and unsaved) until corrected.
   const [typed, setTyped] = useState<Record<LimitKey, string>>(() => ({

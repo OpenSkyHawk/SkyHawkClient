@@ -6,7 +6,11 @@
 // spans topics: the `relay:status` rehydrate bundle and the debug intents.
 import {
   CONFIG_CTRL,
+  CONFIG_PUSH,
   type AppConfig,
+  type ConfigEdit,
+  type ConfigPushChannels,
+  type ConfigView,
   type ConfigExportResult,
   type ConfigImportApplyResult,
   type ConfigImportOpen,
@@ -90,7 +94,8 @@ export interface PushChannels
     EventsPushChannels,
     HidPushChannels,
     NodesPushChannels,
-    CalibrationPushChannels {}
+    CalibrationPushChannels,
+    ConfigPushChannels {}
 
 export type PushChannel = keyof PushChannels
 
@@ -109,7 +114,8 @@ export const IPC = {
   ...EVENTS_PUSH,
   ...HID_PUSH,
   ...NODES_PUSH,
-  ...CALIBRATION_PUSH
+  ...CALIBRATION_PUSH,
+  ...CONFIG_PUSH
 } as const
 
 /** Intents this contract owns: the rehydrate bundle and the debug-log tools. */
@@ -150,8 +156,14 @@ export interface IpcRegistrar {
 /** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
 export interface SkyhawkApi {
   on<C extends PushChannel>(channel: C, cb: (data: PushChannels[C]) => void): () => void
-  getConfig(): Promise<AppConfig>
+  /** The settings and what they resolve to (the power supply). */
+  getConfig(): Promise<ConfigView>
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
+  /**
+   * A form's change, as typed (R3.3): main builds the save over what it holds and pushes
+   * `config:changed`.
+   */
+  editConfig(edit: ConfigEdit): Promise<AppConfig>
 
   // ── configuration export / import (#67) ──────────────────────────────────
   /** Save dialog, then write every section to one file. */

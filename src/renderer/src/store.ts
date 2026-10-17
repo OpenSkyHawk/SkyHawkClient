@@ -15,11 +15,17 @@ import type {
   StreamState,
   TelemetryReadout
 } from '@shared/dcs'
-import type { AppConfig, DcsTransport } from '@shared/config'
+import {
+  DEFAULT_CONFIG,
+  PSU_VIEW_DEFAULT,
+  type AppConfig,
+  type ConfigEdit,
+  type DcsTransport,
+  type PsuView
+} from '@shared/config'
 import { CALIBRATION_IDLE, type CalibrationState } from '@shared/hid/calibration'
 import {
   COCKPIT_IDLE,
-  DEFAULT_PSU,
   type CockpitSnapshot,
   type NodeModel,
   type NodeTelemSnapshot,
@@ -146,6 +152,8 @@ export interface AppState {
   // Cockpit options (#67)
   attentionBanner: boolean
   psu: PsuSetting
+  /** What the PSU setting comes to — preset, limits, name — as main resolves it (R3.3). */
+  psuView: PsuView
 
   // developer / debug
   debugMode: boolean
@@ -281,7 +289,7 @@ function calibrationIntents(): CalibrationIntents {
 }
 
 /** The store fields an AppConfig sets — on load, and after a config import replaces it. */
-export function configState(cfg: AppConfig): Partial<AppState> {
+function configState(cfg: AppConfig): ConfigFields {
   const transport = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(
     (k) => TRANSPORT_TO_IPC[k] === cfg.transport
   )
@@ -326,27 +334,30 @@ function linkState(
   }
 }
 
-function buildConfig(s: AppState): Partial<AppConfig> {
-  return {
-    sourceMode: s.sourceMode,
-    transport: TRANSPORT_TO_IPC[s.transport],
-    host: s.host,
-    commandPort: Number(s.port) || 7778,
-    autoConnect: s.autoConnect,
-    replayDriveSerial: s.replayDriveSerial,
-    debugMode: s.debugMode,
-    attentionBanner: s.attentionBanner,
-    psu: s.psu
-  }
+/** The settings fields the forms edit, as the store holds them. */
+type ConfigFields = Pick<
+  AppState,
+  | 'sourceMode'
+  | 'transport'
+  | 'host'
+  | 'port'
+  | 'autoConnect'
+  | 'replayDriveSerial'
+  | 'debugMode'
+  | 'attentionBanner'
+  | 'psu'
+>
+
+/** A form's change as main takes it (`config:edit`): the contract's transport, the port as typed. */
+function configEdit(patch: Partial<ConfigFields>): ConfigEdit {
+  const { transport, ...rest } = patch
+  return { ...rest, ...(transport !== undefined && { transport: TRANSPORT_TO_IPC[transport] }) }
 }
 
 export const useStore = create<AppState>((set, get) => ({
   tab: 'overview',
-  sourceMode: 'monitor',
-  transport: 'tcp',
-  host: '127.0.0.1',
-  port: '7778',
-  autoConnect: true,
+  ...configState(DEFAULT_CONFIG),
+  psuView: PSU_VIEW_DEFAULT,
   relaying: false,
   logPaused: false,
   autoscroll: true,
@@ -364,10 +375,6 @@ export const useStore = create<AppState>((set, get) => ({
   cockpit: COCKPIT_IDLE,
 
   recording: false,
-  replayDriveSerial: false,
-  attentionBanner: true,
-  psu: DEFAULT_PSU,
-  debugMode: false,
 
   telemetry: IDLE_TELEMETRY,
   bytesIn: 0,
@@ -412,9 +419,10 @@ export const useStore = create<AppState>((set, get) => ({
       return { [key]: on } as Partial<AppState>
     }),
 
+  // What is typed stays as typed; main builds and saves the settings (`config:edit`, R3.3).
   setConfigField: (patch) => {
     set(patch as Partial<AppState>)
-    void window.skyhawk?.setConfig(buildConfig(get()))
+    void window.skyhawk?.editConfig(configEdit(patch))
   },
 
   toggleRelay: () => {
@@ -424,7 +432,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({ relaying: false })
     } else {
       void window.skyhawk
-        ?.setConfig(buildConfig(s))
+        ?.editConfig({})
         .then(() => window.skyhawk?.startRelay())
         // Main refuses a Start it cannot honour (no board for a mode that needs one) and pushes
         // no relay:state for it, so the optimistic flag has to be taken back here.
@@ -518,7 +526,7 @@ export const useStore = create<AppState>((set, get) => ({
     // Node pushes only fire on change, so a reloaded renderer asks for the current picture.
     void api.getNodes().then(({ model, telemetry }) => setNodes(model, telemetry))
 
-    void api.getConfig().then((cfg) => set(configState(cfg)))
+    void api.getConfig().then((v) => set({ ...configState(v.config), psuView: v.psu }))
 
     // Events live in main for the whole app run; a reloaded renderer picks the list back up.
     void api.getEvents().then((rows) => set({ events: restoreEvents(get().events, rows) }))
@@ -562,6 +570,11 @@ export const useStore = create<AppState>((set, get) => ({
       api.on('nodes:model', (m) => setNodes(m, get().nodeTelemetry)),
       api.on('nodes:telemetry', (t) => setNodes(get().nodeModel, t)),
       api.on('cockpit:snapshot', (c) => set({ cockpit: c })),
+      // An import replaced the settings: the forms start over from them. A form's own change
+      // leaves what is typed alone (the port as typed, N5).
+      api.on('config:changed', (c) =>
+        set({ psuView: c.psu, ...(c.source === 'import' ? configState(c.config) : {}) })
+      ),
       api.on('serial:traffic', (frames) => {
         const s = get()
         let seq = s.private_serialSeq

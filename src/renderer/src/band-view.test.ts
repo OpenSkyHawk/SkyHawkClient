@@ -1,7 +1,8 @@
-// The health band's PSU headroom and the plan's PSU name (band-view.ts; from cockpit.test.ts, R3.2).
+// The health band's PSU headroom (band-view.ts; from cockpit.test.ts, R3.2). The plan's PSU name is
+// main's since R3.3 (main/nodes/psu-limits.test.ts).
 import { describe, expect, it } from 'vitest'
 import { fmtPct } from '@shared/format'
-import { headroom, psuName } from './band-view'
+import { headroom } from './band-view'
 
 describe('headroom', () => {
   it('is null when the limit is unknown, so the card keeps its plain total', () => {
@@ -33,12 +34,5 @@ describe('fmtPct', () => {
     expect(fmtPct(9.96)).toBe('10%')
     expect(fmtPct(53.2)).toBe('53%')
     expect(fmtPct(112)).toBe('112%')
-  })
-})
-
-describe('psuName', () => {
-  it('names a preset by its model and a custom supply plainly', () => {
-    expect(psuName({ mode: 'preset', preset: 'nx650', custom: {} })).toBe('NX650')
-    expect(psuName({ mode: 'custom', preset: 'nx650', custom: { w: 500 } })).toBe('PSU')
   })
 })

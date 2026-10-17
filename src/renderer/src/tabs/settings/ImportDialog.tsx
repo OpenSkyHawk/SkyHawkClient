@@ -4,9 +4,6 @@ import { AXIS_LABELS } from '../../store'
 import { Dialog } from './Dialog'
 import { importRowKey, importSubtitle } from './settings-view'
 
-const CAL_NOTE =
-  'Adds these values to the client’s calibration copy — nothing is written to the device here. If the Gateway has lost calibration, the usual Review & restore offer appears on the HID tab; axes the device still holds are never overwritten.'
-
 /**
  * Import configuration — review what the file changes, section by section, and apply the ones
  * ticked. Sections with no change are shown but cannot be picked; a file that changes nothing
@@ -125,7 +122,7 @@ export function ImportDialog({
                     <span className="im__new">{r.to}</span>
                   </div>
                 ))}
-                {s.id === 'calibration' && !none && <div className="im__note">{CAL_NOTE}</div>}
+                {s.note && <div className="im__note">{s.note}</div>}
               </div>
             </div>
           )

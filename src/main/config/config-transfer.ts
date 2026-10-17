@@ -22,6 +22,7 @@ import {
   diffImport,
   parseConfigFile,
   SECTION_IDS,
+  withSectionNotes,
   type ParsedConfig
 } from './config-file'
 import type { CalCache } from '@shared/hid/calibration'
@@ -32,6 +33,11 @@ export interface ConfigTransferDeps {
   getConfig(): AppConfig
   /** Apply and persist a whole AppConfig (the config:set path). */
   setConfig(config: AppConfig): AppConfig
+  /**
+   * An import was applied (R3.3): the renderer is told the settings, and its forms start over
+   * from them — as they did from the import's answer, whatever sections it held.
+   */
+  imported?(): void
   nodes: {
     mappingFile(): NodeMappingFile
     registryDefaults(): Map<number, NodeDefaults>
@@ -90,11 +96,13 @@ export class ConfigTransfer {
       return { status: 'error', error: parsed.error }
     }
     const { config } = parsed
-    const sections = diffImport(
-      this.deps.nodes.registryDefaults(),
-      this.snapshot(),
-      config.sections,
-      this.deps.nodes.onlineIds()
+    const sections = withSectionNotes(
+      diffImport(
+        this.deps.nodes.registryDefaults(),
+        this.snapshot(),
+        config.sections,
+        this.deps.nodes.onlineIds()
+      )
     )
     const token = randomUUID()
     this.pending = { token, config }
@@ -157,6 +165,7 @@ export class ConfigTransfer {
       config = this.deps.setConfig(applyToConfig(config, imported, picked))
     }
     this.pending = undefined
+    this.deps.imported?.()
     const applied = SECTION_IDS.filter((id) => picked.has(id))
     return { ok: true, applied, ...(backupPath ? { backupPath } : {}), config }
   }

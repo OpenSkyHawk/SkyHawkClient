@@ -5,6 +5,7 @@ import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import type { LogEvent } from '@shared/events'
 import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
 import type { HidSnapshot } from '@shared/hid'
+import { PSU_VIEW_DEFAULT } from '@shared/config'
 import { LinkDownClock, linkFacts } from '../../main/gateway/link-state'
 import { hidFacts } from '../../main/hid/hid-facts'
 
@@ -68,19 +69,24 @@ function fakeApi() {
       eventsCleared++
       return Promise.resolve()
     },
+    // The settings and what they resolve to (`config:get` since R3.3).
     getConfig: () =>
       Promise.resolve({
-        sourceMode: 'bridge',
-        transport: 'tcp-to-host',
-        host: '127.0.0.1',
-        commandPort: 7778,
-        listenPort: 5010,
-        autoConnect: true,
-        replayDriveSerial: false,
-        debugMode: false
+        config: {
+          sourceMode: 'bridge',
+          transport: 'tcp-to-host',
+          host: '127.0.0.1',
+          commandPort: 7778,
+          listenPort: 5010,
+          autoConnect: true,
+          replayDriveSerial: false,
+          debugMode: false
+        },
+        psu: PSU_VIEW_DEFAULT
       }),
     getHidAvailability: () => Promise.resolve({ axes: [0, 1], hats: [], buttons: [] }),
     setConfig: (patch: unknown) => Promise.resolve(patch),
+    editConfig: (edit: unknown) => Promise.resolve(edit),
     startRelay: () => Promise.resolve(startResult),
     stopRelay: () => Promise.resolve({ ok: true })
   }
