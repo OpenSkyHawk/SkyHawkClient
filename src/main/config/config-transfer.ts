@@ -31,6 +31,7 @@ import { errorText, stamp } from '@shared/format'
 import { mergeCalibration } from '../hid/calibration'
 import { importMapping } from '../nodes'
 import type { SettingsReplace } from './settings-service'
+import type { JsonFile, JsonSnapshot } from './json-store'
 
 export interface ConfigTransferDeps {
   getConfig(): AppConfig
@@ -55,6 +56,11 @@ export interface ConfigTransferDeps {
   loadCalCache(): CalCache
   /** Save the calibration copy; says why when it did not reach the disk. */
   saveCalCache(cache: CalCache): string | undefined
+  /**
+   * The three files an import writes, copied byte for byte with their `.bak` before it and put
+   * back exactly by a rollback (the JSON store's snapshot / restore).
+   */
+  files: { mapping: FileCopy; calibration: FileCopy; config: FileCopy }
   /** Directory backups go to (<userData>/backups). */
   backupDir(): string
   clientVersion(): string
@@ -156,7 +162,13 @@ export class ConfigTransfer {
     if (picked.size === 0) return { ok: false, error: 'No sections picked' }
 
     // Staged first: every target's new content worked out before anything is written.
-    const targets = this.stage(imported, picked)
+    let targets: Target[]
+    try {
+      targets = this.stage(imported, picked)
+    } catch (err) {
+      if (!(err instanceof StageError)) throw err
+      return { ok: false, error: `Nothing was changed — ${err.message}` }
+    }
 
     let backupPath: string | undefined
     if (backup) {
@@ -195,12 +207,16 @@ export class ConfigTransfer {
 
   /**
    * Every picked target's new content, worked out before anything is written, with how to write
-   * it and how to put back what was there. In commit order.
+   * it and how to put back what was there. In commit order. Each target's file and its `.bak` are
+   * copied byte for byte here (FileCopy), so a rollback leaves both exactly as before the import:
+   * the store's own write puts its in-memory state back, then the copy puts back the bytes —
+   * including the `.bak` that write rotated. Throws when a copy cannot be taken.
    */
   private stage(imported: Partial<ConfigSnapshot>, picked: ReadonlySet<SectionId>): Target[] {
-    const { nodes } = this.deps
+    const { nodes, files } = this.deps
     const targets: Target[] = []
     if (picked.has('nodeMapping')) {
+      const copy = snapshot(files.mapping, SECTION_TITLES.nodeMapping)
       const before = nodes.mappingFile()
       const next = importMapping(before, imported.nodeMapping!, nodes.onlineIds())
       const write = (f: NodeMappingFile) => {
@@ -210,35 +226,53 @@ export class ConfigTransfer {
       targets.push({
         title: SECTION_TITLES.nodeMapping,
         commit: () => write(next),
-        rollback: () => write(before)
+        rollback: () => write(before) ?? files.mapping.restore(copy)?.note
       })
     }
     if (picked.has('calibration')) {
-      const before = this.deps.loadCalCache()
-      const next = mergeCalibration(before, imported.calibration!)
+      const copy = snapshot(files.calibration, SECTION_TITLES.calibration)
+      const next = mergeCalibration(this.deps.loadCalCache(), imported.calibration!)
       targets.push({
         title: SECTION_TITLES.calibration,
         commit: () => this.deps.saveCalCache(next),
-        rollback: () => this.deps.saveCalCache(before)
+        // Nothing held in memory: the copy is read from the file on each use.
+        rollback: () => files.calibration.restore(copy)?.note
       })
     }
     if (picked.has('app') || picked.has('powerSupply')) {
+      const titles = (['app', 'powerSupply'] as const).filter((id) => picked.has(id))
+      const title = titles.map((id) => SECTION_TITLES[id]).join(' and ')
+      const copy = snapshot(files.config, title)
       const before = this.deps.getConfig()
       const next = applyToConfig(before, imported, picked)
       const write = (c: AppConfig) => {
         const r = this.deps.replaceConfig(c)
         return r.ok ? undefined : r.error
       }
-      const titles = (['app', 'powerSupply'] as const).filter((id) => picked.has(id))
       targets.push({
-        title: titles.map((id) => SECTION_TITLES[id]).join(' and '),
+        title,
         commit: () => write(next),
-        rollback: () => write(before)
+        rollback: () => write(before) ?? files.config.restore(copy)?.note
       })
     }
     return targets
   }
 }
+
+/** A target's file, as the JSON store copies it byte for byte (with its `.bak`) and puts it back. */
+export type FileCopy = Pick<JsonFile, 'snapshot' | 'restore'>
+
+/** Copy a target's file for its rollback; a copy that cannot be taken stops the import. */
+function snapshot(file: FileCopy, title: string): JsonSnapshot {
+  try {
+    return file.snapshot()
+  } catch (err) {
+    throw new StageError(`${title} could not be copied for a rollback: ${errorText(err)}`)
+  }
+}
+
+/** Staging an import failed: nothing has been written. The message is ready to show. */
+class StageError extends Error {}
 
 /** One store an import writes: its sections' title, and its write and rollback (each: why not). */
 interface Target {

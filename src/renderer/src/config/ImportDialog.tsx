@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ConfigImportApplyResult, ImportPreview, SectionId } from '@shared/config'
 import { Dialog } from '../app/kit'
-import { importRowKey, importSubtitle } from './import-view'
+import { identicalText, importRowKey, importSubtitle } from './import-view'
 import { useConfigStore } from './store'
 
 /**
@@ -92,7 +92,7 @@ export function ImportDialog({
       {preview.identical && (
         <div className="im__sec">
           <div className="im__body">
-            <div className="im__st">This file matches your current setup</div>
+            <div className="im__st">{identicalText(preview)}</div>
           </div>
         </div>
       )}

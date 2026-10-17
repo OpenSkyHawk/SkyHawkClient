@@ -90,6 +90,21 @@ describe('T13 Settings › Configuration › Import preview (B90, B94, F1, C1, S
     expect(within(dlg).queryByRole('checkbox')).toBeNull()
   })
 
+  it('nothing readable changes but a section was rejected: only the readable sections match', async () => {
+    const text = configFileText(
+      { app: appSettings(DEFAULT_CONFIG), nodeMapping: {}, powerSupply: DEFAULT_CONFIG.psu },
+      EXPORTED_AT
+    )
+    const { dlg } = await openImport(importPreview(text))
+    expect(
+      within(dlg).getByText('The readable sections match your current setup')
+    ).toBeInTheDocument()
+    expect(within(dlg).queryByText('This file matches your current setup')).toBeNull()
+    expect(within(dlg).getByText('Skipped — Node mapping: it has no version.')).toBeInTheDocument()
+    expect(within(dlg).getByText('Nothing to apply.')).toBeInTheDocument()
+    expect(within(dlg).queryByRole('button', { name: /^Apply/ })).toBeNull()
+  })
+
   it('an empty "nodeMapping": {} is listed as skipped with its reason, and can’t be picked (F1, C1)', async () => {
     // contract F1: a structurally empty section is refused and listed as skipped — never read as
     // an empty mapping that would take every adopted board out of your cockpit.

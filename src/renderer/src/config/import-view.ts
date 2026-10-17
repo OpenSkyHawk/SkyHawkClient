@@ -15,6 +15,16 @@ export function importSubtitle(p: {
   return parts.join(' · ')
 }
 
+/**
+ * What the review says when nothing would change: the whole file matches, or — when main left
+ * sections out as malformed (`rejected`, listed below it as skipped) — only the readable ones do.
+ */
+export function identicalText(p: { rejected: readonly unknown[] }): string {
+  return p.rejected.length > 0
+    ? 'The readable sections match your current setup'
+    : 'This file matches your current setup'
+}
+
 /** A review row's key: calibration rows name the axis, and the board when there are several. */
 export function importRowKey(
   r: { k: string; axis?: number; board?: string },

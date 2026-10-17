@@ -29,6 +29,8 @@ let state: {
   mappingRefuses?: string
   /** Failure injection: the writes (1-based, per target) that fail, saying `<target> write <n>`. */
   fail: Partial<Record<Target, number[]>>
+  /** Failure injection: the targets whose byte copy cannot be taken, or put back. */
+  copyFails?: Partial<Record<Target, 'snapshot' | 'restore'>>
   writes: Record<Target, number>
   calls: string[]
 }
@@ -37,6 +39,27 @@ let state: {
 function injected(target: Target): string | undefined {
   const n = ++state.writes[target]
   return state.fail[target]?.includes(n) ? `${target} write ${n} failed` : undefined
+}
+
+/**
+ * A target's file as the JSON store copies it: its "bytes" are the store's value, and putting
+ * them back sets the value (the real byte-for-byte copy is config-transfer.files.test.ts's).
+ */
+function fileCopy(target: Target, key: 'mapping' | 'cache' | 'config') {
+  return {
+    snapshot: () => {
+      if (state.copyFails?.[target] === 'snapshot') throw new Error(`${target} unreadable`)
+      return { file: Buffer.from(JSON.stringify(state[key])), bak: null }
+    },
+    restore: (copy: { file: Buffer | null }) => {
+      if (state.copyFails?.[target] === 'restore') {
+        return { error: new Error('x'), note: `${target} could not be put back: EROFS` }
+      }
+      state.calls.push(`restore ${target}`)
+      ;(state as Record<string, unknown>)[key] = JSON.parse(copy.file!.toString())
+      return undefined
+    }
+  }
 }
 
 function transfer(over: Partial<ConfigTransferDeps> = {}) {
@@ -68,6 +91,11 @@ function transfer(over: Partial<ConfigTransferDeps> = {}) {
       state.calls.push('calibration')
       state.cache = c
       return undefined
+    },
+    files: {
+      mapping: fileCopy('mapping', 'mapping'),
+      calibration: fileCopy('calibration', 'cache'),
+      config: fileCopy('config', 'config')
     },
     backupDir: () => join(dir, 'backups'),
     clientVersion: () => '0.2.0',
@@ -242,14 +270,14 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
       error:
         'Nothing was changed — Axis calibration could not be saved: calibration write 1 failed. ' +
         'Node mapping was put back as before',
-      calls: ['mapping', 'mapping']
+      calls: ['mapping', 'mapping', 'restore mapping']
     },
     {
       target: 'config',
       error:
         'Nothing was changed — App settings and Power supply could not be saved: config write 1 ' +
         'failed. Node mapping and Axis calibration were put back as before',
-      calls: ['mapping', 'calibration', 'calibration', 'mapping']
+      calls: ['mapping', 'calibration', 'restore calibration', 'mapping', 'restore mapping']
     }
   ]
   for (const c of cases) {
@@ -262,7 +290,8 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
       const r = tx.apply(p2.token, ALL, false)
       expect(r).toEqual({ ok: false, error: c.error })
       expect(stores()).toEqual(before) // nothing half-applied
-      expect(state.calls).toEqual(c.calls) // written, then put back, newest first
+      // Written, then put back newest first: the store's own write, then its bytes (and .bak).
+      expect(state.calls).toEqual(c.calls)
       expect(imported).toEqual([]) // the renderer is not told of an import that did not land
       // The file stays open: the same import can be tried again, and lands whole.
       state.fail = {}
@@ -306,7 +335,37 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
     expect(state.config).toEqual(before.c)
   })
 
-  it('a backup that fails stops the import before anything is staged or written', () => {
+  it('a byte copy that cannot be put back: the answer says the import is only partly applied', () => {
+    const t = transfer()
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    state.fail = { config: [1] }
+    state.copyFails = { calibration: 'restore' }
+    expect(t.apply(p.token, ALL, false)).toEqual({
+      ok: false,
+      error:
+        'The import is only partly applied — App settings and Power supply could not be saved: ' +
+        'config write 1 failed. Axis calibration could not be put back (calibration could not be ' +
+        'put back: EROFS), so it keeps the imported settings. Node mapping was put back as before.'
+    })
+  })
+
+  it('a target whose file cannot be copied for a rollback stops the import before any write', () => {
+    const t = transfer()
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    const before = stores()
+    state.copyFails = { config: 'snapshot' }
+    expect(t.apply(p.token, ALL, true)).toEqual({
+      ok: false,
+      error:
+        'Nothing was changed — App settings and Power supply could not be copied for a ' +
+        'rollback: config unreadable'
+    })
+    expect(state.calls).toEqual([])
+    expect(stores()).toEqual(before)
+    expect(() => readdirSync(join(dir, 'backups'))).toThrow() // no backup written either
+  })
+
+  it('a backup that fails stops the import before anything is written', () => {
     const t = transfer({ backupDir: () => join(dir, 'file') })
     writeFileSync(join(dir, 'file'), 'not a folder')
     const p = ready(t.preview(otherSetupFile(), '/x/a.json'))

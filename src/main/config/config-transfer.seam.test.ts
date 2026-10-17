@@ -23,6 +23,9 @@ const axis = (min: number, centre: number, max: number) => ({
 let dir: string
 let stores: { config: AppConfig; mapping: NodeMappingFile; cache: CalCache }
 
+/** No rollback happens here: the file copies are never put back. */
+const noCopy = { snapshot: () => ({ file: null, bak: null }), restore: () => undefined }
+
 function transfer() {
   return new ConfigTransfer({
     getConfig: () => stores.config,
@@ -46,6 +49,7 @@ function transfer() {
       stores.cache = c
       return undefined
     },
+    files: { mapping: noCopy, calibration: noCopy, config: noCopy },
     backupDir: () => join(dir, 'backups'),
     clientVersion: () => '0.2.0',
     now: () => new Date('2026-10-16T10:00:00Z')
