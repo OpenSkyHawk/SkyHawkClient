@@ -1,20 +1,8 @@
 // Settings text decisions (#67), pure so they are unit-tested: what each Cockpit / About row says.
 import { GATEWAY_NODE_ID } from '@shared/firmware'
+import { day, hhmm, plural } from '@shared/format'
 import type { HiddenNode, NodeModel, NodeRegistryInfo } from '@shared/nodes/ipc'
 import { consoleLabel } from '../../cockpit-panels'
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
-
-const pad = (n: number) => String(n).padStart(2, '0')
-/** Local YYYY-MM-DD. */
-const day = (t: number) => {
-  const d = new Date(t)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-const clock = (t: number) => {
-  const d = new Date(t)
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 /** "Reset node mapping" row description. */
 export function resetRowDesc(differing: number): string {
@@ -97,7 +85,7 @@ export function importSubtitle(p: {
 }): string {
   const parts = [p.fileName]
   const t = p.exportedAt ? Date.parse(p.exportedAt) : NaN
-  if (!Number.isNaN(t)) parts.push(`exported ${day(t)} ${clock(t)}`)
+  if (!Number.isNaN(t)) parts.push(`exported ${day(t)} ${hhmm(t)}`)
   if (p.client) parts.push(`client v${p.client}`)
   return parts.join(' · ')
 }

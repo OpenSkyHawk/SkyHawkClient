@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeStatus, NodeTelemSnapshot } from '@shared/nodes/ipc'
 import { modelNode, nodeModel as model, nodeStatus } from '../../test-fixtures/nodes'
 import { PDU_FLAG, RAIL_FLAG, TELEM_PAGE } from '@shared/node-telem'
-import { lastSeenLabel, nodeViews } from './cockpit'
+import { lastSeenLabel } from '@shared/format'
+import { nodeViews } from './cockpit'
 import {
   boardActions,
   CONSOLE_OPTIONS,

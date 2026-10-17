@@ -6,6 +6,7 @@ import {
   nodeStatus as status
 } from '../../test-fixtures/nodes'
 import { PDU_FLAG, RAIL_FLAG, TELEM_PAGE } from '@shared/node-telem'
+import { fmtPct, lastSeenLabel } from '@shared/format'
 import {
   STATE_SYMBOL,
   affected,
@@ -13,10 +14,8 @@ import {
   canErrorsSub,
   canErrorsWorst,
   consoleKey,
-  fmtPct,
   headroom,
   healthBand,
-  lastSeenLabel,
   newCount,
   nodeHealth,
   nodeViews,

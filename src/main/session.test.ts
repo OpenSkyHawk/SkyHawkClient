@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CAL_TYPE, buildFrame } from '@shared/calibration'
 import type { LogRow } from '@shared/dcs/ipc'
-import { eventText } from '@shared/events'
+import { eventText } from '@shared/format'
 import type { LogEvent } from '@shared/events/ipc'
 import type { NodeModel } from '@shared/nodes/ipc'
 import { statusLine } from '../test-fixtures/nodes'

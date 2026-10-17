@@ -6,9 +6,9 @@ import {
   nodeStatus as status
 } from '../../test-fixtures/nodes'
 import { TELEM_PAGE } from '@shared/node-telem'
-import { STATE_SYMBOL, attentionItems, lastSeenLabel, nodeViews } from './cockpit'
+import { fmtTime, lastSeenLabel } from '@shared/format'
+import { STATE_SYMBOL, attentionItems, nodeViews } from './cockpit'
 import { nodesSummary } from './connection-summary'
-import { fmtTime } from './store'
 
 const pdu = (nodeId: number, console: string, over: Partial<NodeModelEntry> = {}) =>
   node(nodeId, { name: `PDU_${console}`, console, kind: 'pdu', readings: 'live', ...over })

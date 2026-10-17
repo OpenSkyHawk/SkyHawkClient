@@ -8,6 +8,7 @@ import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path'
 import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from '@shared/node-mapping'
 import type { NodeMappingFile } from '@shared/nodes/ipc'
+import { errorText, stamp } from '@shared/format'
 
 /** A save that did not reach the disk. The message is ready to show. */
 export class MappingSaveError extends Error {}
@@ -23,7 +24,6 @@ function mappingPath(): string {
 }
 
 const empty = (): NodeMappingFile => ({ ...EMPTY_MAPPING, nodes: {} })
-const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 export function loadNodeMapping(): LoadedMapping {
   const p = mappingPath()
@@ -32,7 +32,7 @@ export function loadNodeMapping(): LoadedMapping {
     if (!existsSync(p)) return { file: empty() }
     text = readFileSync(p, 'utf8')
   } catch (err) {
-    return { file: empty(), readOnly: `node-mapping.json could not be read: ${message(err)}` }
+    return { file: empty(), readOnly: `node-mapping.json could not be read: ${errorText(err)}` }
   }
 
   let raw: unknown
@@ -40,14 +40,14 @@ export function loadNodeMapping(): LoadedMapping {
     raw = JSON.parse(text)
   } catch {
     // Move the damaged file aside, so the next save cannot destroy whatever it still holds.
-    const bad = `${p}.bad-${new Date().toISOString().replace(/[:.]/g, '-')}`
+    const bad = `${p}.bad-${stamp(new Date())}`
     try {
       renameSync(p, bad)
       return { file: empty() }
     } catch (err) {
       return {
         file: empty(),
-        readOnly: `node-mapping.json is damaged and could not be moved aside: ${message(err)}`
+        readOnly: `node-mapping.json is damaged and could not be moved aside: ${errorText(err)}`
       }
     }
   }
@@ -76,6 +76,6 @@ export function saveNodeMapping(file: NodeMappingFile): void {
     } catch {
       // the write already failed; a stray .tmp is harmless and overwritten next time
     }
-    throw new MappingSaveError(`Could not save node mapping: ${message(err)}`)
+    throw new MappingSaveError(`Could not save node mapping: ${errorText(err)}`)
   }
 }

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { useStore, fmtBytes, fmtUptime, type TabId } from '../store'
+import { fmtBytes, fmtUptime } from '@shared/format'
+import { useStore, type TabId } from '../store'
 import { isLinkUp, type DeviceState } from '@shared/gateway/ipc'
 import { attentionItems, healthBand, nodeViews } from '../cockpit'
 import { attentionSummary, cockpitTile, newDevices, newDevicesText } from '../overview'

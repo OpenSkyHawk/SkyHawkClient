@@ -1,6 +1,7 @@
 // Cockpit tab (#63): the pure decisions behind the health band, the plan and Attention. Everything
 // here is computed from what main pushes (`nodes:model`, `nodes:telemetry`); the client applies no
 // thresholds — a warning is always a flag a board raised itself.
+import { lastSeenLabel } from '@shared/format'
 import { isReportableNew } from '@shared/node-rules'
 import type {
   NodeModel,
@@ -72,16 +73,6 @@ export interface NodeHealth {
   state: NodeState
   /** Short reason shown on Attention and tile tooltips, e.g. `OFFLINE`, `I2C`, `5V UNDER-V`. */
   flag?: string
-}
-
-/** "14 Oct, 21:14": when a remembered board was last on the bus (#93). */
-export function lastSeenLabel(t: number): string {
-  return new Date(t).toLocaleString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
 }
 
 /** Offline wins, then bus-off, then any flag the node (or, for a PDU, its pages) raised. */
@@ -576,12 +567,6 @@ export function headroom(value: number | null, limit: number | undefined): Headr
   if (limit === undefined) return null
   const pct = value === null ? null : (value / limit) * 100
   return { limit, pct, bar: pct === null ? 0 : Math.min(100, Math.max(0, pct)) }
-}
-
-/** `4.6%` under 10 %, `53%` from there. */
-export function fmtPct(pct: number): string {
-  const one = Number(pct.toFixed(1))
-  return one < 10 ? `${one.toFixed(1)}%` : `${Math.round(pct)}%`
 }
 
 /** What the plan's PSU box is called: the preset's model, or plain `PSU` for a custom supply. */

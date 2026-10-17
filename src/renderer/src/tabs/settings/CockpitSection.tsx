@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PSU_LIMITS } from '@shared/format'
 import { parsePsuLimit, PSU_PRESETS } from '@shared/psu'
 import type { PsuLimits } from '@shared/nodes/ipc'
 import { useStore } from '../../store'
@@ -8,22 +9,6 @@ import { hiddenRow, resetRowDesc } from './settings-view'
 import { useNodeModel } from './useNodeModel'
 
 type LimitKey = keyof PsuLimits
-
-const LIMITS: { k: LimitKey; label: string; unit: string; custom: string }[] = [
-  {
-    k: 'a12',
-    label: '12 V rail limit',
-    unit: 'A',
-    custom: 'Combined current of all 12 V outputs (PSU label)'
-  },
-  {
-    k: 'a5',
-    label: '5 V rail limit',
-    unit: 'A',
-    custom: 'Combined current of all 5 V outputs (PSU label)'
-  },
-  { k: 'w', label: 'Total power', unit: 'W', custom: 'Rated output (PSU label)' }
-]
 
 const text = (v: number | undefined) => (v === undefined ? '' : String(v))
 
@@ -74,7 +59,7 @@ function PowerSupply() {
             </button>
           </div>
         </Row>
-        {LIMITS.map(({ k, label, unit, custom }) => {
+        {PSU_LIMITS.map(({ key: k, label, unit, hint: custom }) => {
           const bad = !isPreset && parsePsuLimit(typed[k]) === null
           return (
             <Row key={k} k={label} sub={isPreset ? `From the ${preset.label} preset` : custom}>

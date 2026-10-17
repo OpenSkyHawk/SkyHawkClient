@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GATEWAY_NO_ANSWER_MS, GatewayWatch, gatewayEvents, gatewayStatus } from './gateway'
-import { eventText } from './events'
+import { eventText } from './format'
 import type { LogEventInput } from './events/ipc'
 import type { NodeStatus } from './nodes/ipc'
 import { nodeStatus } from '../test-fixtures/nodes'

@@ -6,6 +6,7 @@ import {
   type SerialFrame
 } from '@shared/gateway/ipc'
 import { HID_CONTROLS_BY_ID, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
+import { fmtTime, hex2, hex4 } from '@shared/format'
 import type {
   AircraftStatus,
   LogRow as IpcLogRow,
@@ -54,16 +55,6 @@ const TRANSPORT_TO_IPC: Record<Transport, DcsTransport> = {
   tcp: 'tcp-to-host',
   loop: 'loopback-multicast',
   uni: 'unicast-listen'
-}
-
-const pad = (n: number) => String(n).padStart(2, '0')
-const pad3 = (n: number) => String(n).padStart(3, '0')
-const hex2 = (n: number) => (n & 0xff).toString(16).toUpperCase().padStart(2, '0')
-const hex4 = (n: number) => '0x' + (n & 0xffff).toString(16).toUpperCase().padStart(4, '0')
-
-export function fmtTime(ms: number): string {
-  const d = new Date(ms)
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad3(d.getMilliseconds())}`
 }
 
 function rawHex(addr: number, value: number | string): string {
@@ -550,15 +541,4 @@ export const useStore = create<AppState>((set, get) => ({
 }))
 
 // ── pure helpers ─────────────────────────────────────────────────────────────
-export function fmtBytes(n: number): string {
-  return n >= 1024 ? (n / 1024).toFixed(1) + ' KB/s' : Math.round(n) + ' B/s'
-}
-
-export function fmtUptime(s: number): string {
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = s % 60
-  return `${pad(h)}:${pad(m)}:${pad(sec)}`
-}
-
 export const HAT_DIRS = ['CTR', 'N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']

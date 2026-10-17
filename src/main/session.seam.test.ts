@@ -3,7 +3,7 @@
 // and <userData> files out — through the services harness. Nothing here reaches inside main.
 import { describe, expect, it } from 'vitest'
 import { CTRL } from '@shared/app/ipc'
-import { eventText } from '@shared/events'
+import { eventText } from '@shared/format'
 import type { NodeMappingFile } from '@shared/nodes/ipc'
 import { statusLine } from '../test-fixtures/nodes'
 import { makeServices, type Services } from './test-harness/services'

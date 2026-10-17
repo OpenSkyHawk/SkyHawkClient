@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { isLinkUp } from '@shared/gateway/ipc'
 import type { NodeModel, PsuLimits } from '@shared/nodes/ipc'
 import { effectivePsuLimits } from '@shared/psu'
+import { fmtPct, hhmm, voltsValue } from '@shared/format'
 import { useStore } from '../store'
 import { strayFlag, strayNew } from '../cockpit-adopt'
 import { gatewayView, type GatewayView } from '../gateway-view'
@@ -12,7 +13,6 @@ import {
   attentionItems,
   canErrorsSub,
   canErrorsWorst,
-  fmtPct,
   headroom,
   healthBand,
   newCount,
@@ -33,12 +33,6 @@ import { AdoptDialog } from './cockpit/AdoptDialog'
 import { NodePanel, PduPanel } from './cockpit/SidePanels'
 
 const RING_C = 289.03 // 2π × 46, the ring's circumference
-
-const hhmm = (ms: number) => {
-  const d = new Date(ms)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-const volts = (mv: number) => (mv / 1000).toFixed(2)
 
 export function Cockpit() {
   const model = useStore((s) => s.nodeModel)
@@ -500,9 +494,13 @@ function Group(props: {
   const rails = (
     <>
       12 V{' '}
-      <b className={!dash && r12?.flags ? 'alert' : ''}>{!dash && r12 ? volts(r12.vAvgMv) : '—'}</b>
+      <b className={!dash && r12?.flags ? 'alert' : ''}>
+        {!dash && r12 ? voltsValue(r12.vAvgMv) : '—'}
+      </b>
       {g.wide ? ' · ' : ' '}5 V{' '}
-      <b className={!dash && r5?.flags ? 'alert' : ''}>{!dash && r5 ? volts(r5.vAvgMv) : '—'}</b>
+      <b className={!dash && r5?.flags ? 'alert' : ''}>
+        {!dash && r5 ? voltsValue(r5.vAvgMv) : '—'}
+      </b>
     </>
   )
   const flags = off

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { DASH, voltsValue } from '@shared/format'
 import type { NodeMappingResult, NodeModelEntry, NodeRegistryInfo } from '@shared/nodes/ipc'
 import type { NodeView } from '../../cockpit'
 import {
@@ -308,7 +309,7 @@ function BoardFooter(props: {
   )
 }
 
-const pv = (live: boolean, mv?: number) => (mv !== undefined && live ? (mv / 1000).toFixed(2) : '—')
+const pv = (live: boolean, mv?: number) => (mv !== undefined && live ? voltsValue(mv) : DASH)
 
 /** The clock, once a second while `on` — for "updated N s ago". */
 function useNow(on: boolean): number {

@@ -1,13 +1,11 @@
 // Cockpit side panels (#76, one design for every board since #93): the pure decisions behind the
 // panel group and PDU panels — which actions a board offers, what its fault box says, the rows each panel shows and the mapping patch Save
 // sends. Every value is something a board reported or the client computed, labelled as such.
+import { DASH, fmtUptime, lastSeenLabel } from '@shared/format'
 import type { MappingPatch, NodeModelEntry, PduRailPage } from '@shared/nodes/ipc'
 import { displayCurrentMa, PDU_FLAG, RAIL_FLAG } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
-import { lastSeenLabel, pduAlertFlags, type NodeView } from './cockpit'
-import { fmtUptime } from './store'
-
-const DASH = '—'
+import { pduAlertFlags, type NodeView } from './cockpit'
 
 // ── board actions ───────────────────────────────────────────────────────────
 
