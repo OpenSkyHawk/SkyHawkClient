@@ -263,7 +263,8 @@ export class CalibrationWorkflowHost {
   }
 
   selectAxis(axis: number): Promise<void> {
-    return this.view?.workflow.selectAxis(axis) ?? Promise.resolve()
+    const v = this.view
+    return v ? v.workflow.selectAxis(axis) : Promise.resolve()
   }
 
   startCapture(): void {
@@ -279,15 +280,18 @@ export class CalibrationWorkflowHost {
   }
 
   save(): Promise<void> {
-    return this.view?.workflow.save() ?? Promise.resolve()
+    const v = this.view
+    return v ? v.workflow.save() : Promise.resolve()
   }
 
   restore(): Promise<void> {
-    return this.view?.workflow.restore() ?? Promise.resolve()
+    const v = this.view
+    return v ? v.workflow.restore() : Promise.resolve()
   }
 
   deleteAxis(idx: number): Promise<void> {
-    return this.view?.workflow.deleteAxis(idx) ?? Promise.resolve()
+    const v = this.view
+    return v ? v.workflow.deleteAxis(idx) : Promise.resolve()
   }
 
   setRestoreOpen(open: boolean): void {
