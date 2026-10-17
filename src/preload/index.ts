@@ -48,6 +48,8 @@ const api: SkyhawkApi = {
     ) as Promise<ConfigImportApplyResult>,
   startRelay: () => ipcRenderer.invoke(CTRL.relayStart) as Promise<RelayResult>,
   stopRelay: () => ipcRenderer.invoke(CTRL.relayStop) as Promise<RelayResult>,
+  toggleRelay: (relaying: boolean) =>
+    ipcRenderer.invoke(CTRL.relayToggle, relaying) as Promise<RelayResult>,
   getStatus: () => ipcRenderer.invoke(CTRL.relayStatus) as Promise<RelayStatus>,
   connectDevice: () => ipcRenderer.invoke(CTRL.deviceConnect) as Promise<void>,
   disconnectDevice: () => ipcRenderer.invoke(CTRL.deviceDisconnect) as Promise<void>,

@@ -22,6 +22,7 @@ import {
   type DcsPushChannels,
   type ExportResult,
   type CaptureState,
+  type RelayFacts,
   type RelayResult,
   type RelayState,
   type ReplayLoad
@@ -59,6 +60,8 @@ import {
 export interface RelayStatus {
   running: boolean
   relay: RelayState
+  /** What the relay's surfaces show, as `relay:facts` carries it (R3.3). */
+  relayFacts: RelayFacts
   /** The link, with what main concludes from it, as `device:status` carries it (R3.3). */
   device: DeviceStatusPush
   /**
@@ -83,7 +86,8 @@ export interface DebugDumpResult {
 // device:status, nodes:*, serial:traffic, cal:data. On link down they stop and the renderer keeps
 // the last state, dimmed while device:status says the link is down. hid:report is neither: the joystick is read for as long
 // as the app runs, serial port open or not; nor is cal:workflow, which follows the link's state
-// and the dialog's actions. **Relay-scoped** pushes flow only while
+// and the dialog's actions, nor relay:facts and config:changed, which follow what they are about.
+// **Relay-scoped** pushes flow only while
 // relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries
 // both (panel commands are logged while stopped too), and so does events:batch.
 // Each topic declares its own pushes (shared/<topic>/ipc.ts); this is their union.
@@ -178,6 +182,11 @@ export interface SkyhawkApi {
   ): Promise<ConfigImportApplyResult>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
+  /**
+   * The Relay pill and the Start / Stop button (R3.3): Stop if `relaying` (what the renderer
+   * shows), else save the settings and Start — main's answer to Start, refused or not.
+   */
+  toggleRelay(relaying: boolean): Promise<RelayResult>
   getStatus(): Promise<RelayStatus>
   /** Open the device link now, whatever "connect automatically" says. */
   connectDevice(): Promise<void>

@@ -80,6 +80,7 @@ export class AppServices {
     this.dcs = new DcsConnection()
     this.relay = new DcsRelay(emit, {
       settings: this.settings.store,
+      saveSettings: () => void this.settings.edit({}),
       device: this.connection,
       dcs: this.dcs,
       stats: this.stats,
@@ -155,12 +156,16 @@ export class AppServices {
     // The Cockpit snapshot follows the link too (strays and Attention only while it is up), after
     // `device:status` has gone out, as the Cockpit re-rendered on it (R3.2).
     this.connection.onStatus(() => this.nodes.linkStatus())
+    // So do the relay's facts (blocked, waiting for the Gateway, the Link tile), R3.3.
+    this.connection.onStatus(() => this.relay.inputsChanged())
     // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
     this.settings.store.subscribe((config, prev) => {
       if (prev.autoConnect !== config.autoConnect) {
         this.connection.setAutoConnect(config.autoConnect)
       }
       this.relay.reconfigure(prev, config)
+      // The relay's facts follow the settings (the mode, Drive Gateway, the transport), R3.3.
+      this.relay.inputsChanged()
     })
   }
 
@@ -187,12 +192,20 @@ export class AppServices {
     this.serialMonitor.rendererLoaded()
     // …and it has the HID report and its live axes now, as it had its catalogue from a pull.
     this.hid.rendererLoaded()
+    // …and the recording and the capture it shows.
+    this.relay.rendererLoaded()
   }
 
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
   status(): RelayStatus {
     const device = this.connection.statusPush()
     const { running, relay } = this.relay.status()
-    return { running, relay, device, cal: this.calibration.workflow.state() }
+    return {
+      running,
+      relay,
+      relayFacts: this.relay.facts(),
+      device,
+      cal: this.calibration.workflow.state()
+    }
   }
 }

@@ -2,18 +2,35 @@ import { describe, expect, it } from 'vitest'
 import type { DeviceState } from '@shared/gateway'
 import { isBusy } from '../../main/gateway/link-state'
 import {
-  deviceView as viewOf,
-  relayNote,
-  relayTip,
+  relayNote as noteOf,
+  relayTip as tipOf,
   relayWaiting,
-  startBlocked,
+  startBlocked
+} from '../../main/dcs/relay-rules'
+import {
+  deviceView as viewOf,
+  relayNote as noteText,
+  relayTip as tipText,
   startBlockedCallout,
   startBlockedReason
 } from './device-view'
+import type { SourceMode } from './store'
+import type { StreamState } from '@shared/dcs'
 
 /** The link as the user sees it: main's verdict on the port (`busy`, R3.3), worded here. */
 const deviceView = (state: DeviceState, opts: Omit<Parameters<typeof viewOf>[1], 'busy'>) =>
   viewOf(state, { ...opts, busy: isBusy(opts.detail) })
+
+/** What the relay's surfaces say: main's judgement (relay-rules, R3.3), worded here. */
+interface Relay {
+  mode: SourceMode
+  relaying: boolean
+  stream?: StreamState
+  deviceState: DeviceState
+}
+const relayTip = (o: Relay & { deviceLabel: string; endpoint: string; replayFile?: string }) =>
+  tipText({ ...o, tip: tipOf(o) })
+const relayNote = (o: Relay) => noteText(noteOf(o), o.stream)
 
 const STATES: DeviceState[] = [
   'connected',

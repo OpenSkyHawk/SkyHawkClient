@@ -216,7 +216,14 @@ function launch(opts: ServicesOptions) {
     [CTRL.configEdit]: (edit: ConfigEdit) => services.settings.edit(edit),
     [CTRL.relayStart]: () => services.relay.start(),
     [CTRL.relayStop]: () => services.relay.stop(),
-    [CTRL.relayStatus]: () => services.status(),
+    [CTRL.relayToggle]: (relaying: boolean) => services.relay.toggle(relaying),
+    // A renderer's first pull on (re)load: what the old page held goes with it (app/ipc.ts).
+    [CTRL.relayStatus]: () => {
+      services.calibration.workflow.rendererLoaded()
+      services.nodes.rendererLoaded()
+      services.rendererLoaded()
+      return services.status()
+    },
     [CTRL.deviceConnect]: () => services.connection.connect(),
     [CTRL.deviceDisconnect]: () => services.connection.disconnect(),
     [CTRL.nodesRefresh]: () => services.nodes.requestNodes(),

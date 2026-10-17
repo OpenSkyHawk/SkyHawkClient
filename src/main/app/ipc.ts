@@ -64,8 +64,9 @@ const IPC_ORDER = [
   // The node-mapping sequences (R3.2b), after every channel that was here before them.
   'node-mapping:add-all',
   'node-mapping:unhide',
-  // A form's settings change (R3.3), after every channel that was here before it.
-  'config:edit'
+  // A form's settings change and the relay's on/off (R3.3), after every channel here before them.
+  'config:edit',
+  'relay:toggle'
 ] as const satisfies readonly CtrlChannel[]
 
 /** IPC_ORDER's type when it lists every channel; otherwise the channels it leaves out. */

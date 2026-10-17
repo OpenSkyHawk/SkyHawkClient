@@ -6,7 +6,7 @@
 // The device link is not started or stopped here. It is up whenever the board is plugged in
 // (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
-import type { RelayResult, RelayState } from '@shared/dcs'
+import type { CaptureState, RelayFacts, RelayResult, RelayState, ReplayLoad } from '@shared/dcs'
 import type { Emit, RelayStatus } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
 import type { DeviceStatus } from '@shared/gateway'
@@ -14,7 +14,15 @@ import { isLinkUp } from '../gateway'
 import { DcsBiosProtocol } from './bios-protocol'
 import type { DcsConnection } from './dcs-connection'
 import { relayContext, relayEvents } from './relay-events'
-import { deviceToDcs, exportToDevice, relayConfigChanged, type RelayOptions } from './relay-rules'
+import {
+  captureView,
+  deviceToDcs,
+  exportToDevice,
+  relayConfigChanged,
+  relayFacts,
+  replayView,
+  type RelayOptions
+} from './relay-rules'
 import { ReplaySource, type ReplayInfo } from './replay-source'
 import type { SessionRecorder } from './session-recorder'
 import { Decoder, flushTelemetry } from './sim-telemetry-decoder'
@@ -48,6 +56,11 @@ export interface RelaySettings {
 export interface DcsRelayDeps {
   /** The settings the relay is built from. */
   settings: RelaySettings
+  /**
+   * Save the settings as they stand: Start's first step (the renderer saved its forms before
+   * asking for Start; config:edit with nothing changed, R3.3).
+   */
+  saveSettings(): void
   device: RelayDevice
   dcs: DcsConnection
   stats: Stats
@@ -63,6 +76,11 @@ export class DcsRelay {
   private running = false
   private relay: RelayState = { running: false }
   private timers: ReturnType<typeof setInterval>[] = []
+  /** The recording and the capture as this page set them (N1: a reloaded page starts over). */
+  private recordingView: RelayFacts['recording'] = { on: false }
+  private replayLoaded?: RelayFacts['replay']
+  /** The `relay:facts` last pushed, to push only a change. */
+  private factsKey?: string
   private readonly device: RelayDevice
   private readonly dcs: DcsConnection
   private readonly stats: Stats
@@ -162,6 +180,17 @@ export class DcsRelay {
     }
   }
 
+  /**
+   * The Relay pill and the Start / Stop button (`relay:toggle`, R3.3): what the renderer's store
+   * did on a click — Stop if it showed the relay running, else save the settings, then Start.
+   * `relaying` is what the renderer showed; it takes back its own pending Start if refused.
+   */
+  toggle(relaying: boolean): RelayResult {
+    if (relaying) return this.stop()
+    this.deps.saveSettings()
+    return this.start()
+  }
+
   /** Stop relaying. The device link — HID, calibration, nodes — stays up. */
   stop(): RelayResult {
     this.running = false
@@ -184,6 +213,56 @@ export class DcsRelay {
   /** Whether it is relaying, and the relay's state, for the renderer's rehydrate bundle. */
   status(): Pick<RelayStatus, 'running' | 'relay'> {
     return { running: this.running, relay: this.relay }
+  }
+
+  // ── what the relay's surfaces show (relay:facts, R3.3) ─────────────────────
+
+  /** The facts as they stand: the rehydrate bundle's, and what `relay:facts` pushes. */
+  facts(): RelayFacts {
+    const deviceState = this.device.deviceStatus().state
+    return relayFacts({
+      config: this.config,
+      stream: this.relay.stream,
+      deviceState,
+      linkUp: isLinkUp(deviceState),
+      recording: this.recordingView,
+      replay: this.replayLoaded
+    })
+  }
+
+  /** The link or the settings changed (AppServices): push the facts if they changed with them. */
+  inputsChanged(): void {
+    this.pushFacts()
+  }
+
+  /** The capture toggle answered (`capture:toggle`): the Record controls follow its answer. */
+  showCapture(state: CaptureState): void {
+    this.recordingView = captureView(state)
+    this.pushFacts()
+  }
+
+  /** A capture was opened (`replay:open`): the Capture card follows its answer. */
+  showReplay(load: ReplayLoad): void {
+    this.replayLoaded = replayView(load, this.replayLoaded)
+    this.pushFacts()
+  }
+
+  /**
+   * A renderer (re)loaded (`relay:status`): the recording and the capture it shows start over, as
+   * its store did, whatever main is doing (N1). The bundle carries the facts.
+   */
+  rendererLoaded(): void {
+    this.recordingView = { on: false }
+    this.replayLoaded = undefined
+    this.factsKey = JSON.stringify(this.facts())
+  }
+
+  private pushFacts(): void {
+    const facts = this.facts()
+    const key = JSON.stringify(facts)
+    if (key === this.factsKey) return
+    this.factsKey = key
+    this.emit('relay:facts', facts)
   }
 
   // ── pipeline ───────────────────────────────────────────────────────────────
@@ -220,5 +299,6 @@ export class DcsRelay {
 
     this.relay = relay
     this.emit('relay:state', relay)
+    this.pushFacts()
   }
 }

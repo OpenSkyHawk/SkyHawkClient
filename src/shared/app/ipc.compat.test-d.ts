@@ -25,7 +25,11 @@
 // push `config:changed` → `ConfigChanged` was added (the settings after each change, and what the
 // power supply resolves to), `config:get` answers `ConfigView` (the settings with the resolved
 // power supply) instead of `AppConfig`, and the intent `config:edit` (editConfig) was added: a
-// form's change, as typed, built into the save in main.
+// form's change, as typed, built into the save in main. The push `relay:facts` → `RelayFacts` was
+// added (what the relay's surfaces show, decided in main) and the rehydrate bundle carries it
+// (`relayFacts`); the intent `relay:toggle` (toggleRelay) was added: the pill's and the Start
+// button's Stop-or-save-then-Start, run in main. `TelemetryReadout` gained `tone` (a type change
+// only: the channel's name and payload type are the same).
 //
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
@@ -47,6 +51,7 @@ import type {
   CaptureState,
   ExportResult,
   LogRow,
+  RelayFacts,
   RelayResult,
   RelayState,
   ReplayLoad,
@@ -80,6 +85,7 @@ type Expect<T extends true> = T
 interface OldRelayStatus {
   running: boolean
   relay: RelayState
+  relayFacts: RelayFacts
   device: DeviceStatusPush
   cal?: CalibrationState
 }
@@ -100,6 +106,7 @@ interface OldPushChannels {
   'cal:workflow': CalibrationState
   'cockpit:snapshot': CockpitSnapshot
   'config:changed': ConfigChanged
+  'relay:facts': RelayFacts
 }
 
 type OldPushChannel = keyof OldPushChannels
@@ -120,6 +127,7 @@ interface OldIPC {
   readonly calWorkflow: 'cal:workflow'
   readonly cockpitSnapshot: 'cockpit:snapshot'
   readonly configChanged: 'config:changed'
+  readonly relayFacts: 'relay:facts'
 }
 
 interface OldCTRL {
@@ -167,6 +175,7 @@ interface OldCTRL {
   readonly nodeMappingAddAll: 'node-mapping:add-all'
   readonly nodeMappingUnhide: 'node-mapping:unhide'
   readonly configEdit: 'config:edit'
+  readonly relayToggle: 'relay:toggle'
 }
 
 interface OldSkyhawkApi {
@@ -183,6 +192,7 @@ interface OldSkyhawkApi {
   ): Promise<ConfigImportApplyResult>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
+  toggleRelay(relaying: boolean): Promise<RelayResult>
   getStatus(): Promise<OldRelayStatus>
   connectDevice(): Promise<void>
   disconnectDevice(): Promise<void>

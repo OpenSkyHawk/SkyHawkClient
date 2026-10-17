@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from './store'
 import {
   deviceView,
+  endpointText,
+  relaySide,
   relayTip,
-  relayWaiting,
-  startBlocked,
   startBlockedCallout,
   startBlockedReason
 } from './device-view'
@@ -17,20 +17,13 @@ const CALLOUT_MS = 6000
  *
  * Green while delivering end to end, gold while running but waiting, grey when stopped. When Start
  * would be refused — no board for a mode that needs one — it says so at a glance with a "!", and a
- * click answers with a callout under the pill: why, and the Connect that fixes it.
+ * click answers with a callout under the pill: why, and the Connect that fixes it. What each of
+ * those is, main decides (`relay:facts`, R3.3); the pill words it.
  */
 export function RelayPill() {
-  const sourceMode = useStore((s) => s.sourceMode)
   const relaying = useStore((s) => s.relaying)
-  const relayStream = useStore((s) => s.relayStream)
-  const deviceState = useStore((s) => s.deviceState)
-  const devicePort = useStore((s) => s.devicePort)
-  const deviceDetail = useStore((s) => s.deviceDetail)
-  const deviceBusy = useStore((s) => s.deviceBusy)
+  const facts = useStore((s) => s.relayFacts)
   const autoConnect = useStore((s) => s.autoConnect)
-  const replayDriveSerial = useStore((s) => s.replayDriveSerial)
-  const replayFile = useStore((s) => s.replayFile)
-  const transport = useStore((s) => s.transport)
   const host = useStore((s) => s.host)
   const port = useStore((s) => s.port)
   const toggleRelay = useStore((s) => s.toggleRelay)
@@ -38,33 +31,22 @@ export function RelayPill() {
   const [callout, setCallout] = useState(false)
   const btn = useRef<HTMLButtonElement>(null)
 
-  const blocked = !relaying && startBlocked({ mode: sourceMode, replayDriveSerial, deviceState })
-  const waiting = relayWaiting({ mode: sourceMode, relaying, stream: relayStream, deviceState })
-  const endpoint =
-    transport === 'tcp'
-      ? `${host}:${port}`
-      : transport === 'loop'
-        ? '239.255.50.10:5010'
-        : 'unicast listen'
+  // The side of the on/off the pill shows: a click's pending Start or Stop reads at once.
+  const side = relaySide(facts, relaying)
+  const blocked = side.startBlocked
+  const waiting = side.waiting !== 'none'
   const title = blocked
-    ? startBlockedReason(sourceMode)
+    ? startBlockedReason(blocked)
     : relayTip({
-        mode: sourceMode,
-        relaying,
-        stream: relayStream,
-        deviceState,
-        deviceLabel: deviceView(deviceState, {
-          port: devicePort,
-          detail: deviceDetail,
-          busy: deviceBusy,
-          autoConnect
-        }).label,
-        endpoint,
-        replayFile
+        tip: side.tip,
+        stream: facts.stream,
+        deviceLabel: deviceView(facts.deviceState, { autoConnect }).label,
+        endpoint: endpointText(facts.endpoint.pill, host, port),
+        replayFile: facts.replay?.file
       })
 
   // The board arriving answers the callout; so does it timing out.
-  const open = callout && blocked
+  const open = callout && !!blocked
   useEffect(() => {
     if (!open) return
     const timer = setTimeout(() => setCallout(false), CALLOUT_MS)
@@ -87,7 +69,7 @@ export function RelayPill() {
       <button
         ref={btn}
         className={`pill pill--btn ${cls}`}
-        aria-disabled={blocked}
+        aria-disabled={!!blocked}
         title={title}
         // Not `disabled`: a blocked pill still has to answer a click, with the reason.
         onClick={() => (blocked ? setCallout(true) : toggleRelay())}
@@ -110,7 +92,7 @@ export function RelayPill() {
               </span>
               Can&apos;t start the relay
             </div>
-            <div className="devpop__meta">{startBlockedCallout(sourceMode)}</div>
+            <div className="devpop__meta">{startBlockedCallout(blocked!)}</div>
             <div className="devpop__acts">
               <button
                 className="browse"

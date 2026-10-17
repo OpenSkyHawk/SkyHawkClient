@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { Decoder, extractValue } from './sim-telemetry-decoder'
+import { TELEMETRY_IDLE } from '@shared/dcs'
+import { Decoder, extractValue, gaugeTone, idleTelemetry } from './sim-telemetry-decoder'
 
 describe('extractValue', () => {
   it('masks and shifts', () => {
@@ -42,5 +43,24 @@ describe('Decoder telemetry', () => {
   it('exposes the five readouts', () => {
     const ids = new Decoder().telemetrySnapshot().map((r) => r.id)
     expect(ids).toEqual(['RPM', 'D_IAS_DEG', 'D_FLAPS_IND', 'ALT_FT', 'D_FUEL'])
+  })
+})
+
+describe('the gauges’ alert level (Overview.tsx gaugeColor before R3.3)', () => {
+  it('fuel goes to its alert under 25 %; flap and altitude are the secondary rings', () => {
+    expect(gaugeTone('D_FUEL', 0.25)).toBe('fuel')
+    expect(gaugeTone('D_FUEL', 0.24)).toBe('fuel-low')
+    expect(gaugeTone('D_FLAPS_IND', 0.5)).toBe('secondary')
+    expect(gaugeTone('ALT_FT', 0)).toBe('secondary')
+    expect(gaugeTone('RPM', 0.9)).toBe('primary')
+  })
+
+  it('X10: the idle readouts are their own spec, and the renderer starts from them', () => {
+    expect(idleTelemetry()).toEqual(TELEMETRY_IDLE)
+    const live = new Decoder().telemetrySnapshot()
+    expect(idleTelemetry().map((r) => r.id)).not.toEqual(live.map((r) => r.id))
+    // The idle Press Alt keeps the plain ring; the live one is a secondary ring.
+    expect(idleTelemetry()[3]).toMatchObject({ id: 'D_ALT_NEEDLE', tone: 'primary' })
+    expect(live[3]).toMatchObject({ id: 'ALT_FT', tone: 'secondary' })
   })
 })

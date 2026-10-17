@@ -1,8 +1,10 @@
 import { fmtBytes, fmtUptime } from '@shared/format'
 import { useStore, type TabId } from '../store'
 import type { DeviceState } from '@shared/gateway'
+import type { GaugeTone, OverviewLink } from '@shared/dcs'
 import { newDevicesText } from '../overview'
 import { gatewayView } from '../gateway-view'
+import { endpointText, relaySide } from '../device-view'
 import { Dot } from './cockpit/Dot'
 import logo from '../assets/logo.png'
 
@@ -23,6 +25,20 @@ const LINK_COLOR: Partial<Record<DeviceState, string>> = {
   error: 'var(--red)'
 }
 const TILE_TONE = { ok: 'var(--green)', issue: 'var(--gold)', none: 'var(--muted)' } as const
+/** The Link tile's sub-line: the relay under the device link (main's call, R3.3). */
+const LINK_SUB: Record<OverviewLink, string> = {
+  'gateway-relaying': 'Gateway · relaying',
+  'gateway-stopped': 'Gateway · stream stopped',
+  waiting: 'relay waiting — resumes when it connects',
+  stopped: 'stream stopped'
+}
+/** A gauge ring's colour, for its level as main judges it (R3.3). */
+const GAUGE_COLOR: Record<GaugeTone, string> = {
+  'fuel-low': 'var(--red)',
+  fuel: 'var(--gold)',
+  secondary: 'var(--blue-2)',
+  primary: 'var(--blue)'
+}
 
 function Gauge({
   label,
@@ -76,8 +92,9 @@ function Gauge({
 export function Overview() {
   const s = useStore()
   const link = s.transport === 'tcp' ? 'TCP' : s.transport === 'loop' ? 'Multicast' : 'Unicast'
-  const linkSub =
-    s.transport === 'tcp' ? `${s.host}:${s.port} · remote` : '239.255.50.10:5010 · local'
+  // The DCS Link tile's endpoint and the Link tile's sub-line are main's (relay:facts, R3.3).
+  const linkSub = endpointText(s.relayFacts.endpoint.overview, s.host, s.port)
+  const relaySub = LINK_SUB[relaySide(s.relayFacts, s.relaying).overviewLink]
 
   const connected = s.linkUp
   const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
@@ -105,13 +122,7 @@ export function Overview() {
       // The device link, not the relay (#69); the stream state rides underneath.
       label: 'Link',
       value: LINK_VALUE[s.deviceState],
-      sub: connected
-        ? s.relaying
-          ? 'Gateway · relaying'
-          : 'Gateway · stream stopped'
-        : s.relaying
-          ? 'relay waiting — resumes when it connects'
-          : 'stream stopped',
+      sub: relaySub,
       color: LINK_COLOR[s.deviceState] ?? 'var(--muted)',
       open: { tab: 'connection', title: 'Open the Connection tab' }
     },
@@ -132,16 +143,12 @@ export function Overview() {
     }
   ]
 
-  const gaugeColor = (id: string, pct: number): string => {
-    if (id === 'D_FUEL') return pct < 0.25 ? 'var(--red)' : 'var(--gold)'
-    return id === 'D_FLAPS_IND' || id === 'ALT_FT' ? 'var(--blue-2)' : 'var(--blue)'
-  }
   const gauges = s.telemetry.map((r) => ({
     label: r.label,
     value: Number.isNaN(r.value) ? '—' : Math.round(r.value).toLocaleString(),
     unit: r.unit,
     pct: r.pct,
-    color: gaugeColor(r.id, r.pct)
+    color: GAUGE_COLOR[r.tone]
   }))
 
   const health = [

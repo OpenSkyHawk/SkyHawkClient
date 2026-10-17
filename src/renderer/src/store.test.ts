@@ -5,8 +5,9 @@ import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import type { LogEvent } from '@shared/events'
 import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
 import type { HidSnapshot } from '@shared/hid'
-import { PSU_VIEW_DEFAULT } from '@shared/config'
-import { LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { DEFAULT_CONFIG, PSU_VIEW_DEFAULT } from '@shared/config'
+import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { relayFacts } from '../../main/dcs/relay-rules'
 import { hidFacts } from '../../main/hid/hid-facts'
 
 // The store talks to main through window.skyhawk. Only the calls initBridge() makes need to be
@@ -24,7 +25,7 @@ interface Given {
   'hid:report': HidSnapshot
 }
 type GivenPushes = Omit<PushChannels, keyof Given> & Given
-type GivenStatus = Omit<RelayStatus, 'device'> & { device: DeviceStatus }
+type GivenStatus = Omit<RelayStatus, 'device' | 'relayFacts'> & { device: DeviceStatus }
 
 /** Main's GatewayConnection: the page's "last known" time, judged per push (link-state.ts). */
 let linkDown = new LinkDownClock()
@@ -61,7 +62,18 @@ function fakeApi() {
     },
     getStatus: () => {
       linkDown.pageLoaded(status.device.state) // a (re)loaded page starts over (N1)
-      return Promise.resolve({ ...status, device: withFacts(status.device) })
+      return Promise.resolve({
+        ...status,
+        device: withFacts(status.device),
+        // main's DcsRelay, over the default settings and this status
+        relayFacts: relayFacts({
+          config: DEFAULT_CONFIG,
+          stream: status.relay.stream,
+          deviceState: status.device.state,
+          linkUp: isLinkUp(status.device.state),
+          recording: { on: false }
+        })
+      })
     },
     getNodes: () => Promise.resolve(nodesSnap),
     getEvents: () => Promise.resolve(eventsSnap),
@@ -87,6 +99,11 @@ function fakeApi() {
     getHidAvailability: () => Promise.resolve({ axes: [0, 1], hats: [], buttons: [] }),
     setConfig: (patch: unknown) => Promise.resolve(patch),
     editConfig: (edit: unknown) => Promise.resolve(edit),
+    // main's DcsRelay.toggle over the two intents below
+    toggleRelay: (relaying: boolean) =>
+      relaying
+        ? Promise.resolve({ ok: true })
+        : Promise.resolve({}).then(() => Promise.resolve(startResult)),
     startRelay: () => Promise.resolve(startResult),
     stopRelay: () => Promise.resolve({ ok: true })
   }

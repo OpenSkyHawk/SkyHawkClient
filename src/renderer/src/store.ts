@@ -9,11 +9,15 @@ import {
 import { HID_CONTROLS_BY_ID, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
 import type { HidFreshness } from '@shared/hid'
 import { fmtTime, hex2, hex4 } from '@shared/format'
-import type {
-  AircraftStatus,
-  LogRow as IpcLogRow,
-  StreamState,
-  TelemetryReadout
+import {
+  AIRCRAFT_NONE,
+  RELAY_FACTS_IDLE,
+  TELEMETRY_IDLE,
+  type AircraftStatus,
+  type LogRow as IpcLogRow,
+  type RelayFacts,
+  type StreamState,
+  type TelemetryReadout
 } from '@shared/dcs'
 import {
   DEFAULT_CONFIG,
@@ -71,15 +75,6 @@ function rawHex(addr: number, value: number | string): string {
   return `${hex2(addr >> 8)} ${hex2(addr)} ${hex2(v)} ${hex2(v >> 8)}`
 }
 
-// Idle gauges (value NaN -> "—") until live telemetry arrives.
-const IDLE_TELEMETRY: TelemetryReadout[] = [
-  { id: 'RPM', label: 'RPM', value: NaN, pct: 0, unit: '% RPM' },
-  { id: 'D_IAS_DEG', label: 'IAS', value: NaN, pct: 0, unit: '% FS' },
-  { id: 'D_FLAPS_IND', label: 'Flap', value: NaN, pct: 0, unit: '% DN' },
-  { id: 'D_ALT_NEEDLE', label: 'Press Alt', value: NaN, pct: 0, unit: '% FS' },
-  { id: 'D_FUEL', label: 'Fuel', value: NaN, pct: 0, unit: '% QTY' }
-]
-
 const MAX_LOG = 1000
 const MAX_SERIAL = 2000
 
@@ -95,9 +90,18 @@ export interface AppState {
   host: string
   port: string
   autoConnect: boolean
+  /**
+   * The on/off as shown: set at once by a click (the pending Start or Stop), then as main pushes
+   * `relay:state`, and taken back when main refuses a Start.
+   */
   relaying: boolean
   /** Where the DCS-BIOS stream stands while relaying; undefined when stopped. */
   relayStream?: StreamState
+  /**
+   * What the relay's surfaces show, as main decides it (`relay:facts`, R3.3): for the relay shown
+   * running and shown stopped, the endpoints, the recording and the loaded capture.
+   */
+  relayFacts: RelayFacts
   logPaused: boolean
   autoscroll: boolean
   rawMode: boolean
@@ -142,11 +146,7 @@ export interface AppState {
    */
   linkDownAt?: number
 
-  // record / replay
-  recording: boolean
-  recordEvents?: number
-  replayFile?: string
-  replayInfo?: { events: number; durationMs: number }
+  // replay
   replayDriveSerial: boolean
 
   // Cockpit options (#67)
@@ -359,6 +359,7 @@ export const useStore = create<AppState>((set, get) => ({
   ...configState(DEFAULT_CONFIG),
   psuView: PSU_VIEW_DEFAULT,
   relaying: false,
+  relayFacts: RELAY_FACTS_IDLE,
   logPaused: false,
   autoscroll: true,
   rawMode: false,
@@ -370,13 +371,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   ...linkState(DEVICE_IDLE),
   devicePopOpen: false,
-  aircraft: { name: 'NONE', inferred: false, supported: true },
+  aircraft: AIRCRAFT_NONE,
   nodeTelemetry: [],
   cockpit: COCKPIT_IDLE,
 
-  recording: false,
-
-  telemetry: IDLE_TELEMETRY,
+  telemetry: TELEMETRY_IDLE,
   bytesIn: 0,
   bytesOut: 0,
   fps: 0,
@@ -425,22 +424,15 @@ export const useStore = create<AppState>((set, get) => ({
     void window.skyhawk?.editConfig(configEdit(patch))
   },
 
+  // Main stops, or saves the settings and starts (`relay:toggle`, R3.3); the click shows at once.
   toggleRelay: () => {
     const s = get()
-    if (s.relaying) {
-      void window.skyhawk?.stopRelay()
-      set({ relaying: false })
-    } else {
-      void window.skyhawk
-        ?.editConfig({})
-        .then(() => window.skyhawk?.startRelay())
-        // Main refuses a Start it cannot honour (no board for a mode that needs one) and pushes
-        // no relay:state for it, so the optimistic flag has to be taken back here.
-        .then((r) => {
-          if (r && !r.ok) set({ relaying: false, relayStream: undefined })
-        })
-      set({ relaying: true })
-    }
+    void window.skyhawk?.toggleRelay(s.relaying).then((r) => {
+      // Main refuses a Start it cannot honour (no board for a mode that needs one) and pushes
+      // no relay:state for it, so the pending Relaying has to be taken back here.
+      if (!s.relaying && r && !r.ok) set({ relaying: false, relayStream: undefined })
+    })
+    set({ relaying: !s.relaying })
   },
 
   connectDevice: () => {
@@ -451,21 +443,13 @@ export const useStore = create<AppState>((set, get) => ({
     void window.skyhawk?.disconnectDevice()
   },
 
+  // The recording and the capture come back on `relay:facts` (R3.3).
   toggleCapture: () => {
-    void window.skyhawk
-      ?.toggleCapture()
-      .then((r) => set({ recording: r.recording, recordEvents: r.events }))
+    void window.skyhawk?.toggleCapture()
   },
 
   openReplay: () => {
-    void window.skyhawk?.openReplay().then((r) => {
-      if (r.loaded) {
-        set({
-          replayFile: r.path,
-          replayInfo: { events: r.events ?? 0, durationMs: r.durationMs ?? 0 }
-        })
-      }
-    })
+    void window.skyhawk?.openReplay()
   },
 
   dumpSerialPorts: () => {
@@ -537,6 +521,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({
         relaying: st.running,
         relayStream: st.relay.stream,
+        relayFacts: st.relayFacts,
         ...linkState(st.device),
         // The device's report is only pushed when the port opens. A renderer reload builds a
         // fresh store while the main-process session keeps running, so without carrying the
@@ -565,6 +550,7 @@ export const useStore = create<AppState>((set, get) => ({
       ),
       api.on('device:status', (d) => set(linkState(d))),
       api.on('relay:state', (r) => set({ relaying: r.running, relayStream: r.stream })),
+      api.on('relay:facts', (f) => set({ relayFacts: f })),
       api.on('cal:workflow', (c) => set({ calibration: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:model', (m) => setNodes(m, get().nodeTelemetry)),

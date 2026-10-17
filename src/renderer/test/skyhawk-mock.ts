@@ -53,8 +53,11 @@ import { vi, type Mock } from 'vitest'
 import { DEFAULT_CONFIG, type AppConfig, type ConfigChanged, type ConfigEdit } from '@shared/config'
 import type {
   AircraftStatus,
+  CaptureState,
   LogRow,
+  RelayFacts,
   RelayState,
+  ReplayLoad,
   StatsSnapshot,
   TelemetryReadout
 } from '@shared/dcs'
@@ -80,7 +83,8 @@ import {
 import type { CalibrationCommands } from '../../main/hid/calibration/calibration-workflow'
 import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
-import { LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { captureView, relayFacts, replayView } from '../../main/dcs/relay-rules'
 import { editedConfig } from '../../main/config/settings-form'
 import { resolvePsu } from '../../main/nodes/psu-limits'
 import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
@@ -242,12 +246,17 @@ export function installSkyhawkMock(): SkyhawkMock {
       )
       // …and HidService hands it the report with its live axes (R3.3), on the same terms.
       void Promise.resolve().then(() => push('hid:report', hidPush()))
-      // …and what the old page held for itself starts over (GatewayConnection, SerialTrafficMonitor).
+      // …and what the old page held for itself starts over (GatewayConnection, SerialTrafficMonitor,
+      // DcsRelay).
       linkDown.pageLoaded(device().state)
       monitorShown = false
+      recordingShown = { on: false }
+      replayShown = undefined
+      factsKey = JSON.stringify(relayFactsNow())
       return resolve({
         running: state.relay?.running ?? false,
         relay: state.relay ?? { running: false },
+        relayFacts: relayFactsNow(),
         device: devicePush(),
         cal: host.state()
       })
@@ -265,13 +274,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     ),
     // ── a form's settings change: main's SettingsService builds the save (settings-form.ts) and
     //    applies it — `setConfig`, the spy, stands for that apply — then pushes `config:changed` ──
-    editConfig: vi.fn((edit: ConfigEdit) => {
-      const built = editedConfig(config(), edit)
-      const saved = fns.setConfig(built)
-      state = { ...state, config: { ...config(), ...built } }
-      act(() => push('config:changed', configChanged('edit')))
-      return saved
-    }),
+    editConfig: vi.fn((edit: ConfigEdit) => editSettings(edit)),
     exportConfig: vi.fn(() => resolve({})),
     openConfigImport: vi.fn(() => resolve({ status: 'canceled' as const })),
     // An applied import: main's settings are what it answered, and its forms start over from them.
@@ -280,18 +283,37 @@ export function installSkyhawkMock(): SkyhawkMock {
       (r: Awaited<ReturnType<SkyhawkApi['applyConfigImport']>>) => {
         if (!r.ok) return
         state = { ...state, config: r.config }
+        pushFacts() // the relay's facts follow the settings (AppServices' settings subscriber)
         push('config:changed', configChanged('import'))
       }
     ),
     startRelay: vi.fn(() => resolve({ ok: true })),
     stopRelay: vi.fn(() => resolve({ ok: true })),
+    // ── the relay's on/off: main's DcsRelay.toggle — Stop, or save the settings then Start — over
+    //    the spies above, so a test still sees (and can refuse) the Start ──
+    toggleRelay: vi.fn((relaying: boolean) =>
+      relaying ? fns.stopRelay() : editSettings({}).then(() => fns.startRelay())
+    ),
     connectDevice: vi.fn(() => resolve(undefined)),
     disconnectDevice: vi.fn(() => resolve(undefined)),
     exportLog: vi.fn(() => resolve({})),
     clearEvents: vi.fn(() => resolve(undefined)),
     exportEvents: vi.fn(() => resolve({})),
-    toggleCapture: vi.fn(() => resolve({ recording: false })),
-    openReplay: vi.fn(() => resolve({ loaded: false })),
+    // The Record controls and the Capture card follow main's answer (DcsRelay, `relay:facts`).
+    toggleCapture: after(
+      vi.fn<SkyhawkApi['toggleCapture']>(() => resolve({ recording: false })),
+      (r: CaptureState) => {
+        recordingShown = captureView(r)
+        pushFacts()
+      }
+    ),
+    openReplay: after(
+      vi.fn<SkyhawkApi['openReplay']>(() => resolve({ loaded: false })),
+      (r: ReplayLoad) => {
+        replayShown = replayView(r, replayShown)
+        pushFacts()
+      }
+    ),
     refreshNodes: vi.fn(() => resolve(undefined)),
     setNodeMapping: vi.fn(() => resolve(mapped())),
     adoptNode: vi.fn(() => resolve(mapped())),
@@ -406,6 +428,43 @@ export function installSkyhawkMock(): SkyhawkMock {
 
   // ── the settings, as main's SettingsService holds and pushes them ──
   const config = (): AppConfig => ({ ...DEFAULT_CONFIG, ...state.config })
+  /**
+   * A form's change: SettingsService builds the save (settings-form.ts) and applies it —
+   * `setConfig`, the spy, stands for that apply — the relay's facts follow, then `config:changed`.
+   */
+  const editSettings = (edit: ConfigEdit): Promise<AppConfig> => {
+    const built = editedConfig(config(), edit)
+    const saved = fns.setConfig(built)
+    state = { ...state, config: { ...config(), ...built } }
+    act(() => {
+      pushFacts()
+      push('config:changed', configChanged('edit'))
+    })
+    return saved
+  }
+
+  // ── the relay's facts, as main's DcsRelay pushes them (relay-rules.ts) ──
+  /** The recording and the capture as the page set them; a reloaded page starts over (N1). */
+  let recordingShown: RelayFacts['recording'] = { on: false }
+  let replayShown: RelayFacts['replay']
+  let factsKey: string | undefined
+  const relayFactsNow = (): RelayFacts =>
+    relayFacts({
+      config: config(),
+      stream: state.relay?.stream,
+      deviceState: device().state,
+      linkUp: isLinkUp(device().state),
+      recording: recordingShown,
+      replay: replayShown
+    })
+  /** `relay:facts`, when they changed. */
+  const pushFacts = (): void => {
+    const f = relayFactsNow()
+    const key = JSON.stringify(f)
+    if (key === factsKey) return
+    factsKey = key
+    push('relay:facts', f)
+  }
   const configChanged = (source: ConfigChanged['source']): ConfigChanged => ({
     config: config(),
     psu: resolvePsu(config().psu),
@@ -520,6 +579,8 @@ export function installSkyhawkMock(): SkyhawkMock {
           // the Cockpit snapshot follows the link and each node push (NodeHub).
           if (key === 'device') host.linkStatus(s.device!.state)
           if (key === 'device') cockpit.linkChanged()
+          // The relay's facts follow its state and the link (DcsRelay, R3.3).
+          if (key === 'device' || key === 'relay') pushFacts()
           if (key === 'model') cockpit.modelPushed(s.model!)
           if (key === 'telemetry') cockpit.telemetryPushed(s.telemetry!)
           if (key === 'cal') host.reported(s.cal!)
