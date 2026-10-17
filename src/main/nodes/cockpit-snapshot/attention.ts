@@ -119,7 +119,7 @@ export function strayFlag(e: NodeModelEntry): string {
  * state says it all) or while it is healthy; err → off, else warn. The same reading as the
  * renderer's gatewayView, for the Cockpit.
  */
-export function gatewayAttention(
+function gatewayAttention(
   g: GatewayStatus | undefined,
   linkUp: boolean
 ): CockpitAttention['gateway'] {

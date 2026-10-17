@@ -27,7 +27,7 @@ function railAlert(r: PduReadings): boolean {
  * A PDU group's header: OFFLINE overrides its flags; a rail value shows only while the PDU is up
  * with readings, gold while the PDU flags that rail.
  */
-export function groupHead(p: NodeView): PlanGroupHead {
+function groupHead(p: NodeView): PlanGroupHead {
   const off = p.health.state === 'off'
   const dash = off || p.noReadings
   const r12 = p.readings.rail12V

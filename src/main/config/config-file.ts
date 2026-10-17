@@ -33,11 +33,11 @@ import {
 } from '../nodes'
 
 /** File format this build writes. A higher version came from a newer client. */
-export const CONFIG_FILE_VERSION = 1
+const CONFIG_FILE_VERSION = 1
 
 export const SECTION_IDS: SectionId[] = ['app', 'nodeMapping', 'powerSupply', 'calibration']
 
-export const SECTION_TITLES: Record<SectionId, string> = {
+const SECTION_TITLES: Record<SectionId, string> = {
   app: 'App settings',
   nodeMapping: 'Node mapping',
   powerSupply: 'Power supply',

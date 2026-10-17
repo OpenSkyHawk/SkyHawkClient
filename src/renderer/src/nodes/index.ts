@@ -3,5 +3,4 @@
 export { bindNodes, nodesFromMain, useNodesStore, type NodesState } from './store'
 export { Cockpit as CockpitTab } from './Cockpit'
 export { NodesCard } from './NodesCard'
-export { AdoptDialog } from './AdoptDialog'
 export { Dot } from './Dot'

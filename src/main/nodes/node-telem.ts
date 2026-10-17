@@ -35,7 +35,7 @@ export const TELEM_STALE_MS = 10_000
 const HEX_LEN = NODE_TELEM_ROW_BYTES * 2
 
 /** True for the page ids only a PDU sends — what marks a node as a PDU. */
-export function isPduPage(page: number): boolean {
+function isPduPage(page: number): boolean {
   return (
     page === TELEM_PAGE.PDU_RAIL_12V ||
     page === TELEM_PAGE.PDU_RAIL_5V ||

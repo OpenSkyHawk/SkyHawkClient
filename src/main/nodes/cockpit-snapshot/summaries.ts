@@ -55,7 +55,7 @@ export function cockpitTile(band: HealthBand, live: boolean): CockpitTile {
 // ── Overview › Attention banner ─────────────────────────────────────────────
 
 /** How many names the banner lists per kind before "+N more". */
-export const BANNER_NAMES = 3
+const BANNER_NAMES = 3
 
 /** A PDU outage reads as the PDU plus the nodes that dropped with it. */
 const itemName = (i: AttentionItem) =>

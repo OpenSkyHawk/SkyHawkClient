@@ -36,7 +36,7 @@ export function tileWidth(label: string, min: number, max: number): number {
 const HINT_H = 16
 const GROUP_GAP = 10
 
-export interface PlanTile {
+interface PlanTile {
   view: NodeView
   /** Name without its console prefix (`Left_Fuel` → `Fuel`). */
   short: string
@@ -62,7 +62,7 @@ export interface PlanGroup {
   hint?: { text: string; y: number }
 }
 
-export interface PlanWire {
+interface PlanWire {
   d: string
   /** The PDU feeding this line raises a rail flag. */
   alert: boolean

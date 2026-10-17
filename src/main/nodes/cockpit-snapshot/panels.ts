@@ -349,7 +349,7 @@ export function zoneChoices(views: NodeView[]): ZoneChoices {
 // ── the panels ──────────────────────────────────────────────────────────────
 
 /** A fed board's state in the Feeds list: its flag, else online / no status yet. */
-export function feedState(v: NodeView): string {
+function feedState(v: NodeView): string {
   const e = v.entry
   if (e.notSeen) return 'not seen this session'
   if (v.health.flag) return v.health.flag

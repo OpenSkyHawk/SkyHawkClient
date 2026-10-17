@@ -12,8 +12,8 @@ export interface StreamLogEvents {
   flush(): void
 }
 
-export const LOG_FLUSH_MS = 33
-export const MAX_BATCH = 250
+const LOG_FLUSH_MS = 33
+const MAX_BATCH = 250
 
 export class StreamLog {
   private logBuf: LogRow[] = []

@@ -155,7 +155,7 @@ export function prefill(e: NodeModelEntry, kind: NodeKind): AdoptForm {
  * None — the PDU choice stays explicit (X4 co-located: D7 today, a hidden PDU is not "in your
  * cockpit" here). undefined = not one Add all takes (a PDU, or not in NODE_IDS.md).
  */
-export function addAllPduId(row: NodeView, views: NodeView[]): number | null | undefined {
+function addAllPduId(row: NodeView, views: NodeView[]): number | null | undefined {
   const inCockpit = (id: number | null) =>
     id !== null &&
     views.some((v) => v.entry.nodeId === id && v.entry.kind === 'pdu' && v.entry.source !== 'new')

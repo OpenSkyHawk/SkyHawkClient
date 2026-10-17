@@ -19,7 +19,7 @@ export async function settle(): Promise<void> {
  * mount), its pulls answer from the scenario, then main pushes it. Either way the store ends up
  * holding what main pushed. Unsubscribes when the test ends, so the next test can subscribe again.
  */
-export async function startBridge(scenario: Scenario = {}): Promise<SkyhawkMock> {
+async function startBridge(scenario: Scenario = {}): Promise<SkyhawkMock> {
   const sky = skyhawk()
   sky.emitScenario(scenario) // nobody subscribed yet: main's state as the renderer loads
   const off = initBridge()

@@ -4,7 +4,7 @@ import type { NodeDefaults, NodeKind } from '@shared/nodes'
 import { isNodeId } from './mapping-rules'
 
 /** PDUs are named `PDU_<console>` in NODE_IDS.md, which has no type column. */
-export const isPduName = (name: string): boolean => /^PDU_/.test(name)
+const isPduName = (name: string): boolean => /^PDU_/.test(name)
 
 /**
  * Registry defaults, keyed by NODE_ID. NODE_ID 0 (PanelBridge) never appears on the bus and is

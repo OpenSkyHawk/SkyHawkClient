@@ -158,7 +158,7 @@ export interface ServicesOptions {
 type Push = { [C in PushChannel]: { channel: C; payload: PushChannels[C] } }[PushChannel]
 
 /** The default clock: 2026-10-16 12:00:00 UTC. */
-export const CLOCK_START = Date.UTC(2026, 9, 16, 12, 0, 0)
+const CLOCK_START = Date.UTC(2026, 9, 16, 12, 0, 0)
 
 const live = new Set<Services>()
 

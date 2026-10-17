@@ -49,7 +49,7 @@ export interface RelayEventSink {
 }
 
 /** The settings, as the relay reads them: the SettingsStore, read when it needs them. */
-export interface RelaySettings {
+interface RelaySettings {
   getState(): RelayOptions
 }
 

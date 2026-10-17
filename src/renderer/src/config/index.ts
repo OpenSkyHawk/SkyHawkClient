@@ -10,4 +10,3 @@ export {
   type Transport
 } from './store'
 export { ConfigurationSection } from './ConfigurationSection'
-export { ImportDialog } from './ImportDialog'

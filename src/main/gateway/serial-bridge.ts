@@ -43,7 +43,7 @@ export async function findSimGatewayPort(): Promise<string | undefined> {
   return match?.path
 }
 
-export interface SerialLink {
+interface SerialLink {
   start(): void
   stop(): void
   write(data: Buffer): void

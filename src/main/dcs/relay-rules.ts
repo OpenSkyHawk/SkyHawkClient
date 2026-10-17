@@ -15,7 +15,7 @@ import type {
 import type { DeviceState } from '@shared/gateway'
 
 /** Settings a running relay is built from. Changing anything else must not restart it. */
-export const RELAY_KEYS = [
+const RELAY_KEYS = [
   'sourceMode',
   'transport',
   'host',

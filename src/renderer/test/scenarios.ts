@@ -37,7 +37,7 @@ import { NodeHub, withFaultInfo } from '../../main/nodes/node-hub'
 import { modelNode, nodeModel, nodeStatus } from '../../test-fixtures/nodes'
 import type { CalDevice } from './skyhawk-mock'
 
-export { modelNode, nodeModel, nodeStatus }
+export { modelNode, nodeStatus }
 
 // ── device link (`device:status`) ───────────────────────────────────────────
 
@@ -322,10 +322,10 @@ export const serialFrame = (dir: SerialFrame['dir'], hex: string, t = 0): Serial
 
 // ── axis calibration (#46): the Gateway's calibration channel ─────────────────────────────
 
-export const CAL_SERIAL = 'E6614103E7452D2F'
+const CAL_SERIAL = 'E6614103E7452D2F'
 
 /** HELLO_ACK from today's SimGateway firmware. */
-export const CAL_HELLO: CalHello = {
+const CAL_HELLO: CalHello = {
   proto: CAL_PROTO.version,
   blobVersion: CAL_PROTO.blobVersion,
   axisSlots: CAL_PROTO.axisSlots,

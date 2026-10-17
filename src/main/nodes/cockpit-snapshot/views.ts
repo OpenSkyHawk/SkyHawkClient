@@ -12,7 +12,7 @@ import type {
 import { nodeFaultTag, pduAlertFlags } from '../faults'
 
 /** A PDU's pages that are fresh right now. A stale page is not a reading. */
-export function freshReadings(t: NodeTelemSnapshot | undefined): PduReadings {
+function freshReadings(t: NodeTelemSnapshot | undefined): PduReadings {
   const r: PduReadings = {}
   if (t?.rail12V && !t.rail12V.stale) r.rail12V = t.rail12V
   if (t?.rail5V && !t.rail5V.stale) r.rail5V = t.rail5V

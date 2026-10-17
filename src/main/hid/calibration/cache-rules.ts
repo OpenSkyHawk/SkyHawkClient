@@ -15,7 +15,7 @@
 
 import type { CachedAxis, CachedBoard, CalCache, CalSnapshot } from '@shared/hid/calibration'
 
-export const CAL_CACHE_VERSION = 1
+const CAL_CACHE_VERSION = 1
 
 export function emptyCache(): CalCache {
   return { version: CAL_CACHE_VERSION, boards: {} }

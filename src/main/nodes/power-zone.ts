@@ -15,7 +15,7 @@ export const PDU_GROUP_WINDOW_MS = 2000
 export const PDU_GROUP_POLL_CATCH_MS = 7000
 
 /** Did `n` drop together with `pdu`? Both must be offline with a known time. */
-export function droppedTogether(n: NodeModelEntry, pdu: NodeModelEntry): boolean {
+function droppedTogether(n: NodeModelEntry, pdu: NodeModelEntry): boolean {
   if (n.offlineAt === undefined || pdu.offlineAt === undefined) return false
   const d = n.offlineAt - pdu.offlineAt
   if (Math.abs(d) <= PDU_GROUP_WINDOW_MS) return true
