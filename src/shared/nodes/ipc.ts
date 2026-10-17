@@ -216,7 +216,10 @@ export interface NodeModelEntry {
   name: string
   /** null for a new node. */
   console: string | null
-  /** null for a PDU: a PDU is never fed by another one, whatever was stored. */
+  /**
+   * The PDU feeding it: always a PDU in your cockpit (hidden ones included), else null — a link to
+   * anything else reads as No power zone (D7). null for a PDU: a PDU is never fed by another one.
+   */
   pduId: number | null
   /** For drawing: 'pdu' once identified as one, else 'panel'. Never stored, never a gate. */
   kind: NodeKind
@@ -232,9 +235,10 @@ export interface NodeModelEntry {
   source: 'registry' | 'adopted' | 'new'
   /**
    * New registry boards: their NODE_IDS.md defaults, to pre-fill the Adopt form once the board has
-   * identified itself. Never used to identify it.
+   * identified itself. Never used to identify it. `pduId` is its default PDU only while that PDU is
+   * in your cockpit, else null (D7).
    */
-  registry?: { name: string; console: string; pduId: number | null; pduName?: string }
+  registry?: { name: string; console: string; pduId: number | null }
   availability: NodeAvailability
   /** While offline this session: when the client learned of it. Absent for `notSeen`. */
   offlineAt?: number
@@ -265,7 +269,10 @@ export interface PduOutage {
   pduId: number
   /** The fed nodes that dropped with it. */
   nodeIds: number[]
-  /** Fed nodes in total (excluding hidden ones and ones not seen this session), for "N of M". */
+  /**
+   * Fed nodes in total, for "N of M": the boards it feeds (power-zone.ts fedBy) less the hidden ones
+   * and the ones not seen this session — neither could have dropped with it.
+   */
   fedCount: number
   at: number
 }
@@ -285,6 +292,11 @@ export interface HiddenNode {
   /** Its stored kind: the one it reported, else its registry kind. */
   kind: NodeKind
   source: 'registry' | 'adopted'
+  /**
+   * The PDU feeding it, when it has a power zone (a PDU in your cockpit): a PDU's Feeds count and
+   * Forget unlink hidden boards too (X7).
+   */
+  pduId?: number
 }
 
 export interface NodeModel {
@@ -583,6 +595,27 @@ export interface RailRow {
   flagged: boolean
 }
 
+/**
+ * A panel group's power zone, resolved once in main (D7, cockpit-snapshot/members.ts resolveZone)
+ * and read by every surface: the plan, Powered by, Adopt, Connected nodes and the zone pickers. A
+ * zone is only ever a PDU in your cockpit: `active` on the plan, `hidden` until it reports again
+ * (the board then sits in its console's No power zone on the plan, but keeps the link), else
+ * `none`. `label` is how every surface names it: `PDU_Right`, or `PDU_Right (hidden)`.
+ */
+export type PowerZone =
+  | { status: 'none' }
+  | { status: 'active' | 'hidden'; pduId: number; name: string; label: string }
+
+/** One board a PDU feeds, as its Feeds tab lists it. */
+export interface FedBoard {
+  nodeId: number
+  name: string
+  /** Its flag, else online / no status yet; `hidden until it reports again` for a hidden one. */
+  detail: string
+  /** Hidden until it reports again: listed, but it has no panel to open. */
+  hidden: boolean
+}
+
 /** One board's side panel: what it says and offers. */
 export interface BoardPanel {
   /** In your cockpit (not new): Powered by, Placement and the footer show. */
@@ -592,26 +625,25 @@ export interface BoardPanel {
   actions: BoardActions
   /** Panel groups: "Reported by the node". */
   status?: Row[]
-  /** Panel groups: the PDU feeding it (its power zone, wherever that PDU is). */
-  poweredBy?: number
+  /** Panel groups: its power zone, as resolved (D7). */
+  zone?: PowerZone
   /** PDUs: "Rails · live". */
   rails?: RailRow[]
   /** PDUs: "Board status". */
   board?: Row[]
-  /** PDUs: the boards in your cockpit it feeds, each with its state. */
-  feeds?: { nodeId: number; detail: string }[]
+  /** PDUs: the boards in your cockpit it feeds, hidden ones included (X7), each with its state. */
+  feeds?: FedBoard[]
   /** PDUs: the other PDUs in your cockpit on its console. */
   sharedWith?: string[]
 }
 
 /**
- * The power zones a panel can be given. `options[console][current]` is the Power zone list for a
- * panel on `console` whose zone is `current` ('' = none, or a PDU not in your cockpit); `first` is
- * the zone picking that console picks.
+ * The power zones a panel can be given: only PDUs in your cockpit (D7), a hidden one labelled
+ * `(hidden)`. `options[console][current]` is the Power zone list for a panel on `console` whose
+ * zone is `current` ('' = none). Changing the console clears the zone (N9): the user picks one.
  */
 export interface ZoneChoices {
   options: Record<string, Record<string, { value: number; label: string }[]>>
-  first: Record<string, number | null>
 }
 
 /** What the Adopt dialog can say about a new NODE_ID: only what it has reported. */
@@ -644,8 +676,6 @@ export interface AdoptRow {
   goneEvidence: Evidence
   /** Where the form starts: the NODE_IDS.md pre-fill, or blank. */
   prefill: AdoptForm
-  /** Its default PDU when that PDU is not in your cockpit: offered as "(not added)", by this name. */
-  pending?: { pduId: number; name: string }
   /**
    * "Add all" (registry panel groups only): the power zone an untouched form is added with — its
    * default PDU only when that PDU is in your cockpit, else None.
@@ -809,8 +839,7 @@ export const COCKPIT_IDLE: CockpitSnapshot = {
   attention: { items: [], shown: [], count: 0, more: 0, newCount: 0 },
   panels: {},
   zones: {
-    options: { '': { '': [] }, Left: { '': [] }, Center: { '': [] }, Right: { '': [] } },
-    first: { '': null, Left: null, Center: null, Right: null }
+    options: { '': { '': [] }, Left: { '': [] }, Center: { '': [] }, Right: { '': [] } }
   },
   adopt: [],
   overview: {

@@ -72,6 +72,7 @@ describe('B2 an adopted board stays in your cockpit once a later NODE_IDS.md lis
   })
 
   it('a later client still has it, with what you set, online and offline — not new', () => {
+    disk.file = { version: 4, nodes: { 3: { added: true } } } // PDU_Left, its zone (D7)
     // This client: 41 isn't in NODE_IDS.md. It reports, and you adopt it.
     const today = hub()
     today.status(1, PANEL, 0)
@@ -132,7 +133,8 @@ describe('B8 Forget removes everything; a forgotten board that reports is new ag
       version: 4,
       nodes: {
         1: { added: true },
-        2: { added: true, name: 'Nav', console: 'Left', pduId: 3, hidden: true, lastSeen: T0 }
+        2: { added: true, name: 'Nav', console: 'Left', pduId: 3, hidden: true, lastSeen: T0 },
+        4: { added: true } // PDU_Right, its NODE_IDS.md zone: the pre-fill keeps it (D7)
       }
     }
     const { h, status, end, flush, node } = hub()

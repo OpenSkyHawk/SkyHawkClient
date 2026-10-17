@@ -57,16 +57,33 @@ describe('T8 Board panel footer: PDU (B73, B9, B10, X8)', () => {
     ).toBeInTheDocument()
   })
 
-  it('the fed count is the boards on the plan, not the hidden one (X8 today)', async () => {
-    // contract X8: main's Forget unlinks every board the PDU feeds, hidden ones included (here 3);
-    // today the footer and Feeds count only the visible boards in your cockpit (2).
-    const { sheet, user } = await openSettings(scene())
-    expect(within(sheet).getByText(/^Forget removes this PDU/)).toHaveTextContent('Its 2 boards')
-    const feeds = within(sheet).getByRole('tab', { name: 'Feeds · 2' })
+  it('the fed count includes the hidden board, as Forget unlinks it too (X7/X8, #131)', async () => {
+    // contract X8 (fixed, #131 X7): main's Forget unlinks every board the PDU feeds, hidden ones
+    // included, so the footer and Feeds count them all (here 3). Right_Radar is hidden and fed.
+    const { sheet, user } = await openSettings(
+      scene({
+        hiddenNodes: [
+          {
+            nodeId: 8,
+            name: 'Right_Radar',
+            console: 'Right',
+            kind: 'panel',
+            source: 'registry',
+            pduId: 4
+          }
+        ]
+      })
+    )
+    expect(within(sheet).getByText(/^Forget removes this PDU/)).toHaveTextContent('Its 3 boards')
+    const feeds = within(sheet).getByRole('tab', { name: 'Feeds · 3' })
     await user.click(feeds)
     expect(within(sheet).getByRole('button', { name: 'Open Right_Navigation' })).toBeInTheDocument()
     expect(within(sheet).getByRole('button', { name: 'Open Right_TACAN' })).toBeInTheDocument()
-    expect(within(sheet).queryByText('Right_Radar')).toBeNull()
+    // Listed, but a hidden board has no panel to open.
+    expect(within(sheet).getByText('Right_Radar').closest('li')).toHaveTextContent(
+      'Right_Radarhidden until it reports again · #8'
+    )
+    expect(within(sheet).queryByRole('button', { name: 'Open Right_Radar' })).toBeNull()
   })
 
   it('a PDU feeding nothing: the note leaves the boards out', async () => {

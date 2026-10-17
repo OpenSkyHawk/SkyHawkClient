@@ -87,9 +87,9 @@ describe('T5 Connection › nodes summary card (B63, B14, B37, X2)', () => {
     ).toHaveTextContent(
       '✕Center_Armament#1 · no power zone · not seen this session · last seen 14 Oct, 21:14OFFLINE'
     )
-    // contract X2: the plan puts #7 in No power zone (its PDU isn't in your cockpit); today the
-    // card's meta names that PDU anyway, because it is on the bus.
-    expect(row('#7 · Node 6')).toHaveTextContent('!Left_Oxygen#7 · Node 6OVERHEAT')
+    // contract X2 / R1 (fixed, #131 D7): its PDU (#6) isn't in your cockpit, so the card reads the
+    // same resolved zone as the plan — No power zone — never the PDU on the bus.
+    expect(row('#7 · no power zone')).toHaveTextContent('!Left_Oxygen#7 · no power zoneOVERHEAT')
   })
 
   it('the footer counts the rest: "+N more · N no status yet · healthy nodes hidden"', async () => {

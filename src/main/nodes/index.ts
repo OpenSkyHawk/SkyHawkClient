@@ -8,6 +8,7 @@ export { NodeRoster } from './node-status-wire'
 export {
   checkImportedMapping,
   effectiveMapping,
+  importedOutsideLinks,
   importMapping,
   isPlainObject,
   sanitizeNodeMapping

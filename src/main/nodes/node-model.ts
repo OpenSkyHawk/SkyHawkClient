@@ -74,13 +74,15 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     if (m?.hidden) {
       // Still in your cockpit (X1): what every surface needs to count it as a member.
       hidden.push(nodeId)
-      hiddenNodes.push({
+      const h: HiddenNode = {
         nodeId,
         name: m.name,
         console: m.console,
         kind: m.kind,
         source: m.source
-      })
+      }
+      if (m.kind !== 'pdu' && m.pduId !== null) h.pduId = m.pduId
+      hiddenNodes.push(h)
       continue
     }
     const st = roster.get(nodeId)
@@ -118,9 +120,8 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     if (seen?.reportedAt !== undefined) e.reportedAt = seen.reportedAt
     if (source === 'new' && seen) e.firstSeenAt = seen.firstSeenAt
     if (source === 'new' && mapped) {
+      // Its default PDU only while that PDU is in your cockpit (effectiveMapping, D7).
       e.registry = { name: mapped.name, console: mapped.console, pduId: mapped.pduId }
-      const pdu = mapped.pduId === null ? undefined : mapping.get(mapped.pduId)
-      if (pdu) e.registry.pduName = pdu.name
     }
     if (kind === 'pdu') {
       e.everHadReadings = t?.isPdu ?? false

@@ -188,6 +188,7 @@ export class NodeHub implements NodeLineSink {
     this.log = deps.log ?? (() => {})
     this.store = new MappingStore({
       file: deps.mappingFile,
+      defaults: this.defaults,
       log: deps.log,
       events: deps.mappingEvents,
       onCommit: () => {

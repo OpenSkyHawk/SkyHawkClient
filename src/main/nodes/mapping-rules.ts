@@ -95,24 +95,31 @@ function sanitizeOverride(raw: unknown, from: From): NodeOverride | undefined {
  * - before v3 (no version counts as old): the ignore list is dropped — Ignore never shipped and is
  *   gone (#93) — and an entry seen, placed, renamed or hidden is marked, since that is how it was in
  *   your cockpit then; an adopted one is marked as in v3.
+ * - with the registry (`defaults`, as main loads node-mapping.json): a power zone of a board in your
+ *   cockpit that names a PDU outside it becomes No power zone (D7: `unlinkOutside`).
  * A v4 file (or a newer one, read-only: mapping-file.ts) is read as written: an entry without the
  * marker (say, one a config import brought) never joins your cockpit by a reload.
  */
-export function sanitizeNodeMapping(raw: unknown): NodeMappingFile {
+export function sanitizeNodeMapping(
+  raw: unknown,
+  defaults?: Map<number, NodeDefaults>
+): NodeMappingFile {
   if (!raw || typeof raw !== 'object') return { ...EMPTY_MAPPING, nodes: {} }
   const r = raw as Record<string, unknown>
   const nodes: Record<number, NodeOverride> = {}
+  let from: From = 'v4'
   if (r.nodes && typeof r.nodes === 'object') {
     const raws = Object.entries(r.nodes as Record<string, unknown>)
     const v = typeof r.version === 'number' ? r.version : 0
-    const from: From = v >= NODE_MAPPING_VERSION ? 'v4' : v === 3 ? 'v3' : 'legacy'
+    from = v >= NODE_MAPPING_VERSION ? 'v4' : v === 3 ? 'v3' : 'legacy'
     for (const [k, val] of raws) {
       const id = Number(k)
       const o = isNodeId(id) ? sanitizeOverride(val, from) : undefined
       if (o) nodes[id] = o
     }
   }
-  return { version: NODE_MAPPING_VERSION, nodes }
+  const file: NodeMappingFile = { version: NODE_MAPPING_VERSION, nodes }
+  return defaults && from !== 'v4' ? unlinkOutside(defaults, file) : file
 }
 
 const hasOverride = (o: NodeOverride): boolean =>
@@ -123,22 +130,34 @@ const FIELDS = ['name', 'console', 'pduId'] as const
 type Field = (typeof FIELDS)[number]
 
 /**
- * A power zone of none whose NODE_IDS.md PDU is not in your cockpit (one you forgot, say): Reset
- * keeps it, so it never links a board back to a PDU you forgot, and it is no difference to undo.
+ * Where a link may point (D7): a PDU in your cockpit — hidden ones included, since hiding only
+ * takes a board off the Cockpit. Anything else (a PDU you never added or forgot, a panel, an id
+ * nobody knows) is No power zone. The one rule: what the mapping says feeds a board
+ * (effectiveMapping), what main accepts (checkPowerZone), what Reset gives back (keptOnReset) and
+ * what an upgrade or an import keeps (unlinkOutside) all read it.
  */
-function keepsNone(
+function zoneTarget(
   defaults: Map<number, NodeDefaults>,
   file: NodeMappingFile,
-  d: NodeDefaults,
-  o: NodeOverride
-): boolean {
-  const p = d.pduId
-  return o.pduId === null && p !== null && !inCockpit(defaults, p, file.nodes[p])
+  pduId: number | null | undefined
+): number | null {
+  if (pduId === undefined || pduId === null) return null
+  const o = file.nodes[pduId]
+  if (!inCockpit(defaults, pduId, o)) return null
+  return (o?.kind ?? defaults.get(pduId)?.kind) === 'pdu' ? pduId : null
+}
+
+/** The link a board's entry stores or defaults to, before `zoneTarget` says whether it holds. */
+function storedZone(d: NodeDefaults | undefined, o: NodeOverride | undefined): number | null {
+  if (o?.pduId !== undefined) return o.pduId
+  return d ? d.pduId : null
 }
 
 /**
  * A registry board's stored fields that differ from what Reset would give it — "differs", counted
  * against the registry, not from what happens to be stored (S1). A field you left alone never does.
+ * Its power zone after Reset is its NODE_IDS.md PDU only while that PDU is in your cockpit, else
+ * none (D7), so a none whose default PDU is outside your cockpit is no difference to undo.
  */
 function differing(
   defaults: Map<number, NodeDefaults>,
@@ -146,16 +165,19 @@ function differing(
   d: NodeDefaults,
   o: NodeOverride
 ): Field[] {
-  return FIELDS.filter(
-    (k) =>
-      o[k] !== undefined && o[k] !== d[k] && !(k === 'pduId' && keepsNone(defaults, file, d, o))
-  )
+  return FIELDS.filter((k) => {
+    if (o[k] === undefined) return false
+    if (k !== 'pduId') return o[k] !== d[k]
+    return zoneTarget(defaults, file, o.pduId) !== zoneTarget(defaults, file, d.pduId)
+  })
 }
 
 /**
  * Registry defaults + overrides, plus adopted nodes. Every registry entry is listed (it is the
  * dictionary names and power zones resolve against); `known` says which are in your cockpit. A
- * board's kind is what it reported when stored, else its registry kind.
+ * board's kind is what it reported when stored, else its registry kind. Its `pduId` is the PDU in
+ * your cockpit feeding it, else null (zoneTarget, D7): a link to anything else — a registry board's
+ * NODE_IDS.md PDU you never added included — reads as No power zone everywhere.
  */
 export function effectiveMapping(
   defaults: Map<number, NodeDefaults>,
@@ -168,7 +190,7 @@ export function effectiveMapping(
       nodeId,
       name: o.name ?? d.name,
       console: o.console ?? d.console,
-      pduId: o.pduId !== undefined ? o.pduId : d.pduId,
+      pduId: zoneTarget(defaults, file, storedZone(d, o)),
       kind: o.kind ?? d.kind,
       source: 'registry',
       differs: differing(defaults, file, d, o).length > 0,
@@ -186,7 +208,7 @@ export function effectiveMapping(
       nodeId,
       name: o.name!,
       console: o.console ?? '',
-      pduId: o.pduId ?? null,
+      pduId: zoneTarget(defaults, file, o.pduId),
       kind: o.kind!,
       source: 'adopted',
       differs: false,
@@ -242,10 +264,11 @@ export const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /**
- * A power zone names the PDU feeding a node: a PDU has none, and a panel's must be a registry or
- * adopted PDU — never itself or another panel. Checked on set only; a stored zone that later stops
- * pointing at a PDU (a registry change) still loads, since rewriting user data on read is worse
- * than one odd zone, and grouping only ever starts from a real PDU.
+ * A power zone names the PDU feeding a node: a PDU has none, and a panel's must be a PDU in your
+ * cockpit, hidden ones included (D7: zoneTarget) — never itself, another panel, or a PDU you have
+ * not added. Checked on set; a stored zone that later stops pointing at one (a registry change)
+ * still loads and reads as No power zone (effectiveMapping), since rewriting user data on read is
+ * worse than one odd zone.
  */
 function checkPowerZone(
   file: NodeMappingFile,
@@ -257,11 +280,15 @@ function checkPowerZone(
 ): void {
   if (pduId === undefined || pduId === null) return
   if ((kindOf(nodeId) ?? kind) === 'pdu') throw new MappingError('A PDU has no power zone')
-  // The zone must be a placed node that is a PDU — by what it reports, not only what was stored.
+  // The zone must be a PDU in your cockpit — a PDU by what it reports, not only what was stored.
+  // Only a board in your cockpit has a stored kind; outside it, no registry kind stands in (D7) —
+  // the registry's only says which refusal to give.
   const zone = pduId === nodeId ? undefined : effectiveMapping(defaults, file).get(pduId)
-  if (!zone || (kindOf(pduId) ?? zone.kind) !== 'pdu') {
-    throw new MappingError('Power zone must be a PDU')
-  }
+  if (zone?.known && kindOf(pduId) === 'pdu') return
+  const pduOutside = !zone?.known && (kindOf(pduId) ?? defaults.get(pduId)?.kind) === 'pdu'
+  throw new MappingError(
+    pduOutside ? 'That PDU is not in your cockpit — add it first' : 'Power zone must be a PDU'
+  )
 }
 
 function checkPatch(p: MappingPatch): void {
@@ -393,7 +420,9 @@ export function forgetNode(
   // A PDU by what it reports now, else by the kind stored for it in your cockpit (KindOf).
   if (kindOf(nodeId) === 'pdu') {
     for (const m of mapped.values()) {
-      if (m.nodeId === nodeId || !m.known || m.pduId !== nodeId) continue
+      // Whatever its link says — set, or its NODE_IDS.md default — hidden boards included (X7).
+      const zone = storedZone(defaults.get(m.nodeId), file.nodes[m.nodeId])
+      if (m.nodeId === nodeId || !m.known || zone !== nodeId) continue
       const d = defaults.get(m.nodeId)
       // Registry default pointing at the forgotten PDU: stored as an explicit "none".
       const o = patched(next.nodes[m.nodeId], d, { pduId: null })
@@ -422,7 +451,8 @@ export function resetNode(
 /**
  * What a reset leaves of a registry board's entry: everything that is not an override (the marker
  * — an adopted one stays in your cockpit, as a registry one — its reported kind, hidden and last
- * seen), and a power zone of none that `keepsNone`: Reset never links a board to a PDU you forgot.
+ * seen). A power zone you set goes back to its NODE_IDS.md PDU only while that PDU is in your
+ * cockpit; otherwise it is stored as none (D7): Reset never links a board to a PDU outside it.
  */
 function keptOnReset(
   defaults: Map<number, NodeDefaults>,
@@ -435,7 +465,9 @@ function keptOnReset(
   if (o?.kind) kept.kind = o.kind
   if (o?.hidden) kept.hidden = true
   if (o?.lastSeen) kept.lastSeen = o.lastSeen
-  if (o && keepsNone(defaults, file, d, o)) kept.pduId = null
+  if (o?.pduId !== undefined && d.pduId !== null && zoneTarget(defaults, file, d.pduId) === null) {
+    kept.pduId = null
+  }
   return kept
 }
 
@@ -497,7 +529,11 @@ export function resetPreview(
     nodeCount++
     for (const field of fields) {
       if (field === 'pduId') {
-        const zone = { from: zoneName(o.pduId), to: zoneName(d.pduId) }
+        // What it is fed by now, and what Reset gives it: only ever a PDU in your cockpit (D7).
+        const zone = {
+          from: zoneName(zoneTarget(defaults, file, o.pduId)),
+          to: zoneName(zoneTarget(defaults, file, d.pduId))
+        }
         rows.push({ nodeId: id, node: d.name, field: 'power zone', ...zone })
       } else rows.push({ nodeId: id, node: d.name, field, from: o[field]!, to: d[field] })
     }
@@ -533,7 +569,9 @@ export function checkImportedMapping(
  * a board the file has in its cockpit joins yours, and one it does not have leaves. Only what this
  * computer observed stays, for a board that is in your cockpit after the import: each board's
  * `lastSeen`, and the kind it reported here where the file has none. Hidden is stored only on a
- * board in your cockpit (S4), and never on one on the bus: Hide is for offline boards only.
+ * board in your cockpit (S4), and never on one on the bus: Hide is for offline boards only. A power
+ * zone naming a PDU outside the imported cockpit becomes No power zone (D7; the review lists each:
+ * importedOutsideLinks).
  */
 export function importMapping(
   current: NodeMappingFile,
@@ -541,6 +579,16 @@ export function importMapping(
   imported: NodeMappingFile,
   /** Boards on the bus now: an import never hides one — Hide is for offline boards only. */
   online: Iterable<number> = []
+): NodeMappingFile {
+  return unlinkOutside(defaults, stageImport(current, defaults, imported, online))
+}
+
+/** The import as written, with this computer's observations — before its zones are checked. */
+function stageImport(
+  current: NodeMappingFile,
+  defaults: Map<number, NodeDefaults>,
+  imported: NodeMappingFile,
+  online: Iterable<number>
 ): NodeMappingFile {
   const onBus = new Set(online)
   const nodes: Record<number, NodeOverride> = {}
@@ -556,6 +604,62 @@ export function importMapping(
     if (Object.keys(o).length) nodes[id] = o
   }
   return { version: NODE_MAPPING_VERSION, nodes }
+}
+
+/** A board in your cockpit whose power zone (stored, or its NODE_IDS.md default) names `pduId`. */
+export interface OutsideLink {
+  nodeId: number
+  pduId: number
+}
+
+/**
+ * The panel groups in your cockpit whose power zone — set, or a registry board's NODE_IDS.md
+ * default — names something that is not a PDU in your cockpit (zoneTarget). They read as No power
+ * zone.
+ */
+function outsideLinks(defaults: Map<number, NodeDefaults>, file: NodeMappingFile): OutsideLink[] {
+  const out: OutsideLink[] = []
+  const ids = new Set([...defaults.keys(), ...Object.keys(file.nodes).map(Number)])
+  for (const id of [...ids].sort((a, b) => a - b)) {
+    const o = file.nodes[id]
+    const d = defaults.get(id)
+    // A PDU has no power zone (whatever was stored): only a panel's link can name one.
+    if (!inCockpit(defaults, id, o) || (o?.kind ?? d?.kind) === 'pdu') continue
+    const pduId = storedZone(d, o)
+    if (pduId !== null && zoneTarget(defaults, file, pduId) === null)
+      out.push({ nodeId: id, pduId })
+  }
+  return out
+}
+
+/**
+ * Every link to a PDU outside your cockpit stored as an explicit none (D7): what an upgraded file
+ * (sanitizeNodeMapping) and an import keep. Explicit, so the board does not join that PDU by itself
+ * if it is added later: the PDU choice stays yours. Returns the same object when nothing changes.
+ */
+function unlinkOutside(
+  defaults: Map<number, NodeDefaults>,
+  file: NodeMappingFile
+): NodeMappingFile {
+  let next = file
+  for (const { nodeId } of outsideLinks(defaults, file)) {
+    next = withNode(
+      next,
+      nodeId,
+      patched(next.nodes[nodeId], defaults.get(nodeId), { pduId: null })
+    )
+  }
+  return next
+}
+
+/** The links an import would turn into No power zone, for its review (config-file.ts). */
+export function importedOutsideLinks(
+  current: NodeMappingFile,
+  defaults: Map<number, NodeDefaults>,
+  imported: NodeMappingFile,
+  online: Iterable<number> = []
+): OutsideLink[] {
+  return outsideLinks(defaults, stageImport(current, defaults, imported, online))
 }
 
 /** An on/off from the renderer must be a real boolean: 'no' or 'false' is truthy. */

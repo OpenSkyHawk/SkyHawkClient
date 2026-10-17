@@ -6,6 +6,7 @@ import {
   type BoardActions,
   type BoardPanel,
   type FaultBox,
+  type FedBoard,
   type NodeMappingResult,
   type NodeModelEntry,
   type NodeRegistryInfo,
@@ -14,7 +15,7 @@ import {
 } from '@shared/nodes'
 import { Chevron, Sheet } from '../app/kit'
 import { useNodesStore } from './store'
-import { firstZone, mappingPatch, reportAge, zoneOptions } from './panel-view'
+import { mappingPatch, reportAge, zoneOptions } from './panel-view'
 import { Dot } from './Dot'
 
 function Fault({ box }: { box: FaultBox }) {
@@ -119,6 +120,25 @@ function Tabs<T extends string>(props: {
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * A board a PDU feeds that is hidden until it reports again: listed (Forget unlinks it too, X7), but
+ * it has no panel to open.
+ */
+function HiddenFeed({ f }: { f: FedBoard }) {
+  return (
+    <li>
+      <span className="node__dot" aria-hidden="true" />
+      <span className="att__t">
+        <b>{f.name}</b>
+        <br />
+        <span>
+          {f.detail} · #{f.nodeId}
+        </span>
+      </span>
+    </li>
   )
 }
 
@@ -281,10 +301,10 @@ export function NodePanel(props: {
   const { view: v, views, panel, zones } = props
   const e = v.entry
   const [tab, setTab] = useState<'status' | 'settings'>('status')
+  // Its power zone as main resolved it (D7): an active one is a PDU on the plan, opened from here.
+  const zone = panel.zone ?? { status: 'none' }
   const pdu =
-    panel.poweredBy === undefined
-      ? undefined
-      : views.find((p) => p.entry.nodeId === panel.poweredBy)
+    zone.status === 'active' ? views.find((p) => p.entry.nodeId === zone.pduId) : undefined
   // The form starts from the mapping when the panel opens; pushes while editing don't reset it.
   const [name, setName] = useState(e.name)
   const [con, setCon] = useState(e.console ?? '')
@@ -295,7 +315,7 @@ export function NodePanel(props: {
   const age = props.live ? reportAge(e, now) : 'last known'
 
   const where = placed
-    ? `${consoleLabel(e.console)} · ${pdu ? pdu.entry.name : 'no power zone'}`
+    ? `${consoleLabel(e.console)} · ${zone.status === 'none' ? 'no power zone' : zone.label}`
     : 'not placed yet'
   const rails = pdu?.readings
 
@@ -347,6 +367,10 @@ export function NodePanel(props: {
                     onOpen={props.onOpen}
                   />
                 </ul>
+              ) : zone.status === 'hidden' ? (
+                <div className="hint">
+                  {zone.label} — hidden until it reports again; this board keeps the link.
+                </div>
               ) : (
                 <div className="hint">No power zone. Pick one in the Settings tab.</div>
               )}
@@ -368,8 +392,9 @@ export function NodePanel(props: {
                     id="np-console"
                     value={con}
                     onChange={(c) => {
+                      // A new console clears the zone (N9): pick its PDU yourself.
                       setCon(c)
-                      setPduId(firstZone(zones, c))
+                      setPduId(null)
                     }}
                   />
                 </div>
@@ -394,7 +419,7 @@ export function NodePanel(props: {
               </div>
               <div className="hint">
                 Defaults come from NODE_IDS.md. Changing the power zone moves the tile to that PDU
-                on the plan; picking a console picks its first PDU.
+                on the plan; picking a console clears it, so you pick its PDU.
               </div>
             </div>
           )}
@@ -424,10 +449,11 @@ export function PduPanel(props: {
   const [con, setCon] = useState(e.console ?? '')
   const call = useMappingCall(props.onClose)
   const others = panel.sharedWith ?? []
-  const feeds = (panel.feeds ?? []).flatMap((f) => {
-    const n = views.find((o) => o.entry.nodeId === f.nodeId)
-    return n ? [{ view: n, detail: f.detail }] : []
-  })
+  // Main's list, hidden boards included (X7); a hidden one has no view on the plan.
+  const feeds = (panel.feeds ?? []).map((f) => ({
+    f,
+    view: f.hidden ? undefined : views.find((o) => o.entry.nodeId === f.nodeId)
+  }))
   const rails = panel.rails ?? []
   const watts = rails.every((r) => r.watts)
     ? ` Power (W) is computed here: ${rails.map((r) => `${r.watts} W`).join(' + ')}.`
@@ -507,14 +533,13 @@ export function PduPanel(props: {
           <div className="section-h">Boards on this PDU</div>
           {feeds.length ? (
             <ul className="evt att sh__list">
-              {feeds.map((f) => (
-                <BoardLink
-                  key={f.view.entry.nodeId}
-                  v={f.view}
-                  detail={f.detail}
-                  onOpen={props.onOpen}
-                />
-              ))}
+              {feeds.map(({ f, view }) =>
+                view ? (
+                  <BoardLink key={f.nodeId} v={view} detail={f.detail} onOpen={props.onOpen} />
+                ) : (
+                  <HiddenFeed key={f.nodeId} f={f} />
+                )
+              )}
             </ul>
           ) : (
             <div className="hint">No board has this PDU as its power zone.</div>

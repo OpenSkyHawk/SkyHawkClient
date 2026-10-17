@@ -25,9 +25,10 @@ import {
   attentionItems as cockpitAttentionItems,
   strayNew
 } from '../../../main/nodes/cockpit-snapshot/attention'
-import { adoptPduChoices, adoptRows } from '../../../main/nodes/cockpit-snapshot/adopt'
+import { adoptRows } from '../../../main/nodes/cockpit-snapshot/adopt'
 import { cockpitMembers } from '../../../main/nodes/cockpit-snapshot/members'
-import { nodeFaultBoxes } from '../../../main/nodes/cockpit-snapshot/panels'
+import { boardZones } from '../../../main/nodes/power-zone'
+import { nodeFaultBoxes, powerZoneOptions } from '../../../main/nodes/cockpit-snapshot/panels'
 import { registrySpecs } from './adopt-view'
 import {
   cockpitTile,
@@ -75,7 +76,9 @@ describe('fix-track probes (today)', () => {
     expect(attentionSummary(ovBand, attentionItems(views, []))).toBeNull()
     expect(newDevices(views, true)).toBeNull()
     // Connection
-    expect(nodesSummary(views, [], cockpitMembers(model))).toMatchObject({
+    expect(
+      nodesSummary(views, [], boardZones(model.nodes, cockpitMembers(model).get))
+    ).toMatchObject({
       known: 0,
       warn: 0,
       rows: []
@@ -132,13 +135,9 @@ describe('fix-track probes (today)', () => {
     const views = cockpitViews(m, [])
     const members = cockpitMembers(m)
     expect(registrySpecs(adoptRows(views, members))[0]?.spec.pduId).toBe(5)
-    const choices = adoptPduChoices(
-      views,
-      members,
-      'Center',
-      5,
-      m.nodes.find((n) => n.nodeId === 1)!
-    )
-    expect(choices).toEqual({ zones: [{ value: 5, label: 'PDU_Center' }] })
+    // The one Powered by list (D7, #131): a hidden PDU is offered, marked "(hidden)".
+    expect(powerZoneOptions(members, 'Center', 5)).toEqual([
+      { value: 5, label: 'PDU_Center (hidden)' }
+    ])
   })
 })

@@ -3919,12 +3919,9 @@ select.input {
 .ad__err {
   margin-top: 12px;
 }
-/* #93: a registry board's form is pre-filled; a default PDU not in your cockpit yet is explained */
+/* #93: a registry board's form is pre-filled */
 .ad__pre {
   margin: 0 0 8px;
-}
-.ad__pdu {
-  margin-top: 6px;
 }
 .ad__ft {
   grid-column: 1 / -1;

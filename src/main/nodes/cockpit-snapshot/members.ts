@@ -14,6 +14,8 @@ export interface Member {
   source: 'registry' | 'adopted'
   /** Hidden until it reports again: not on the plan, still in your cockpit. */
   hidden: boolean
+  /** The PDU feeding it (a PDU in your cockpit), else null. */
+  pduId: number | null
 }
 
 export interface Members {
@@ -38,10 +40,11 @@ export function cockpitMembers(model: NodeModel | undefined): Members {
       console: e.console ?? '',
       kind: e.kind,
       source: e.source,
-      hidden: false
+      hidden: false,
+      pduId: e.pduId
     })
   }
-  for (const h of model?.hiddenNodes ?? []) all.push({ ...h, hidden: true })
+  for (const h of model?.hiddenNodes ?? []) all.push({ ...h, hidden: true, pduId: h.pduId ?? null })
   all.sort((a, b) => a.nodeId - b.nodeId)
   const byId = new Map(all.map((m) => [m.nodeId, m]))
   return { all, pdus: all.filter((m) => m.kind === 'pdu'), get: (id) => byId.get(id) }

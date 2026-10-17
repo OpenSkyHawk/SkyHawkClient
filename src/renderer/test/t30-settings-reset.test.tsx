@@ -95,9 +95,10 @@ describe('T30 Settings › Cockpit › Reset… (B89, B24)', () => {
     const dlg = await openReview()
     expect(sky.previewNodeReset).toHaveBeenCalled()
     expect(within(dlg).getByText('2 changes')).toBeInTheDocument()
+    // D7 (#131): its NODE_IDS.md PDU, PDU_Right, is not in your cockpit, so Reset gives it none.
     expect(changes(dlg)).toEqual([
       'Right_Navigation · nameNav→Right_Navigation',
-      'Right_Navigation · power zonePDU_Left→PDU_Right',
+      'Right_Navigation · power zonePDU_Left→—',
       '#41 Left_TrimLeft · PDU_Left→New on the bus'
     ])
     expect(within(dlg).getByText('1 node · not in the registry')).toBeInTheDocument()

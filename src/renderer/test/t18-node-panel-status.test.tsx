@@ -138,11 +138,11 @@ describe('T18 Node panel, Status tab (B70, B14, F11)', () => {
     ])
   })
 
-  it('a board waiting to be added reads "Not in registry" (C6 today)', async () => {
-    // contract C6/X5: a registry board waiting to be added is labelled "Not in registry". Today
-    // a new board's panel is reached only through a placed board's Powered by (X2 R3): no tile,
-    // no Attention row and no Connection row leads to a new panel group's own panel.
-    const { sheet, user } = await openStatus({ pduId: 41 }, [
+  it('a zone naming a board not in your cockpit is No power zone: Powered by opens nothing (D7)', async () => {
+    // contract C6/X5 (the "Not in registry" label) is pinned in main (phase0-probes C6). A new
+    // board's panel was reached only through a placed board's Powered by (X2 R3); with D7 (#131) a
+    // zone is only ever a PDU in your cockpit, so Powered by reads the resolved zone: none here.
+    const { sheet } = await openStatus({ pduId: 41 }, [
       newBoard(41, T0, {
         name: 'PDU_Right_Fwd',
         kind: 'pdu',
@@ -151,11 +151,31 @@ describe('T18 Node panel, Status tab (B70, B14, F11)', () => {
         registry: { name: 'PDU_Right_Fwd', console: 'Right', pduId: null }
       })
     ])
-    await user.click(within(sheet).getByRole('button', { name: 'Open PDU_Right_Fwd' }))
-    const pduSheet = screen.getByRole('dialog', { name: 'PDU PDU_Right_Fwd' })
-    expect(boxes(pduSheet)).toEqual([
-      'Not in registry — this NODE_ID is not in the bundled NODE_IDS.md. Name it and place it on the map.'
-    ])
+    expect(within(sheet).queryByRole('button', { name: 'Open PDU_Right_Fwd' })).toBeNull()
+    expect(
+      within(sheet).getByText('No power zone. Pick one in the Settings tab.')
+    ).toBeInTheDocument()
+  })
+
+  it('fed by a hidden PDU: Powered by names it "(hidden)" and keeps the link (D7)', async () => {
+    const r = await renderScenario(<Cockpit />, {
+      device: connected(),
+      model: model([panel(2, 'Right_Navigation', { pduId: 4 })], [], {
+        hidden: [4],
+        hiddenNodes: [
+          { nodeId: 4, name: 'PDU_Right', console: 'Right', kind: 'pdu', source: 'registry' }
+        ]
+      })
+    })
+    await r.user.click(screen.getByTitle(/^#2 Right_Navigation/))
+    const sheet = screen.getByRole('dialog', { name: 'Panel group Right_Navigation' })
+    expect(within(sheet).getByText('Right console · PDU_Right (hidden)')).toBeInTheDocument()
+    expect(
+      within(sheet).getByText(
+        'PDU_Right (hidden) — hidden until it reports again; this board keeps the link.'
+      )
+    ).toBeInTheDocument()
+    expect(within(sheet).queryByRole('button', { name: /^Open PDU_Right/ })).toBeNull()
   })
 
   it('"updated N s ago" ticks while it reports; offline it reads "last report"', async () => {

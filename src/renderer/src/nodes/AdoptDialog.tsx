@@ -8,14 +8,8 @@ import {
   type NodeMappingResult,
   type ZoneChoices
 } from '@shared/nodes'
-import {
-  adoptPduChoices,
-  adoptSpec,
-  identState,
-  keptQueue,
-  nextSelection,
-  registrySpecs
-} from './adopt-view'
+import { adoptSpec, identState, keptQueue, nextSelection, registrySpecs } from './adopt-view'
+import { zoneOptions } from './panel-view'
 import { useModalFocus } from '../app/kit'
 import { useNodesStore } from './store'
 import { Dot } from './Dot'
@@ -190,10 +184,9 @@ function AdoptForm(props: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const ev = row.evidence
-  // #93: the PDU is explicit — one in your cockpit on another console is "(other console)"; a
-  // default PDU not in your cockpit yet stays a choice, "(not added)", and the board moves under it
-  // once that PDU is added.
-  const { zones, pending } = adoptPduChoices(props.zones, row, con, pduId)
+  // #93: the PDU is explicit, and only ever one in your cockpit (D7): one on another console is
+  // "(other console)", a hidden one "(hidden)". Changing the console clears it (N9).
+  const zones = zoneOptions(props.zones, con, typeof pduId === 'number' ? pduId : null)
   const spec = kind ? adoptSpec(kind, { name, console: con, pduId }) : null
   const ident = identState(e.availability === 'online', props.dropped)
 
@@ -293,14 +286,7 @@ function AdoptForm(props: {
                         {o.label}
                       </option>
                     ))}
-                    {pending && <option value={pduId as number}>{pending} (not added)</option>}
                   </select>
-                  {pending && (
-                    <div className="hint ad__pdu">
-                      {pending} isn’t in your cockpit yet. Keep it and this board moves under it
-                      once it’s added, or pick None.
-                    </div>
-                  )}
                 </div>
               )}
             </div>

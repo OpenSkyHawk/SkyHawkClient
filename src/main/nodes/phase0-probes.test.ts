@@ -11,7 +11,6 @@ import {
   setNodeMapping,
   adoptNode,
   effectiveMapping,
-  EMPTY_MAPPING,
   type KindOf
 } from './mapping-rules'
 import { boardIdentity } from './node-kind'
@@ -164,18 +163,23 @@ describe('fix-track probes (today)', () => {
     expect(w.status()?.kind).toBe('not-responding')
   })
 
-  it('D7: a zone to a registry PDU that is not in your cockpit is accepted by main', () => {
+  it('D7 (fixed, #131): a zone to a registry PDU that is not in your cockpit is refused by main', () => {
     const f: NodeMappingFile = { version: 4, nodes: { 2: { added: true } } }
-    const g = setNodeMapping(f, defaults, 2, { pduId: 3 }, kinds(f, defaults)) // PDU_Left, not added
+    expect(() => setNodeMapping(f, defaults, 2, { pduId: 3 }, kinds(f, defaults))).toThrow(
+      'That PDU is not in your cockpit — add it first'
+    ) // PDU_Left, not added
+    const added: NodeMappingFile = { version: 4, nodes: { ...f.nodes, 3: { added: true } } }
+    const g = setNodeMapping(added, defaults, 2, { pduId: 3 }, kinds(added, defaults))
     expect(g.nodes[2]).toEqual({ added: true, pduId: 3 })
   })
 
   it('D3 (fixed, #136): membership is imported as written, and the review lists the join', () => {
     const cur: NodeMappingFile = { version: 4, nodes: {} }
     const imp: NodeMappingFile = { version: 4, nodes: { 2: { added: true, name: 'Nav' } } }
+    // D7 (#131): its NODE_IDS.md PDU, PDU_Right, is not in the imported cockpit: No power zone.
     expect(importMapping(cur, defaults, imp)).toEqual({
       version: 4,
-      nodes: { 2: { added: true, name: 'Nav' } }
+      nodes: { 2: { added: true, name: 'Nav', pduId: null } }
     })
     const diff = diffImport(
       defaults,
@@ -188,13 +192,14 @@ describe('fix-track probes (today)', () => {
       { nodeMapping: imp }
     )
     expect(diff[0]!.rows).toEqual([
-      { k: 'Right_Navigation', from: 'not in your cockpit', to: 'Nav · Right · PDU_Right' }
+      { k: 'Right_Navigation', from: 'not in your cockpit', to: 'Nav · Right · —' }
     ])
   })
 
   it('#95 bug 1 (fixed, S1): an adopted board renamed to its later registry name stays in', () => {
+    const left: NodeMappingFile = { version: 4, nodes: { 3: { added: true } } } // PDU_Left (D7)
     const f = adoptNode(
-      EMPTY_MAPPING,
+      left,
       defaults,
       41,
       {
@@ -203,7 +208,7 @@ describe('fix-track probes (today)', () => {
         pduId: 3,
         kind: 'panel'
       },
-      kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+      kinds(left, defaults, { 41: 'panel' })
     )
     const later = registryDefaults({ ...REG, 41: { name: 'Left_Oxy', console: 'Left' } })
     const g = setNodeMapping(f, later, 41, { name: 'Left_Oxy' }, kinds(f, later))
