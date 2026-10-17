@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
-import { isLinkUp } from '@shared/gateway'
 import type { NodeRegistryInfo } from '@shared/nodes'
 import { useStore } from '../../store'
 import { Dialog } from './Dialog'
 import { Row, SectionHead } from './Row'
-import { registryName, registryOnBus, registrySummary } from './settings-view'
-import { useNodeModel } from './useNodeModel'
+import { useNodesPulled } from './useNodesPulled'
 
 function RegistryDialog({ reg, onClose }: { reg: NodeRegistryInfo; onClose: () => void }) {
-  const model = useNodeModel()
-  const linkUp = useStore((s) => isLinkUp(s.deviceState))
+  const pulled = useNodesPulled()
+  // Each row as main reads it (cockpit:snapshot settings, R3.2b).
+  const rows = useStore((s) => s.cockpit.settings.registry.rows)
   const file = reg.file.split('/').pop()
   return (
     <Dialog
@@ -31,12 +30,12 @@ function RegistryDialog({ reg, onClose }: { reg: NodeRegistryInfo; onClose: () =
         <span>Console</span>
         <span>On the bus</span>
       </div>
-      {reg.nodes.map((n) => {
-        const bus = registryOnBus(n.nodeId, model, linkUp)
+      {rows.map((n) => {
+        const bus = pulled ? n.onBus : n.unloaded
         return (
           <div className="rg" key={n.nodeId}>
             <span className="rg__id">#{n.nodeId}</span>
-            <span>{registryName(n)}</span>
+            <span>{n.name}</span>
             <span className="rg__c">{n.console}</span>
             <span>
               {bus.text !== '—' && (
@@ -54,6 +53,7 @@ function RegistryDialog({ reg, onClose }: { reg: NodeRegistryInfo; onClose: () =
 export function AboutSection() {
   const [reg, setReg] = useState<NodeRegistryInfo>()
   const [open, setOpen] = useState(false)
+  const summary = useStore((s) => s.cockpit.settings.registry.summary)
 
   useEffect(() => {
     void window.skyhawk?.getNodeRegistry().then(setReg)
@@ -72,7 +72,7 @@ export function AboutSection() {
         <Row k="License" sub="Free software">
           <span className="set-row__value">GPL-2.0-only</span>
         </Row>
-        <Row k="Node registry" sub={reg ? registrySummary(reg) : 'NODE_IDS.md'}>
+        <Row k="Node registry" sub={reg ? summary : 'NODE_IDS.md'}>
           <div className="set-row__btns">
             {reg && <span className="set-row__value">{reg.commit.slice(0, 7)}</span>}
             <button className="browse" disabled={!reg} onClick={() => setOpen(true)}>

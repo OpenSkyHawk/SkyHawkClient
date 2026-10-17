@@ -1,7 +1,15 @@
 // The Adopt dialog's own state (R3.2): the unsaved form and what it would send, the rows the dialog
 // keeps while it is open, the identify dot and where the selection goes next. What each row is and
-// what it starts as are main's (cockpit:snapshot adopt); "Add all" still sequences here (R3.2b).
-import type { AdoptForm, AdoptRow, AdoptSpec, NodeKind, ZoneChoices } from '@shared/nodes'
+// what it starts as are main's (cockpit:snapshot adopt); "Add all" is sequenced by main
+// (node-mapping:add-all, R3.2b) over the set this picks.
+import type {
+  AdoptForm,
+  AdoptRequest,
+  AdoptRow,
+  AdoptSpec,
+  NodeKind,
+  ZoneChoices
+} from '@shared/nodes'
 import { zoneOptions } from './panel-view'
 
 /**
@@ -61,8 +69,8 @@ export function adoptPduChoices(
 export function registrySpecs(
   queue: AdoptRow[],
   edits: ReadonlyMap<number, AdoptForm> = new Map()
-): { nodeId: number; spec: AdoptSpec }[] {
-  const out: { nodeId: number; spec: AdoptSpec }[] = []
+): AdoptRequest[] {
+  const out: AdoptRequest[] = []
   for (const r of queue) {
     if (r.addAllPduId === undefined) continue
     const edited = edits.get(r.view.entry.nodeId)

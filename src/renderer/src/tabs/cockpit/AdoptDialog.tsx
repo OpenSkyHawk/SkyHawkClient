@@ -71,18 +71,13 @@ export function AdoptDialog(props: {
   const [edits, setEdits] = useState<ReadonlyMap<number, FormValues>>(new Map())
   const bulk = registrySpecs(queue, edits)
   const [bulkError, setBulkError] = useState('')
+  // Main adopts them one at a time and stops at the first it refuses (R3.2b); the ones it added
+  // leave the queue.
   const addAll = async () => {
     setBulkError('')
-    const added: number[] = []
-    for (const b of bulk) {
-      const r = await window.skyhawk?.adoptNode(b.nodeId, b.spec)
-      if (r && !r.ok) {
-        setDone(new Set([...done, ...added]))
-        return setBulkError(`NODE_ID ${b.nodeId}: ${r.error}`)
-      }
-      added.push(b.nodeId)
-    }
-    setDone(new Set([...done, ...added]))
+    const r = await window.skyhawk?.addAllNodes(bulk)
+    setDone(new Set([...done, ...(r ? r.done : bulk.map((b) => b.nodeId))]))
+    if (r && !r.ok) setBulkError(`NODE_ID ${r.nodeId}: ${r.error}`)
   }
 
   if (!current) return null

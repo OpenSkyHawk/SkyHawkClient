@@ -6,7 +6,7 @@ import { useStore } from '../../store'
 import { ResetDialog } from './ResetDialog'
 import { Row, SectionHead } from './Row'
 import { hiddenRow, resetRowDesc } from './settings-view'
-import { useNodeModel } from './useNodeModel'
+import { useNodesPulled } from './useNodesPulled'
 
 type LimitKey = keyof PsuLimits
 
@@ -96,16 +96,16 @@ function PowerSupply() {
  * on its own when it reports.
  */
 function HiddenNodes() {
-  const model = useNodeModel()
+  const pulled = useNodesPulled()
+  const nodes = useStore((s) => s.cockpit.settings)
   const [error, setError] = useState<string>()
-  const hidden = model?.hiddenNodes ?? []
+  const hidden = pulled ? nodes.hidden : []
 
+  // Main un-hides them one at a time and stops at the first it can't (R3.2b).
   const unhide = async (ids: number[]) => {
     setError(undefined)
-    for (const id of ids) {
-      const r = await window.skyhawk?.hideNode(id, false)
-      if (r && !r.ok) return setError(r.error)
-    }
+    const r = await window.skyhawk?.unhideNodes(ids)
+    if (r && !r.ok) setError(r.error)
   }
 
   return (
@@ -157,12 +157,14 @@ function HiddenNodes() {
 }
 
 export function CockpitSection() {
-  const model = useNodeModel()
+  const pulled = useNodesPulled()
+  const nodes = useStore((s) => s.cockpit.settings)
+  // The review asks main for a fresh preview each time the model is pushed.
+  const model = useStore((s) => s.nodeModel)
   const attentionBanner = useStore((s) => s.attentionBanner)
   const setConfigField = useStore((s) => s.setConfigField)
   const [resetOpen, setResetOpen] = useState(false)
-  const differing = model?.differingCount ?? 0
-  const anyAdopted = model?.nodes.some((n) => n.source === 'adopted') ?? false
+  const differing = pulled ? nodes.differing : 0
 
   return (
     <>
@@ -174,7 +176,7 @@ export function CockpitSection() {
         <Row k="Reset node mapping" sub={resetRowDesc(differing)}>
           <button
             className="browse"
-            disabled={!model || (differing === 0 && !anyAdopted)}
+            disabled={!pulled || !nodes.canReset}
             onClick={() => setResetOpen(true)}
           >
             Reset…

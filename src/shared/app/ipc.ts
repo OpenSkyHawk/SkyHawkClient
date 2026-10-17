@@ -39,8 +39,10 @@ import {
 import {
   NODES_CTRL,
   NODES_PUSH,
+  type AdoptRequest,
   type AdoptSpec,
   type MappingPatch,
+  type NodeBatchResult,
   type NodeMappingResult,
   type NodeRegistryInfo,
   type NodeSnapshot,
@@ -211,6 +213,13 @@ export interface SkyhawkApi {
    * it on is refused while the board is online.
    */
   hideNode(nodeId: number, on: boolean): Promise<NodeMappingResult>
+  /**
+   * "Add all": adopt each board in turn, as `adoptNode` would, stopping at the first refusal. Each
+   * one pushes `nodes:model` as it lands.
+   */
+  addAllNodes(bulk: AdoptRequest[]): Promise<NodeBatchResult>
+  /** Un-hide each board in turn, as `hideNode(id, false)` would, stopping at the first refusal. */
+  unhideNodes(nodeIds: number[]): Promise<NodeBatchResult>
   setSerialMonitor(on: boolean): Promise<void>
   dumpSerialPorts(): Promise<DebugDumpResult>
   revealDebugLog(): Promise<void>

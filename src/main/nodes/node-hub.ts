@@ -5,11 +5,13 @@
 // through the connection's write (R2.2b). It also hosts the Cockpit snapshot (R3.2): built from
 // each node push and the link, and pushed with them on `cockpit:snapshot`.
 import type {
+  AdoptRequest,
   AdoptSpec,
   MappedNode,
   MappingPatch,
   NodeDefaults,
   NodeIdentity,
+  NodeBatchResult,
   NodeMappingFile,
   NodeMappingResult,
   NodeModel,
@@ -61,6 +63,7 @@ import { NODE_TELEM_MSG, NodeTelemStore, parseNodeTelem } from './node-telem'
 import { registryDefaults } from './registry'
 import { MappingSaveError, MappingStore, type MappingFileIO } from './mapping-store'
 import { CockpitSnapshotHost } from './cockpit-host'
+import { addAllInTurn, unhideInTurn } from './mapping-sequence'
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
@@ -173,7 +176,8 @@ export class NodeHub implements NodeLineSink {
       }
     })
     this.cockpit = new CockpitSnapshotHost((snapshot) => this.emit('cockpit:snapshot', snapshot), {
-      device: () => this.link.deviceStatus()
+      device: () => this.link.deviceStatus(),
+      registry: () => this.registry()
     })
   }
 
@@ -372,6 +376,19 @@ export class NodeHub implements NodeLineSink {
 
   adopt(nodeId: number, spec: AdoptSpec): NodeMappingResult {
     return this.update((f) => adoptNode(f, this.defaults, nodeId, spec, this.kindOf))
+  }
+
+  /**
+   * "Add all" (R3.2b, the Adopt dialog's loop until then): adopt each board in turn, as one adopt
+   * each — every one pushes the model as it lands — stopping at the first refusal.
+   */
+  addAll(bulk: AdoptRequest[]): Promise<NodeBatchResult> {
+    return addAllInTurn(bulk, (nodeId, spec) => this.adopt(nodeId, spec))
+  }
+
+  /** "Un-hide" / "Un-hide all" (R3.2b, Settings' loop until then): the same, one un-hide each. */
+  unhide(ids: number[]): Promise<NodeBatchResult> {
+    return unhideInTurn(ids, (nodeId, on) => this.hide(nodeId, on))
   }
 
   /** One registry board back to its NODE_IDS.md defaults. */

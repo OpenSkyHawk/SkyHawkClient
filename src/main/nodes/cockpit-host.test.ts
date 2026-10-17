@@ -136,6 +136,33 @@ describe('CockpitSnapshotHost', () => {
     expect(host.state()).toBe(pushed[3])
   })
 
+  it('lists the registry its source answers with, in Settings’ rows (R3.2b)', () => {
+    const pushed: CockpitSnapshot[] = []
+    const registry = {
+      file: 'Firmware/NODE_IDS.md',
+      commit: 'abc1234',
+      date: '2026-10-01',
+      nodes: [{ nodeId: 1, name: 'Center_Armament', console: 'Center', kind: 'panel' as const }]
+    }
+    const host = new CockpitSnapshotHost((s) => pushed.push(s), {
+      device: () => ({ state: 'connected' }),
+      registry: () => registry
+    })
+    host.modelPushed(nodeModel([modelNode(1)]))
+    expect(pushed[0]!.settings.registry).toEqual({
+      summary: 'NODE_IDS.md · 1 node: 0 PDUs, 1 panel group',
+      rows: [
+        {
+          nodeId: 1,
+          name: 'Center_Armament',
+          console: 'Center',
+          onBus: { text: 'yes', dot: 'on' },
+          unloaded: { text: '—', dot: '' }
+        }
+      ]
+    })
+  })
+
   it('a board still identifying: rebuilt nextAt + 50 ms later, when it becomes a stray', () => {
     vi.useFakeTimers({ now: 10_000 })
     const { host, pushed } = rig()

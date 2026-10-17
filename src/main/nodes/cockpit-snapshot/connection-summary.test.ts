@@ -1,14 +1,17 @@
+// Ported from the renderer's connection-summary.test.ts (R3.2b): Connection › Connected nodes, now
+// built in main (summaries.ts). Same cases, same expected values; the one that also checks the
+// board symbols (a renderer table) stays in the renderer's node-view.test.ts.
 import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeTelemSnapshot, PduOutage } from '@shared/nodes'
 import {
   modelNode as node,
   nodeModel as model,
   nodeStatus as status
-} from '../../test-fixtures/nodes'
-import { TELEM_PAGE } from '../../main/nodes/node-telem'
+} from '../../../test-fixtures/nodes'
+import { TELEM_PAGE } from '../node-telem'
 import { fmtTime, lastSeenLabel } from '@shared/format'
-import { STATE_SYMBOL, attentionItems, nodeViews } from './cockpit'
-import { nodesSummary } from './connection-summary'
+import { nodesSummary } from './summaries'
+import { nodeViews } from './views'
 
 const pdu = (nodeId: number, console: string, over: Partial<NodeModelEntry> = {}) =>
   node(nodeId, { name: `PDU_${console}`, console, kind: 'pdu', readings: 'live', ...over })
@@ -83,26 +86,6 @@ describe('nodesSummary counts', () => {
 })
 
 describe('nodesSummary rows', () => {
-  it('shows the 3 most severe in Cockpit Attention order, with symbols', () => {
-    const nodes = [
-      node(1, { status: status(1, { epvf: true }) }),
-      node(2, { availability: 'offline', offlineAt: T }),
-      node(9, { status: status(9, { boff: true }) }),
-      node(10, { status: status(10, { overheat: true }) }),
-      node(11)
-    ]
-    const s = summary(nodes)
-    const att = attentionItems(nodeViews(model(nodes), []), [])
-    expect(s.rows.map((r) => r.nodeId)).toEqual(att.slice(0, 3).map((i) => i.nodeId))
-    expect(s.rows.map((r) => [r.nodeId, r.chip, r.tone, STATE_SYMBOL[r.state]])).toEqual([
-      [2, 'OFFLINE', 'err', '✕'],
-      [9, 'BUS-OFF', 'err', '✕'],
-      [1, 'ERR-PASSIVE', 'warn', '!']
-    ])
-    expect(s.more).toBe(1)
-    expect(s.footer).toBe('+1 more · healthy nodes hidden')
-  })
-
   it('a board not seen this session: no false "offline since", but when it was last seen (#93)', () => {
     const t = Date.UTC(2026, 9, 14, 21, 13)
     const s = summary([

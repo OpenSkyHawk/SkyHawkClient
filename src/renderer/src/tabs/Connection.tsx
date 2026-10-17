@@ -1,9 +1,6 @@
-import { useMemo } from 'react'
 import { useStore, type SourceMode, type Transport } from '../store'
 import { USB_IDENTITY } from '@shared/firmware'
 import { isLinkUp } from '@shared/gateway'
-import { nodeViews } from '../cockpit'
-import { nodesSummary } from '../connection-summary'
 import { deviceView, relayNote, startBlocked, startBlockedReason } from '../device-view'
 import { Dot } from './cockpit/Dot'
 
@@ -30,8 +27,8 @@ const REC_DOT = (
  * order as Cockpit › Attention. Healthy nodes are left to the Cockpit tab.
  */
 function NodesCard() {
-  const model = useStore((x) => x.nodeModel)
-  const telemetry = useStore((x) => x.nodeTelemetry)
+  // Counts and rows as main summed them up (cockpit:snapshot, R3.2b).
+  const sum = useStore((x) => x.cockpit.nodesCard)
   const deviceState = useStore((x) => x.deviceState)
   const autoConnect = useStore((x) => x.autoConnect)
   const refreshNodes = useStore((x) => x.refreshNodes)
@@ -39,10 +36,6 @@ function NodesCard() {
   const set = useStore((x) => x.set)
   // Node status rides on the device link, which is up in every source mode (#69).
   const linkUp = isLinkUp(deviceState)
-  const sum = useMemo(
-    () => nodesSummary(model ? nodeViews(model, telemetry) : [], model?.outages ?? []),
-    [model, telemetry]
-  )
 
   return (
     <div className="card field ncard">

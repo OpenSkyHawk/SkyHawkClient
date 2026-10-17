@@ -25,7 +25,13 @@
 // pure builder main pushes `cockpit:snapshot` from, its peak W and its stray timer — on the test's
 // clock and timers. It is handed what main would hand it, in the same steps: each `nodes:model` and
 // `nodes:telemetry` push and each `device:status` push (the link and the Gateway's health), and
-// the renderer's load (`getStatus`, main's relay:status).
+// the renderer's load (`getStatus`, main's relay:status). The Overview, Connection and Settings
+// read their sections of the same snapshot (R3.2b); the registry it lists is the scenario's, as
+// `getNodeRegistry` answers it.
+//
+// "Add all" and "Un-hide all" run main's own sequence (R3.2b): `addAllNodes` / `unhideNodes` go
+// through NodeHub's loop (mapping-sequence), one `adoptNode` / `hideNode` per board — the same
+// spies, so a test still sees (and can refuse) each board's call.
 //
 // Calibration runs main's own workflow (R3.1): the mock hosts a real CalibrationWorkflowHost — the
 // workflow, the dialog's start/close sequencing, the restore offer and the derived CalibrationState
@@ -72,6 +78,7 @@ import {
 import type { CalibrationCommands } from '../../main/hid/calibration/calibration-workflow'
 import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
+import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app'
 import type { LogEvent } from '@shared/events'
@@ -248,6 +255,9 @@ export function installSkyhawkMock(): SkyhawkMock {
     resetNodeMapping: vi.fn(() => resolve(mapped())),
     previewNodeReset: vi.fn(() => resolve({ rows: [], nodeCount: 0, adopted: [] })),
     hideNode: vi.fn(() => resolve(mapped())),
+    // ── node-mapping sequences: main's loop, over the per-board intents above ──
+    addAllNodes: vi.fn((bulk) => addAllInTurn(bulk, (id, spec) => fns.adoptNode(id, spec))),
+    unhideNodes: vi.fn((ids) => unhideInTurn(ids, (id, on) => fns.hideNode(id, on))),
     setSerialMonitor: vi.fn(() => resolve(undefined)),
     dumpSerialPorts: vi.fn(() => resolve({ path: '/tmp/serial-ports.txt', count: 0 })),
     revealDebugLog: vi.fn(() => resolve(undefined)),
@@ -386,7 +396,8 @@ export function installSkyhawkMock(): SkyhawkMock {
 
   /** Main's Cockpit snapshot (NodeHub hosts the same), over the scenario as main holds it. */
   const cockpit = new CockpitSnapshotHost((snap) => push('cockpit:snapshot', snap), {
-    device: () => state.device ?? { state: 'no-device' }
+    device: () => state.device ?? { state: 'no-device' },
+    registry: () => state.registry ?? EMPTY_REGISTRY
   })
 
   const mock = Object.defineProperty(Object.assign(fns, calSpies), 'scenario', {

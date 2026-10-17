@@ -333,6 +333,20 @@ export interface NodeSnapshot {
 /** A mapping change: the new model, or why the input was refused (nothing was written). */
 export type NodeMappingResult = { ok: true; model: NodeModel } | { ok: false; error: string }
 
+/** One board for "Add all" (R3.2): the NODE_ID and what to adopt it as. */
+export interface AdoptRequest {
+  nodeId: number
+  spec: AdoptSpec
+}
+
+/**
+ * Mapping changes run one board at a time ("Add all", "Un-hide all"; R3.2): the NODE_IDs done in
+ * order, and — when one was refused — that one and why. The boards after it were not tried.
+ */
+export type NodeBatchResult =
+  | { ok: true; done: number[] }
+  | { ok: false; done: number[]; nodeId: number; error: string }
+
 // ── consoles ────────────────────────────────────────────────────────────────
 
 /** NODE_IDS.md console names, as the mapping stores them. */
@@ -596,6 +610,107 @@ export interface AdoptRow {
   addAllPduId?: number | null
 }
 
+// ── Overview, Connection and Settings (R3.2b): each surface's own reading of the same picture ──
+
+/** The Overview's Cockpit tile. */
+export interface CockpitTile {
+  value: string
+  sub: string
+  /** Worst state among known nodes, drawn as its symbol before the value. Healthy = none. */
+  symbol?: 'off' | 'warn'
+  /** ok = all up and healthy; issue = something offline or warning; none = no live status. */
+  tone: 'ok' | 'issue' | 'none'
+}
+
+/** The Overview's Attention banner. */
+export interface AttentionSummary {
+  /** `8 nodes need attention` */
+  head: string
+  /** `3 offline (Left_Oxygen, Right_TACAN, Center_Clock) · 5 warnings` */
+  detail: string
+}
+
+/** The Overview's new-devices notice: what waits to be adopted, by kind. */
+export interface NewDevices {
+  count: number
+  panels: number
+  pdus: number
+  /** Of them, boards in NODE_IDS.md waiting to be added (#93: pre-filled in New on the bus). */
+  registry: number
+}
+
+/** What the Overview shows about your cockpit. */
+export interface OverviewSummary {
+  tile: CockpitTile
+  /** While the link is up and a board reports a problem; the Settings toggle is the renderer's. */
+  banner: AttentionSummary | null
+  /** null = nothing to show, including while the link is down. */
+  newDevices: NewDevices | null
+}
+
+export interface SummaryRow {
+  nodeId: number
+  name: string
+  state: NodeState
+  /** Chip text: `OFFLINE`, `BUS-OFF`, or the flags the board raised. */
+  chip: string
+  tone: 'err' | 'warn'
+  /**
+   * `#13 · PDU_Left · offline since 21:11:18`, or for a board remembered from an earlier session
+   * that hasn't reported since the link opened, `… · not seen this session · last seen 14 Oct,
+   * 21:13` — "offline since" would be the roster's time, not when it went (#93).
+   */
+  meta: string
+}
+
+/** Connection › Connected nodes. */
+export interface NodesSummary {
+  /** Known nodes (registry + adopted, PDUs included); new nodes are not counted. */
+  known: number
+  healthy: number
+  warn: number
+  off: number
+  /** No complete roster yet and not reported. */
+  unknown: number
+  /** Known nodes that are PDUs, by their kind (never by NODE_ID). */
+  pdus: number
+  /** Client-computed total over PDUs with fresh readings; null = none has any. */
+  watts: number | null
+  /** The most severe nodes, in Cockpit Attention order. */
+  rows: SummaryRow[]
+  /** Attention items not shown. */
+  more: number
+  /** `+5 more · healthy nodes hidden`; empty when there is nothing to say. */
+  footer: string
+}
+
+/** A registry row's "On the bus" column. */
+export type OnBus = { text: string; dot: 'on' | 'off' | '' }
+
+/** One row of Settings › About › Node registry. */
+export interface RegistryRow {
+  nodeId: number
+  /** As the client shows it: the bridge row is the Gateway (#94). */
+  name: string
+  console: string
+  /** From the link and the last model. */
+  onBus: OnBus
+  /** The same before the dialog's own pull of the node data has landed (no model yet). */
+  unloaded: OnBus
+}
+
+/** What Settings shows about the node mapping. */
+export interface SettingsNodes {
+  /** Registry nodes that differ from NODE_IDS.md. */
+  differing: number
+  /** Reset… is offered: something differs, or an adopted board is on the plan. */
+  canReset: boolean
+  /** Settings › Hidden boards. */
+  hidden: HiddenNode[]
+  /** Settings › About › Node registry: the summary line and the dialog's rows. */
+  registry: { summary: string; rows: RegistryRow[] }
+}
+
 export interface CockpitSnapshot {
   /** Increases with every snapshot main builds. */
   rev: number
@@ -611,6 +726,12 @@ export interface CockpitSnapshot {
   zones: ZoneChoices
   /** The Adopt dialog's queue: new NODE_IDs, oldest first seen first. */
   adopt: AdoptRow[]
+  /** The Overview's tile, banner and new-devices notice (R3.2b). */
+  overview: OverviewSummary
+  /** Connection › Connected nodes (R3.2b). */
+  nodesCard: NodesSummary
+  /** Settings › Cockpit and About (R3.2b). */
+  settings: SettingsNodes
 }
 
 /** What the Cockpit shows before main's first snapshot: no model, link down. */
@@ -648,7 +769,25 @@ export const COCKPIT_IDLE: CockpitSnapshot = {
     options: { '': { '': [] }, Left: { '': [] }, Center: { '': [] }, Right: { '': [] } },
     first: { '': null, Left: null, Center: null, Right: null }
   },
-  adopt: []
+  adopt: [],
+  overview: {
+    tile: { value: '—', sub: 'no live node status', tone: 'none' },
+    banner: null,
+    newDevices: null
+  },
+  nodesCard: {
+    known: 0,
+    healthy: 0,
+    warn: 0,
+    off: 0,
+    unknown: 0,
+    pdus: 0,
+    watts: null,
+    rows: [],
+    more: 0,
+    footer: ''
+  },
+  settings: { differing: 0, canReset: false, hidden: [], registry: { summary: '', rows: [] } }
 }
 
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */
@@ -679,5 +818,7 @@ export const NODES_CTRL = {
   nodeMappingReset: 'node-mapping:reset',
   nodeMappingResetPreview: 'node-mapping:reset-preview',
   nodeRegistry: 'nodes:registry',
-  nodeMappingHide: 'node-mapping:hide'
+  nodeMappingHide: 'node-mapping:hide',
+  nodeMappingAddAll: 'node-mapping:add-all',
+  nodeMappingUnhide: 'node-mapping:unhide'
 } as const
