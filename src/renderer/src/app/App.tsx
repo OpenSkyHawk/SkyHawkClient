@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useConfigStore } from '../config'
+import { useDcsStore } from '../dcs'
 import { SerialTab } from '../gateway'
 import { initBridge } from './ipc-adapter'
 import { useNav, type TabId } from './kit'
@@ -24,7 +24,8 @@ const TABS: { id: TabId; label: string }[] = [
 
 export function App() {
   const tab = useNav((s) => s.tab)
-  const sourceMode = useConfigStore((s) => s.sourceMode)
+  // The mode the relay's facts were judged against (R3.4c), as the Connection tab's segment shows it.
+  const sourceMode = useDcsStore((s) => s.relayFacts.mode)
   const set = useNav((s) => s.set)
 
   useEffect(() => initBridge(), [])

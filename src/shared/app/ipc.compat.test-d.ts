@@ -38,6 +38,13 @@
 // `recordShown`; `ConfigEdit` gained `psuMode`; `ConfigExportResult` became a union on `outcome`
 // (`saved` with its path, `canceled`, `failed` with its error).
 //
+// R3.4c (one consistent frame per main update): the wire changed, the API did not. Main sends
+// every push of one turn as one message on the new channel `push:batch` (PUSH_BATCH), carrying a
+// `PushBatch` — an ordered list of `{ channel, payload }` over the push channels above — and the
+// preload hands each push to the subscribers `on` registered, in order. So `SkyhawkApi`,
+// `PushChannels`, `IPC` and `CTRL` still match the frozen copy; the wire channel and the batch's
+// shape are pinned below. `RelayFacts` gained `mode` and `transport` (a type change only).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -65,7 +72,16 @@ import type {
   StatsSnapshot,
   TelemetryReadout
 } from '../dcs/ipc'
-import type { CTRL, DebugDumpResult, IPC, PushChannels, RelayStatus, SkyhawkApi } from './ipc'
+import type {
+  CTRL,
+  DebugDumpResult,
+  IPC,
+  PUSH_BATCH,
+  PushBatch,
+  PushChannels,
+  RelayStatus,
+  SkyhawkApi
+} from './ipc'
 import type { DeviceStatusPush, SerialFrame } from '../gateway/ipc'
 import type { HidAvailability, HidReport } from '../hid/ipc'
 import type {
@@ -238,12 +254,19 @@ interface OldSkyhawkApi {
   calAttach(on: boolean): Promise<void>
 }
 
+/** R3.4c: one `push:batch` message — main's pushes of one turn, in order. */
+type OldPushBatch = {
+  [C in OldPushChannel]: { channel: C; payload: OldPushChannels[C] }
+}[OldPushChannel][]
+
 export type ApiSurfaceUnchanged = [
   Expect<Equal<OldSkyhawkApi, SkyhawkApi>>,
   Expect<Equal<OldPushChannels, PushChannels>>,
   Expect<Equal<OldIPC, typeof IPC>>,
   Expect<Equal<OldCTRL, typeof CTRL>>,
-  Expect<Equal<OldRelayStatus, RelayStatus>>
+  Expect<Equal<OldRelayStatus, RelayStatus>>,
+  Expect<Equal<'push:batch', typeof PUSH_BATCH>>,
+  Expect<Equal<OldPushBatch, PushBatch>>
 ]
 
 /**

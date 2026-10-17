@@ -1,13 +1,17 @@
 // The app's one window, and `emit`: every main → renderer push goes through it.
 import { BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
-import type { PushChannel, PushChannels } from '@shared/app'
+import { PUSH_BATCH, type Emit } from '@shared/app'
+import { batchPushes } from './push-batch'
 
 let mainWindow: BrowserWindow | null = null
 
-export function emit<C extends PushChannel>(channel: C, payload: PushChannels[C]): void {
-  mainWindow?.webContents.send(channel, payload)
-}
+/**
+ * Every push: collected per main turn and sent as one `push:batch` message (R3.4c), so the
+ * renderer applies a turn's pushes together. A window that is gone by the flush gets nothing, as
+ * before.
+ */
+export const emit: Emit = batchPushes((batch) => mainWindow?.webContents.send(PUSH_BATCH, batch))
 
 export function createWindow(): void {
   const win = new BrowserWindow({

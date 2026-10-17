@@ -71,14 +71,19 @@ const TRANSPORT_TO_IPC: Record<Transport, DcsTransport> = {
   uni: 'unicast-listen'
 }
 
+/** The contract's transport as the forms name it. */
+export function viewTransport(transport: DcsTransport): Transport {
+  const t = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(
+    (k) => TRANSPORT_TO_IPC[k] === transport
+  )
+  return t ?? 'tcp'
+}
+
 /** The store fields an AppConfig sets — on load, and after a config import replaces it. */
 function configState(cfg: AppConfig): ConfigFields {
-  const transport = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(
-    (k) => TRANSPORT_TO_IPC[k] === cfg.transport
-  )
   return {
     sourceMode: cfg.sourceMode,
-    transport: transport ?? 'tcp',
+    transport: viewTransport(cfg.transport),
     host: cfg.host,
     port: String(cfg.commandPort),
     autoConnect: cfg.autoConnect,

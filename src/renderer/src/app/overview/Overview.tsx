@@ -1,7 +1,7 @@
 import { fmtBytes, fmtUptime } from '@shared/format'
 import type { DeviceState } from '@shared/gateway'
 import type { GaugeTone, OverviewLink } from '@shared/dcs'
-import { useConfigStore } from '../../config'
+import { useConfigStore, viewTransport } from '../../config'
 import { endpointText, relaySide, useDcsStore } from '../../dcs'
 import { gatewayView, useGatewayStore } from '../../gateway'
 import { Dot, useNodesStore } from '../../nodes'
@@ -97,7 +97,9 @@ export function Overview() {
   const gw = useGatewayStore()
   const nodes = useNodesStore()
   const nav = useNav()
-  const link = cfg.transport === 'tcp' ? 'TCP' : cfg.transport === 'loop' ? 'Multicast' : 'Unicast'
+  // The transport the relay's facts were judged against (R3.4c), as its endpoint below is.
+  const transport = viewTransport(dcs.relayFacts.transport)
+  const link = transport === 'tcp' ? 'TCP' : transport === 'loop' ? 'Multicast' : 'Unicast'
   // The DCS Link tile's endpoint and the Link tile's sub-line are main's (relay:facts, R3.3).
   const linkSub = endpointText(dcs.relayFacts.endpoint.overview, cfg.host, cfg.port)
   const relaySub = LINK_SUB[relaySide(dcs.relayFacts, dcs.relaying).overviewLink]

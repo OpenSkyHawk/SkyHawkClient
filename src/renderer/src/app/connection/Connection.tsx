@@ -1,5 +1,5 @@
-import { useConfigStore, type SourceMode, type Transport } from '../../config'
-import { CaptureCard, RecordCard, RelayStart } from '../../dcs'
+import { useConfigStore, viewTransport, type SourceMode, type Transport } from '../../config'
+import { CaptureCard, RecordCard, RelayStart, useDcsStore } from '../../dcs'
 import { DeviceCard } from '../../gateway'
 import { NodesCard } from '../../nodes'
 
@@ -25,6 +25,11 @@ const TRANSPORTS: { id: Transport; title: string; detail: string }[] = [
 export function Connection() {
   const s = useConfigStore()
   const setConfigField = useConfigStore((x) => x.setConfigField)
+  // The mode and the transport the relay's facts were judged against (R3.4c): the segment, its
+  // hint and the radios flip in the same push as the cards, Start and the pill, once main has
+  // taken the click.
+  const facts = useDcsStore((x) => x.relayFacts)
+  const transport = viewTransport(facts.transport)
 
   return (
     <div className="conn">
@@ -44,14 +49,14 @@ export function Connection() {
             {(['bridge', 'monitor', 'replay'] as SourceMode[]).map((m) => (
               <button
                 key={m}
-                className={s.sourceMode === m ? 'on' : ''}
+                className={facts.mode === m ? 'on' : ''}
                 onClick={() => setConfigField({ sourceMode: m })}
               >
                 {m[0]!.toUpperCase() + m.slice(1)}
               </button>
             ))}
           </div>
-          <div className="hint">{HINTS[s.sourceMode]}</div>
+          <div className="hint">{HINTS[facts.mode]}</div>
         </div>
 
         {/* The Capture and Record cards flip together, in the same relay:facts push (R3.4a). */}
@@ -87,7 +92,7 @@ export function Connection() {
             {TRANSPORTS.map((t) => (
               <button
                 key={t.id}
-                className={`radio${s.transport === t.id ? ' on' : ''}`}
+                className={`radio${transport === t.id ? ' on' : ''}`}
                 onClick={() => setConfigField({ transport: t.id })}
               >
                 <span className="radio__dot">

@@ -4,6 +4,7 @@ export {
   bindConfig,
   configFromMain,
   useConfigStore,
+  viewTransport,
   type ConfigState,
   type SourceMode,
   type Transport

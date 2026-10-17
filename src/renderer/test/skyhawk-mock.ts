@@ -44,6 +44,12 @@
 // main's own cache rules — and the RAW stream arrives as `calRaw` batches into the workflow. The
 // renderer's dialog sends the workflow intents (`calOpen`, `calSave`, …), which the host answers.
 //
+// Pushes travel as main sends them (R3.4c): every push main makes in one turn goes out as one
+// `push:batch`, and the preload hands its pushes to their subscribers in one task, in order. Here a
+// turn is one of the mock's own steps (`emitScenario`, an intent's answer, a host's timer firing),
+// delivered as it ends, inside its `act`; a push made anywhere else (after an await) is delivered
+// in a microtask, as main's flush is. Both go through the preload's own dispatch (`deliverPushes`).
+//
 // Intents (renderer → main requests) are `vi.fn`s with harmless defaults, so a test can assert the
 // call (`expect(sky.forgetNode).toHaveBeenCalledWith(4)`) or override the answer
 // (`sky.forgetNode.mockResolvedValueOnce({ ok: false, error: '…' })`). The type follows
@@ -91,7 +97,13 @@ import { savedEdit } from '../../main/config/settings-form'
 import { resolvePsu } from '../../main/nodes/psu-limits'
 import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
-import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app'
+import {
+  deliverPushes,
+  type PushChannel,
+  type PushChannels,
+  type PushItem,
+  type SkyhawkApi
+} from '@shared/app'
 import type { LogEvent } from '@shared/events'
 
 /** What main knows right now. Every field is optional: absent = main's state at launch. */
@@ -241,13 +253,12 @@ export function installSkyhawkMock(): SkyhawkMock {
     getConfig: vi.fn(() => resolve({ config: config(), psu: resolvePsu(config().psu) })),
     getStatus: vi.fn(() => {
       host.rendererLoaded() // main's relay:status handler: a renderer (re)loaded
-      // …and the Cockpit snapshot starts over from what main holds. Main's push reaches a page that
-      // has subscribed by then (IPC is asynchronous); here the push waits for the same.
-      void Promise.resolve().then(() =>
-        cockpit.rendererLoaded(state.model ?? EMPTY_MODEL, state.telemetry ?? [])
-      )
-      // …and HidService hands it the report with its live axes (R3.3), on the same terms.
-      void Promise.resolve().then(() => push('hid:report', hidPush()))
+      // …and the Cockpit snapshot starts over from what main holds. Main's pushes go out as one
+      // batch ahead of its answer, and reach a page that has subscribed by then (IPC is
+      // asynchronous): here the batch waits for the same, in a microtask.
+      cockpit.rendererLoaded(state.model ?? EMPTY_MODEL, state.telemetry ?? [])
+      // …and HidService hands it the report with its live axes (R3.3), in the same batch.
+      push('hid:report', hidPush())
       // …and what the old page held for itself starts over (GatewayConnection, SerialTrafficMonitor,
       // DcsRelay).
       linkDown.pageLoaded(device().state)
@@ -330,7 +341,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     // Main's SerialTrafficMonitor: the page's flag comes back on `device:status`.
     setSerialMonitor: vi.fn((on: boolean) => {
       monitorShown = on
-      act(() => push('device:status', statusPush()))
+      turn(() => push('device:status', statusPush()))
       return resolve(undefined)
     }),
     dumpSerialPorts: vi.fn(() => resolve({ path: '/tmp/serial-ports.txt', count: 0 })),
@@ -453,7 +464,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     if (built === undefined) return resolve(config())
     const saved = fns.setConfig(built)
     state = { ...state, config: { ...config(), ...built } }
-    act(() => {
+    turn(() => {
       pushFacts()
       push('config:changed', configChanged('edit'))
     })
@@ -491,8 +502,56 @@ export function installSkyhawkMock(): SkyhawkMock {
   /** A mapping intent main accepted: it answers with the model (and would push it). */
   const mapped = () => ({ ok: true as const, model: state.model ?? EMPTY_MODEL })
 
+  // ── the pushes, one batch per main turn (R3.4c) ──
+  /** The pushes of the turn in progress, in the order main made them. */
+  let batch: PushItem[] = []
+  /** Inside one of the mock's own turns: it delivers the batch as it ends. */
+  let depth = 0
+  let flushQueued = false
+  let delivering = false
+  /** Main's `emit`: the push joins its turn's batch. */
   const push = <C extends PushChannel>(ch: C, data: PushChannels[C]): void => {
-    for (const cb of listeners.get(ch) ?? []) (cb as (d: PushChannels[C]) => void)(data)
+    batch.push({ channel: ch, payload: data } as PushItem)
+    if (depth > 0 || flushQueued) return
+    // Main's flush, a microtask after the turn's first push.
+    flushQueued = true
+    queueMicrotask(() => {
+      flushQueued = false
+      deliver()
+    })
+  }
+  /** One `push:batch` message, as the preload hands it on: every push, in order, in one go. */
+  const deliver = (): void => {
+    if (delivering) return // a push a subscriber caused goes out after this message
+    delivering = true
+    try {
+      while (batch.length) {
+        const message = batch
+        batch = []
+        deliverPushes(message, (ch) => listeners.get(ch))
+      }
+    } finally {
+      delivering = false
+    }
+  }
+  /** One of main's turns: what `fn` pushes goes out as one batch as it ends, inside its `act`. */
+  const turn = (fn: () => void): void => {
+    act(() => {
+      depth++
+      try {
+        fn()
+      } finally {
+        depth--
+      }
+      if (depth === 0) deliver()
+    })
+  }
+  /** Timers whose callbacks are main turns: what one firing pushes goes out as one batch. */
+  const turnTimers = {
+    setTimeout: (fn: () => void, ms: number): unknown => setTimeout(() => turn(fn), ms),
+    clearTimeout: (id: unknown): void => clearTimeout(id as ReturnType<typeof setTimeout>),
+    setInterval: (fn: () => void, ms: number): unknown => setInterval(() => turn(fn), ms),
+    clearInterval: (id: unknown): void => clearInterval(id as ReturnType<typeof setInterval>)
   }
 
   // ── the calibration channel, as main's HidCalibrationService answers it ──
@@ -518,7 +577,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     lastCal = snap
     state = { ...state, cal: snap }
     // main's calRead pushes what it read, and reports it to the workflow
-    act(() => {
+    turn(() => {
       push('cal:data', snap)
       host.reported(snap)
     })
@@ -558,20 +617,28 @@ export function installSkyhawkMock(): SkyhawkMock {
   }
 
   /** Main's calibration workflow (HidCalibrationService hosts the same), over the spies above. */
-  const host = new CalibrationWorkflowHost(calSpies, (st) => {
-    push('cal:workflow', st)
-    // HidService follows what the device declares, after the push (AppServices).
-    if (st.tab.snapshot !== hidCal) {
-      hidCal = st.tab.snapshot
-      push('hid:report', hidPush())
-    }
-  })
+  const host = new CalibrationWorkflowHost(
+    calSpies,
+    (st) => {
+      push('cal:workflow', st)
+      // HidService follows what the device declares, after the push (AppServices).
+      if (st.tab.snapshot !== hidCal) {
+        hidCal = st.tab.snapshot
+        push('hid:report', hidPush())
+      }
+    },
+    { timers: turnTimers }
+  )
 
   /** Main's Cockpit snapshot (NodeHub hosts the same), over the scenario as main holds it. */
-  const cockpit = new CockpitSnapshotHost((snap) => push('cockpit:snapshot', snap), {
-    device: () => state.device ?? { state: 'no-device' },
-    registry: () => state.registry ?? EMPTY_REGISTRY
-  })
+  const cockpit = new CockpitSnapshotHost(
+    (snap) => push('cockpit:snapshot', snap),
+    {
+      device: () => state.device ?? { state: 'no-device' },
+      registry: () => state.registry ?? EMPTY_REGISTRY
+    },
+    { timers: turnTimers }
+  )
 
   const mock = Object.defineProperty(Object.assign(fns, calSpies), 'scenario', {
     get: () => state
@@ -585,7 +652,7 @@ export function installSkyhawkMock(): SkyhawkMock {
       const s = opened && given.cal === undefined ? { ...given, cal: snapshotOf(device) } : given
       if (opened) lastCal = s.cal
       state = { ...state, ...s }
-      act(() => {
+      turn(() => {
         for (const [key, ch] of Object.entries(PUSHES) as [keyof Scenario, PushChannel][]) {
           const data = s[key]
           if (data === undefined) continue
