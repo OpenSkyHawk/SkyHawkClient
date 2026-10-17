@@ -18,8 +18,9 @@ import {
   type Row,
   type ZoneChoices
 } from '@shared/nodes'
-import { displayCurrentMa, nodeFaultTag, PDU_FLAG } from '@shared/nodes/legacy-rules'
-import { pduAlertFlags, pduFlagMeanings } from '../faults'
+import { PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
+import { nodeFaultTag, pduAlertFlags, pduFlagMeanings } from '../faults'
+import { displayCurrentMa } from '../node-telem'
 
 // ── board actions ───────────────────────────────────────────────────────────
 

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildNodeModel, cameOnline, type NodeModelInput } from './node-model'
-import { isReportableNew } from '@shared/nodes/legacy-rules'
+import { buildNodeModel, cameOnline, isReportableNew, type NodeModelInput } from './node-model'
 import { PDU_GROUP_POLL_CATCH_MS, PDU_GROUP_WINDOW_MS } from './power-zone'
 import { EMPTY_MAPPING } from './mapping-rules'
 import { registryDefaults } from './registry'

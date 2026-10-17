@@ -45,10 +45,9 @@ import {
   NODE_REGISTRY_SOURCE,
   type NodeFaultName
 } from '@shared/firmware'
-import { isAdoptableKind } from '@shared/nodes/legacy-rules'
 import { buildNodeModel } from './node-model'
 import { NodeEventTracker } from './node-events'
-import { resolveKind } from './node-kind'
+import { isAdoptableKind, resolveKind } from './node-kind'
 import {
   BRIDGE_NODE_ID,
   cleanNodeLine,

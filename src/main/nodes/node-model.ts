@@ -13,7 +13,7 @@ import type {
   NodeTelemSnapshot
 } from '@shared/nodes'
 import { differingCount, effectiveMapping } from './mapping-rules'
-import { resolveKind } from './node-kind'
+import { isAdoptableKind, resolveKind } from './node-kind'
 import { BRIDGE_NODE_ID } from './node-status-wire'
 import { hasFreshPduPage } from './node-telem'
 import { pduOutages } from './power-zone'
@@ -125,6 +125,16 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     hiddenNodes,
     rosterComplete: complete
   }
+}
+
+/**
+ * A new device worth telling the user about: not in the registry or adopted, on the bus now, and
+ * identified as something that can be adopted. Until then it is not news — not on the Cockpit
+ * count, the Overview notice or the event log. One predicate for every tab (node 0 is never in the
+ * model).
+ */
+export function isReportableNew(e: NodeModelEntry): boolean {
+  return e.source === 'new' && e.availability === 'online' && isAdoptableKind(e.identified)
 }
 
 /**

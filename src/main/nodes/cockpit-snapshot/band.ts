@@ -1,7 +1,8 @@
 // The health band (moved from the renderer's cockpit.ts, R3.2): node counts, the rails' amps and
 // watts, the lowest 5 V rail, the hottest PDU, the worst CAN counters and the session's peak W.
 import type { CockpitBand, HealthBand, NodeView, PduRailPage } from '@shared/nodes'
-import { displayCurrentMa, PDU_FLAG } from '@shared/nodes/legacy-rules'
+import { PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
+import { displayCurrentMa } from '../node-telem'
 
 const railW = (p?: PduRailPage) => (p ? (p.vAvgMv / 1000) * (displayCurrentMa(p.iAvgMa) / 1000) : 0)
 

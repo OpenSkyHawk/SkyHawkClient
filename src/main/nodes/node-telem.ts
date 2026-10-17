@@ -98,6 +98,11 @@ export function hasFreshPduPage(t: NodeTelemSnapshot): boolean {
   return [t.rail12V, t.rail5V, t.status].some((p) => p !== undefined && !p.stale)
 }
 
+/** iAvgMa for display: residual negative offset reads as 0. */
+export function displayCurrentMa(ma: number): number {
+  return Math.max(0, ma)
+}
+
 interface Entry {
   data: TelemPageData
   at: number

@@ -316,6 +316,29 @@ export interface PsuSetting {
 
 export const DEFAULT_PSU: PsuSetting = { mode: 'preset', preset: 'nx650', custom: {} }
 
+// Which values a PSU limit accepts (R3.4a: from shared/nodes/legacy-rules.ts). Part of the
+// contract because both sides need the same answer: main sanitizes a saved or imported limit with
+// it (psu-limits.ts), and the renderer marks a limit field invalid on every keystroke, from the text
+// typed since the form mounted, before anything is saved.
+
+/** Largest value accepted for any limit; anything above is a typo, not a desktop PSU. */
+export const PSU_LIMIT_MAX = 10000
+
+export const isLimit = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= PSU_LIMIT_MAX
+
+/**
+ * Parse one limit as typed. Empty means "unknown" (undefined); anything that is not a positive
+ * number up to PSU_LIMIT_MAX is refused (null), so the field can show it and nothing is saved.
+ */
+export function parsePsuLimit(text: string): number | undefined | null {
+  const t = text.trim()
+  if (!t) return undefined
+  if (!/^\d+(\.\d+)?$/.test(t)) return null
+  const n = Number(t)
+  return isLimit(n) ? n : null
+}
+
 export interface NodeRegistryInfo {
   /** Path in the firmware repo, e.g. Firmware/NODE_IDS.md. */
   file: string

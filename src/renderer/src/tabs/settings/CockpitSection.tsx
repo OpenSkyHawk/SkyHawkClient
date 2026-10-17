@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { PSU_LIMITS } from '@shared/format'
-import { parsePsuLimit } from '@shared/nodes/legacy-rules'
-import type { PsuLimits } from '@shared/nodes'
+import { parsePsuLimit, type PsuLimits } from '@shared/nodes'
 import { useStore } from '../../store'
 import { ResetDialog } from './ResetDialog'
 import { Row, SectionHead } from './Row'

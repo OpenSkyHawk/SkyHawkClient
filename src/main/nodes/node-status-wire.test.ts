@@ -9,7 +9,7 @@ import {
   parseNodeStatus,
   ROSTER_REPLY_MS
 } from './node-status-wire'
-import { nodeFaultTag } from '@shared/nodes/legacy-rules'
+import { nodeFaultTag } from './faults'
 import type { NodeStatus } from '@shared/nodes'
 import { nodeStatus } from '../../test-fixtures/nodes'
 

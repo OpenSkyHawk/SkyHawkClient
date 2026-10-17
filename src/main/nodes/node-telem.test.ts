@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { PDU_RAIL_FLAGS as RAIL_FLAG, PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
 import {
+  displayCurrentMa,
   hasFreshPduPage,
   NodeTelemStore,
   parseNodeTelem,
   TELEM_PAGE,
   TELEM_STALE_MS
 } from './node-telem'
-import { displayCurrentMa, PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
 import type { NodeTelem } from '@shared/nodes'
 
 /** `_NODE_TELEM` argument: nodeId + the 8 frame bytes, as the bridge forwards them. */
