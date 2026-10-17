@@ -34,7 +34,7 @@ import { format } from 'prettier'
 
 const PIN = {
   repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
-  commit: 'd29433ab149fcff1695e3d5eb07e2fab4211a603'
+  commit: 'a78dd90276fffb820b64ba74b82f354ab167348a'
 }
 
 const SRC = {
