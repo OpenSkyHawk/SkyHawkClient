@@ -61,7 +61,7 @@ scratch folder. Packaged builds without it use the normal OS app-data folder.
 ## Sync script
 
 `scripts/sync-a4ec.ts` (`npm run sync`) sparse-fetches a **pinned OpenSkyhawk commit**
-and regenerates `src/main/reference/*.generated.ts` — the A-4E-C control map, HID layout,
+and regenerates `src/shared/firmware/*.generated.ts` — the A-4E-C control map, HID layout,
 and SimGateway constants. Generated files are committed so normal builds need no network.
 CI runs a freshness check on every PR.
 

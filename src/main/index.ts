@@ -16,7 +16,7 @@ import {
 } from '@shared/ipc'
 import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/node-mapping'
 import { eventsToTsv } from '@shared/events'
-import { HID_CONTROLS, HID_ID } from './reference/hid-controls.generated'
+import { HID_CONTROLS, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
 import { Session } from './session'
 import { loadConfig, saveConfig } from './settings'
 import { loadCalCache, saveCalCache } from './cal-cache'
@@ -43,14 +43,22 @@ function hidAvailability(): HidAvailability {
   const hats: number[] = []
   const buttons: number[] = []
   for (const c of HID_CONTROLS) {
-    if (c.id >= HID_ID.AXIS_MIN && c.id <= HID_ID.AXIS_MAX && c.id - HID_ID.AXIS_MIN < 8) {
+    if (
+      c.id >= HID_ID.AXIS_MIN &&
+      c.id <= HID_ID.AXIS_MAX &&
+      c.id - HID_ID.AXIS_MIN < HID_REPORT_LAYOUT.axes.count
+    ) {
       axes.push(c.id - HID_ID.AXIS_MIN)
-    } else if (c.id >= HID_ID.HAT_MIN && c.id <= HID_ID.HAT_MAX && c.id - HID_ID.HAT_MIN < 4) {
+    } else if (
+      c.id >= HID_ID.HAT_MIN &&
+      c.id <= HID_ID.HAT_MAX &&
+      c.id - HID_ID.HAT_MIN < HID_REPORT_LAYOUT.hats.count
+    ) {
       hats.push(c.id - HID_ID.HAT_MIN)
     } else if (
       c.id >= HID_ID.BUTTON_MIN &&
       c.id <= HID_ID.BUTTON_MAX &&
-      c.id - HID_ID.BUTTON_MIN < 128
+      c.id - HID_ID.BUTTON_MIN < HID_REPORT_LAYOUT.buttons.count
     ) {
       buttons.push(c.id - HID_ID.BUTTON_MIN)
     }

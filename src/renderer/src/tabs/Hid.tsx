@@ -1,3 +1,4 @@
+import { HID_REPORT_LAYOUT } from '@shared/firmware'
 import { isLinkUp } from '@shared/ipc'
 import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
 import { freshness } from '../freshness'
@@ -56,7 +57,7 @@ function Axis({
   cal: CalState
   onCalibrate?: () => void
 }) {
-  const pct = Math.max(-1, Math.min(1, raw / 32768)) // signed ±32768
+  const pct = Math.max(-1, Math.min(1, raw / -HID_REPORT_LAYOUT.axes.min)) // signed ±32768
   const fillW = Math.abs(pct) * 50 // % of half-track
   const left = pct >= 0 ? 50 : 50 - fillW
   return (
@@ -160,7 +161,9 @@ export function Hid() {
         <div className="panel-h">
           <span className="section-h">Axes</span>
           <span className="meta">
-            {s.cal ? `${present.length} of 8 slots · device-reported` : 'int16 · ±32768'}
+            {s.cal
+              ? `${present.length} of ${HID_REPORT_LAYOUT.axes.count} slots · device-reported`
+              : `int16 · ±${-HID_REPORT_LAYOUT.axes.min}`}
           </span>
           {s.cal && (
             <span className={`meta ${uncalibrated ? 'meta--warn' : 'meta--ok'}`}>
@@ -222,7 +225,7 @@ export function Hid() {
         <div className="card field hid__hats">
           <div className="panel-h">
             <span className="section-h">Hats</span>
-            <span className="meta">8-way POV</span>
+            <span className="meta">{HID_REPORT_LAYOUT.hats.centeredAtOrAbove}-way POV</span>
           </div>
           <div className="hats">
             {s.hats.map((d, i) => (
@@ -249,12 +252,12 @@ export function Hid() {
         <div className="panel-h">
           <span className="section-h">Buttons</span>
           <span className="meta">
-            128 × 1-bit · {availButtons.size} mapped ·{' '}
+            {HID_REPORT_LAYOUT.buttons.count} × 1-bit · {availButtons.size} mapped ·{' '}
             <span className="meta--lit">{lit.size} lit</span>
           </span>
         </div>
         <div className="btns__grid">
-          {Array.from({ length: 128 }, (_, i) => {
+          {Array.from({ length: HID_REPORT_LAYOUT.buttons.count }, (_, i) => {
             const cls = lit.has(i) ? ' lit' : availButtons.has(i) ? '' : ' btn--off'
             return (
               <span key={i} className={`btn${cls}`} title={`Button ${i}`}>

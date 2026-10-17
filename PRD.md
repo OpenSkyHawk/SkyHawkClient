@@ -101,7 +101,7 @@ Settings expose: source mode, DCS host + transport (`loopback-multicast | unicas
 
 ## 7. Firmware sync (build-script, copies from the OpenSkyhawk repo)
 
-A committed `scripts/sync-a4ec.ts` (run via `npm run sync`, and as a `prebuild` step) **sparse-fetches a pinned git commit** of the OpenSkyhawk repo and emits typed modules under `src/main/reference/`:
+A committed `scripts/sync-a4ec.ts` (run via `npm run sync`, and as a `prebuild` step) **sparse-fetches a pinned git commit** of the OpenSkyhawk repo and emits typed modules under `src/shared/firmware/`:
 
 - `tools/gen_a4ec/data/A-4E-C.jsonp` → `a4ec-controls.generated.ts` (address→{name,mask,type,range,description}; both decode-by-address and command lookup).
 - `Firmware/Libraries/HIDControls/HIDControls.h` → `hid-controls.generated.ts` (controlId→name, range sentinels).

@@ -12,51 +12,41 @@
 // that way throughout the client. The ±32767 seen on the HID tab comes from the HID report,
 // where the firmware applied the offset; nothing here re-derives it.
 
+import { CAL_NACK_REASONS, CAL_PAYLOAD_LEN, CAL_PROTO, CAL_TYPES } from './firmware'
+
 /**
- * Constants restated from src/main/reference/axis-cal.generated.ts.
- *
- * They are duplicated rather than imported because `src/shared` is aliased everywhere while
- * `src/main/reference` is not, so importing across that boundary inverts the layering — the
- * same reason nodes.ts restates SUPPORTED_NODE_PROTO and HFLAG_*. reference.test.ts asserts
- * the two agree on every entry, so a firmware bump fails loudly rather than drifting.
+ * Constants from the generated firmware reference (shared/firmware, AxisCal.h), under the names
+ * the codec and its callers use. Nothing here is restated: a firmware bump changes them at sync.
  */
-export const CAL_PROTO_VERSION = 1
+export const CAL_PROTO_VERSION = CAL_PROTO.version
 
 /** Frame lead-in, "\xAA S K C". */
-export const CAL_MAGIC = Uint8Array.from([0xaa, 0x53, 0x4b, 0x43])
+export const CAL_MAGIC = Uint8Array.from(CAL_PROTO.magic)
 
 /** magic 4 + type 1 + seq 1 + len 2 + crc 2. */
-export const CAL_ENVELOPE_BYTES = 10
+export const CAL_ENVELOPE_BYTES = CAL_PROTO.envelopeBytes
 
 /** CAL_DATA, the largest legal payload — and the bound on how much a receiver may buffer. */
-export const CAL_MAX_PAYLOAD = 82
+export const CAL_MAX_PAYLOAD = CAL_PROTO.maxPayload
 
 /** HID report axis slots. Fixed by the descriptor, not by how many a cockpit populates. */
-export const AXIS_CAL_SLOTS = 8
+export const AXIS_CAL_SLOTS = CAL_PROTO.axisSlots
 
 /** Axis sentinel: "all" for RESET, "none" for SESSION_OPEN / STREAM_SELECT. */
-export const CAL_AXIS_NONE = 0xff
+export const CAL_AXIS_NONE = CAL_PROTO.axisNone
 
-/** Message types. High bit set = device -> client. */
-export const CAL_TYPE = {
-  HELLO: 0x01,
-  GET_CAL: 0x02,
-  SESSION_OPEN: 0x03,
-  SESSION_CLOSE: 0x04,
-  COMMIT: 0x05,
-  RESET: 0x06,
-  KEEPALIVE: 0x07,
-  STREAM_SELECT: 0x08,
-  HELLO_ACK: 0x81,
-  CAL_DATA: 0x82,
-  SESSION_ACK: 0x83,
-  ACK: 0x84,
-  NACK: 0x85,
-  RAW: 0x86
-} as const
+/** A generated code-keyed table, turned around: name -> wire code. */
+function byName(
+  table: Partial<Record<number, { name: string }>>
+): Readonly<Record<string, number>> {
+  return Object.fromEntries(Object.entries(table).map(([code, info]) => [info!.name, Number(code)]))
+}
+
+/** Message types, by name (CAL_TYPES). High bit set = device -> client. */
+export const CAL_TYPE = byName(CAL_TYPES)
 
 /**
- * NACK reasons.
+ * NACK reasons, by name (CAL_NACK_REASONS).
  *
  * Only five can ever reach a client. BAD_CRC, BAD_LENGTH and BAD_TYPE are all rejected at the
  * gateway's framing layer, where a failing candidate is not a frame at all — its bytes are
@@ -64,19 +54,33 @@ export const CAL_TYPE = {
  * timeout on HELLO, never as a NACK**, so the no-answer path has to cover no-device,
  * wrong-firmware and newer-protocol alike.
  */
-export const CAL_NACK = {
-  BAD_CRC: 0x01,
-  BAD_LENGTH: 0x02,
-  BAD_TYPE: 0x03,
-  BAD_INDEX: 0x04,
-  BAD_ORDER: 0x05,
-  NO_SESSION: 0x06,
-  NO_STORAGE: 0x07,
-  BAD_DEADZONE: 0x08
-} as const
+export const CAL_NACK = byName(CAL_NACK_REASONS)
+
+/** The five NACK reasons that can actually reach a client (see CAL_NACK). */
+const REACHABLE_NACK: ReadonlySet<string> = new Set([
+  'BAD_INDEX',
+  'BAD_ORDER',
+  'NO_SESSION',
+  'NO_STORAGE',
+  'BAD_DEADZONE'
+])
 
 /**
- * The one legal payload length per type.
+ * A NACK reason as CalLink's refusal message names it: one of the five reachable reasons by
+ * name, anything else as `reason 0x…`.
+ */
+export function nackRefusalName(reason: number): string {
+  const name = CAL_NACK_REASONS[reason]?.name
+  return name !== undefined && REACHABLE_NACK.has(name) ? name : `reason 0x${reason.toString(16)}`
+}
+
+/** A NACK reason as a calibration failure reports it: any known reason by name, else `0x…`. */
+export function nackReasonName(reason: number): string {
+  return CAL_NACK_REASONS[reason]?.name ?? `0x${reason.toString(16)}`
+}
+
+/**
+ * The one legal payload length per type (generated CAL_PAYLOAD_LEN).
  *
  * `LEN` is not merely bounded, it is fixed by `TYPE`, and it is checked **before the payload is
  * buffered**. `LEN` is read before the CRC can be verified, so on a false frame it is noise: a
@@ -84,22 +88,7 @@ export const CAL_NACK = {
  * that many bytes stalls its line assembly. There are no variable-length types — COMMIT carries
  * exactly one axis — so there is no exception to state or to get wrong.
  */
-export const CAL_PAYLOAD_LEN: Readonly<Record<number, number>> = {
-  [CAL_TYPE.HELLO]: 0,
-  [CAL_TYPE.GET_CAL]: 0,
-  [CAL_TYPE.SESSION_OPEN]: 1,
-  [CAL_TYPE.SESSION_CLOSE]: 0,
-  [CAL_TYPE.COMMIT]: 9,
-  [CAL_TYPE.RESET]: 1,
-  [CAL_TYPE.KEEPALIVE]: 0,
-  [CAL_TYPE.STREAM_SELECT]: 1,
-  [CAL_TYPE.HELLO_ACK]: 6,
-  [CAL_TYPE.CAL_DATA]: 82,
-  [CAL_TYPE.SESSION_ACK]: 5,
-  [CAL_TYPE.ACK]: 1,
-  [CAL_TYPE.NACK]: 3,
-  [CAL_TYPE.RAW]: 5
-}
+export { CAL_PAYLOAD_LEN }
 
 /** Largest complete frame, and therefore the hard bound on CalDemux's carry. */
 export const CAL_MAX_FRAME = CAL_ENVELOPE_BYTES + CAL_MAX_PAYLOAD

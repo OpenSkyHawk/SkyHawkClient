@@ -1,6 +1,6 @@
 // Turns raw DCS-BIOS writes into named log rows, aircraft state, and the five
 // sim-telemetry readouts — using the generated A-4E-C reference.
-import { A4EC_OUTPUTS_BY_ADDRESS } from './reference/a4ec-controls.generated'
+import { A4EC_OUTPUTS_BY_ADDRESS } from '@shared/firmware'
 import { A4EC_ADDRESS_RANGE } from './reference/dcsbios-metadata'
 import { StringRegion, ACFT_NAME_ADDRESS, ACFT_NAME_MAX } from '@shared/dcsbios'
 import type { AircraftStatus, LogRow, TelemetryReadout } from '@shared/ipc'

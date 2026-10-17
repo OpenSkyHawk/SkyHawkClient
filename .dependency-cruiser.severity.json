@@ -5,7 +5,7 @@
   "rendererShared": "warn",
   "contracts": "warn",
   "cycles": "warn",
-  "firmwareLeaf": "warn",
+  "firmwareLeaf": "error",
   "formatLeaf": "warn",
   "kitLeaf": "warn",
   "topicsMain": "warn",

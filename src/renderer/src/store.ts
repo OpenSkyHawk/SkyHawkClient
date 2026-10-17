@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { isLinkUp } from '@shared/ipc'
+import { HID_CONTROLS_BY_ID, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
 import type {
   AircraftStatus,
   AppConfig,
@@ -38,16 +39,11 @@ export interface LogRow {
   raw: string
 }
 
-export const AXIS_LABELS = [
-  'Roll',
-  'Pitch',
-  'Throttle',
-  'Rudder',
-  'Brake L',
-  'Brake R',
-  'Zoom',
-  'Spare'
-]
+/** Per HID axis slot: its HIDControls.h label, or "Spare" for a slot the firmware doesn't catalogue. */
+export const AXIS_LABELS = Array.from(
+  { length: HID_REPORT_LAYOUT.axes.count },
+  (_, i) => HID_CONTROLS_BY_ID.get(HID_ID.AXIS_MIN + i)?.label ?? 'Spare'
+)
 
 // ── renderer <-> main transport mapping ──────────────────────────────────────
 const TRANSPORT_TO_IPC: Record<Transport, DcsTransport> = {
@@ -305,9 +301,9 @@ export const useStore = create<AppState>((set, get) => ({
   cmdsTotal: 0,
   lastCmd: '—',
 
-  axes: Array(8).fill(0),
+  axes: Array(HID_REPORT_LAYOUT.axes.count).fill(0),
   buttons: [],
-  hats: [0, 0, 0, 0],
+  hats: Array(HID_REPORT_LAYOUT.hats.count).fill(0),
   availAxes: [],
   availHats: [],
   availButtons: [],

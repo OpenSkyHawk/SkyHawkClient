@@ -34,8 +34,7 @@ import {
   type ResetPreview
 } from '@shared/node-mapping'
 import { buildNodeModel, type NodeModel } from '@shared/node-rules'
-import { NODE_NAMES, NODE_REGISTRY_SOURCE } from './reference/node-names.generated'
-import { NODE_FAULT_CODES } from './reference/node-status.generated'
+import { NODE_FAULT_CODES, NODE_NAMES, NODE_REGISTRY_SOURCE } from '@shared/firmware'
 import {
   loadNodeMapping,
   MappingSaveError,
@@ -52,10 +51,10 @@ const NODE_TELEM_PUSH_MS = 1000
 /** Fault-dictionary enrichment: the abbr, label and description for the node's faultId. */
 /**
  * Client wording where the generated text reads like firmware notes (the label comes from the enum
- * name, the description from the header comment).
+ * name, the description from the header comment). Keyed by NODE_FAULT_CODES name.
  */
-const FAULT_TEXT: Partial<Record<number, { label: string; description: string }>> = {
-  0x09: {
+const FAULT_TEXT: Partial<Record<string, { label: string; description: string }>> = {
+  DUPLICATE_NODE_ID: {
     label: 'Duplicate NODE_ID',
     description:
       'another board uses this NODE_ID, so the two are reported as one and this row mixes both'
@@ -64,7 +63,7 @@ const FAULT_TEXT: Partial<Record<number, { label: string; description: string }>
 
 export function withFaultInfo(n: NodeStatus): NodeStatus {
   const fc = n.faultId ? NODE_FAULT_CODES[n.faultId] : undefined
-  const text = n.faultId ? FAULT_TEXT[n.faultId] : undefined
+  const text = fc ? FAULT_TEXT[fc.name] : undefined
   return {
     ...n,
     faultAbbr: fc?.abbr,

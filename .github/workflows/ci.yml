@@ -19,7 +19,7 @@ jobs:
       - name: Sync freshness check
         run: |
           npm run sync
-          git diff --exit-code -- src/main/reference \
+          git diff --exit-code -- src/shared/firmware \
             || (echo "::error::generated reference files are stale — run 'npm run sync' and commit" && exit 1)
       - run: npm run lint
       - name: Boundary lint (warn-only until each phase flips its rules)

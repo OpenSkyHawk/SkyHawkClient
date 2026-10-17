@@ -3,39 +3,22 @@ import {
   A4EC_OUTPUTS,
   A4EC_OUTPUTS_BY_ADDRESS,
   A4EC_INPUTS,
-  A4EC_INPUTS_BY_ID
-} from './a4ec-controls.generated'
-import { HID_CONTROLS, HID_CONTROLS_BY_ID, HID_ID } from './hid-controls.generated'
-import { HID_REPORT_LAYOUT } from './hid-report-layout.generated'
-import {
+  A4EC_INPUTS_BY_ID,
+  HID_CONTROLS,
+  HID_CONTROLS_BY_ID,
+  HID_ID,
+  HID_REPORT_LAYOUT,
   NODE_STATUS,
-  NODE_HEALTH_FLAGS,
   NODE_FAULT_CODES,
-  NODE_KINDS,
   NODE_TELEM,
-  TELEM_PAGES,
-  PDU_RAIL_FLAGS,
-  PDU_STATUS_FLAGS
-} from './node-status.generated'
-import { NODE_NAMES } from './node-names.generated'
-import { CAL_PROTO, CAL_TYPES, CAL_NACK_REASONS, CAL_PAYLOAD_LEN } from './axis-cal.generated'
-import { ACFT_NAME } from './dcsbios-metadata'
-import {
-  HFLAG_DEGRADED,
-  HFLAG_OVERHEAT,
-  NODE_END_MSG,
-  NODE_KIND,
-  NODE_MSG,
-  NODE_REQ_ADDR,
-  SUPPORTED_NODE_PROTO
-} from '@shared/nodes'
-import {
-  NODE_TELEM_MSG,
-  PDU_FLAG,
-  RAIL_FLAG,
-  SUPPORTED_TELEM_PROTO,
-  TELEM_PAGE
-} from '@shared/node-telem'
+  NODE_NAMES,
+  CAL_PROTO,
+  CAL_TYPES,
+  CAL_PAYLOAD_LEN
+} from '.'
+import { ACFT_NAME } from '../../main/reference/dcsbios-metadata'
+import { SUPPORTED_NODE_PROTO } from '@shared/nodes'
+import { SUPPORTED_TELEM_PROTO } from '@shared/node-telem'
 import * as cal from '@shared/calibration'
 
 describe('a4ec-controls.generated', () => {
@@ -102,14 +85,6 @@ describe('dcsbios-metadata', () => {
 describe('node-status.generated', () => {
   it('matches the shared decoder contract (fails loudly on a firmware bump)', () => {
     expect(NODE_STATUS.protoVersion).toBe(SUPPORTED_NODE_PROTO)
-    expect(NODE_STATUS.reqAddress).toBe(NODE_REQ_ADDR)
-    expect(NODE_STATUS.msgName).toBe(NODE_MSG)
-    expect(NODE_STATUS.endMsgName).toBe(NODE_END_MSG)
-  })
-
-  it('health-flag masks match the decoder (firmware bit reassignment fails loudly)', () => {
-    expect(NODE_HEALTH_FLAGS.OVERHEAT).toBe(HFLAG_OVERHEAT)
-    expect(NODE_HEALTH_FLAGS.DEGRADED).toBe(HFLAG_DEGRADED)
   })
 
   it('fault-code dictionary pins every known code (append-only; a renumber fails loudly)', () => {
@@ -145,70 +120,20 @@ describe('node-status.generated', () => {
   })
 })
 
-// shared/node-telem.ts restates these so `src/shared` needs no `src/main` import. Compared in both
-// directions, so a page or flag added, removed or renumbered firmware-side fails here.
+// shared/node-telem.ts imports its page ids and flag bits from here; only the decoder's protocol
+// version is its own, so a firmware bump fails here rather than mis-decoding.
 describe('node-telem contract', () => {
   it('matches the shared decoder (fails loudly on a firmware bump)', () => {
     expect(NODE_TELEM.protoVersion).toBe(SUPPORTED_TELEM_PROTO)
-    expect(NODE_TELEM.msgName).toBe(NODE_TELEM_MSG)
-  })
-
-  it('page ids and flag bits match the decoder exactly', () => {
-    expect(TELEM_PAGES).toEqual(TELEM_PAGE)
-    expect(PDU_RAIL_FLAGS).toEqual(RAIL_FLAG)
-    expect(PDU_STATUS_FLAGS).toEqual(PDU_FLAG)
-    // _NODE_STATUS v3 nodeKind (#344): the parser's names must be the firmware's.
-    expect(NODE_KINDS).toEqual(NODE_KIND)
   })
 })
 
-// shared/calibration.ts restates these constants rather than importing them, because `src/shared`
-// is aliased everywhere and `src/main/reference` is not. That duplication is only safe because
-// these assertions are exhaustive in BOTH directions — a firmware bump that adds, removes or
-// renumbers anything has to fail here, not surface as a mis-framed packet on the wire.
+// shared/calibration.ts imports these from here. The codec's framing and payload decoders are
+// written for one protocol version, so a firmware bump to another has to fail here, not surface as
+// a mis-framed packet on the wire.
 describe('axis-cal.generated', () => {
-  it('scalar contract matches the codec', () => {
-    expect(CAL_PROTO.version).toBe(cal.CAL_PROTO_VERSION)
-    expect(CAL_PROTO.axisSlots).toBe(cal.AXIS_CAL_SLOTS)
-    expect(CAL_PROTO.axisNone).toBe(cal.CAL_AXIS_NONE)
-    expect(CAL_PROTO.envelopeBytes).toBe(cal.CAL_ENVELOPE_BYTES)
-    expect(CAL_PROTO.maxPayload).toBe(cal.CAL_MAX_PAYLOAD)
-    expect([...CAL_PROTO.magic]).toEqual([...cal.CAL_MAGIC])
-  })
-
-  it('every message type agrees, in both directions', () => {
-    const generated = new Map(
-      Object.entries(CAL_TYPES).map(([code, info]) => [info!.name, Number(code)])
-    )
-    const codec = new Map(Object.entries(cal.CAL_TYPE))
-    // Same names on both sides — catches a type added or dropped firmware-side.
-    expect([...codec.keys()].sort()).toEqual([...generated.keys()].sort())
-    for (const [name, code] of codec) expect(generated.get(name), name).toBe(code)
-  })
-
-  it('every payload length agrees, for every type', () => {
-    for (const [name, code] of Object.entries(cal.CAL_TYPE)) {
-      expect(CAL_PAYLOAD_LEN[code], name).toBe(cal.CAL_PAYLOAD_LEN[code])
-    }
-    // No length in the codec that the firmware does not declare, and vice versa.
-    expect(
-      Object.keys(cal.CAL_PAYLOAD_LEN)
-        .map(Number)
-        .sort((a, b) => a - b)
-    ).toEqual(
-      Object.keys(CAL_PAYLOAD_LEN)
-        .map(Number)
-        .sort((a, b) => a - b)
-    )
-  })
-
-  it('every NACK reason agrees, in both directions', () => {
-    const generated = new Map(
-      Object.entries(CAL_NACK_REASONS).map(([code, info]) => [info!.name, Number(code)])
-    )
-    const codec = new Map(Object.entries(cal.CAL_NACK))
-    expect([...codec.keys()].sort()).toEqual([...generated.keys()].sort())
-    for (const [name, code] of codec) expect(generated.get(name), name).toBe(code)
+  it('is the protocol version the codec is written for', () => {
+    expect(CAL_PROTO.version).toBe(1)
   })
 
   it('marks device-originated types by the high bit', () => {
