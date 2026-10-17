@@ -6,7 +6,7 @@ import type { LogEvent } from '@shared/events'
 import type { NodeModel } from '@shared/nodes'
 import { statusLine } from '../../test-fixtures/nodes'
 
-// Session pulls in electron (debug log path), the serial port, the DCS transport and node-hid.
+// AppServices pulls in electron (debug log path), the serial port, the DCS transport and node-hid.
 // Only the seams matter here, so each is replaced with something a test can drive directly.
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
 
@@ -126,7 +126,7 @@ vi.mock('../hid/hid-reader', () => ({
   }
 }))
 
-const { Session } = await import('./session')
+const { AppServices } = await import('./app-services')
 const { deviceToDcs, exportToDevice, relayConfigChanged } = await import('../dcs/relay-rules')
 const { PortNotFoundError } = await import('../gateway/serial-bridge')
 const { nodeRosterRequest } = await import('../nodes/node-status-wire')
@@ -135,7 +135,7 @@ const { DEFAULT_CONFIG } = await import('@shared/config')
 const ascii = (s: string) => Buffer.from(s, 'ascii')
 
 function bridgeSession() {
-  const session = new Session(() => {})
+  const session = new AppServices(() => {})
   session.settings.update({ sourceMode: 'bridge' })
   session.open()
   FakeSerial.last!.openCb('/dev/fake') // a Bridge relay starts only with the board connected
@@ -146,7 +146,7 @@ function bridgeSession() {
   return { session, serial, transport }
 }
 
-describe('Session de-mux boundary', () => {
+describe('AppServices de-mux boundary', () => {
   beforeEach(() => {
     FakeSerial.last = undefined
     FakeTransport.last = undefined
@@ -212,7 +212,7 @@ describe('node telemetry tap', () => {
     vi.useFakeTimers()
     try {
       const pushes: [string, unknown][] = []
-      const session = new Session((c, p) => pushes.push([c, p]))
+      const session = new AppServices((c, p) => pushes.push([c, p]))
       session.settings.update({ sourceMode: 'bridge' })
       session.open()
       const serial = FakeSerial.last!
@@ -262,7 +262,7 @@ describe('HID reporting latency', () => {
     // reference HID tester in the first place.
     vi.useFakeTimers()
     const hidEvents: boolean[][] = []
-    const session = new Session((ch, payload) => {
+    const session = new AppServices((ch, payload) => {
       if (ch === 'hid:report') hidEvents.push([...(payload as { buttons: boolean[] }).buttons])
     })
     session.settings.update({ sourceMode: 'bridge' })
@@ -316,9 +316,11 @@ describe('HID recovery after an unplug', () => {
 type Push = [string, unknown]
 
 /** A session with the link open (app launched), the relay not started, and a recorder of pushes. */
-function launched(config: Parameters<InstanceType<typeof Session>['settings']['update']>[0] = {}) {
+function launched(
+  config: Parameters<InstanceType<typeof AppServices>['settings']['update']>[0] = {}
+) {
   const pushes: Push[] = []
-  const session = new Session((c, p) => pushes.push([c, p]))
+  const session = new AppServices((c, p) => pushes.push([c, p]))
   session.settings.update(config)
   session.open()
   const serial = FakeSerial.last!
@@ -681,7 +683,7 @@ describe('Gateway health (#94)', () => {
     FakeTransport.last = undefined
   })
 
-  const rows = (session: InstanceType<typeof Session>) =>
+  const rows = (session: InstanceType<typeof AppServices>) =>
     session.journal.snapshot().map((e) => `${e.source}:${e.name}: ${eventText(e)}`)
 
   /** The Gateway's own row (node 0, kind 03, 42 °C), with these heartbeat flags. */
@@ -785,7 +787,7 @@ describe('event log (#64)', () => {
     FakeTransport.last = undefined
   })
 
-  const rows = (session: InstanceType<typeof Session>) =>
+  const rows = (session: InstanceType<typeof AppServices>) =>
     session.journal.snapshot().map((e) => `${e.source}:${e.name}: ${eventText(e)}`)
 
   it('moves link errors out of the stream log into client events', () => {

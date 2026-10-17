@@ -2,10 +2,8 @@
 // asks (it would otherwise stream the export at full rate); taps GatewayConnection.onTraffic, and
 // flushes `serial:traffic` on its own timer on the link's list (LinkRider).
 import type { SerialFrame } from '@shared/gateway'
-import type { PushChannel, PushChannels } from '@shared/app'
+import type { Emit } from '@shared/app'
 import type { LinkRider, LinkTimer } from './gateway-connection'
-
-type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 const SERIAL_FLUSH_MS = 50
 const MAX_SERIAL_BUF = 4000

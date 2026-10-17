@@ -9,8 +9,8 @@
   "firmwareLeaf": "error",
   "formatLeaf": "error",
   "kitLeaf": "warn",
-  "topicsMain": "warn",
+  "topicsMain": "error",
   "topicsRenderer": "warn",
-  "deepMain": "warn",
+  "deepMain": "error",
   "deepRenderer": "warn"
 }

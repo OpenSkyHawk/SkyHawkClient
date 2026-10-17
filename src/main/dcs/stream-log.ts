@@ -2,11 +2,9 @@
 // the export, batched to the renderer on a 33 ms flush. The same flush pushes the event log's new
 // rows first (its `events:batch`), as it did in Session.
 import type { LogRow } from '@shared/dcs'
-import type { PushChannel, PushChannels } from '@shared/app'
+import type { Emit } from '@shared/app'
 import type { DeviceLine } from '../gateway'
 import type { Stats } from './stream-stats'
-
-type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 /** The event log, as this flush drives it (EventJournal). */
 export interface StreamLogEvents {

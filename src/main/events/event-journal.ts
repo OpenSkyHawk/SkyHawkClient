@@ -3,11 +3,10 @@
 // relay's rows (DcsRelay), client errors, and the Gateway link's state rows. The rows themselves
 // are made where they happen (nodes, gateway/link-events.ts, dcs/relay-events.ts); this only
 // records them, dedupes the repeats, and pushes what is new on the stream log's flush.
+import type { Emit } from '@shared/app'
 import type { EventsPushChannels, LogEvent, LogEventInput } from '@shared/events'
 import type { DeviceState } from '@shared/gateway'
 import { clientErrorEvent, EventLog, eventsToTsv } from './event-log'
-
-type Emit = <C extends keyof EventsPushChannels>(channel: C, payload: EventsPushChannels[C]) => void
 
 /** Where client errors also go (app's debug log). */
 export type JournalLog = (tag: string, data?: unknown) => void
@@ -21,7 +20,7 @@ export class EventJournal {
   private lastErr = new Map<string, string>()
 
   constructor(
-    private readonly emit: Emit,
+    private readonly emit: Emit<keyof EventsPushChannels>,
     private readonly log: JournalLog
   ) {}
 

@@ -18,7 +18,7 @@ import type {
   ResetOptions,
   ResetPreview
 } from '@shared/nodes'
-import type { PushChannel, PushChannels } from '@shared/app'
+import type { Emit } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
 import { isLinkUp, type DeviceStatus, type GatewayStatus } from '@shared/gateway'
 import { GatewayWatch, type LinkRider, type NodeLineSink } from '../gateway'
@@ -59,8 +59,6 @@ import {
 import { NODE_TELEM_MSG, NodeTelemStore, parseNodeTelem } from './node-telem'
 import { registryDefaults } from './registry'
 import { MappingSaveError, MappingStore, type MappingFileIO } from './mapping-store'
-
-type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
@@ -184,7 +182,7 @@ export class NodeHub implements NodeLineSink {
 
   // ── the link's moments (gateway LinkRider) ────────────────────────────────
 
-  /** NodeHub's part of the Gateway connection's moments. Session rides it after HID. */
+  /** NodeHub's part of the Gateway connection's moments. AppServices rides it after HID. */
   readonly rider: LinkRider = {
     // Poll the node roster so silent deaths get reconciled — relaying or not.
     timers: (every) => every(NODES_REFRESH_MS, () => this.requestNodes()),

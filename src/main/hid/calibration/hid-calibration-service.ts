@@ -16,14 +16,12 @@ import type {
   CalResult,
   CalSnapshot
 } from '@shared/hid/calibration'
-import type { PushChannel, PushChannels } from '@shared/app'
+import type { Emit } from '@shared/app'
 import type { CalFrameFilter, LinkRider, LinkTimer } from '../../gateway'
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
 import { loadCalCache, saveCalCache, type CacheFileIO } from './cache-store'
 import { boardFor, dropAxis, regressedAxes, storeAxes } from './cache-rules'
 import { CAL_AXIS_NONE, nackReasonName } from './codec'
-
-type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 /** `cal:raw` batches: the serial monitor's cadence, as before the split. */
 const CAL_RAW_FLUSH_MS = 50

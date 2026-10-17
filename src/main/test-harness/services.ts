@@ -1,7 +1,7 @@
 // Services harness for SESSION-seam tests (test-only: production code never imports this).
 //
-// `makeServices()` launches the main process the way app/index.ts does — settings loaded from
-// config.json, then the device link opened — with fakes standing in for the hardware and the
+// `makeServices()` launches the main process the way app/bootstrap.ts does — settings loaded
+// from config.json, then the device link opened — with fakes standing in for the hardware and the
 // outside world: the SimGateway serial port, the DCS transport, HID, the clock and <userData>.
 //
 // A test sees only what the app shows the outside world:
@@ -10,8 +10,8 @@
 //   - the files main writes under <userData>,
 //   - bytes on the fake serial port and the fake DCS socket,
 //   - a clock it advances.
-// Never the objects inside. Today the harness wraps `Session`; once Session becomes `AppServices`
-// (R2.3) only this file changes, and the tests written against it keep passing as they are.
+// Never the objects inside. The harness wraps `AppServices` (R2.3c; it wrapped `Session` before):
+// only this file changed, and the tests written against it kept passing as they are.
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -114,8 +114,8 @@ class FakeHid {
 
 // Registered before main is imported (below), so main is built against the fakes. Paths are
 // relative to this file. The mapping, settings and calibration-cache stores are real: they write
-// <userData>, through the same store paths app/index.ts hands them. electron is still faked for
-// app's own use of it (debug.log, the version).
+// <userData>, through the same store paths app/bootstrap.ts hands them. electron is still faked
+// for app's own use of it (debug.log, the version).
 vi.doMock('electron', () => ({
   app: {
     getPath: () => world.userData,
@@ -135,7 +135,7 @@ vi.doMock('../gateway/serial-bridge', () => ({
 vi.doMock('../dcs/transports', () => ({ createTransport: () => new FakeTransport() }))
 vi.doMock('../hid/hid-reader', () => ({ HidReader: FakeHid }))
 
-const { Session } = await import('../app/session')
+const { AppServices } = await import('../app/app-services')
 const { storePaths } = await import('../app/user-data')
 const { PortNotFoundError } = await import('../gateway/serial-bridge')
 
@@ -201,42 +201,43 @@ function launch(opts: ServicesOptions) {
   FakeSerial.last = undefined
   FakeTransport.last = undefined
 
-  // app/index.ts: the <userData> files, handed to the stores.
+  // app/bootstrap.ts: the <userData> files, handed to the stores.
   const paths = storePaths(() => world.userData)
 
   const pushes: Push[] = []
-  const session = new Session((channel, payload) => {
+  const services = new AppServices((channel, payload) => {
     pushes.push({ channel, payload } as Push)
   }, paths)
 
-  // app/index.ts registerIpc(): the renderer's requests main answers, by channel.
+  // app/ipc.ts registerIpc() and the topics' ipc.ts: the renderer's requests main answers.
   const intents = {
-    [CTRL.configGet]: () => session.settings.get(),
-    [CTRL.configSet]: (patch: Partial<AppConfig>) => session.settings.apply(patch),
-    [CTRL.relayStart]: () => session.relay.start(),
-    [CTRL.relayStop]: () => session.relay.stop(),
-    [CTRL.relayStatus]: () => session.status(),
-    [CTRL.deviceConnect]: () => session.connection.connect(),
-    [CTRL.deviceDisconnect]: () => session.connection.disconnect(),
-    [CTRL.nodesRefresh]: () => session.nodes.requestNodes(),
-    [CTRL.nodesGet]: () => session.nodes.snapshot(),
-    [CTRL.nodeMappingSet]: (id: number, patch: MappingPatch) => session.nodes.setMapping(id, patch),
-    [CTRL.nodeMappingAdopt]: (id: number, spec: AdoptSpec) => session.nodes.adopt(id, spec),
-    [CTRL.nodeMappingForget]: (id: number) => session.nodes.forget(id),
-    [CTRL.nodeMappingResetNode]: (id: number) => session.nodes.resetBoard(id),
-    [CTRL.nodeMappingReset]: (opts?: ResetOptions) => session.nodes.resetAll(opts),
-    [CTRL.nodeMappingResetPreview]: () => session.nodes.previewReset(),
-    [CTRL.nodeRegistry]: () => session.nodes.registry(),
-    [CTRL.nodeMappingHide]: (id: number, on: boolean) => session.nodes.hide(id, on),
-    [CTRL.serialMonitor]: (on: boolean) => session.serialMonitor.setSerialMonitor(on),
-    [CTRL.eventsGet]: () => session.journal.snapshot(),
-    [CTRL.eventsClear]: () => session.journal.clear()
+    [CTRL.configGet]: () => services.settings.get(),
+    [CTRL.configSet]: (patch: Partial<AppConfig>) => services.settings.apply(patch),
+    [CTRL.relayStart]: () => services.relay.start(),
+    [CTRL.relayStop]: () => services.relay.stop(),
+    [CTRL.relayStatus]: () => services.status(),
+    [CTRL.deviceConnect]: () => services.connection.connect(),
+    [CTRL.deviceDisconnect]: () => services.connection.disconnect(),
+    [CTRL.nodesRefresh]: () => services.nodes.requestNodes(),
+    [CTRL.nodesGet]: () => services.nodes.snapshot(),
+    [CTRL.nodeMappingSet]: (id: number, patch: MappingPatch) =>
+      services.nodes.setMapping(id, patch),
+    [CTRL.nodeMappingAdopt]: (id: number, spec: AdoptSpec) => services.nodes.adopt(id, spec),
+    [CTRL.nodeMappingForget]: (id: number) => services.nodes.forget(id),
+    [CTRL.nodeMappingResetNode]: (id: number) => services.nodes.resetBoard(id),
+    [CTRL.nodeMappingReset]: (opts?: ResetOptions) => services.nodes.resetAll(opts),
+    [CTRL.nodeMappingResetPreview]: () => services.nodes.previewReset(),
+    [CTRL.nodeRegistry]: () => services.nodes.registry(),
+    [CTRL.nodeMappingHide]: (id: number, on: boolean) => services.nodes.hide(id, on),
+    [CTRL.serialMonitor]: (on: boolean) => services.serialMonitor.setSerialMonitor(on),
+    [CTRL.eventsGet]: () => services.journal.snapshot(),
+    [CTRL.eventsClear]: () => services.journal.clear()
   }
   type Intents = typeof intents
 
-  // app/index.ts app.whenReady(): seed from persisted settings, then bring the device link up.
-  session.settings.load()
-  session.open()
+  // app/bootstrap.ts app.whenReady(): seed from persisted settings, then bring the device link up.
+  services.settings.load()
+  services.open()
 
   let quit = false
   let disposed = false
@@ -364,14 +365,14 @@ function launch(opts: ServicesOptions) {
 
     /** The window closes (`window-all-closed`): the relay stops, the app keeps running. */
     closeWindow(): void {
-      session.relay.stop()
+      services.relay.stop()
     },
 
     /** The app quits (`will-quit`). */
     quit(): void {
       if (quit) return
       quit = true
-      session.shutdown()
+      services.shutdown()
     },
 
     /** Quit if still running, put real timers back and delete <userData>. Idempotent. */

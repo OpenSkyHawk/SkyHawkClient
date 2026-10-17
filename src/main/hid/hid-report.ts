@@ -5,7 +5,8 @@
 //   int16_t axes[8]      // X Y Z Rx Ry Rz Slider Dial (little-endian)
 // => 34 bytes, no report id. The numbers come from HID_REPORT_LAYOUT (shared/firmware), which the
 // sync asserts against that struct.
-import { HID_REPORT_LAYOUT } from '@shared/firmware'
+import type { HidAvailability } from '@shared/hid'
+import { HID_CONTROLS, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
 
 export const HID_REPORT_SIZE = HID_REPORT_LAYOUT.size
 export const HID_AXIS_COUNT = HID_REPORT_LAYOUT.axes.count
@@ -65,4 +66,33 @@ export function decodeReport(report: Uint8Array): {
   }
 
   return { axes, buttons, hats }
+}
+
+/** Report indices the firmware catalogues, derived from HIDControls.h. */
+export function hidAvailability(): HidAvailability {
+  const axes: number[] = []
+  const hats: number[] = []
+  const buttons: number[] = []
+  for (const c of HID_CONTROLS) {
+    if (
+      c.id >= HID_ID.AXIS_MIN &&
+      c.id <= HID_ID.AXIS_MAX &&
+      c.id - HID_ID.AXIS_MIN < HID_REPORT_LAYOUT.axes.count
+    ) {
+      axes.push(c.id - HID_ID.AXIS_MIN)
+    } else if (
+      c.id >= HID_ID.HAT_MIN &&
+      c.id <= HID_ID.HAT_MAX &&
+      c.id - HID_ID.HAT_MIN < HID_REPORT_LAYOUT.hats.count
+    ) {
+      hats.push(c.id - HID_ID.HAT_MIN)
+    } else if (
+      c.id >= HID_ID.BUTTON_MIN &&
+      c.id <= HID_ID.BUTTON_MAX &&
+      c.id - HID_ID.BUTTON_MIN < HID_REPORT_LAYOUT.buttons.count
+    ) {
+      buttons.push(c.id - HID_ID.BUTTON_MIN)
+    }
+  }
+  return { axes, hats, buttons }
 }

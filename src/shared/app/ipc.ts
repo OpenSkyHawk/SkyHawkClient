@@ -94,6 +94,15 @@ export interface PushChannels
 
 export type PushChannel = keyof PushChannels
 
+/**
+ * A main → renderer push, as AppServices hands it to each service. `Emit<C>` narrows it to some
+ * channels (EventJournal pushes only `events:batch`); the full `Emit` is assignable to any of them.
+ */
+export type Emit<Channels extends PushChannel = PushChannel> = <C extends Channels>(
+  channel: C,
+  payload: PushChannels[C]
+) => void
+
 export const IPC = {
   ...GATEWAY_PUSH,
   ...DCS_PUSH,
@@ -122,6 +131,21 @@ export const CTRL = {
   ...NODES_CTRL,
   ...CALIBRATION_CTRL
 } as const
+
+/** An intent channel: any CTRL value. */
+export type CtrlChannel = (typeof CTRL)[keyof typeof CTRL]
+
+/** An intent's handler, as `ipcMain.handle` takes it. Each handler types its own arguments. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ipcMain's own listener shape
+export type IpcListener = (event: unknown, ...args: any[]) => unknown
+
+/**
+ * Where main answers intents: `ipcMain.handle`, structurally, so a main topic's
+ * `register<Topic>Ipc` never imports electron (only main/app does).
+ */
+export interface IpcRegistrar {
+  handle(channel: CtrlChannel, listener: IpcListener): void
+}
 
 /** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
 export interface SkyhawkApi {

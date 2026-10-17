@@ -15,7 +15,7 @@ describe('HidReader.reopen', () => {
     // while start()'s open is still awaiting node-hid. Both completing would leave an orphaned
     // handle emitting reports into a reader that no longer references it.
     //
-    // This lives outside session.test.ts on purpose: that file mocks './hid', so the same test
+    // This lives outside app-services.test.ts on purpose: that file mocks './hid', so the same test
     // there exercised the stub rather than any of this.
     const reader = new HidReader() as unknown as Innards
     let closed = 0
