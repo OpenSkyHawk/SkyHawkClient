@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import type { NodeModel } from '@shared/nodes'
-import { Settings } from '../src/tabs/Settings'
+import { Settings } from '../src/app/settings/Settings'
 import pkg from '../../../package.json'
 import { renderScenario, settle } from './render'
 import { bundledRegistry, connected, link, model, offline, panel, pdu } from './scenarios'

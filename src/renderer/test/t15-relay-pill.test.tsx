@@ -1,7 +1,7 @@
 // T15 — the title-bar Relay pill: the one on/off for the DCS-BIOS stream.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import { RelayPill } from '../src/RelayPill'
+import { RelayPill } from '../src/app/titlebar/RelayPill'
 import { renderScenario, settle } from './render'
 import { connected, link } from './scenarios'
 

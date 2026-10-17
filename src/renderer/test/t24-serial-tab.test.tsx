@@ -1,7 +1,7 @@
 // T24 — the Serial tab: the raw serial monitor, its rows and Clear.
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import { Serial } from '../src/tabs/Serial'
+import { Serial } from '../src/gateway/Serial'
 import { renderScenario } from './render'
 import { connected, serialFrame } from './scenarios'
 

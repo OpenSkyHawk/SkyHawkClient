@@ -1,8 +1,8 @@
 // T4 — Overview: the new-devices notice.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import { Overview } from '../src/tabs/Overview'
-import { App } from '../src/App'
+import { Overview } from '../src/app/overview/Overview'
+import { App } from '../src/app/App'
 import { renderScenario } from './render'
 import { connected, link, model, newBoard, panel } from './scenarios'
 

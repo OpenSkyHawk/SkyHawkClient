@@ -2,7 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/saira/index.css'
 import '@fontsource-variable/jetbrains-mono/index.css'
-import { App } from './App'
+import { App } from './app'
 import './styles.css'
 
 const root = document.getElementById('root')

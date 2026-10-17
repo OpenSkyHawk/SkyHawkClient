@@ -1,9 +1,9 @@
 // T5 — Connection › Connected nodes: the summary card.
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import { Connection } from '../src/tabs/Connection'
-import { Cockpit } from '../src/tabs/Cockpit'
-import { App } from '../src/App'
+import { Connection } from '../src/app/connection/Connection'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
+import { App } from '../src/app/App'
 import { renderScenario } from './render'
 import {
   connected,

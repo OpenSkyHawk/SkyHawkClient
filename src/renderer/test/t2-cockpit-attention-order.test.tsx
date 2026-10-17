@@ -1,8 +1,8 @@
 // T2 — Cockpit › Attention: order, the Gateway item, "+N more", empty states.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import { Cockpit } from '../src/tabs/Cockpit'
-import { DevicePopover } from '../src/DevicePopover'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
+import { DevicePopover } from '../src/app/titlebar/DevicePopover'
 import { renderScenario } from './render'
 import {
   connected,

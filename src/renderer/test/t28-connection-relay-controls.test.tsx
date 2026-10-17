@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { USB_IDENTITY } from '@shared/firmware'
-import { Connection } from '../src/tabs/Connection'
-import { App } from '../src/App'
+import { Connection } from '../src/app/connection/Connection'
+import { App } from '../src/app/App'
 import { renderScenario, settle } from './render'
 import { connected, link, PORT } from './scenarios'
 

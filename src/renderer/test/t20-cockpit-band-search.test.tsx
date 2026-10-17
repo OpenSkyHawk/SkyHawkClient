@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { PDU_STATUS_FLAGS } from '@shared/firmware'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario } from './render'
 import {
   connected,

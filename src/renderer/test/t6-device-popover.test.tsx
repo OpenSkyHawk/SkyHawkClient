@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import type { DeviceState } from '@shared/gateway'
-import { DevicePopover } from '../src/DevicePopover'
-import { App } from '../src/App'
+import { DevicePopover } from '../src/app/titlebar/DevicePopover'
+import { App } from '../src/app/App'
 import { renderScenario } from './render'
 import { PORT, connected, gateway, gatewayNotResponding, link } from './scenarios'
 

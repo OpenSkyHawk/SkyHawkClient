@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import type { NodeMappingFile, NodeModel } from '@shared/nodes'
-import { Settings } from '../src/tabs/Settings'
+import { Settings } from '../src/app/settings/Settings'
 import { renderScenario, settle } from './render'
 import { connected, model, modelNode, panel, pdu, resetPreview } from './scenarios'
 

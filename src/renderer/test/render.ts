@@ -4,7 +4,7 @@ import type { ReactElement } from 'react'
 import { act, render, type RenderResult } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { onTestFinished, vi } from 'vitest'
-import { useStore } from '../src/store'
+import { initBridge } from '../src/app/ipc-adapter'
 import { skyhawk, type Scenario, type SkyhawkMock } from './skyhawk-mock'
 
 /** Let pending IPC answers (the renderer's pulls) land. */
@@ -22,7 +22,7 @@ export async function settle(): Promise<void> {
 export async function startBridge(scenario: Scenario = {}): Promise<SkyhawkMock> {
   const sky = skyhawk()
   sky.emitScenario(scenario) // nobody subscribed yet: main's state as the renderer loads
-  const off = useStore.getState().initBridge()
+  const off = initBridge()
   if (off) onTestFinished(off)
   await settle()
   sky.emitScenario(scenario)

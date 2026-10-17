@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import type { NodeModelEntry, NodeTelemSnapshot, PduOutage } from '@shared/nodes'
 import { PDU_RAIL_FLAGS, PDU_STATUS_FLAGS } from '@shared/firmware'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario } from './render'
 import { connected, model, offline, outage, panel, pdu, pduTelemetry } from './scenarios'
 

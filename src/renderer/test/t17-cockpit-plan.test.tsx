@@ -1,7 +1,7 @@
 // T17 — Cockpit › the plan: which group each board is drawn in, and what never moves a tile.
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario } from './render'
 import { connected, model, newBoard, offline, panel, pdu, reported } from './scenarios'
 

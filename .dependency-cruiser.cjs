@@ -3,13 +3,12 @@
 // Seeded from `depcruise --init oneshot` (dependency-cruiser 18.5.0); its default rule set is
 // replaced by the boundary rules below, its options are kept.
 //
-// The rules describe the TARGET layout: src/main/<topic>/, src/renderer/src/<topic>/ and
+// The rules describe the layout: src/main/<topic>/, src/renderer/src/<topic>/ and
 // src/shared/<topic>/{index,ipc}.ts contracts, plus the leaves src/shared/firmware/,
-// src/shared/format/ and src/renderer/src/app/kit/. Until files move there, the topic and
-// deep-import rules have little to match.
+// src/shared/format/ and src/renderer/src/app/kit/.
 //
-// Severities live ONLY in .dependency-cruiser.severity.json, one key per rule family, so each
-// phase flips its own families from "warn" to "error" without touching this file.
+// Severities live ONLY in .dependency-cruiser.severity.json, one key per rule family. Each phase
+// flipped its own families from "warn" to "error"; since R3.4b every family is "error".
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- CommonJS config file
 const SEV = require('./.dependency-cruiser.severity.json')
 

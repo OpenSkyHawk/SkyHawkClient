@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import type { NodeMappingFile } from '@shared/nodes'
-import { Settings } from '../src/tabs/Settings'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { Settings } from '../src/app/settings/Settings'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario, settle } from './render'
 import { connected, model, modelNode, panel, pdu, resetPreview } from './scenarios'
 

@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, within } from '@testing-library/react'
 import type { NodeModelEntry } from '@shared/nodes'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario } from './render'
 import {
   connected,

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import type { AppConfig } from '@shared/config'
-import { Settings } from '../src/tabs/Settings'
+import { Settings } from '../src/app/settings/Settings'
 import { renderScenario, settle } from './render'
 import { connected, link } from './scenarios'
 
