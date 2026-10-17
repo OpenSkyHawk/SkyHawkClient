@@ -12,16 +12,21 @@ import {
 } from '@shared/config'
 import { storePaths } from '../app/user-data'
 import { withSectionNotes } from './config-file'
-import { buildConfig, editedConfig, formOf, savedEdit, withPsuLimit } from './settings-form'
+import {
+  buildConfig,
+  COMMAND_PORT_ERROR,
+  commandPortOf,
+  editedConfig,
+  formOf,
+  savedEdit,
+  withPsuLimit
+} from './settings-form'
 import { SettingsService } from './settings-service'
 
 describe('the forms’ save (buildConfig)', () => {
-  it('saves every field the forms edit; a port that isn’t a number saves as 7778 (N5)', () => {
+  it('saves every field the forms edit', () => {
     const form = formOf(DEFAULT_CONFIG)
-    expect(buildConfig({ ...form, port: '7779' }).commandPort).toBe(7779)
-    for (const junk of ['', '77a', 'abc', '0']) {
-      expect(buildConfig({ ...form, port: junk }).commandPort, junk).toBe(7778)
-    }
+    expect(buildConfig({ ...form, commandPort: 7779 }).commandPort).toBe(7779)
     expect(Object.keys(buildConfig(form)).sort()).toEqual(
       [
         'attentionBanner',
@@ -44,8 +49,35 @@ describe('the forms’ save (buildConfig)', () => {
       host: '10.0.0.7',
       commandPort: 7790
     })
-    expect(editedConfig(current, { port: '77a' }).commandPort).toBe(7778)
     expect(editedConfig(current, {})).toEqual(buildConfig(formOf(current)))
+  })
+
+  it('N5: the command port as typed is a port only as whole digits, 1–65535', () => {
+    expect(commandPortOf('7779')).toBe(7779)
+    expect(commandPortOf(' 7779 ')).toBe(7779)
+    expect(commandPortOf('1')).toBe(1)
+    expect(commandPortOf('65535')).toBe(65535)
+    for (const junk of ['', ' ', '77a', 'abc', '0', '65536', '-1', '7778.5', '1e3', '0x1f']) {
+      expect(commandPortOf(junk), junk).toBeUndefined()
+    }
+  })
+
+  it('N5: a junk port is refused with its error, never saved as 7778', () => {
+    const current = { ...DEFAULT_CONFIG, host: '10.0.0.7', commandPort: 7790 }
+    for (const junk of ['', '77a', 'abc', '0', '70000']) {
+      expect(savedEdit(current, { port: junk }), junk).toEqual({
+        ok: false,
+        error: COMMAND_PORT_ERROR
+      })
+    }
+    expect(savedEdit(current, { port: '7781' })).toEqual({
+      ok: true,
+      save: editedConfig(current, { commandPort: 7781 })
+    })
+    expect(savedEdit(current, { host: '10.0.0.9' })).toMatchObject({
+      ok: true,
+      save: { host: '10.0.0.9', commandPort: 7790 }
+    })
   })
 
   it('a PSU mode switch keeps the preset and the custom limits (R3.4a: `{ ...psu, mode }`)', () => {
@@ -67,15 +99,18 @@ describe('the forms’ save (buildConfig)', () => {
     }
     expect(psu.custom, 'the setting held is never changed in place').toEqual({ a12: 40, w: 500 })
     const current = { ...DEFAULT_CONFIG, psu }
-    expect(savedEdit(current, { psuLimit: { key: 'w', text: '400' } })?.psu).toEqual({
-      ...psu,
-      custom: { a12: 40, w: 400 }
+    expect(savedEdit(current, { psuLimit: { key: 'w', text: '400' } })).toMatchObject({
+      ok: true,
+      save: { psu: { ...psu, custom: { a12: 40, w: 400 } } }
     })
     expect(
       savedEdit(current, { psuLimit: { key: 'w', text: 'x' } }),
-      'nothing to save'
-    ).toBeUndefined()
-    expect(savedEdit(current, { host: 'h' })).toEqual(editedConfig(current, { host: 'h' }))
+      'nothing to save, quietly'
+    ).toEqual({ ok: false })
+    expect(savedEdit(current, { host: 'h' })).toEqual({
+      ok: true,
+      save: editedConfig(current, { host: 'h' })
+    })
   })
 })
 
@@ -99,8 +134,9 @@ describe('SettingsService: edits saved and pushed back (config:changed)', () => 
   it('an edit is built over the settings, saved, and comes back as an edit', () => {
     const { s, pushed } = service()
     s.update({ host: '10.0.0.7' })
-    const cfg = s.edit({ port: '7781' })
-    expect(cfg).toMatchObject({ host: '10.0.0.7', commandPort: 7781 })
+    const r = s.edit({ port: '7781' })
+    expect(r).toMatchObject({ ok: true, config: { host: '10.0.0.7', commandPort: 7781 } })
+    const cfg = s.get()
     expect(JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8'))).toMatchObject({
       commandPort: 7781
     })
@@ -111,11 +147,21 @@ describe('SettingsService: edits saved and pushed back (config:changed)', () => 
     const { s, pushed } = service()
     s.edit({ psu: { mode: 'custom', preset: 'nx650', custom: { w: 400 } } })
     const before = readFileSync(join(dir, 'config.json'), 'utf8')
-    expect(s.edit({ psuLimit: { key: 'w', text: '40x' } })).toBe(s.get())
+    expect(s.edit({ psuLimit: { key: 'w', text: '40x' } })).toEqual({ ok: false })
     expect(pushed).toHaveLength(1)
     expect(readFileSync(join(dir, 'config.json'), 'utf8')).toBe(before)
     s.edit({ psuLimit: { key: 'w', text: '' } })
     expect(pushed.at(-1)?.config.psu.custom).toEqual({})
+  })
+
+  it('N5: a junk port answers why, and saves and pushes nothing', () => {
+    const { s, pushed } = service()
+    s.edit({ port: '7781' })
+    const before = readFileSync(join(dir, 'config.json'), 'utf8')
+    expect(s.edit({ port: '77a' })).toEqual({ ok: false, error: COMMAND_PORT_ERROR })
+    expect(s.get().commandPort).toBe(7781)
+    expect(pushed).toHaveLength(1)
+    expect(readFileSync(join(dir, 'config.json'), 'utf8')).toBe(before)
   })
 
   it('the power supply comes back resolved; an import says so, once it is applied', () => {

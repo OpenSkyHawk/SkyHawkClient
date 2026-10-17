@@ -62,7 +62,8 @@ import {
   type AppConfig,
   type BackupList,
   type ConfigChanged,
-  type ConfigEdit
+  type ConfigEdit,
+  type ConfigEditResult
 } from '@shared/config'
 import {
   AIRCRAFT_NONE,
@@ -469,17 +470,17 @@ export function installSkyhawkMock(): SkyhawkMock {
    * A form's change: SettingsService builds the save (settings-form.ts) and applies it —
    * `setConfig`, the spy, stands for that apply — the relay's facts follow, then `config:changed`.
    */
-  const editSettings = (edit: ConfigEdit): Promise<AppConfig> => {
+  const editSettings = (edit: ConfigEdit): Promise<ConfigEditResult> => {
     const built = savedEdit(config(), edit)
-    // A refused PSU limit: nothing saved, nothing pushed (SettingsService.edit).
-    if (built === undefined) return resolve(config())
-    const saved = fns.setConfig(built)
-    state = { ...state, config: { ...config(), ...built } }
+    // Refused (a junk port, a refused PSU limit): nothing saved, nothing pushed (SettingsService.edit).
+    if (!built.ok) return resolve(built)
+    void fns.setConfig(built.save)
+    state = { ...state, config: { ...config(), ...built.save } }
     turn(() => {
       pushFacts()
       push('config:changed', configChanged('edit'))
     })
-    return saved
+    return resolve({ ok: true as const, config: config() })
   }
 
   // ── the relay's facts, as main's DcsRelay pushes them (relay-rules.ts) ──

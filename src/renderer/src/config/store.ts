@@ -20,6 +20,8 @@ import type { PsuLimits, PsuSetting } from '@shared/nodes'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
 export type TransportId = 'tcp' | 'loop' | 'uni'
+/** The typed DCS link fields, saved on commit (blur / Enter, N5). */
+export type LinkField = 'host' | 'port'
 
 /** A call to main as the view made it: undefined outside Electron (no `window.skyhawk`). */
 type Ask<K extends keyof Omit<SkyhawkApi, 'on'>> = (
@@ -31,6 +33,15 @@ export interface ConfigState {
   transport: TransportId
   host: string
   port: string
+  /** Why main refused the last committed port (N5); nothing was saved for it. */
+  portError?: string
+  /** The link fields typed since their last commit: what a commit sends (N5). */
+  linkTyped: Partial<Record<LinkField, true>>
+  /**
+   * How many times main's settings replaced the forms (`config:get`, an import): a form that
+   * keeps its own typed text (Settings › Cockpit's PSU limits) starts over from them on each (N8).
+   */
+  formsReset: number
   autoConnect: boolean
 
   // replay
@@ -47,6 +58,10 @@ export interface ConfigState {
   debugDump?: { path: string; count: number }
 
   setConfigField: (patch: Partial<ConfigFields>) => void
+  /** A DCS link field as typed: held here, not saved until it is committed (N5). */
+  typeLinkField: (field: LinkField, text: string) => void
+  /** A DCS link field committed (blur / Enter): main checks and saves it, or answers why not (N5). */
+  commitLinkField: (field: LinkField) => void
   /** Settings › Cockpit's PSU switch: main switches the mode over the setting it holds (R3.4a). */
   setPsuMode: (mode: PsuSetting['mode']) => void
   /** Settings › Cockpit's PSU limit, as typed: main refuses, deletes or sets it (R3.4a). */
@@ -90,9 +105,14 @@ export function viewTransport(transport: DcsTransport): TransportId {
   return t ?? 'tcp'
 }
 
-/** The store fields an AppConfig sets — on load, and after a config import replaces it. */
-function configState(cfg: AppConfig): ConfigFields {
+/**
+ * The store fields an AppConfig sets — on load, and after a config import replaces it: the forms
+ * start over, nothing typed left to commit and no refused port shown.
+ */
+function configState(cfg: AppConfig): ConfigFields & Pick<ConfigState, 'portError' | 'linkTyped'> {
   return {
+    portError: undefined,
+    linkTyped: {},
     sourceMode: cfg.sourceMode,
     transport: viewTransport(cfg.transport),
     host: cfg.host,
@@ -128,14 +148,37 @@ function configEdit(patch: Partial<ConfigFields>): ConfigEdit {
 /** A form's change, to main (`config:edit`): main builds the settings and saves them (R3.3). */
 const editConfig = (edit: ConfigEdit): void => void api()?.editConfig(edit)
 
-export const useConfigStore = create<ConfigState>((set) => ({
+export const useConfigStore = create<ConfigState>((set, get) => ({
   ...configState(DEFAULT_CONFIG),
+  formsReset: 0,
   psuView: PSU_VIEW_DEFAULT,
 
   // What is typed stays as typed; main builds and saves the settings (`config:edit`, R3.3).
   setConfigField: (patch) => {
     set(patch as Partial<ConfigState>)
     editConfig(configEdit(patch))
+  },
+
+  // Typing saves nothing (N5): the text waits for its commit.
+  typeLinkField: (field, text) => {
+    set((s) => ({ [field]: text, linkTyped: { ...s.linkTyped, [field]: true } }))
+  },
+
+  // Main checks the port and saves, or saves nothing and answers why: the form shows that answer
+  // under the port, unless the field has changed since (N5). A commit with nothing typed sends
+  // nothing (an Enter, then the blur).
+  commitLinkField: (field) => {
+    const s = get()
+    if (!s.linkTyped[field]) return
+    const text = s[field]
+    const { [field]: _sent, ...linkTyped } = s.linkTyped
+    set({ linkTyped })
+    const answer = api()?.editConfig({ [field]: text })
+    if (field !== 'port' || !answer) return
+    void answer.then((r) => {
+      if (get().port !== text) return
+      set({ portError: r.ok ? undefined : r.error })
+    })
   },
 
   // The switched setting comes back on `config:changed` (R3.4a).
@@ -178,19 +221,26 @@ export const useConfigStore = create<ConfigState>((set) => ({
 export const configFromMain = {
   /** `config:get`. */
   config: (v: ConfigView): void =>
-    useConfigStore.setState({ ...configState(v.config), psuView: v.psu }),
+    useConfigStore.setState((s) => ({
+      ...configState(v.config),
+      psuView: v.psu,
+      formsReset: s.formsReset + 1
+    })),
 
   /**
-   * `config:changed`. An import replaced the settings: the forms start over from them. A form's own
-   * change leaves what is typed alone (the port as typed, N5); the PSU setting is main's either way,
-   * since main switches its mode (R3.4a).
+   * `config:changed`. An import replaced the settings: the forms start over from them, the PSU
+   * limits' typed text too (N8). A form's own change leaves what is typed alone (the port as typed,
+   * N5); the PSU setting is main's either way, since main switches its mode (R3.4a).
    */
   changed: (c: ConfigChanged): void =>
-    useConfigStore.setState({
+    useConfigStore.setState((s) => ({
       psuView: c.psu,
       psu: c.config.psu,
-      ...(c.source === 'import' ? configState(c.config) : {})
-    }),
+      ...(c.source === 'import' && {
+        ...configState(c.config),
+        formsReset: s.formsReset + 1
+      })
+    })),
 
   /** `config:backups`, and `config:backups-get`'s answer. */
   backups: (list: BackupList): void => useConfigStore.setState({ backups: list })

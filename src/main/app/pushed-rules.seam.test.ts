@@ -79,16 +79,26 @@ describe('relay:facts: what the relay’s surfaces show', () => {
     expect(app.lastPush('relay:state')).toEqual({ running: false })
   })
 
-  it('a form’s edit: built over the settings held, the port as typed; the facts follow', () => {
+  it('a form’s edit: built over the settings held, a typed port checked (N5); the facts follow', () => {
     const app = makeServices(monitor)
     app.invoke(CTRL.configEdit, { transport: 'unicast-listen' })
     expect(app.lastPush('relay:facts')?.endpoint).toBe('0.0.0.0:5010')
-    app.invoke(CTRL.configEdit, { port: '77a' })
+    expect(app.invoke(CTRL.configEdit, { port: '7781' })).toMatchObject({
+      ok: true,
+      config: { commandPort: 7781 }
+    })
+    // N5: a port that is not one is refused with why; nothing is saved, nothing pushed.
+    const changes = app.pushesOf('config:changed').length
+    expect(app.invoke(CTRL.configEdit, { port: '77a' })).toEqual({
+      ok: false,
+      error: 'Not a port. Enter a whole number from 1 to 65535.'
+    })
     expect(app.files.json('config.json')).toMatchObject({
       transport: 'unicast-listen',
-      commandPort: 7778
+      commandPort: 7781
     })
-    expect(app.invoke(CTRL.configGet).config.commandPort).toBe(7778)
+    expect(app.invoke(CTRL.configGet).config.commandPort).toBe(7781)
+    expect(app.pushesOf('config:changed')).toHaveLength(changes)
   })
 })
 
