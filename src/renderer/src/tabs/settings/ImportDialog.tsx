@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import type { ConfigImportApplyResult, ImportPreview } from '@shared/ipc'
-import type { SectionId } from '@shared/config-file'
+import type { ConfigImportApplyResult, ImportPreview, SectionId } from '@shared/config/ipc'
 import { AXIS_LABELS } from '../../store'
 import { Dialog } from './Dialog'
 import { importRowKey, importSubtitle } from './settings-view'

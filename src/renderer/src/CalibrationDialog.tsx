@@ -7,7 +7,7 @@ import {
   sweepsRemaining
 } from '@shared/axis-capture'
 import { CAL_PROTO, HID_REPORT_LAYOUT } from '@shared/firmware'
-import type { CalSnapshot } from '@shared/ipc'
+import type { CalSnapshot } from '@shared/hid/calibration/ipc'
 import { CalibrationController, type CalibrationState } from './calibration-controller'
 import { AXIS_LABELS, useStore } from './store'
 

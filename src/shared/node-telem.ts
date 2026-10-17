@@ -14,6 +14,7 @@ import {
   PDU_STATUS_FLAGS,
   TELEM_PAGES
 } from './firmware'
+import type { NodeTelem, NodeTelemSnapshot, TelemPageData } from './nodes/ipc'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_TELEM_PROTO = 1
@@ -40,45 +41,6 @@ export const TELEM_STALE_MS = 10_000
 
 // NODE_TELEM_ROW_BYTES (9) as hex, 18 chars: nodeId + the 8 frame bytes in wire order.
 const HEX_LEN = NODE_TELEM_ROW_BYTES * 2
-
-/**
- * PDU_RAIL_12V / PDU_RAIL_5V. Averages and the minimum cover the window since this page's
- * previous PERIODIC send (3 s). A flag-change send goes out at once without restarting that
- * window, so the next periodic page still covers the full 3 s.
- */
-export interface PduRailPage {
-  kind: 'rail'
-  page: typeof TELEM_PAGE.PDU_RAIL_12V | typeof TELEM_PAGE.PDU_RAIL_5V
-  flags: number // RAIL_FLAG bits
-  vAvgMv: number
-  vMinMv: number // window minimum
-  /** Signed: a small negative value is residual sensor offset. Use displayCurrentMa() to show it. */
-  iAvgMa: number
-}
-
-/** PDU_STATUS. */
-export interface PduStatusPage {
-  kind: 'status'
-  page: typeof TELEM_PAGE.PDU_STATUS
-  flags: number // PDU_FLAG bits
-  /** Board NTC temperature, °C at 0.1 resolution; null = the board reports it unavailable. */
-  ntcTempC: number | null
-  /** 12 V peak current over the same window as the rail averages, after the board's ~100 µs RC filter. */
-  i12PeakMa: number
-  /** 5 V peak current, same window and filter. */
-  i5PeakMa: number
-}
-
-/** A page id this build does not know (a newer node type). Kept raw; never decoded. */
-export interface UnknownTelemPage {
-  kind: 'unknown'
-  page: number
-  /** Frame bytes 1–7 as 14 hex chars, wire order. */
-  body: string
-}
-
-export type TelemPageData = PduRailPage | PduStatusPage | UnknownTelemPage
-export type NodeTelem = { nodeId: number } & TelemPageData
 
 /** True for the page ids only a PDU sends — what marks a node as a PDU. */
 export function isPduPage(page: number): boolean {
@@ -147,22 +109,6 @@ export function parseNodeTelem(hex: string): NodeTelem | null {
  */
 export function hasFreshPduPage(t: NodeTelemSnapshot): boolean {
   return [t.rail12V, t.rail5V, t.status].some((p) => p !== undefined && !p.stale)
-}
-
-/** A page as last received, with its age. A stale page keeps its last values for "last known". */
-export type TelemPageView<T extends TelemPageData> = T & { ageMs: number; stale: boolean }
-
-export interface NodeTelemSnapshot {
-  nodeId: number
-  /** Has sent at least one PDU page since the store was reset. */
-  isPdu: boolean
-  rail12V?: TelemPageView<PduRailPage>
-  rail5V?: TelemPageView<PduRailPage>
-  status?: TelemPageView<PduStatusPage>
-  /** Pages with ids this build does not know, by page id. */
-  other: TelemPageView<UnknownTelemPage>[]
-  /** At least one page is fresh (≤ TELEM_STALE_MS). */
-  live: boolean
 }
 
 interface Entry {

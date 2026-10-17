@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
-  NODE_END_MSG,
-  NODE_MSG,
-  NodeRoster,
-  ROSTER_REPLY_MS,
   cleanNodeLine,
   isLegacyNodeStatus,
-  parseNodeStatus,
-  nodeRosterRequest,
+  NODE_END_MSG,
+  NODE_MSG,
   nodeFaultTag,
-  type NodeStatus
+  NodeRoster,
+  nodeRosterRequest,
+  parseNodeStatus,
+  ROSTER_REPLY_MS
 } from './nodes'
+import type { NodeStatus } from './nodes/ipc'
 import { nodeStatus } from '../test-fixtures/nodes'
 
 const node = (over: Partial<NodeStatus>): NodeStatus =>

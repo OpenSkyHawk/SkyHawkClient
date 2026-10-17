@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { NodeMappingResult, NodeRegistryInfo } from '@shared/ipc'
-import type { NodeModelEntry } from '@shared/node-rules'
+import type { NodeMappingResult, NodeModelEntry, NodeRegistryInfo } from '@shared/nodes/ipc'
 import type { NodeView } from '../../cockpit'
 import {
   boardActions,

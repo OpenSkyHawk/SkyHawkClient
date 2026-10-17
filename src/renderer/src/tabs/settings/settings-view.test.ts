@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { NodeRegistryInfo } from '@shared/ipc'
-import type { NodeModel, NodeModelEntry } from '@shared/node-rules'
+import type { NodeModel, NodeModelEntry, NodeRegistryInfo } from '@shared/nodes/ipc'
 import {
   hiddenRow,
   importDoneText,

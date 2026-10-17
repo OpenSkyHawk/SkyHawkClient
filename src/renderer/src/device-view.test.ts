@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { DeviceState } from '@shared/ipc'
+import type { DeviceState } from '@shared/gateway/ipc'
 import {
   deviceView,
   relayNote,

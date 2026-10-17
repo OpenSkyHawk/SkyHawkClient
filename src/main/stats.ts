@@ -1,7 +1,7 @@
 // Rolling counters for the Stream Health / Command Activity panels.
 // snapshot() reports per-second rates as deltas since the previous snapshot,
 // so it is expected to be called on a steady ~1 Hz tick.
-import type { StatsSnapshot } from '@shared/ipc'
+import type { StatsSnapshot } from '@shared/dcs/ipc'
 
 export class Stats {
   private bytesIn = 0

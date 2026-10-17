@@ -7,7 +7,8 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { emptyCache, sanitizeCache, type CalCache } from '@shared/cal-cache'
+import { emptyCache, sanitizeCache } from '@shared/cal-cache'
+import type { CalCache } from '@shared/hid/calibration/ipc'
 
 function cachePath(): string {
   return join(app.getPath('userData'), 'calibration-cache.json')

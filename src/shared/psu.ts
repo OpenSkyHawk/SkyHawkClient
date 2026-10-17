@@ -1,25 +1,13 @@
 // Power supply limits (#67) the Cockpit headroom is drawn against (#63). Pure; persisted in
 // config.json as AppConfig.psu. Display only — the client never alerts on them.
 
-/** Rail limits as printed on a PSU label. Absent = unknown: the Cockpit shows plain totals. */
-export interface PsuLimits {
-  /** Combined current of all 12 V outputs, A. */
-  a12?: number
-  /** Combined current of all 5 V outputs, A. */
-  a5?: number
-  /** Rated output, W. */
-  w?: number
-}
-
-export type PsuPresetId = 'nx650'
-
-export interface PsuPreset {
-  /** Short label for the segmented control. */
-  label: string
-  /** Full name, shown under the limits. */
-  name: string
-  limits: PsuLimits
-}
+import {
+  DEFAULT_PSU,
+  type PsuLimits,
+  type PsuPreset,
+  type PsuPresetId,
+  type PsuSetting
+} from './nodes/ipc'
 
 /** Supplies bundled with the client. Limits are read-only in Settings. */
 export const PSU_PRESETS: Record<PsuPresetId, PsuPreset> = {
@@ -27,15 +15,6 @@ export const PSU_PRESETS: Record<PsuPresetId, PsuPreset> = {
   // (+3.3 V and +5 V share 100 W combined; the Cockpit shows no 3.3 V rail, so that is left out.)
   nx650: { label: 'NX650', name: 'GOLDEN FIELD NX650', limits: { a12: 54, a5: 20, w: 650 } }
 }
-
-export interface PsuSetting {
-  mode: 'preset' | 'custom'
-  preset: PsuPresetId
-  /** Kept while a preset is picked, so switching back to Custom restores what was entered. */
-  custom: PsuLimits
-}
-
-export const DEFAULT_PSU: PsuSetting = { mode: 'preset', preset: 'nx650', custom: {} }
 
 /** Largest value accepted for any limit; anything above is a typo, not a desktop PSU. */
 export const PSU_LIMIT_MAX = 10000

@@ -1,7 +1,7 @@
 // Connection › Connected nodes (#66): the pure decisions behind the summary card. Counts and the
 // most severe nodes come from the same helpers as the Cockpit health band and Attention, so the
 // two tabs always agree; the full picture lives in the Cockpit tab.
-import type { PduOutage } from '@shared/node-rules'
+import type { PduOutage } from '@shared/nodes/ipc'
 import {
   affected,
   ATTENTION_SHOWN,

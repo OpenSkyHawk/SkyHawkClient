@@ -9,11 +9,12 @@ import {
   isProblem,
   NodeEventTracker,
   relayEvents,
-  type LogEventInput,
   type NodeLookup
 } from './events'
-import { NODE_END_MSG, NODE_MSG, ROSTER_REPLY_MS, type NodeStatus } from './nodes'
-import { PDU_FLAG, RAIL_FLAG, type NodeTelem } from './node-telem'
+import type { LogEventInput } from './events/ipc'
+import { NODE_END_MSG, NODE_MSG, ROSTER_REPLY_MS } from './nodes'
+import type { NodeStatus, NodeTelem } from './nodes/ipc'
+import { PDU_FLAG, RAIL_FLAG } from './node-telem'
 import { nodeStatus } from '../test-fixtures/nodes'
 
 const st = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>

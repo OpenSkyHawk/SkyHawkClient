@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { gatewayStatus } from '@shared/gateway'
-import type { NodeStatus } from '@shared/nodes'
+import type { NodeStatus } from '@shared/nodes/ipc'
 import { gatewayView } from './gateway-view'
 import { nodeStatus } from '../../test-fixtures/nodes'
 

@@ -6,43 +6,51 @@
 // A later PR that changes the API on purpose updates the copy in the same diff.
 //
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
+import type { Mutate, StoreApi } from 'zustand/vanilla'
+import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
 import type {
   AppConfig,
+  ConfigExportResult,
+  ConfigImportApplyResult,
+  ConfigImportOpen,
+  SectionId,
+  SettingsStore
+} from '../config/ipc'
+import type {
+  CachedBoard,
   CalCacheEntry,
   CalCommitAxis,
   CalHello,
   CalRawSample,
   CalResult,
-  CalSnapshot,
+  CalSnapshot
+} from '../hid/calibration/ipc'
+import type {
+  AircraftStatus,
   CaptureState,
-  ConfigExportResult,
-  ConfigImportApplyResult,
-  ConfigImportOpen,
-  DebugDumpResult,
-  DeviceStatus,
   ExportResult,
-  HidAvailability,
-  HidSnapshot,
   LogRow,
-  NodeMappingResult,
-  NodeRegistryInfo,
-  NodeSnapshot,
   RelayResult,
   RelayState,
-  RelayStatus,
   ReplayLoad,
-  SerialFrame,
   StatsSnapshot,
-  AircraftStatus,
   TelemetryReadout
-} from '@shared/ipc'
-import type { CTRL, IPC, PushChannels, SkyhawkApi } from '@shared/ipc'
-import type { CachedBoard } from '@shared/cal-cache'
-import type { SectionId } from '@shared/config-file'
-import type { LogEvent } from '@shared/events'
-import type { NodeTelemSnapshot } from '@shared/node-telem'
-import type { AdoptSpec, MappingPatch, ResetOptions, ResetPreview } from '@shared/node-mapping'
-import type { NodeModel } from '@shared/node-rules'
+} from '../dcs/ipc'
+import type { CTRL, DebugDumpResult, IPC, PushChannels, RelayStatus, SkyhawkApi } from './ipc'
+import type { DeviceStatus, SerialFrame } from '../gateway/ipc'
+import type { HidAvailability, HidSnapshot } from '../hid/ipc'
+import type {
+  AdoptSpec,
+  MappingPatch,
+  NodeMappingResult,
+  NodeModel,
+  NodeRegistryInfo,
+  NodeSnapshot,
+  NodeTelemSnapshot,
+  ResetOptions,
+  ResetPreview
+} from '../nodes/ipc'
+import type { LogEvent } from '../events/ipc'
 
 /** Exact type equality (mutual assignability is not enough: it misses optional/readonly drift). */
 type Equal<X, Y> =
@@ -180,3 +188,12 @@ export type ApiSurfaceUnchanged = [
   Expect<Equal<OldIPC, typeof IPC>>,
   Expect<Equal<OldCTRL, typeof CTRL>>
 ]
+
+/**
+ * `SettingsStore` is type-only, but a zustand vanilla store under `subscribeWithSelector` must be
+ * usable as one (R2.3 hands such a store out).
+ */
+type ZustandSettingsStore = Mutate<StoreApi<AppConfig>, [['zustand/subscribeWithSelector', never]]>
+export type SettingsStoreFitsZustand = Expect<
+  ZustandSettingsStore extends SettingsStore ? true : false
+>

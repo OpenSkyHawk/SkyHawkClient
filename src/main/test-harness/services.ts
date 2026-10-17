@@ -16,8 +16,9 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { onTestFinished, vi } from 'vitest'
-import { CTRL, type AppConfig, type PushChannel, type PushChannels } from '@shared/ipc'
-import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/node-mapping'
+import { CTRL, type PushChannel, type PushChannels } from '@shared/app/ipc'
+import type { AppConfig } from '@shared/config/ipc'
+import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes/ipc'
 
 // ── the outside world, faked ─────────────────────────────────────────────────
 

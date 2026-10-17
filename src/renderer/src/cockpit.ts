@@ -1,22 +1,19 @@
 // Cockpit tab (#63): the pure decisions behind the health band, the plan and Attention. Everything
 // here is computed from what main pushes (`nodes:model`, `nodes:telemetry`); the client applies no
 // thresholds — a warning is always a flag a board raised itself.
-import {
-  isReportableNew,
-  type NodeModel,
-  type NodeModelEntry,
-  type PduOutage
-} from '@shared/node-rules'
-import {
-  PDU_FLAG,
-  RAIL_FLAG,
-  displayCurrentMa,
-  type NodeTelemSnapshot,
-  type PduRailPage,
-  type PduStatusPage
-} from '@shared/node-telem'
+import { isReportableNew } from '@shared/node-rules'
+import type {
+  NodeModel,
+  NodeModelEntry,
+  NodeTelemSnapshot,
+  PduOutage,
+  PduRailPage,
+  PduStatusPage,
+  PsuSetting
+} from '@shared/nodes/ipc'
+import { displayCurrentMa, PDU_FLAG, RAIL_FLAG } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
-import { PSU_PRESETS, type PsuSetting } from '@shared/psu'
+import { PSU_PRESETS } from '@shared/psu'
 
 /** How a node reads on the plan. 'unknown' = no complete roster yet and it has not reported. */
 export type NodeState = 'on' | 'warn' | 'off' | 'new' | 'unknown'

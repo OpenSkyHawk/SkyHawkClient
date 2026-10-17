@@ -13,7 +13,7 @@ import {
   HID_HAT_COUNT,
   HID_REPORT_SIZE
 } from '@shared/hid'
-import type { HidSnapshot } from '@shared/ipc'
+import type { HidSnapshot } from '@shared/hid/ipc'
 import { SIMGATEWAY_PID, SIMGATEWAY_VID } from './serial'
 
 /** Matches the serial link's reconnect cadence — the same cable, coming back at the same time. */

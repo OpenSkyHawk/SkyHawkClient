@@ -1,7 +1,6 @@
 // Settings text decisions (#67), pure so they are unit-tested: what each Cockpit / About row says.
 import { GATEWAY_NODE_ID } from '@shared/firmware'
-import type { NodeRegistryInfo } from '@shared/ipc'
-import type { HiddenNode, NodeModel } from '@shared/node-rules'
+import type { HiddenNode, NodeModel, NodeRegistryInfo } from '@shared/nodes/ipc'
 import { consoleLabel } from '../../cockpit-panels'
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`

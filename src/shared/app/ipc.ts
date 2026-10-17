@@ -1,0 +1,231 @@
+// Typed IPC contract between the Electron main process and the renderer.
+// Channels are one-way main -> renderer pushes; control actions are renderer -> main.
+//
+// The app contract assembles the topic contracts (shared/<topic>/ipc.ts) into the one surface the
+// preload exposes: `SkyhawkApi`, every push channel and every intent channel. It owns only what
+// spans topics: the `relay:status` rehydrate bundle and the debug intents.
+import {
+  CONFIG_CTRL,
+  type AppConfig,
+  type ConfigExportResult,
+  type ConfigImportApplyResult,
+  type ConfigImportOpen,
+  type SectionId
+} from '../config/ipc'
+import {
+  DCS_CTRL,
+  DCS_PUSH,
+  type DcsPushChannels,
+  type ExportResult,
+  type CaptureState,
+  type RelayResult,
+  type RelayState,
+  type ReplayLoad
+} from '../dcs/ipc'
+import { EVENTS_CTRL, EVENTS_PUSH, type EventsPushChannels, type LogEvent } from '../events/ipc'
+import {
+  GATEWAY_CTRL,
+  GATEWAY_PUSH,
+  type DeviceStatus,
+  type GatewayPushChannels
+} from '../gateway/ipc'
+import { HID_CTRL, HID_PUSH, type HidAvailability, type HidPushChannels } from '../hid/ipc'
+import {
+  CALIBRATION_CTRL,
+  CALIBRATION_PUSH,
+  type CachedBoard,
+  type CalCacheEntry,
+  type CalCommitAxis,
+  type CalHello,
+  type CalibrationPushChannels,
+  type CalResult,
+  type CalSnapshot
+} from '../hid/calibration/ipc'
+import {
+  NODES_CTRL,
+  NODES_PUSH,
+  type AdoptSpec,
+  type MappingPatch,
+  type NodeMappingResult,
+  type NodeRegistryInfo,
+  type NodeSnapshot,
+  type NodesPushChannels,
+  type ResetOptions,
+  type ResetPreview
+} from '../nodes/ipc'
+
+/** Live session state so a freshly (re)loaded renderer can rehydrate. */
+export interface RelayStatus {
+  running: boolean
+  relay: RelayState
+  device: DeviceStatus
+  /**
+   * Last calibration the device confirmed, if the link is still up.
+   *
+   * Carried here because `cal:data` is only pushed when the port opens. A renderer reload
+   * creates a fresh store while the main-process session keeps running, so without this the
+   * badges would stay blank until the next reconnect — indefinitely, on a stable link.
+   */
+  cal?: CalSnapshot
+}
+
+export interface DebugDumpResult {
+  path: string
+  count: number
+}
+
+// main -> renderer channel payloads
+//
+// Two scopes (#69). **Link-scoped** pushes flow whenever the device link is up, relaying or not:
+// device:status, nodes:*, serial:traffic, cal:*. On link down they stop and the renderer keeps
+// the last state, dimmed via isLinkUp(). hid:report is neither: the joystick is read for as long
+// as the app runs, serial port open or not. **Relay-scoped** pushes flow only while
+// relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries
+// both (panel commands are logged while stopped too), and so does events:batch.
+// Each topic declares its own pushes (shared/<topic>/ipc.ts); this is their union.
+export interface PushChannels
+  extends
+    GatewayPushChannels,
+    DcsPushChannels,
+    EventsPushChannels,
+    HidPushChannels,
+    NodesPushChannels,
+    CalibrationPushChannels {}
+
+export type PushChannel = keyof PushChannels
+
+export const IPC = {
+  ...GATEWAY_PUSH,
+  ...DCS_PUSH,
+  ...EVENTS_PUSH,
+  ...HID_PUSH,
+  ...NODES_PUSH,
+  ...CALIBRATION_PUSH
+} as const
+
+/** Intents this contract owns: the rehydrate bundle and the debug-log tools. */
+export const APP_CTRL = {
+  relayStatus: 'relay:status',
+  debugDumpPorts: 'debug:dump-ports',
+  debugReveal: 'debug:reveal'
+} as const
+
+// ── control (renderer -> main, invoke/response) ──────────────────────────────
+
+export const CTRL = {
+  ...CONFIG_CTRL,
+  ...DCS_CTRL,
+  ...APP_CTRL,
+  ...GATEWAY_CTRL,
+  ...EVENTS_CTRL,
+  ...HID_CTRL,
+  ...NODES_CTRL,
+  ...CALIBRATION_CTRL
+} as const
+
+/** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
+export interface SkyhawkApi {
+  on<C extends PushChannel>(channel: C, cb: (data: PushChannels[C]) => void): () => void
+  getConfig(): Promise<AppConfig>
+  setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
+
+  // ── configuration export / import (#67) ──────────────────────────────────
+  /** Save dialog, then write every section to one file. */
+  exportConfig(): Promise<ConfigExportResult>
+  /** Open dialog, then validate and preview; the file stays in main until applied. */
+  openConfigImport(): Promise<ConfigImportOpen>
+  /** Apply the picked sections of the previewed file, after an optional backup of the current setup. */
+  applyConfigImport(
+    token: string,
+    sections: SectionId[],
+    backup: boolean
+  ): Promise<ConfigImportApplyResult>
+  startRelay(): Promise<RelayResult>
+  stopRelay(): Promise<RelayResult>
+  getStatus(): Promise<RelayStatus>
+  /** Open the device link now, whatever "connect automatically" says. */
+  connectDevice(): Promise<void>
+  /** Close the device link and keep it closed — through a replug — until connectDevice(). */
+  disconnectDevice(): Promise<void>
+  exportLog(text: string): Promise<ExportResult>
+
+  // ── event log (#64) — in memory in main, this app run only ────────────────
+  /** Every event this session, oldest first, for a renderer (re)load. */
+  getEvents(): Promise<LogEvent[]>
+  /** Clear the session's events (what Clear in Log › Events does). */
+  clearEvents(): Promise<void>
+  /** Save dialog, then every event as TSV, oldest first, whatever the view filters. */
+  exportEvents(): Promise<ExportResult>
+  toggleCapture(): Promise<CaptureState>
+  openReplay(): Promise<ReplayLoad>
+  getHidAvailability(): Promise<HidAvailability>
+  refreshNodes(): Promise<void>
+
+  // ── node data layer (#61) ─────────────────────────────────────────────────
+  // Every mapping change persists to node-mapping.json and also pushes `nodes:model`.
+  /** Current model + telemetry, for a renderer (re)load. */
+  getNodes(): Promise<NodeSnapshot>
+  /** Rename / move / re-zone a registry or adopted node. A value equal to its default is cleared. */
+  setNodeMapping(nodeId: number, patch: MappingPatch): Promise<NodeMappingResult>
+  /** Place a new NODE_ID (not in the registry); it stops being "new". */
+  adoptNode(nodeId: number, spec: AdoptSpec): Promise<NodeMappingResult>
+  /**
+   * Remove an offline board from your cockpit, keeping nothing; forgetting a PDU unlinks its
+   * boards. Refused while the board is online.
+   */
+  forgetNode(nodeId: number): Promise<NodeMappingResult>
+  /** One registry board back to its NODE_IDS.md name, console and power zone. */
+  resetNode(nodeId: number): Promise<NodeMappingResult>
+  /**
+   * Every registry node back to its defaults; hidden flags and last-seen times are kept, and
+   * adopted nodes too unless `forgetAdopted`.
+   */
+  resetNodeMapping(opts?: ResetOptions): Promise<NodeMappingResult>
+  /** What resetNodeMapping would change, field by field — the review before a reset. */
+  previewNodeReset(): Promise<ResetPreview>
+  /** The bundled NODE_IDS registry (PanelBridge included) and the commit it came from. */
+  getNodeRegistry(): Promise<NodeRegistryInfo>
+  /**
+   * "Hidden until it reports again" on / off. Cleared automatically when the node reports; turning
+   * it on is refused while the board is online.
+   */
+  hideNode(nodeId: number, on: boolean): Promise<NodeMappingResult>
+  setSerialMonitor(on: boolean): Promise<void>
+  dumpSerialPorts(): Promise<DebugDumpResult>
+  revealDebugLog(): Promise<void>
+
+  // ── axis calibration (#46) ────────────────────────────────────────────────
+  // hello/read are answered outside a session, so badges work with no dialog open.
+  calHello(): Promise<CalResult<CalHello>>
+  calRead(): Promise<CalResult<CalSnapshot>>
+  /** Opens a session and streams RAW for one axis. 0xFF streams none. */
+  calSessionOpen(axisIdx: number): Promise<CalResult<{ timeoutMs: number; axisIdx: number }>>
+  calStreamSelect(axisIdx: number): Promise<CalResult<null>>
+  /** Writes and persists exactly one axis. Acknowledged != stored; follow with calRead(). */
+  calCommit(axis: CalCommitAxis): Promise<CalResult<null>>
+  /** Deletes stored calibration for one axis, or all with 0xFF. Persists immediately. */
+  calReset(idx: number): Promise<CalResult<null>>
+  calSessionClose(): Promise<CalResult<null>>
+
+  // ── the client's copy of what the device confirmed storing (#46, part 5) ──
+  /**
+   * What the cache holds for the board currently attached, and which of its axes the device has
+   * since lost. `board` is undefined when nothing is cached, or when the port reports no serial —
+   * without one there is no way to tell this board's calibration from another's.
+   */
+  calCacheRead(): Promise<CalResult<{ board?: CachedBoard; regressed: number[] }>>
+  /**
+   * Record axes the device has **confirmed** storing — call after the read-back, never after the
+   * ACK. Caching what was sent rather than what came back would preserve client optimism as if it
+   * were device state, which is the one thing this copy must never do.
+   */
+  calCacheStore(axes: CalCacheEntry[]): Promise<CalResult<null>>
+  /**
+   * Forget an axis the user deliberately deleted, or the whole board with `0xFF`.
+   *
+   * A deletion has to reach the cache. Inferring it from a later read is impossible — an axis that
+   * is uncalibrated because the user erased it looks exactly like one that lost its calibration,
+   * and the client would offer to restore what was just deleted.
+   */
+  calCacheDrop(idx: number): Promise<CalResult<null>>
+}

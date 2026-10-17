@@ -4,7 +4,7 @@
 // these behaviours on purpose updates its probe. The main/shared half is
 // src/main/phase0-probes.test.ts.
 import { describe, expect, it } from 'vitest'
-import type { NodeMappingFile } from '@shared/node-mapping'
+import type { NodeMappingFile } from '@shared/nodes/ipc'
 import { NODE_MSG, NodeRoster } from '@shared/nodes'
 import { registryDefaults, setHidden, EMPTY_MAPPING } from '@shared/node-mapping'
 import { buildNodeModel } from '@shared/node-rules'

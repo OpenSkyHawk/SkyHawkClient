@@ -1,20 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  CTRL,
-  type AppConfig,
-  type CalCacheEntry,
-  type CalCommitAxis,
-  type CaptureState,
-  type ConfigExportResult,
-  type ConfigImportOpen,
-  type HidAvailability,
-  type PushChannel,
-  type PushChannels,
-  type ReplayLoad
-} from '@shared/ipc'
-import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/node-mapping'
+import { CTRL, type PushChannel, type PushChannels } from '@shared/app/ipc'
+import type { AppConfig, ConfigExportResult, ConfigImportOpen } from '@shared/config/ipc'
+import type { CalCacheEntry, CalCommitAxis } from '@shared/hid/calibration/ipc'
+import type { CaptureState, ReplayLoad } from '@shared/dcs/ipc'
+import type { HidAvailability } from '@shared/hid/ipc'
+import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes/ipc'
 import { eventsToTsv } from '@shared/events'
 import { HID_CONTROLS, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
 import { Session } from './session'

@@ -7,9 +7,8 @@ import {
   PDU_GROUP_WINDOW_MS,
   type NodeModelInput
 } from './node-rules'
-import { EMPTY_MAPPING, registryDefaults, type NodeMappingFile } from './node-mapping'
-import type { NodeSeen, NodeStatus } from './nodes'
-import type { NodeTelemSnapshot } from './node-telem'
+import { EMPTY_MAPPING, registryDefaults } from './node-mapping'
+import type { NodeMappingFile, NodeSeen, NodeStatus, NodeTelemSnapshot } from './nodes/ipc'
 import { nodeStatus } from '../test-fixtures/nodes'
 
 const defaults = registryDefaults({

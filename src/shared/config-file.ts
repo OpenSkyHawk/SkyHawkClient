@@ -9,32 +9,26 @@
 //   calibration  calibration-cache.json               sanitizeCache
 // Calibration only ever refills the client's copy. Writing a device is the HID tab's Review &
 // restore offer, never an import.
-import { sanitizeConfig, type AppConfig } from './ipc'
-import { sanitizeCache, type CachedAxis, type CalCache } from './cal-cache'
+import { sanitizeConfig } from './settings-schema'
 import {
-  effectiveMapping,
-  importMapping,
-  sanitizeNodeMapping,
-  type MappedNode,
-  type NodeDefaults,
-  type NodeMappingFile
-} from './node-mapping'
-import { PSU_PRESETS, sanitizePsu, type PsuLimits, type PsuSetting } from './psu'
+  CONFIG_FORMAT,
+  type AppConfig,
+  type AppSettings,
+  type ConfigFile,
+  type ConfigSnapshot,
+  type DiffRow,
+  type SectionDiff,
+  type SectionId
+} from './config/ipc'
+import { sanitizeCache } from './cal-cache'
+import type { CachedAxis, CalCache } from './hid/calibration/ipc'
+import { effectiveMapping, importMapping, sanitizeNodeMapping } from './node-mapping'
+import type { MappedNode, NodeDefaults, NodeMappingFile, PsuLimits, PsuSetting } from './nodes/ipc'
+import { PSU_PRESETS, sanitizePsu } from './psu'
 
-export const CONFIG_FORMAT = 'openskyhawk-client-config'
 /** File format this build writes. A higher version came from a newer client. */
 export const CONFIG_FILE_VERSION = 1
 
-export type AppSettings = Omit<AppConfig, 'psu'>
-
-export interface ConfigSnapshot {
-  app: AppSettings
-  nodeMapping: NodeMappingFile
-  powerSupply: PsuSetting
-  calibration: CalCache
-}
-
-export type SectionId = keyof ConfigSnapshot
 export const SECTION_IDS: SectionId[] = ['app', 'nodeMapping', 'powerSupply', 'calibration']
 
 export const SECTION_TITLES: Record<SectionId, string> = {
@@ -42,15 +36,6 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   nodeMapping: 'Node mapping',
   powerSupply: 'Power supply',
   calibration: 'Axis calibration'
-}
-
-export interface ConfigFile {
-  format: typeof CONFIG_FORMAT
-  version: number
-  exportedAt: string
-  /** Client version that wrote it. */
-  client: string
-  sections: Partial<ConfigSnapshot>
 }
 
 /** Split AppConfig into its two sections. */
@@ -130,23 +115,6 @@ export function parseConfigFile(text: string): ParseResult {
 }
 
 // ── review: what applying a section would change ─────────────────────────────
-
-/** One `key  from → to` line. `axis` set: the renderer names the axis (it owns the labels). */
-export interface DiffRow {
-  k: string
-  from: string
-  to: string
-  axis?: number
-  board?: string
-}
-
-export interface SectionDiff {
-  id: SectionId
-  title: string
-  /** Short count for the heading: "2 changes", "3 nodes", "4 axes · board 4134-A7". */
-  summary: string
-  rows: DiffRow[]
-}
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const onOff = (b: boolean) => (b ? 'On' : 'Off')

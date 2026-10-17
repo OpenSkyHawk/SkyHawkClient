@@ -6,12 +6,8 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  EMPTY_MAPPING,
-  NODE_MAPPING_VERSION,
-  sanitizeNodeMapping,
-  type NodeMappingFile
-} from '@shared/node-mapping'
+import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from '@shared/node-mapping'
+import type { NodeMappingFile } from '@shared/nodes/ipc'
 
 /** A save that did not reach the disk. The message is ready to show. */
 export class MappingSaveError extends Error {}

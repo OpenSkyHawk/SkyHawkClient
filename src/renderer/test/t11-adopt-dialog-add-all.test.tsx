@@ -1,7 +1,7 @@
 // T11 — the Adopt dialog: "Add all", the Powered by choices, and a board power-cycled to identify it.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import type { NodeModel, NodeModelEntry } from '@shared/node-rules'
+import type { NodeModel, NodeModelEntry } from '@shared/nodes/ipc'
 import { Cockpit } from '../src/tabs/Cockpit'
 import { renderScenario, settle } from './render'
 import { connected, model, newBoard, pdu } from './scenarios'

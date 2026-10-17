@@ -3,48 +3,19 @@
 // restart. Node events come from changes in the boards' own reports (`_NODE_STATUS`,
 // `_NODE_TELEM`): the client never applies a threshold, so every alert here is a flag a board
 // raised itself.
-import type { DeviceStatus, RelayState, SourceMode } from './ipc'
-import { BRIDGE_NODE_ID, NODE_END_MSG, ROSTER_REPLY_MS, type NodeStatus } from './nodes'
-import {
-  displayCurrentMa,
-  PDU_FLAG,
-  RAIL_FLAG,
-  TELEM_PAGE,
-  type NodeTelem,
-  type PduRailPage
-} from './node-telem'
-
-export type EventSource = 'node' | 'client'
-
-/** error ✕ (offline / failure), warn ! (a raised flag), new + (new on the bus), info ● (cleared / up). */
-export type EventSeverity = 'error' | 'warn' | 'new' | 'info'
+import type { DeviceStatus } from './gateway/ipc'
+import type { RelayState } from './dcs/ipc'
+import type { SourceMode } from './config/ipc'
+import { BRIDGE_NODE_ID, NODE_END_MSG, ROSTER_REPLY_MS } from './nodes'
+import type { NodeStatus, NodeTelem, PduRailPage } from './nodes/ipc'
+import { displayCurrentMa, PDU_FLAG, RAIL_FLAG, TELEM_PAGE } from './node-telem'
+import { MAX_EVENTS, type EventSeverity, type LogEvent, type LogEventInput } from './events/ipc'
 
 export const SEVERITY_GLYPH: Record<EventSeverity, string> = {
   error: '✕',
   warn: '!',
   new: '+',
   info: '●'
-}
-
-export interface LogEventInput {
-  t: number
-  source: EventSource
-  /** Node events about one node; absent for the roster summary and client events. */
-  nodeId?: number
-  /** Node: its effective name. Client: `SERIAL`, `DCS`, `Gateway` or `Relay`. */
-  name: string
-  severity: EventSeverity
-  /** What happened, e.g. `5V UNDER-V raised`, `offline`, `connected`. */
-  event: string
-  /** The reading or reason that goes with it, e.g. `4.71 V`, `no heartbeat`. */
-  detail?: string
-  /** The source line: the `_NODE_STATUS` / `_NODE_TELEM` frame, or the original client message. */
-  raw: string
-}
-
-export interface LogEvent extends LogEventInput {
-  /** Increasing for the whole app run; never reused, not even after Clear. */
-  id: number
 }
 
 /** `event · detail`, as the Events view and the Cockpit box print it. */
@@ -396,9 +367,6 @@ export function relayEvents(
 }
 
 // ── the session list ────────────────────────────────────────────────────────
-
-/** Oldest rows go first once the session holds this many. */
-export const MAX_EVENTS = 5000
 
 /** The session's events, oldest first, plus what has not been pushed to the renderer yet. */
 export class EventLog {

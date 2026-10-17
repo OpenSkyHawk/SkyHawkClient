@@ -2,17 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   applyToConfig,
   buildConfigFile,
-  CONFIG_FORMAT,
   diffImport,
   mergeCalibration,
-  parseConfigFile,
-  type ConfigSnapshot,
-  type SectionId
+  parseConfigFile
 } from './config-file'
-import { DEFAULT_CONFIG } from './ipc'
-import { registryDefaults, type NodeMappingFile } from './node-mapping'
-import { DEFAULT_PSU } from './psu'
-import type { CalCache } from './cal-cache'
+import { CONFIG_FORMAT, DEFAULT_CONFIG, type ConfigSnapshot, type SectionId } from './config/ipc'
+import { registryDefaults } from './node-mapping'
+import { DEFAULT_PSU, type NodeMappingFile } from './nodes/ipc'
+import type { CalCache } from './hid/calibration/ipc'
 import { DEFAULT_APP_SETTINGS } from '../test-fixtures/config'
 
 const defaults = registryDefaults({

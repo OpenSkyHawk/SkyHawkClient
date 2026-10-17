@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { parsePsuLimit, PSU_PRESETS, type PsuLimits } from '@shared/psu'
+import { parsePsuLimit, PSU_PRESETS } from '@shared/psu'
+import type { PsuLimits } from '@shared/nodes/ipc'
 import { useStore } from '../../store'
 import { ResetDialog } from './ResetDialog'
 import { Row, SectionHead } from './Row'

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CAL_TYPE, buildFrame } from '@shared/calibration'
-import type { LogRow } from '@shared/ipc'
-import { eventText, type LogEvent } from '@shared/events'
-import type { NodeModel } from '@shared/node-rules'
+import type { LogRow } from '@shared/dcs/ipc'
+import { eventText } from '@shared/events'
+import type { LogEvent } from '@shared/events/ipc'
+import type { NodeModel } from '@shared/nodes/ipc'
 import { statusLine } from '../test-fixtures/nodes'
 
 // Session pulls in electron (debug log path), the serial port, the DCS transport and node-hid.
@@ -128,7 +129,7 @@ vi.mock('./hid', () => ({
 const { Session, deviceToDcs, exportToDevice, relayConfigChanged } = await import('./session')
 const { PortNotFoundError } = await import('./serial')
 const { nodeRosterRequest } = await import('@shared/nodes')
-const { DEFAULT_CONFIG } = await import('@shared/ipc')
+const { DEFAULT_CONFIG } = await import('@shared/config/ipc')
 
 const ascii = (s: string) => Buffer.from(s, 'ascii')
 

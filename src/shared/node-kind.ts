@@ -2,13 +2,7 @@
 // mapping validation, Ignore's recorded kind, the Adopt gate and the Overview — so no two places
 // can disagree about a board. Never inferred from a NODE_ID: a PDU can take any ID (#344).
 import { NODE_KIND } from './nodes'
-import type { NodeKind } from './node-mapping'
-
-/**
- * A node's type once something solid says so. 'bridge' = a SimGateway/PanelBridge board; 'other' =
- * a kind this client doesn't know (a newer firmware's). Neither is ever adoptable.
- */
-export type NodeIdentity = 'pdu' | 'panel' | 'bridge' | 'other'
+import type { NodeIdentity, NodeKind } from './nodes/ipc'
 
 /** The kind a status row reports (NodeStatus.nodeKind); undefined = not reported (0) or no row. */
 export function reportedIdentity(nodeKind: number | undefined): NodeIdentity | undefined {

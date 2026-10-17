@@ -1,23 +1,27 @@
 import { create } from 'zustand'
-import { isLinkUp } from '@shared/ipc'
+import {
+  isLinkUp,
+  type DeviceState,
+  type GatewayStatus,
+  type SerialFrame
+} from '@shared/gateway/ipc'
 import { HID_CONTROLS_BY_ID, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
 import type {
   AircraftStatus,
-  AppConfig,
-  CalSnapshot,
-  DcsTransport,
-  DeviceState,
-  StreamState,
   LogRow as IpcLogRow,
+  StreamState,
   TelemetryReadout
-} from '@shared/ipc'
-import type { NodeModel } from '@shared/node-rules'
-import type { NodeTelemSnapshot } from '@shared/node-telem'
-import { DEFAULT_PSU, type PsuSetting } from '@shared/psu'
+} from '@shared/dcs/ipc'
+import type { AppConfig, DcsTransport } from '@shared/config/ipc'
+import type { CalSnapshot } from '@shared/hid/calibration/ipc'
+import {
+  DEFAULT_PSU,
+  type NodeModel,
+  type NodeTelemSnapshot,
+  type PsuSetting
+} from '@shared/nodes/ipc'
 import { nodeViews, totalWatts } from './cockpit'
-import type { SerialFrame } from '@shared/ipc'
-import type { LogEvent } from '@shared/events'
-import type { GatewayStatus } from '@shared/gateway'
+import type { LogEvent } from '@shared/events/ipc'
 import { mergeEvents, restoreEvents, type EventSourceFilter, type LogView } from './log-view'
 
 export type TabId = 'overview' | 'connection' | 'cockpit' | 'log' | 'serial' | 'hid' | 'settings'

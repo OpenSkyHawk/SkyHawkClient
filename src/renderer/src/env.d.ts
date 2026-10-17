@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { SkyhawkApi } from '@shared/ipc'
+import type { SkyhawkApi } from '@shared/app/ipc'
 
 declare global {
   interface Window {

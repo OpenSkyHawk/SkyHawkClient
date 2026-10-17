@@ -19,29 +19,21 @@ import {
 } from '@shared/nodes'
 import { GatewayWatch } from '@shared/gateway'
 import { NODE_TELEM_MSG } from '@shared/node-telem'
-import type { LogEventInput } from '@shared/events'
-import {
-  isLinkUp,
-  type CalCacheEntry,
-  type CalCommitAxis,
-  type CalHello,
-  type CalRawSample,
-  type CalResult,
-  type CalSnapshot,
-  type DeviceStatus,
-  type PushChannel,
-  type PushChannels,
-  type SerialFrame
-} from '@shared/ipc'
+import type { LogEventInput } from '@shared/events/ipc'
+import { isLinkUp, type DeviceStatus, type SerialFrame } from '@shared/gateway/ipc'
+import type {
+  CachedAxis,
+  CachedBoard,
+  CalCacheEntry,
+  CalCommitAxis,
+  CalHello,
+  CalRawSample,
+  CalResult,
+  CalSnapshot
+} from '@shared/hid/calibration/ipc'
+import type { PushChannel, PushChannels } from '@shared/app/ipc'
 import { CAL_AXIS_NONE, nackReasonName } from '@shared/calibration'
-import {
-  boardFor,
-  dropAxis,
-  regressedAxes,
-  storeAxes,
-  type CachedAxis,
-  type CachedBoard
-} from '@shared/cal-cache'
+import { boardFor, dropAxis, regressedAxes, storeAxes } from '@shared/cal-cache'
 import { CalLink, CalNackError, CalTimeoutError } from './callink'
 import {
   findSimGatewayPort,

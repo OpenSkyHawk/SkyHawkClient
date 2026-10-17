@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { NodeMappingFile } from '@shared/node-mapping'
+import type { NodeMappingFile } from '@shared/nodes/ipc'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from '@shared/nodes'
 
 const disk: {

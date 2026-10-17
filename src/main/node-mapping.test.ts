@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { EMPTY_MAPPING, importMapping, type NodeMappingFile } from '@shared/node-mapping'
+import { EMPTY_MAPPING, importMapping } from '@shared/node-mapping'
+import type { NodeMappingFile } from '@shared/nodes/ipc'
 
 const userData = vi.hoisted(() => ({ dir: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => userData.dir } }))

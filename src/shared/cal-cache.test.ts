@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { CalSnapshot } from './ipc'
+import type { CachedAxis, CalCache, CalSnapshot } from './hid/calibration/ipc'
 import {
   boardFor,
   dropAxis,
   emptyCache,
   regressedAxes,
   sanitizeCache,
-  storeAxes,
-  type CachedAxis,
-  type CalCache
+  storeAxes
 } from './cal-cache'
 
 const SERIAL = '50031327805E871C'

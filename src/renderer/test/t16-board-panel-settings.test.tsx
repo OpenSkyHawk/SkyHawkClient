@@ -1,7 +1,7 @@
 // T16 — the board panel's Settings tab: display name, console and power zone, and what Save sends.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import type { NodeRegistryInfo } from '@shared/ipc'
+import type { NodeRegistryInfo } from '@shared/nodes/ipc'
 import { Cockpit } from '../src/tabs/Cockpit'
 import { renderScenario, settle } from './render'
 import { connected, model, newBoard, panel, pdu } from './scenarios'

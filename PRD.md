@@ -131,7 +131,7 @@ SkyHawkClient/
 │   └── release.yml             ← tag v*: build Win + Mac Electron artifacts → GitHub Release
 ├── src/main/{bridge,reference,stats}.ts ...
 ├── src/renderer/{panels,store}/ ...
-├── src/shared/ipc.ts
+├── src/shared/<topic>/ipc.ts   ← IPC contract per topic; src/shared/app/ipc.ts assembles them
 ├── scripts/sync-a4ec.ts        ← firmware sync (also a CI step / prebuild)
 ├── package.json  electron.vite.config.ts  tsconfig.json  .eslintrc  .prettierrc
 └── README.md (data-flow + how it relates to the firmware repo)

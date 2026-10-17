@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG, sanitizeConfig } from './ipc'
+import { DEFAULT_CONFIG } from './config/ipc'
+import { sanitizeConfig } from './settings-schema'
 
 describe('sanitizeConfig', () => {
   it('falls back to defaults for empty / junk input', () => {

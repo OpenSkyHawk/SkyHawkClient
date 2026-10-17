@@ -2,23 +2,18 @@
 // One place for them, on top of the shared node fixtures, so every component test describes the
 // world the same way. Each builder states its defaults; a test passes whatever differs.
 import { emptyCache } from '@shared/cal-cache'
-import {
-  appSettings,
-  buildConfigFile,
-  diffImport,
-  parseConfigFile,
-  type ConfigSnapshot
-} from '@shared/config-file'
-import { gatewayStatus, type GatewayStatus } from '@shared/gateway'
-import {
-  DEFAULT_CONFIG,
-  type DeviceState,
-  type DeviceStatus,
-  type ImportPreview
-} from '@shared/ipc'
-import type { NodeDefaults } from '@shared/node-mapping'
-import type { NodeModel, NodeModelEntry, PduOutage } from '@shared/node-rules'
-import { NODE_KIND, type NodeStatus } from '@shared/nodes'
+import { appSettings, buildConfigFile, diffImport, parseConfigFile } from '@shared/config-file'
+import { DEFAULT_CONFIG, type ConfigSnapshot, type ImportPreview } from '@shared/config/ipc'
+import { gatewayStatus } from '@shared/gateway'
+import type { DeviceState, DeviceStatus, GatewayStatus } from '@shared/gateway/ipc'
+import type {
+  NodeDefaults,
+  NodeModel,
+  NodeModelEntry,
+  NodeStatus,
+  PduOutage
+} from '@shared/nodes/ipc'
+import { NODE_KIND } from '@shared/nodes'
 import { modelNode, nodeModel, nodeStatus } from '../../test-fixtures/nodes'
 
 export { modelNode, nodeModel, nodeStatus }

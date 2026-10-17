@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { NodeMappingResult } from '@shared/ipc'
+import type { NodeMappingResult } from '@shared/nodes/ipc'
 import type { NodeView } from '../../cockpit'
 import {
   adoptability,

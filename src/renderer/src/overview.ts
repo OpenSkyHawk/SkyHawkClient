@@ -2,7 +2,8 @@
 // new-devices notice. All of it is read off the Cockpit's own picture (`healthBand`,
 // `attentionItems`); the client adds no thresholds of its own.
 import { isAdoptableKind } from '@shared/node-kind'
-import { isReportableNew, type NodeModelEntry } from '@shared/node-rules'
+import { isReportableNew } from '@shared/node-rules'
+import type { NodeModelEntry } from '@shared/nodes/ipc'
 import type { AttentionItem, HealthBand, NodeView } from './cockpit'
 
 // ── Cockpit tile ────────────────────────────────────────────────────────────
