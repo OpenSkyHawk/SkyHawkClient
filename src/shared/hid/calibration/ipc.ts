@@ -539,6 +539,11 @@ export interface CalibrationTabState {
   snapshot?: CalSnapshot
   /** Per axis index; absent = not declared (or not known), so no badge. */
   badges: Partial<Record<number, CalBadge>>
+  /**
+   * A badge opens the dialog on its axis. The Calibrate button's link rule (N6): with the link
+   * down a badge still shows its state, greyed out, as the button is.
+   */
+  badgeOpens: boolean
   /** Declared axes with no calibration on the device. */
   uncalibrated: number
   /** Axes the device lost that the cache holds a confirmed copy of. */
@@ -564,6 +569,7 @@ export interface CalibrationState {
 export const CALIBRATION_IDLE: CalibrationState = {
   tab: {
     badges: {},
+    badgeOpens: false,
     uncalibrated: 0,
     showOffer: false,
     calibrate: { shown: true, enabled: false }

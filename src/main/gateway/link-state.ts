@@ -72,8 +72,8 @@ export function linkAction(state: DeviceState): LinkAction {
 /**
  * "When the link last went down after being up", as the renderer's store kept it for the
  * Cockpit's "last known" time, judged per `device:status` push: stamped on an up → down change,
- * cleared while up, otherwise left as it was. The page's own: a renderer that (re)loads starts
- * with none until the next drop (N1), so `pageLoaded` forgets it.
+ * cleared while up, otherwise left as it was. A renderer that (re)loads is handed it in the
+ * rehydrate bundle (N1).
  */
 export class LinkDownClock {
   private wasUp = false
@@ -93,15 +93,6 @@ export class LinkDownClock {
   /** The time as the last push carried it. */
   get value(): number | undefined {
     return this.at
-  }
-
-  /**
-   * A renderer (re)loaded: its store started with no time, and took the link's state from the
-   * rehydrate bundle (`relay:status`), which is where its next push is judged from.
-   */
-  pageLoaded(state: DeviceState): void {
-    this.at = undefined
-    this.wasUp = isLinkUp(state)
   }
 }
 

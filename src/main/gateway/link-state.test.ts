@@ -53,25 +53,6 @@ describe('the Cockpit’s "last known" time (store.ts before R3.3)', () => {
     expect(clock.pushed('disconnected')).toBe(4000)
     expect(clock.pushed('disconnected')).toBe(4000)
   })
-
-  it('a reloaded page has none until the link next drops (N1)', () => {
-    let now = 1000
-    const clock = new LinkDownClock(() => now)
-    clock.pushed('connected')
-    clock.pushed('reconnecting')
-    expect(clock.value).toBe(1000)
-    clock.pageLoaded('reconnecting')
-    expect(clock.value).toBeUndefined()
-    now = 2000
-    expect(clock.pushed('no-device'), 'down → down is no drop').toBeUndefined()
-    expect(clock.pushed('connected')).toBeUndefined()
-    expect(clock.pushed('reconnecting')).toBe(2000)
-    // Reloaded while up: the next drop stamps.
-    clock.pushed('connected')
-    clock.pageLoaded('connected')
-    now = 3000
-    expect(clock.pushed('error')).toBe(3000)
-  })
 })
 
 describe('the link’s action (R3.4a: the renderer’s deviceView table before)', () => {

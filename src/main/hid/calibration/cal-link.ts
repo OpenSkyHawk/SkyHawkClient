@@ -21,7 +21,7 @@ import {
   decodeSessionAck,
   encodeCommit,
   encodeReset,
-  nackRefusalName,
+  nackName,
   type CalData,
   type CalFrame,
   type HelloAck,
@@ -49,7 +49,7 @@ export class CalNackError extends Error {
     /** Axis index where one applies, else CAL_AXIS_NONE. */
     readonly detail: number
   ) {
-    super(`calibration: device refused (${nackRefusalName(reason)})`)
+    super(`calibration: device refused (${nackName(reason)})`)
     this.name = 'CalNackError'
   }
 }

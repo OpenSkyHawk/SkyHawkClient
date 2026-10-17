@@ -6,6 +6,7 @@ import type { LogEvent } from '@shared/events'
 import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
 import type { HidSnapshot } from '@shared/hid'
 import { BACKUP_LIST_DEFAULT, DEFAULT_CONFIG, PSU_VIEW_DEFAULT } from '@shared/config'
+import { AIRCRAFT_NONE, TELEMETRY_IDLE } from '@shared/dcs'
 import { isLinkUp, LinkDownClock, linkFacts } from '../../../main/gateway/link-state'
 import { relayFacts } from '../../../main/dcs/relay-rules'
 import { hidFacts } from '../../../main/hid/hid-facts'
@@ -25,7 +26,8 @@ interface Given {
   'hid:report': HidSnapshot
 }
 type GivenPushes = Omit<PushChannels, keyof Given> & Given
-type GivenStatus = Omit<RelayStatus, 'device' | 'relayFacts'> & { device: DeviceStatus }
+type GivenStatus = Omit<RelayStatus, 'device' | 'relayFacts' | 'aircraft' | 'telemetry'> &
+  Partial<Pick<RelayStatus, 'aircraft' | 'telemetry'>> & { device: DeviceStatus }
 
 /** Main's GatewayConnection: the page's "last known" time, judged per push (link-state.ts). */
 let linkDown = new LinkDownClock()
@@ -61,8 +63,10 @@ function fakeApi() {
       return () => {}
     },
     getStatus: () => {
-      linkDown.pageLoaded(status.device.state) // a (re)loaded page starts over (N1)
       return Promise.resolve({
+        // main's DcsRelay: the aircraft and the gauges as last pushed (none pushed by default)
+        aircraft: AIRCRAFT_NONE,
+        telemetry: TELEMETRY_IDLE,
         ...status,
         device: withFacts(status.device),
         // main's DcsRelay, over the default settings and this status
@@ -157,9 +161,15 @@ const calibration = (snap: CalSnapshot): CalibrationState => ({
  * Since R3.4b the renderer's state is split across the topic stores; the cases read it as one, the
  * way the single store held it (the Log tab's Pause is the events slice's `togglePause`).
  */
-async function freshStore() {
+async function freshStore(mainClock?: LinkDownClock) {
   listeners.clear()
-  linkDown = new LinkDownClock()
+  // Main's clock has judged the link's state it already pushed, before this page loaded; a reload
+  // of a page main kept serving hands its own clock on.
+  if (mainClock) linkDown = mainClock
+  else {
+    linkDown = new LinkDownClock()
+    linkDown.pushed(status.device.state)
+  }
   vi.resetModules()
   ;(globalThis as { window?: unknown }).window = { skyhawk: fakeApi() }
   const { initBridge } = await import('./ipc-adapter')
@@ -249,6 +259,21 @@ describe('relay state (#69)', () => {
     push('relay:state', { running: false })
     expect(s.getState().relaying).toBe(false)
     expect(s.getState().deviceState, 'stopping the relay leaves the link up').toBe('connected')
+  })
+
+  it('rehydrates what main still shows on a reload: the aircraft, the gauges, the link (N1)', async () => {
+    const aircraft = { name: 'A-4E-C', inferred: false, supported: true }
+    const telemetry = TELEMETRY_IDLE.map((g) => ({ ...g, value: 42, pct: 0.42 }))
+    status = { running: false, relay: { running: false }, device: { state: 'connected' } }
+    const before = await freshStore()
+    push('device:status', { state: 'no-device' })
+    const at = before.getState().linkDownAt
+    expect(at).toBeDefined()
+    status = { ...status, device: { state: 'no-device' }, aircraft, telemetry }
+    const s = await freshStore(linkDown)
+    expect(s.getState().aircraft).toEqual(aircraft)
+    expect(s.getState().telemetry).toEqual(telemetry)
+    expect(s.getState().linkDownAt, 'the last-known time main holds').toBe(at)
   })
 
   it('rehydrates the relay state on a reload', async () => {

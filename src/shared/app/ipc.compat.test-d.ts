@@ -92,6 +92,13 @@
 // below, and `DeviceStatusPush` lost `canRefresh` (its only reader was that button; a type change
 // only, no channel renamed).
 //
+// Fix track #132 (N6, N1: the calibrate badge, a reload): no channel, intent or method was added,
+// removed or renamed. The rehydrate bundle (`relay:status`) gained `aircraft` (`AircraftStatus`)
+// and `telemetry` (`TelemetryReadout[]`), as last pushed, so a reload keeps them; its `relayFacts`
+// and `device` now carry the recording, the capture, the last-known time and the serial monitor's
+// flag as main holds them (no type change there). `CalibrationTabState` (`cal:workflow`) gained
+// `badgeOpens`: the badges follow the Calibrate button's link rule (a type change only).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -173,6 +180,8 @@ interface OldRelayStatus {
   running: boolean
   relay: RelayState
   relayFacts: RelayFacts
+  aircraft: AircraftStatus
+  telemetry: TelemetryReadout[]
   device: DeviceStatusPush
   cal?: CalibrationState
 }

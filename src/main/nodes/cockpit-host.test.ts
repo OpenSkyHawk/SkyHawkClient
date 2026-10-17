@@ -96,12 +96,12 @@ describe('node state (#63) — the peak W, from the store', () => {
     expect(host.state().band.peakW).toBeCloseTo(29, 0)
   })
 
-  it('a renderer reload starts the peak over from what main holds now', () => {
+  it('a renderer reload keeps the session peak (N1)', () => {
     const { host } = rig()
     host.modelPushed(pduModel)
     host.telemetryPushed(telem(2000))
     host.rendererLoaded(pduModel, telem(1000))
-    expect(host.state().band.peakW).toBeCloseTo(12)
+    expect(host.state().band.peakW).toBeCloseTo(24)
   })
 })
 

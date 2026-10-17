@@ -6,7 +6,17 @@
 // The device link is not started or stopped here. It is up whenever the board is plugged in
 // (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
-import type { RecordState, RelayFacts, RelayResult, RelayState, ReplayLoad } from '@shared/dcs'
+import {
+  AIRCRAFT_NONE,
+  TELEMETRY_IDLE,
+  type AircraftStatus,
+  type RecordState,
+  type RelayFacts,
+  type RelayResult,
+  type RelayState,
+  type ReplayLoad,
+  type TelemetryReadout
+} from '@shared/dcs'
 import type { Emit, RelayStatus } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
 import type { DeviceStatus } from '@shared/gateway'
@@ -76,9 +86,15 @@ export class DcsRelay {
   private running = false
   private relay: RelayState = { running: false }
   private timers: ReturnType<typeof setInterval>[] = []
-  /** The recording and the capture as this page set them (N1: a reloaded page starts over). */
+  /** The recording and the capture, as their intents last answered (a reload keeps them, N1). */
   private recordingView: RelayFacts['recording'] = { on: false }
   private replayLoaded?: RelayFacts['replay']
+  /**
+   * The gauges and the aircraft as the telemetry tick last pushed them: what the screen shows,
+   * stopped or not, so a renderer that (re)loads is handed them (N1).
+   */
+  private telemetry: TelemetryReadout[] = TELEMETRY_IDLE
+  private aircraft: AircraftStatus = AIRCRAFT_NONE
   /** The `relay:facts` last pushed, to push only a change. */
   private factsKey?: string
   private readonly device: RelayDevice
@@ -170,7 +186,7 @@ export class DcsRelay {
       }
 
       this.timers = [
-        setInterval(() => flushTelemetry(this.decoder, this.emit), TELEMETRY_MS),
+        setInterval(() => this.flushTelemetry(), TELEMETRY_MS),
         setInterval(() => this.emit('stats:tick', this.stats.snapshot()), STATS_MS)
       ]
       return { ok: true }
@@ -210,9 +226,17 @@ export class DcsRelay {
     return this.replay.info()
   }
 
-  /** Whether it is relaying, and the relay's state, for the renderer's rehydrate bundle. */
-  status(): Pick<RelayStatus, 'running' | 'relay'> {
-    return { running: this.running, relay: this.relay }
+  /**
+   * Whether it is relaying, the relay's state, and the gauges and aircraft last pushed, for the
+   * renderer's rehydrate bundle.
+   */
+  status(): Pick<RelayStatus, 'running' | 'relay' | 'aircraft' | 'telemetry'> {
+    return {
+      running: this.running,
+      relay: this.relay,
+      aircraft: this.aircraft,
+      telemetry: this.telemetry
+    }
   }
 
   // ── what the relay's surfaces show (relay:facts, R3.3) ─────────────────────
@@ -247,16 +271,6 @@ export class DcsRelay {
     this.pushFacts()
   }
 
-  /**
-   * A renderer (re)loaded (`relay:status`): the recording and the capture it shows start over, as
-   * its store did, whatever main is doing (N1). The bundle carries the facts.
-   */
-  rendererLoaded(): void {
-    this.recordingView = { on: false }
-    this.replayLoaded = undefined
-    this.factsKey = JSON.stringify(this.facts())
-  }
-
   private pushFacts(): void {
     const facts = this.facts()
     const key = JSON.stringify(facts)
@@ -266,6 +280,13 @@ export class DcsRelay {
   }
 
   // ── pipeline ───────────────────────────────────────────────────────────────
+
+  /** The telemetry tick (sim-telemetry-decoder.ts), what it pushed remembered for a reload. */
+  private flushTelemetry(): void {
+    const { telemetry, aircraft } = flushTelemetry(this.decoder, this.emit)
+    this.telemetry = telemetry
+    if (aircraft) this.aircraft = aircraft
+  }
 
   /** One chunk of the DCS-BIOS export, from DCS or a capture. */
   private onExport(chunk: Buffer): void {

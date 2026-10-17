@@ -37,17 +37,18 @@ describe('device:status carries the link’s facts', () => {
     })
   })
 
-  it('the serial monitor’s flag comes back on device:status; a reloaded page starts over (N1)', () => {
+  it('the serial monitor’s flag comes back on device:status; a reloaded page keeps it (N1)', () => {
     const app = makeServices(monitor)
     app.serial.open()
     const n = app.pushesOf('device:status').length
     app.invoke(CTRL.serialMonitor, true)
     expect(app.pushesOf('device:status')).toHaveLength(n + 1)
     expect(app.lastPush('device:status')).toMatchObject({ state: 'connected', serialMonitor: true })
+    const at = app.clock.now()
     app.serial.close()
     const reloaded = app.invoke(CTRL.relayStatus)
-    expect(reloaded.device).toMatchObject({ serialMonitor: false })
-    expect(reloaded.device.linkDownAt, 'no last-known time for a reloaded page').toBeUndefined()
+    expect(reloaded.device).toMatchObject({ serialMonitor: true })
+    expect(reloaded.device.linkDownAt, 'the last-known time, as main holds it').toBe(at)
   })
 })
 

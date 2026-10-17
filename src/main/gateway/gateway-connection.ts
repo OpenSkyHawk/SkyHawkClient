@@ -112,7 +112,7 @@ function subscribe<T>(set: Set<T>, cb: T): Unsubscribe {
 export class GatewayConnection {
   private serial?: SerialBridge
   private status: DeviceStatus = { state: 'disconnected' }
-  /** The Cockpit's "last known" time, as the page's store kept it (R3.3). */
+  /** The Cockpit's "last known" time (R3.3); a reloaded renderer is handed it too (N1). */
   private readonly linkDown = new LinkDownClock()
   private autoConnect = true
   private started = false
@@ -307,14 +307,6 @@ export class GatewayConnection {
   /** The status with what main concludes from it, as the last `device:status` carried it (R3.3). */
   statusPush(): DeviceStatusPush {
     return this.withFacts(this.status)
-  }
-
-  /**
-   * A renderer (re)loaded (`relay:status`): the page's own link facts start over, as its store
-   * did — no "last known" time until the link next drops (N1).
-   */
-  rendererLoaded(): void {
-    this.linkDown.pageLoaded(this.status.state)
   }
 
   /** Something `device:status` carries changed without the link changing (the serial monitor). */

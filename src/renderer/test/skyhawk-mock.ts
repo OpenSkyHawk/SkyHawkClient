@@ -64,15 +64,17 @@ import {
   type ConfigChanged,
   type ConfigEdit
 } from '@shared/config'
-import type {
-  AircraftStatus,
-  RecordState,
-  StreamRow,
-  RelayFacts,
-  RelayState,
-  ReplayLoad,
-  StatsSnapshot,
-  TelemetryReadout
+import {
+  AIRCRAFT_NONE,
+  TELEMETRY_IDLE,
+  type AircraftStatus,
+  type RecordState,
+  type RelayFacts,
+  type RelayState,
+  type ReplayLoad,
+  type StatsSnapshot,
+  type StreamRow,
+  type TelemetryReadout
 } from '@shared/dcs'
 import type {
   CalCache,
@@ -273,17 +275,15 @@ export function installSkyhawkMock(): SkyhawkMock {
       cockpit.rendererLoaded(state.model ?? EMPTY_MODEL, state.telemetry ?? [])
       // …and HidService hands it the report with its live axes (R3.3), in the same batch.
       push('hid:report', hidPush())
-      // …and what the old page held for itself starts over (GatewayConnection, SerialTrafficMonitor,
-      // DcsRelay).
-      linkDown.pageLoaded(device().state)
-      monitorShown = false
-      recordingShown = { on: false }
-      replayShown = undefined
-      factsKey = JSON.stringify(relayFactsNow())
+      // …and what main holds for the screen comes back in the bundle (N1): the last-known time and
+      // the monitor's flag (GatewayConnection, SerialTrafficMonitor), the recording and the capture
+      // (DcsRelay's facts), the aircraft and the gauges as last pushed (DcsRelay).
       return resolve({
         running: state.relay?.running ?? false,
         relay: state.relay ?? { running: false },
         relayFacts: relayFactsNow(),
+        aircraft: state.aircraft ?? AIRCRAFT_NONE,
+        telemetry: state.gauges ?? TELEMETRY_IDLE,
         device: devicePush(),
         cal: host.state()
       })
@@ -446,7 +446,7 @@ export function installSkyhawkMock(): SkyhawkMock {
 
   // ── the device link, as main's GatewayConnection pushes it (link-state.ts) ──
   const device = (): DeviceStatus => state.device ?? { state: 'no-device' }
-  /** The Cockpit's "last known" time and the serial monitor's flag: the page's, kept in main. */
+  /** The Cockpit's "last known" time and the serial monitor's flag, kept in main. */
   const linkDown = new LinkDownClock()
   let monitorShown = false
   /**
@@ -483,7 +483,7 @@ export function installSkyhawkMock(): SkyhawkMock {
   }
 
   // ── the relay's facts, as main's DcsRelay pushes them (relay-rules.ts) ──
-  /** The recording and the capture as the page set them; a reloaded page starts over (N1). */
+  /** The recording and the capture as their intents last answered; a reload keeps them (N1). */
   let recordingShown: RelayFacts['recording'] = { on: false }
   let replayShown: RelayFacts['replay']
   let factsKey: string | undefined

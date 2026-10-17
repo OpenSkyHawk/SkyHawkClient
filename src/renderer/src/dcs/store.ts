@@ -143,10 +143,13 @@ export const dcsFromMain = {
    * The rehydrate bundle (`relay:status`): a dev reload resets the renderer but the main-process
    * session keeps running, so the UI must not assume "stopped".
    */
-  status: (st: Pick<RelayStatus, 'running' | 'relayFacts'>): void =>
+  status: (st: Pick<RelayStatus, 'running' | 'relayFacts' | 'aircraft' | 'telemetry'>): void =>
     useDcsStore.setState({
       relaying: st.running,
-      relayFacts: st.relayFacts
+      relayFacts: st.relayFacts,
+      // What main still shows: the aircraft and the gauges, pushed only on change or per tick (N1).
+      aircraft: st.aircraft,
+      telemetry: st.telemetry
     }),
 
   /** `relay:state`. */

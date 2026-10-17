@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CALIBRATION_IDLE, type CalibrationState, type CalSnapshot } from '@shared/hid/calibration'
 import type { CalibrationCommands } from './calibration-workflow'
+import { tabState } from './calibration-view-model'
 import { CalibrationWorkflowHost } from './workflow-host'
 
 const snapshot = (calibratedMask: number, serial = 'BOARD-A'): CalSnapshot => ({
@@ -156,5 +157,35 @@ describe('calibration state lifecycle', () => {
     h.reported(snapshot(0b00, 'BOARD-B'))
     expect(snap()?.serialNumber).toBe('BOARD-B')
     expect(snap()?.calibratedMask).toBe(0b00)
+  })
+})
+
+// N6: the per-axis badge opened the dialog with the link down while Calibrate was greyed out.
+describe('the badges follow the Calibrate button’s link rule (N6)', () => {
+  it('with the link down a badge shows its state but does not open the dialog', () => {
+    const tab = tabState(snapshot(0b01), false, undefined)
+    expect(tab.badges).toEqual({ 0: 'cal', 1: 'raw' })
+    expect(tab.calibrate.enabled).toBe(false)
+    expect(tab.badgeOpens, 'the same rule as Calibrate').toBe(false)
+  })
+
+  it('with the link up both open it', () => {
+    const tab = tabState(snapshot(0b01), true, undefined)
+    expect(tab.calibrate.enabled).toBe(true)
+    expect(tab.badgeOpens).toBe(true)
+  })
+
+  it('the host pushes it with the link: a report that lands after a drop opens nothing', () => {
+    const { h } = host()
+    h.linkStatus('connected')
+    h.reported(snapshot(0b01))
+    expect(h.state().tab).toMatchObject({ badgeOpens: true, calibrate: { enabled: true } })
+    h.linkStatus('reconnecting')
+    h.reported(snapshot(0b01))
+    expect(h.state().tab).toMatchObject({
+      badges: { 0: 'cal', 1: 'raw' },
+      badgeOpens: false,
+      calibrate: { enabled: false }
+    })
   })
 })

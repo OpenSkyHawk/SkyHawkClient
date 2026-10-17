@@ -9,31 +9,25 @@ const SERIAL_FLUSH_MS = 50
 const MAX_SERIAL_BUF = 4000
 
 export class SerialTrafficMonitor implements LinkRider {
+  /**
+   * The monitor is on: the Serial tab's toggle as it was last set. `device:status` carries it
+   * (R3.3), and so does the rehydrate bundle, so a renderer that (re)loads shows the monitor as
+   * main runs it (N1).
+   */
   private serialMonitor = false
   private serialBuf: SerialFrame[] = []
-  /**
-   * The Serial tab's toggle as the page last set it, which `device:status` carries (R3.3). The
-   * page's own: a renderer that (re)loads shows the monitor off while main keeps it running — and
-   * its traffic coming — until the toggle is pressed (N1), as when the page held the flag.
-   */
-  private shownOn = false
   private changed?: () => void
 
   constructor(private readonly emit: Emit) {}
 
-  /** The page's monitor flag (`device:status`). */
+  /** The monitor's flag, as `device:status` carries it. */
   get shown(): boolean {
-    return this.shownOn
+    return this.serialMonitor
   }
 
-  /** Told each time the page's flag is set: GatewayConnection pushes it (AppServices). */
+  /** Told each time the flag is set: GatewayConnection pushes it (AppServices). */
   onShownChange(cb: () => void): void {
     this.changed = cb
-  }
-
-  /** A renderer (re)loaded: its flag starts off; the monitor itself keeps running (N1). */
-  rendererLoaded(): void {
-    this.shownOn = false
   }
 
   /** The `serial:traffic` flush, on the link's timer list. */
@@ -45,8 +39,7 @@ export class SerialTrafficMonitor implements LinkRider {
   setSerialMonitor(on: boolean): void {
     this.serialMonitor = on
     if (!on) this.serialBuf = []
-    // The page set its toggle: what it shows comes back on `device:status` (R3.3).
-    this.shownOn = on
+    // What the toggle shows comes back on `device:status` (R3.3).
     this.changed?.()
   }
 

@@ -195,26 +195,25 @@ export class AppServices {
   }
 
   /**
-   * A renderer (re)loaded (`relay:status`, its first pull): what the page held for itself starts
-   * over, as its store did (N1) — the link's "last known" time and the serial monitor's flag.
+   * A renderer (re)loaded (`relay:status`, its first pull): it has the HID report and its live
+   * axes now, as it has its catalogue from a pull. What main holds for the screen — the link's
+   * "last known" time, the serial monitor's flag, the recording, the capture, the aircraft and
+   * the gauges — is kept, and the bundle hands it over (N1).
    */
   rendererLoaded(): void {
-    this.connection.rendererLoaded()
-    this.serialMonitor.rendererLoaded()
-    // …and it has the HID report and its live axes now, as it had its catalogue from a pull.
     this.hid.rendererLoaded()
-    // …and the recording and the capture it shows.
-    this.relay.rendererLoaded()
   }
 
-  /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
+  /** Snapshot so a (re)loaded renderer can rehydrate what main holds for the screen (N1). */
   status(): RelayStatus {
     const device = this.connection.statusPush()
-    const { running, relay } = this.relay.status()
+    const { running, relay, aircraft, telemetry } = this.relay.status()
     return {
       running,
       relay,
       relayFacts: this.relay.facts(),
+      aircraft,
+      telemetry,
       device,
       cal: this.calibration.workflow.state()
     }
