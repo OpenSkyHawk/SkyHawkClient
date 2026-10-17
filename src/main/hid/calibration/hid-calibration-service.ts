@@ -230,13 +230,12 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
     return this.calRun((l) => l.hello())
   }
 
-  /** Read stored calibration and push it to the renderer, so badges follow the device. */
+  /** Read stored calibration and report it to the workflow, so badges follow the device. */
   async calRead(): Promise<CalResult<CalSnapshot>> {
     const r = await this.calRun((l) => l.getCal())
     if (r.ok) {
       const snap: CalSnapshot = { ...r.value, serialNumber: this.calSerialNumber }
       this.lastCal = snap
-      this.emit('cal:data', snap)
       this.workflow.reported(snap)
       return { ok: true, value: snap }
     }

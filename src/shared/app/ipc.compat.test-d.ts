@@ -45,6 +45,10 @@
 // `PushChannels`, `IPC` and `CTRL` still match the frozen copy; the wire channel and the batch's
 // shape are pinned below. `RelayFacts` gained `mode` and `transport` (a type change only).
 //
+// R3.4d (final cleanup): the push `cal:data` (IPC.calData) was removed — the renderer stopped
+// listening in R3.1, when the calibration workflow moved to main; main still reads GET_CAL and
+// hands the report to the workflow, which pushes `cal:workflow`.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -59,7 +63,7 @@ import type {
   SectionId,
   SettingsStore
 } from '../config/ipc'
-import type { CalibrationState, CalSnapshot } from '../hid/calibration/ipc'
+import type { CalibrationState } from '../hid/calibration/ipc'
 import type {
   AircraftStatus,
   CaptureState,
@@ -125,7 +129,6 @@ interface OldPushChannels {
   'nodes:telemetry': NodeTelemSnapshot[]
   'nodes:model': NodeModel
   'serial:traffic': SerialFrame[]
-  'cal:data': CalSnapshot
   'cal:workflow': CalibrationState
   'cockpit:snapshot': CockpitSnapshot
   'config:changed': ConfigChanged
@@ -146,7 +149,6 @@ interface OldIPC {
   readonly nodesTelemetry: 'nodes:telemetry'
   readonly nodesModel: 'nodes:model'
   readonly serialTraffic: 'serial:traffic'
-  readonly calData: 'cal:data'
   readonly calWorkflow: 'cal:workflow'
   readonly cockpitSnapshot: 'cockpit:snapshot'
   readonly configChanged: 'config:changed'

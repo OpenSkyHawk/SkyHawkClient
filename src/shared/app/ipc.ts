@@ -83,7 +83,7 @@ export interface DebugDumpResult {
 // main -> renderer channel payloads
 //
 // Two scopes (#69). **Link-scoped** pushes flow whenever the device link is up, relaying or not:
-// device:status, nodes:*, serial:traffic, cal:data. On link down they stop and the renderer keeps
+// device:status, nodes:*, serial:traffic. On link down they stop and the renderer keeps
 // the last state, dimmed while device:status says the link is down. hid:report is neither: the joystick is read for as long
 // as the app runs, serial port open or not; nor is cal:workflow, which follows the link's state
 // and the dialog's actions, nor relay:facts and config:changed, which follow what they are about.

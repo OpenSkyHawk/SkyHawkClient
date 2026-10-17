@@ -10,8 +10,6 @@ export interface HidState {
   buttons: number[]
   hats: number[]
   hidRate: number
-  /** Since the last report, or since we began listening if none has arrived. */
-  hidAgeMs: number
   /** The report's age as main bands it (`hid:report`, R3.3). */
   hidBand: HidFreshness
   /** Axis slots this Gateway declares, as main counts them (`hid:report`). */
@@ -29,7 +27,6 @@ export const useHidStore = create<HidState>(() => ({
   availHats: [],
   availButtons: [],
   hidRate: 0,
-  hidAgeMs: 0,
   // A report 0 ms old reads live; no slot is live until main says so (as before the catalogue).
   hidBand: 'live',
   hidPresent: 0,
@@ -49,7 +46,6 @@ export const hidFromMain = {
       buttons: h.buttons.flatMap((b, i) => (b ? [i] : [])),
       hats: h.hats,
       hidRate: h.rateHz,
-      hidAgeMs: h.ageMs,
       hidBand: h.band,
       hidPresent: h.present,
       axisLive: h.axisLive

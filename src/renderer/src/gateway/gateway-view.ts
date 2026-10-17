@@ -1,5 +1,5 @@
-// Where the Gateway's status lands in the UI (#94): the title-bar pill, the Device popover, the
-// Overview alert and the Cockpit's Attention item. Presentation only: severity, label, note and
+// Where the Gateway's status lands in the UI (#94): the title-bar pill, the Device popover and the
+// Overview alert (the Cockpit's Attention item comes in main's cockpit snapshot). Presentation only: severity, label, note and
 // alert all come from gatewayStatus (main/gateway/gateway-health.ts), computed once in main, and so
 // do when it shows (only while the link is up) and where (aboutLink) (R3.4a).
 import type { GatewayStatus } from '@shared/gateway'
@@ -14,8 +14,6 @@ export interface GatewayView {
   health?: { text: string; tone?: 'warn' | 'err'; note?: string }
   /** Serious faults only: the Overview alert. */
   alert?: { head: string; text: string }
-  /** Cockpit › Attention: one item while it reports any problem. */
-  attention?: { flag: string; state: 'off' | 'warn' }
 }
 
 /**
@@ -31,8 +29,7 @@ export function gatewayView(g: GatewayStatus | undefined, port?: string): Gatewa
       cls: tone === 'err' ? 'devind--err' : 'devind--warn',
       tip: `Gateway reports a problem${port ? ` · ${port}` : ''} — click for details`
     },
-    alert: g.alert,
-    attention: { flag: g.label, state: tone === 'err' ? 'off' : 'warn' }
+    alert: g.alert
   }
   // About the link, not something it reports (main's aboutLink): the popover's title says it.
   if (g.aboutLink) return { ...view, title: g.label, meta: g.note }

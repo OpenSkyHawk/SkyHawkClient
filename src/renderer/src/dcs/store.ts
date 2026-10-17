@@ -12,7 +12,6 @@ import {
   type RelayFacts,
   type RelayState,
   type StatsSnapshot,
-  type StreamState,
   type TelemetryReadout
 } from '@shared/dcs'
 import { useEventsStore } from '../events'
@@ -26,8 +25,6 @@ export interface DcsState {
    * `relay:state`, and taken back when main refuses a Start.
    */
   relaying: boolean
-  /** Where the DCS-BIOS stream stands while relaying; undefined when stopped. */
-  relayStream?: StreamState
   /**
    * What the relay's surfaces show, as main decides it (`relay:facts`, R3.3): for the relay shown
    * running and shown stopped, the endpoints, the recording and the loaded capture.
@@ -111,7 +108,7 @@ export const useDcsStore = create<DcsState>((set, get) => ({
       .then((r) => {
         // Main refuses a Start it cannot honour (no board for a mode that needs one) and pushes
         // no relay:state for it, so the pending Relaying has to be taken back here.
-        if (!s.relaying && r && !r.ok) set({ relaying: false, relayStream: undefined })
+        if (!s.relaying && r && !r.ok) set({ relaying: false })
       })
     set({ relaying: !s.relaying })
   },
@@ -146,16 +143,14 @@ export const dcsFromMain = {
    * The rehydrate bundle (`relay:status`): a dev reload resets the renderer but the main-process
    * session keeps running, so the UI must not assume "stopped".
    */
-  status: (st: Pick<RelayStatus, 'running' | 'relay' | 'relayFacts'>): void =>
+  status: (st: Pick<RelayStatus, 'running' | 'relayFacts'>): void =>
     useDcsStore.setState({
       relaying: st.running,
-      relayStream: st.relay.stream,
       relayFacts: st.relayFacts
     }),
 
   /** `relay:state`. */
-  relayState: (r: RelayState): void =>
-    useDcsStore.setState({ relaying: r.running, relayStream: r.stream }),
+  relayState: (r: RelayState): void => useDcsStore.setState({ relaying: r.running }),
 
   /** `relay:facts`. */
   relayFacts: (f: RelayFacts): void => useDcsStore.setState({ relayFacts: f }),

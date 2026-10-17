@@ -129,7 +129,7 @@ describe('calibration state lifecycle', () => {
   })
 
   // Clearing only on `no-device` would leave the previous board's badges on screen through a
-  // reconnect -- and permanently, if the next board runs firmware that never sends cal:data.
+  // reconnect -- and permanently, if the next board runs firmware that never answers GET_CAL.
   for (const state of ['reconnecting', 'error', 'no-device', 'scanning', 'disconnected'] as const) {
     it(`drops the snapshot when the device goes ${state}`, () => {
       const { h, snap } = host()

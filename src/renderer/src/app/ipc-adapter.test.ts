@@ -209,18 +209,9 @@ describe('calibration state lifecycle', () => {
     expect(s.getState().calibration.tab.snapshot?.calibratedMask).toBe(0b01)
   })
 
-  it('carries the report age, not just the rate', async () => {
-    // HidReader has always computed ageMs, and the store used to take only rateHz — so the
-    // freshness signal existed in main and was dropped at the IPC boundary.
-    const s = await freshStore()
-    push('hid:report', { axes: [1], buttons: [false], hats: [0], ageMs: 90_000, rateHz: 3 })
-    expect(s.getState().hidRate).toBe(3)
-    expect(s.getState().hidAgeMs).toBe(90_000)
-  })
-
   it('rehydrates the snapshot on a renderer reload', async () => {
     // The regression: a reload builds a fresh store while the main-process session keeps
-    // running. No port-open event follows, so no cal:data is pushed, and without the snapshot
+    // running. No port-open event follows, so no GET_CAL is read, and without the snapshot
     // in session status the badges would stay blank indefinitely on a stable link.
     status = {
       running: true,
@@ -252,15 +243,13 @@ describe('relay state (#69)', () => {
     const s = await freshStore()
     push('relay:state', { running: true, stream: 'reconnecting' })
     expect(s.getState().relaying).toBe(true)
-    expect(s.getState().relayStream).toBe('reconnecting')
     push('device:status', { state: 'connected', portPath: '/dev/fake' })
     push('relay:state', { running: false })
     expect(s.getState().relaying).toBe(false)
-    expect(s.getState().relayStream).toBeUndefined()
     expect(s.getState().deviceState, 'stopping the relay leaves the link up').toBe('connected')
   })
 
-  it('rehydrates the stream state on a reload', async () => {
+  it('rehydrates the relay state on a reload', async () => {
     status = {
       running: true,
       relay: { running: true, stream: 'connected' },
@@ -268,7 +257,6 @@ describe('relay state (#69)', () => {
     }
     const s = await freshStore()
     expect(s.getState().relaying).toBe(true)
-    expect(s.getState().relayStream).toBe('connected')
   })
 })
 
@@ -338,11 +326,10 @@ describe('node state (#63)', () => {
     nodesSnap = { model: EMPTY_MODEL, telemetry: [] }
   })
 
-  it('rehydrates the model and telemetry on a renderer reload', async () => {
+  it('rehydrates the model on a renderer reload', async () => {
     nodesSnap = { model: pduModel, telemetry: telem(1000) }
     const s = await freshStore()
     expect(s.getState().nodeModel).toBe(pduModel)
-    expect(s.getState().nodeTelemetry).toHaveLength(1)
   })
 
   it('keeps the last model when the link drops, and remembers when it dropped', async () => {

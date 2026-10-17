@@ -27,7 +27,7 @@ describe('gatewayView — reads the status, never re-derives it', () => {
     expect(view()).toEqual({ health: { text: 'OK · 42 °C' } })
   })
 
-  it('a warning: gold pill with the port, Health row with its note, Attention — no alert', () => {
+  it('a warning: gold pill with the port, Health row with its note — no alert', () => {
     const v = view({ overheat: true, dieTempC: 78 }, false, PORT)
     expect(v.pill).toEqual({
       cls: 'devind--warn',
@@ -35,17 +35,15 @@ describe('gatewayView — reads the status, never re-derives it', () => {
     })
     expect(v.health).toMatchObject({ text: 'Overheat · 78 °C', tone: 'warn' })
     expect(v.health?.note).toMatch(/temperature trip/)
-    expect(v.attention).toEqual({ flag: 'Overheat · 78 °C', state: 'warn' })
     expect(v.alert).toBeUndefined()
   })
 
-  it('bus-off: red pill, Health row, the Overview alert, an offline Attention item', () => {
+  it('bus-off: red pill, Health row, the Overview alert', () => {
     const v = view({ boff: true })
     expect(v.pill?.cls).toBe('devind--err')
     expect(v.pill?.tip).toBe('Gateway reports a problem — click for details')
     expect(v.health).toMatchObject({ text: 'Bus-off', tone: 'err' })
     expect(v.alert?.head).toBe('The Gateway can’t reach your panels')
-    expect(v.attention).toEqual({ flag: 'Bus-off', state: 'off' })
   })
 
   it('not responding: popover title and line instead of the Health row', () => {
@@ -56,6 +54,5 @@ describe('gatewayView — reads the status, never re-derives it', () => {
     )
     expect(v.health).toBeUndefined()
     expect(v.alert?.head).toBe('Gateway not responding')
-    expect(v.attention).toEqual({ flag: 'Not responding', state: 'off' })
   })
 })

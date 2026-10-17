@@ -8,7 +8,7 @@
 //   - it keeps the scenario as main's current state, so the pulls a (re)loaded renderer makes
 //     (`getStatus`, `getNodes`, `getConfig`, `getEvents`, `getNodeRegistry`) answer from it, and
 //   - it pushes each part on today's channel: `device:status`, `relay:state`, `nodes:model`,
-//     `nodes:telemetry`, `events:batch`, `cal:data`, `hid:report`, `aircraft:changed`, the relay's
+//     `nodes:telemetry`, `events:batch`, `hid:report`, `aircraft:changed`, the relay's
 //     ticks `telemetry:tick` and `stats:tick`, and the stream batches `log:batch` and
 //     `serial:traffic` — and hands the link's state, the device's calibration report and the RAW
 //     batches to main's calibration workflow, which pushes `cal:workflow`.
@@ -40,7 +40,7 @@
 // GET_CAL, SESSION_OPEN, STREAM_SELECT, COMMIT and RESET answer), plus the client's restore cache
 // on disk. The `cal*` commands (spies on the mock, so a test can assert the exchange) answer the
 // way main's HidCalibrationService does over it — `offline` while the port is closed, GET_CAL also
-// pushing `cal:data` and reporting to the workflow, the cache keyed by the board's serial through
+// reporting to the workflow, the cache keyed by the board's serial through
 // main's own cache rules — and the RAW stream arrives as `calRaw` batches into the workflow. The
 // renderer's dialog sends the workflow intents (`calOpen`, `calSave`, …), which the host answers.
 //
@@ -120,7 +120,7 @@ export interface Scenario {
   config?: Partial<AppConfig>
   /** The session's event log rows, oldest first (`events:batch`). */
   events?: LogEvent[]
-  /** Calibration the device confirmed (`cal:data`). */
+  /** Calibration the device confirmed (GET_CAL's answer, handed to the workflow; not pushed). */
   cal?: CalSnapshot
   /** The latest HID report (`hid:report`). */
   hid?: HidSnapshot
@@ -136,8 +136,8 @@ export interface Scenario {
   hidAvailability?: HidAvailability
   /**
    * The attached Gateway's calibration channel and the client's restore cache: what the `cal*`
-   * invokes answer while the port is open. Main reads it when the port opens, so it also pushes
-   * `cal:data` (the stored calibration) unless the scenario gives `cal` itself.
+   * invokes answer while the port is open. Main reads it when the port opens, so it also reports
+   * the stored calibration to the workflow unless the scenario gives `cal` itself.
    */
   calDevice?: CalDevice
   /** DCS-BIOS stream rows, oldest first (`log:batch`). A batch: pushed, never pulled. */
@@ -196,8 +196,11 @@ const EMPTY_REGISTRY: NodeRegistryInfo = {
 /** What the renderer is told the firmware catalogues when a scenario says nothing. */
 const NO_CATALOGUE: HidAvailability = { axes: [], hats: [], buttons: [] }
 
-/** Today's push for each scenario part, in the order emitScenario sends them. */
-const PUSHES: { [K in keyof Scenario]?: PushChannel } = {
+/**
+ * Today's push for each scenario part, in the order emitScenario sends them. `cal` has no push
+ * (R3.4d): main hands the device's report to the workflow, which pushes `cal:workflow`.
+ */
+const PUSHES: { [K in keyof Scenario]?: PushChannel | null } = {
   device: 'device:status',
   relay: 'relay:state',
   aircraft: 'aircraft:changed',
@@ -206,7 +209,7 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel } = {
   model: 'nodes:model',
   telemetry: 'nodes:telemetry',
   events: 'events:batch',
-  cal: 'cal:data',
+  cal: null,
   hid: 'hid:report',
   stream: 'log:batch',
   serial: 'serial:traffic'
@@ -576,11 +579,8 @@ export function installSkyhawkMock(): SkyhawkMock {
     const snap = snapshotOf(d)
     lastCal = snap
     state = { ...state, cal: snap }
-    // main's calRead pushes what it read, and reports it to the workflow
-    turn(() => {
-      push('cal:data', snap)
-      host.reported(snap)
-    })
+    // main's calRead reports what it read to the workflow
+    turn(() => host.reported(snap))
     return snap
   }
   const setStored = (
@@ -653,13 +653,14 @@ export function installSkyhawkMock(): SkyhawkMock {
       if (opened) lastCal = s.cal
       state = { ...state, ...s }
       turn(() => {
-        for (const [key, ch] of Object.entries(PUSHES) as [keyof Scenario, PushChannel][]) {
+        for (const [key, ch] of Object.entries(PUSHES) as [keyof Scenario, PushChannel | null][]) {
           const data = s[key]
           if (data === undefined) continue
           // `device:status` and `hid:report` carry what main concludes from them (R3.3).
-          push(ch, (key === 'device' ? statusPush() : key === 'hid' ? hidPush() : data) as never)
+          if (ch)
+            push(ch, (key === 'device' ? statusPush() : key === 'hid' ? hidPush() : data) as never)
           // What main does next, inside the same step: the workflow follows the link's state
-          // (onStatus, after `device:status`) and takes the report (calRead, after `cal:data`);
+          // (onStatus, after `device:status`) and takes the report (calRead);
           // the Cockpit snapshot follows the link and each node push (NodeHub).
           if (key === 'device') host.linkStatus(s.device!.state)
           if (key === 'device') cockpit.linkChanged()

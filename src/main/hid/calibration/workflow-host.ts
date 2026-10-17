@@ -209,13 +209,13 @@ export class CalibrationWorkflowHost {
       // the link is up. Everything else — reconnecting after a close, error, no-device,
       // disconnected — means the snapshot may describe a board that is gone. Clearing only on
       // `no-device` would leave the old board's badges on screen through a reconnect, and if
-      // the next board runs firmware predating the calibration protocol it never sends
-      // `cal:data`, so they would never be corrected.
+      // the next board runs firmware predating the calibration protocol it never answers
+      // GET_CAL, so they would never be corrected.
       if (!up) this.setSnapshot(undefined)
     })
   }
 
-  /** The device reported its stored calibration (GET_CAL, as `cal:data` pushes it). */
+  /** The device reported its stored calibration (GET_CAL, as calRead reads it). */
   reported(snap: CalSnapshot): void {
     this.setSnapshot(snap)
   }
