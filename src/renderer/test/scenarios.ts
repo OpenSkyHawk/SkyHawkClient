@@ -146,7 +146,7 @@ export const model = (
 // ── main's node hub over a mapping file: the bundled registry and the reset review ─────────
 
 /** Main's NodeHub over node-mapping.json holding `file`, with no device link. */
-const hubOver = (file: NodeMappingFile = { version: 3, nodes: {} }) =>
+const hubOver = (file: NodeMappingFile = { version: 4, nodes: {} }) =>
   new NodeHub(
     () => {},
     new NodeRoster(),
@@ -168,7 +168,7 @@ export const resetPreview = (file: NodeMappingFile): ResetPreview => hubOver(fil
 /** This computer's setup as main snapshots it: the default config, no mapping, no calibration. */
 export const setup = (over: Partial<ConfigSnapshot> = {}): ConfigSnapshot => ({
   app: appSettings(DEFAULT_CONFIG),
-  nodeMapping: { version: 3, nodes: {} },
+  nodeMapping: { version: 4, nodes: {} },
   powerSupply: DEFAULT_CONFIG.psu,
   calibration: emptyCache(),
   ...over

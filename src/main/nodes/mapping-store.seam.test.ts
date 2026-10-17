@@ -1,5 +1,5 @@
 // FILE-seam contract test (Phase 0, row B17): node-mapping.json as it is read from and written to
-// <userData>. Older files are upgraded once, on read; the next save writes v3.
+// <userData>. Older files are upgraded once, on read; the next save writes v4.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -17,6 +17,7 @@ const loadNodeMapping = () => store.loadNodeMapping(io)
 const saveNodeMapping = (f: NodeMappingFile) => store.saveNodeMapping(f, io)
 
 const path = () => join(userData.dir, 'node-mapping.json')
+const bak = () => `${path()}.bak`
 const write = (raw: unknown) => writeFileSync(path(), JSON.stringify(raw))
 const onDisk = () => JSON.parse(readFileSync(path(), 'utf8')) as unknown
 const T0 = '2026-10-14T21:14:00.000Z'
@@ -35,10 +36,10 @@ describe('B17 older node-mapping.json files are upgraded once, on read', () => {
   })
   afterEach(() => rmSync(userData.dir, { recursive: true, force: true }))
 
-  it('v2: a renamed registry board is in your cockpit; the save writes v3', () => {
+  it('v2: a renamed registry board is in your cockpit; the save writes v4', () => {
     const { first, saved, second } = upgrade({ version: 2, nodes: { 2: { name: 'Nav' } } })
-    expect(first).toEqual({ file: { version: 3, nodes: { 2: { name: 'Nav', added: true } } } })
-    expect(saved).toEqual({ version: 3, nodes: { 2: { name: 'Nav', added: true } } })
+    expect(first).toEqual({ file: { version: 4, nodes: { 2: { name: 'Nav', added: true } } } })
+    expect(saved).toEqual({ version: 4, nodes: { 2: { name: 'Nav', added: true } } })
     expect(second).toEqual(first)
   })
 
@@ -54,8 +55,8 @@ describe('B17 older node-mapping.json files are upgraded once, on read', () => {
         5: { pduId: null } // power zone set to none: placed
       }
     })
-    const v3 = {
-      version: 3,
+    const v4 = {
+      version: 4,
       nodes: {
         1: { lastSeen: T0, added: true },
         2: { console: 'Left', added: true },
@@ -64,19 +65,23 @@ describe('B17 older node-mapping.json files are upgraded once, on read', () => {
         5: { pduId: null, added: true }
       }
     }
-    expect(first).toEqual({ file: v3 })
-    expect(saved).toEqual(v3)
+    expect(first).toEqual({ file: v4 })
+    expect(saved).toEqual(v4)
   })
 
-  it('no version at all reads as an old file; an adopted board keeps its own entry, not added', () => {
+  it('no version at all reads as an old file; an adopted board keeps its own entry, marked', () => {
     const adopted = { name: 'Left_Trim', console: 'Left', kind: 'panel', pduId: 3 }
     const { first, saved } = upgrade({
       nodes: { 2: { name: 'Nav' }, 41: adopted, 5: { bogus: true } }
     })
-    // Registry board 5 had nothing worth keeping: it is dropped, not added.
-    const v3 = { version: 3, nodes: { 2: { name: 'Nav', added: true }, 41: adopted } }
-    expect(first).toEqual({ file: v3 })
-    expect(saved).toEqual(v3)
+    // Registry board 5 had nothing worth keeping: it is dropped, not added. The adopted board
+    // carries v4's one marker (S1).
+    const v4 = {
+      version: 4,
+      nodes: { 2: { name: 'Nav', added: true }, 41: { ...adopted, added: true } }
+    }
+    expect(first).toEqual({ file: v4 })
+    expect(saved).toEqual(v4)
   })
 
   it('once upgraded the file is read as written: a v3 entry without `added` stays out', () => {
@@ -86,5 +91,44 @@ describe('B17 older node-mapping.json files are upgraded once, on read', () => {
       2: { name: 'Nav', added: true },
       1: { name: 'Arm' }
     })
+  })
+
+  it('v3: every field is kept, an adopted board is marked, and the v3 file becomes the .bak', () => {
+    const v3 = {
+      version: 3,
+      nodes: {
+        1: { added: true, name: 'Arm', console: 'Left', pduId: null, hidden: true, lastSeen: T0 },
+        2: { name: 'Nav' },
+        41: { name: 'Left_Trim', console: 'Left', kind: 'panel', pduId: 3, lastSeen: T0 }
+      }
+    }
+    const { first, saved, second } = upgrade(v3)
+    const v4 = { version: 4, nodes: { ...v3.nodes, 41: { ...v3.nodes[41], added: true } } }
+    expect(first).toEqual({ file: v4 })
+    expect(saved).toEqual(v4)
+    expect(second).toEqual(first)
+    expect(JSON.parse(readFileSync(bak(), 'utf8'))).toEqual(v3) // the save before it, kept
+  })
+
+  it('a damaged v4 file falls back to its v3 .bak, upgraded the same way', () => {
+    upgrade({ version: 3, nodes: { 41: { name: 'Trim', console: 'Left', kind: 'panel' } } })
+    writeFileSync(path(), '{"version":4,"nodes":{"41":{"na')
+    const loaded = loadNodeMapping()
+    expect(loaded.file).toEqual({
+      version: 4,
+      nodes: { 41: { name: 'Trim', console: 'Left', kind: 'panel', added: true } }
+    })
+    expect(loaded.readOnly).toBeUndefined()
+    expect(loaded.notice?.severity).toBe('warn')
+  })
+
+  it('a file newer than v4 is loaded read-only and never rewritten', () => {
+    const v5 = { version: 5, nodes: { 2: { added: true, name: 'Nav', future: 1 } } }
+    write(v5)
+    const before = readFileSync(path(), 'utf8')
+    const loaded = loadNodeMapping()
+    expect(loaded.readOnly).toBe('node-mapping.json was written by a newer client')
+    expect(loaded.file.nodes).toEqual({ 2: { added: true, name: 'Nav' } })
+    expect(readFileSync(path(), 'utf8')).toBe(before)
   })
 })

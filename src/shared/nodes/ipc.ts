@@ -50,19 +50,28 @@ export type NodeIdentity = 'pdu' | 'panel' | 'bridge' | 'other'
 
 export type NodeKind = 'pdu' | 'panel'
 
-/** What node-mapping.json holds for one NODE_ID. Every field optional: absent = default. */
+/**
+ * What node-mapping.json holds for one NODE_ID (v4, sparse): whether it is in your cockpit, the kind
+ * the board reported, and only the fields you changed. Absent = the registry's value, so a later
+ * NODE_IDS.md (a better default name or console) still reaches a board that left that field alone.
+ */
 export interface NodeOverride {
+  /** Only what you changed: for a registry board, a value equal to NODE_IDS.md is stored as absent. */
   name?: string
   console?: string
   /** Power zone: the PDU NODE_ID feeding this node. null = explicitly none. */
   pduId?: number | null
-  /** Adopted nodes only — registry nodes take their kind from the registry. */
+  /**
+   * The kind the board itself reported (its NODE_KIND, or PDU pages), stored when it is added and
+   * whenever it reports. Absent = it has not reported since this was stored: a registry board then
+   * reads as its registry kind.
+   */
   kind?: NodeKind
   /** Replaced / removed board: skip it until it reports again. */
   hidden?: boolean
   /**
-   * Registry boards only: you added it to your cockpit (New on the bus › Add to cockpit). Reset to
-   * default keeps it; only Forget removes it. Adopted nodes are in your cockpit by being adopted.
+   * In your cockpit: the one marker, for a registry board you added and a board you adopted alike.
+   * Reset keeps it; only Forget removes it.
    */
   added?: boolean
   /**
@@ -73,7 +82,7 @@ export interface NodeOverride {
 }
 
 export interface NodeMappingFile {
-  version: 3
+  version: 4
   nodes: Record<number, NodeOverride>
 }
 
@@ -93,7 +102,7 @@ export interface MappedNode {
   pduId: number | null
   kind: NodeKind
   source: 'registry' | 'adopted'
-  /** Registry node with at least one stored override (what reset would undo). */
+  /** Registry node with a field that differs from NODE_IDS.md (what reset would undo). */
   differs: boolean
   hidden: boolean
   /**

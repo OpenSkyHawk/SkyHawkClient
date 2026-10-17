@@ -20,7 +20,7 @@ import { buildNodeModel } from './node-model'
 import { GatewayWatch, GATEWAY_NO_ANSWER_MS } from '../gateway/gateway-health'
 import { DEFAULT_APP_SETTINGS } from '../../test-fixtures/config'
 
-const disk: { file: NodeMappingFile } = { file: { version: 3, nodes: {} } }
+const disk: { file: NodeMappingFile } = { file: { version: 4, nodes: {} } }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
 vi.mock('./mapping-file', () => {
   class MappingSaveError extends Error {}
@@ -46,7 +46,7 @@ const defaults = registryDefaults(REG)
 const row = (id: number, kind: number, present = true) =>
   `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind.toString(16).padStart(2, '0')}`.toUpperCase()
 const added = (): NodeMappingFile => ({
-  version: 3,
+  version: 4,
   nodes: {
     1: { added: true },
     2: { added: true },
@@ -105,7 +105,7 @@ describe('fix-track probes (today)', () => {
   })
 
   it('C4: a node identified only by PDU telemetry logs "new on the bus" only at its next status row', () => {
-    const a = hubWith({ version: 3, nodes: {} })
+    const a = hubWith({ version: 4, nodes: {} })
     a.status(1, 1, 0)
     a.roster.applyMessage(NODE_END_MSG, '1', 0)
     a.h.statusLine(NODE_END_MSG, '_NODE_STATUS_END 1', 0)
@@ -149,16 +149,16 @@ describe('fix-track probes (today)', () => {
   })
 
   it('D7: a zone to a registry PDU that is not in your cockpit is accepted by main', () => {
-    const f: NodeMappingFile = { version: 3, nodes: { 2: { added: true } } }
+    const f: NodeMappingFile = { version: 4, nodes: { 2: { added: true } } }
     const g = setNodeMapping(f, defaults, 2, { pduId: 3 }) // PDU_Left, not added
     expect(g.nodes[2]).toEqual({ added: true, pduId: 3 })
   })
 
   it('D3 (fixed, #136): membership is imported as written, and the review lists the join', () => {
-    const cur: NodeMappingFile = { version: 3, nodes: {} }
-    const imp: NodeMappingFile = { version: 3, nodes: { 2: { added: true, name: 'Nav' } } }
-    expect(importMapping(cur, imp)).toEqual({
-      version: 3,
+    const cur: NodeMappingFile = { version: 4, nodes: {} }
+    const imp: NodeMappingFile = { version: 4, nodes: { 2: { added: true, name: 'Nav' } } }
+    expect(importMapping(cur, defaults, imp)).toEqual({
+      version: 4,
       nodes: { 2: { added: true, name: 'Nav' } }
     })
     const diff = diffImport(
@@ -176,7 +176,7 @@ describe('fix-track probes (today)', () => {
     ])
   })
 
-  it('#95 bug 1: an adopted board renamed to its later registry name drops out', () => {
+  it('#95 bug 1 (fixed, S1): an adopted board renamed to its later registry name stays in', () => {
     const f = adoptNode(EMPTY_MAPPING, defaults, 41, {
       name: 'Left_Oxygen',
       console: 'Left',
@@ -185,18 +185,18 @@ describe('fix-track probes (today)', () => {
     })
     const later = registryDefaults({ ...REG, 41: { name: 'Left_Oxy', console: 'Left' } })
     const g = setNodeMapping(f, later, 41, { name: 'Left_Oxy' })
-    expect(effectiveMapping(later, g).get(41)?.known).toBe(false)
+    expect(effectiveMapping(later, g).get(41)?.known).toBe(true)
   })
 
-  it('#95 bug 3: a registry panel ID added while reporting PDU reads panel once silent', () => {
+  it('#95 bug 3 (fixed, S1): a registry panel ID added while reporting PDU reads PDU once silent', () => {
     const f = adoptNode(
-      { version: 3, nodes: {} },
+      { version: 4, nodes: {} },
       defaults,
       2,
       { name: 'Right_Navigation', console: 'Right', pduId: null, kind: 'pdu' },
       () => 'pdu'
     )
     const m = buildNodeModel({ roster: [], seen: new Map(), telemetry: [], defaults, file: f })
-    expect(m.nodes.find((x) => x.nodeId === 2)?.kind).toBe('panel')
+    expect(m.nodes.find((x) => x.nodeId === 2)?.kind).toBe('pdu')
   })
 })

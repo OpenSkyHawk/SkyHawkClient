@@ -275,7 +275,12 @@ export class ConfigTransfer {
     if (picked.has('nodeMapping')) {
       const copy = snapshot(files.mapping, SECTION_TITLES.nodeMapping)
       const before = nodes.mappingFile()
-      const next = importMapping(before, imported.nodeMapping!, nodes.onlineIds())
+      const next = importMapping(
+        before,
+        nodes.registryDefaults(),
+        imported.nodeMapping!,
+        nodes.onlineIds()
+      )
       const write = (f: NodeMappingFile) => {
         const r = nodes.replaceMapping(f)
         return r.ok ? undefined : r.error

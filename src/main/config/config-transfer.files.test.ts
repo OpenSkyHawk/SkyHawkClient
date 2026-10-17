@@ -27,8 +27,8 @@ const axis = (min: number, centre: number, max: number) => ({
 })
 
 const MAPPING: NodeMappingFile = {
-  version: 3,
-  nodes: { 41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' } }
+  version: 4,
+  nodes: { 41: { added: true, name: 'Trim', console: 'Left', pduId: null, kind: 'panel' } }
 }
 const CACHE: CalCache = {
   version: 1,

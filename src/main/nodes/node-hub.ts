@@ -11,6 +11,7 @@ import type {
   MappingPatch,
   NodeDefaults,
   NodeIdentity,
+  NodeKind,
   NodeBatchResult,
   NodeMappingFile,
   NodeMappingResult,
@@ -32,6 +33,7 @@ import {
   forgetNode,
   MappingError,
   markSeen,
+  recordKinds,
   resetMapping,
   resetNode,
   resetPreview,
@@ -366,7 +368,27 @@ export class NodeHub implements NodeLineSink {
       changed = true
     }
     if (rosterChanged) this.rosterTransitions(now)
-    if (changed) this.pushModel(now)
+    if (changed) {
+      this.recordReportedKinds(now)
+      this.pushModel(now)
+    }
+  }
+
+  /**
+   * What each board said it is (its NODE_KIND, or PDU pages) is stored on its entry when it is in
+   * your cockpit, so it still reads as that while offline (S1 bug 3). Writes only on a change.
+   */
+  private recordReportedKinds(now: number): void {
+    const rows = new Map(this.roster.snapshot().map((n) => [n.nodeId, n.nodeKind]))
+    const pages = this.telem.snapshot(now).filter((t) => t.isPdu)
+    const ids = new Set([...rows.keys(), ...pages.map((t) => t.nodeId)])
+    const reported: [number, NodeKind][] = []
+    for (const id of ids) {
+      const pduTelemetry = pages.some((t) => t.nodeId === id)
+      const k = resolveKind({ reported: rows.get(id), pduTelemetry })
+      if (isAdoptableKind(k)) reported.push([id, k])
+    }
+    if (reported.length) this.store.persist(recordKinds(this.mapping(), this.defaults, reported))
   }
 
   /**
@@ -473,8 +495,9 @@ export class NodeHub implements NodeLineSink {
 
   /**
    * What a node is, by the one resolver the model uses (node-kind.ts): its own announcement, then
-   * PDU telemetry, then the registry or an adoption. undefined = nothing solid yet — the model's
-   * 'panel' for a new node is a display default, never knowledge.
+   * PDU telemetry, then what is stored for a board in your cockpit (the kind it reported before,
+   * else the registry's). undefined = nothing solid yet — the model's 'panel' for a new node is a
+   * display default, never knowledge.
    */
   private readonly kindOf = (nodeId: number, now = Date.now()): NodeIdentity | undefined =>
     resolveKind({

@@ -26,7 +26,7 @@ const cal = (boards: CalCache['boards']): CalCache => ({ version: 1, boards })
 
 const current: ConfigSnapshot = {
   app: DEFAULT_APP_SETTINGS,
-  nodeMapping: { version: 3, nodes: {} },
+  nodeMapping: { version: 4, nodes: {} },
   powerSupply: DEFAULT_PSU,
   calibration: cal({
     A7: { confirmedAt: '2026-10-01T00:00:00Z', axes: { 2: axis(120, 2000, 3980) } }
@@ -186,21 +186,21 @@ describe('parseConfigFile: strict import validation (C1)', () => {
     expect(verdict('nodeMapping', { version: 'x', nodes: {} })).toBe('it has no version')
     expect(verdict('nodeMapping', { version: 3 })).toBe('it has no list of boards')
     expect(verdict('nodeMapping', { version: 3, nodes: [] })).toBe('it has no list of boards')
-    expect(verdict('nodeMapping', { version: 4, nodes: {} })).toBe(
+    expect(verdict('nodeMapping', { version: 5, nodes: {} })).toBe(
       'it was written by a newer client'
     )
     // With both, an empty list is a real empty cockpit, and entries are read tolerantly.
-    expect(verdict('nodeMapping', { version: 3, nodes: {} })).toEqual({ version: 3, nodes: {} })
+    expect(verdict('nodeMapping', { version: 3, nodes: {} })).toEqual({ version: 4, nodes: {} })
     expect(
       verdict('nodeMapping', {
         version: 3,
         nodes: { 99: { name: 'out of range' }, 2: { name: 'Nav', pduId: 'x' } }
       })
-    ).toEqual({ version: 3, nodes: { 2: { name: 'Nav' } } })
+    ).toEqual({ version: 4, nodes: { 2: { name: 'Nav' } } })
     // An older client's file (v1, with its ignore list) is upgraded as a local one is.
     expect(
       verdict('nodeMapping', { version: 1, nodes: { 2: { name: 'Nav' } }, ignored: [3] })
-    ).toEqual({ version: 3, nodes: { 2: { name: 'Nav', added: true } } })
+    ).toEqual({ version: 4, nodes: { 2: { name: 'Nav', added: true } } })
   })
 
   it('powerSupply: `mode`, `preset` and `custom` must be there, and every limit valid', () => {
@@ -266,10 +266,10 @@ describe('diffImport', () => {
   it('the review matches the apply: no "hidden" row for a board on the bus (#93 re-review K)', () => {
     const cur: ConfigSnapshot = {
       ...current,
-      nodeMapping: { version: 3, nodes: { 2: { added: true } } }
+      nodeMapping: { version: 4, nodes: { 2: { added: true } } }
     }
     const next = {
-      nodeMapping: { version: 3 as const, nodes: { 2: { added: true, hidden: true } } }
+      nodeMapping: { version: 4 as const, nodes: { 2: { added: true, hidden: true } } }
     }
     expect(diffImport(defaults, cur, next, [2])[0]!.rows).toEqual([])
     expect(diffImport(defaults, cur, next, [])[0]!.rows).toEqual([
@@ -282,17 +282,24 @@ describe('diffImport', () => {
     const cur: ConfigSnapshot = {
       ...current,
       nodeMapping: {
-        version: 3,
+        version: 4,
         nodes: {
           1: { added: true, lastSeen: seen },
           2: { added: true, lastSeen: seen },
-          41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen }
+          41: {
+            added: true,
+            name: 'Trim',
+            console: 'Left',
+            pduId: null,
+            kind: 'panel',
+            lastSeen: seen
+          }
         }
       }
     }
     // The file has 2 (with another computer's last seen) and 4, not 1 or 41.
     const file: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: { 2: { added: true, lastSeen: '2020-01-01T00:00:00.000Z' }, 4: { added: true } }
     }
     expect(diffImport(defaults, cur, { nodeMapping: file })).toEqual([
@@ -313,11 +320,11 @@ describe('diffImport', () => {
     ])
     // Last seen is this computer's, never a row; the same membership reviews as no change.
     const same: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: {
         1: { added: true },
         2: { added: true, lastSeen: '2020-01-01T00:00:00.000Z' },
-        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+        41: { added: true, name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
       }
     }
     expect(diffImport(defaults, cur, { nodeMapping: same })[0]).toEqual({
@@ -330,7 +337,7 @@ describe('diffImport', () => {
 
   it('a hidden flag on a board outside your cockpit is not imported, so not reviewed (S4)', () => {
     const file: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: { 2: { hidden: true }, 52: { hidden: true } }
     }
     expect(diffImport(defaults, current, { nodeMapping: file })[0]!.rows).toEqual([])
@@ -338,11 +345,11 @@ describe('diffImport', () => {
 
   it('lists each change as key  from → to, per section', () => {
     const mapping: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: {
         1: { pduId: 3 },
         2: { name: 'Right_TACAN' },
-        41: { name: 'Right_Oxygen', console: 'Right', pduId: 4, kind: 'panel' }
+        41: { added: true, name: 'Right_Oxygen', console: 'Right', pduId: 4, kind: 'panel' }
       }
     }
     const diff = diffImport(defaults, current, {

@@ -134,10 +134,10 @@ function otherSetupFile(): string {
     },
     // 52: an adopted board, hidden (S4: only a board in your cockpit carries a hidden flag).
     mapping: {
-      version: 3,
+      version: 4,
       nodes: {
         1: { name: 'Arm' },
-        52: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', hidden: true }
+        52: { added: true, name: 'Trim', console: 'Left', pduId: null, kind: 'panel', hidden: true }
       }
     },
     cache: {
@@ -163,7 +163,7 @@ describe('ConfigTransfer', () => {
     dir = mkdtempSync(join(tmpdir(), 'skyhawk-transfer-'))
     state = {
       config: DEFAULT_CONFIG,
-      mapping: { version: 3, nodes: {} },
+      mapping: { version: 4, nodes: {} },
       cache: {
         version: 1,
         boards: { A7: { confirmedAt: '2026-10-14T00:00:00Z', axes: { 2: axis(4, 5, 6) } } }
@@ -263,7 +263,7 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
     dir = mkdtempSync(join(tmpdir(), 'skyhawk-transfer-'))
     state = {
       config: DEFAULT_CONFIG,
-      mapping: { version: 3, nodes: { 1: { added: true, name: 'Armament' } } },
+      mapping: { version: 4, nodes: { 1: { added: true, name: 'Armament' } } },
       cache: {
         version: 1,
         boards: { A7: { confirmedAt: '2026-10-14T00:00:00Z', axes: { 2: axis(4, 5, 6) } } }
@@ -418,7 +418,7 @@ describe('ConfigTransfer: automatic backups and restore (#136)', () => {
     dir = mkdtempSync(join(tmpdir(), 'skyhawk-transfer-'))
     state = {
       config: DEFAULT_CONFIG,
-      mapping: { version: 3, nodes: {} },
+      mapping: { version: 4, nodes: {} },
       cache: { version: 1, boards: {} },
       fail: {},
       writes: { mapping: 0, calibration: 0, config: 0 },

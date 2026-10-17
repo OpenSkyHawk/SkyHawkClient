@@ -7,7 +7,7 @@ import type { NodeMappingFile } from '@shared/nodes'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from './node-status-wire'
 import { statusRow } from '../../test-fixtures/nodes'
 
-const disk: { file: NodeMappingFile; saves: number } = { file: { version: 3, nodes: {} }, saves: 0 }
+const disk: { file: NodeMappingFile; saves: number } = { file: { version: 4, nodes: {} }, saves: 0 }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } })) // debug log path
 // The bundled NODE_IDS.md, as a hub reads it when it is built. B2 builds a "later client" whose
 // bundle lists one more NODE_ID; every other test sees today's bundle unchanged.
@@ -62,7 +62,7 @@ function hub() {
 }
 
 beforeEach(() => {
-  disk.file = { version: 3, nodes: {} }
+  disk.file = { version: 4, nodes: {} }
   disk.saves = 0
 })
 
@@ -129,7 +129,7 @@ describe('B8 Forget removes everything; a forgotten board that reports is new ag
   it('a registry board: its entry is gone, and back on the bus it is new, pre-filled from NODE_IDS.md', () => {
     // Added, renamed, placed, given a power zone, hidden, and seen before. Offline now.
     disk.file = {
-      version: 3,
+      version: 4,
       nodes: {
         1: { added: true },
         2: { added: true, name: 'Nav', console: 'Left', pduId: 3, hidden: true, lastSeen: T0 }
@@ -158,10 +158,17 @@ describe('B8 Forget removes everything; a forgotten board that reports is new ag
 
   it('an adopted board: its entry is gone, and back on the bus it is new, with nothing pre-filled', () => {
     disk.file = {
-      version: 3,
+      version: 4,
       nodes: {
         1: { added: true },
-        41: { name: 'Left_Trim', console: 'Left', kind: 'panel', pduId: 3, lastSeen: T0 }
+        41: {
+          added: true,
+          name: 'Left_Trim',
+          console: 'Left',
+          kind: 'panel',
+          pduId: 3,
+          lastSeen: T0
+        }
       }
     }
     const { h, status, end, flush, node } = hub()
@@ -186,7 +193,7 @@ describe('B10 Hide keeps links: boards fed by a hidden PDU keep their power zone
     // Board 1 is placed under PDU 4 explicitly (its NODE_IDS.md default is PDU 5); board 2 is fed
     // by PDU 4 by default (Right console).
     disk.file = {
-      version: 3,
+      version: 4,
       nodes: { 1: { added: true, pduId: 4 }, 2: { added: true }, 4: { added: true } }
     }
     const { h, status, end, flush, node } = hub()
