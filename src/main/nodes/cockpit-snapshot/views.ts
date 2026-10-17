@@ -1,4 +1,4 @@
-// Per-board health, flag and readings (moved from the renderer's cockpit.ts, R3.2): what each node
+// Per-board health, flag and readings (moved from the renderer, R3.2): what each node
 // reads as on the plan, computed once per snapshot from the node model and the telemetry. The
 // client applies no thresholds — a warning is always a flag a board raised itself.
 import type {

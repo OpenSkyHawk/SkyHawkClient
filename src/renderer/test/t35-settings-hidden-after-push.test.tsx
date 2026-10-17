@@ -1,7 +1,7 @@
 // T35 — Settings › Cockpit › Hidden boards follows main's pushes: a hidden board that reports
-// again drops off the list. Settings reads the model through its own subscription (useNodeModel),
-// a second copy beside the store's; this pins the deterministic path only — pull, then pushes in
-// order. The pull-vs-push race (C5 / F10) is not pinned.
+// again drops off the list. Settings pulls the node data when it mounts (useNodesPulled) and then
+// reads main's pushes through the nodes store; this pins the deterministic path only — pull, then
+// pushes in order. The pull-vs-push race (C5 / F10) is not pinned.
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { Settings } from '../src/app/settings/Settings'

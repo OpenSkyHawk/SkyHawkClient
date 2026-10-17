@@ -50,8 +50,8 @@ export function relayConfigChanged<T extends RelayOptions>(prev: T, next: T): bo
 }
 
 // ── what the relay's surfaces show (R3.3) ────────────────────────────────────
-// Moved from the renderer (device-view.ts, RelayPill.tsx, Connection.tsx, Overview.tsx,
-// ConnectionSection.tsx): DcsRelay decides these and pushes them on `relay:facts`; the renderer
+// Moved from the renderer (the title bar, Connection, Overview and Settings › Connection):
+// DcsRelay decides these and pushes them on `relay:facts`; the renderer
 // keeps the wording. `relaying` is the on/off as the surface shows it: the renderer's pending
 // Start or Stop reads at once, before main answers, so each fact comes for both.
 
@@ -168,15 +168,15 @@ export function canRecord(relaying: boolean): RelaySurfaces['canRecord'] {
 
 /**
  * Is a Record control shown at all (R3.4a, each surface its own variant like canRecord): the
- * Connection tab's Record card is hidden in Replay (Connection.tsx before); Settings › Connection's
- * Record row always shows.
+ * Connection tab's Record card is hidden in Replay (the renderer's rule before); Settings ›
+ * Connection's Record row always shows.
  */
 export function recordShown(mode: SourceMode): RelayFacts['recordShown'] {
   return { connection: mode !== 'replay', settings: true }
 }
 
 /**
- * Is the Connection tab's Capture card shown (R3.4a: Connection.tsx before): Replay only. The
+ * Is the Connection tab's Capture card shown (R3.4a: the renderer's rule before): Replay only. The
  * mirror of the Record card's rule, beside it, so both come from the same mode in the same push.
  */
 export function captureShown(mode: SourceMode): boolean {

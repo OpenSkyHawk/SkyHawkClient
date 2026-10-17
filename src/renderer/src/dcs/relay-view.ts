@@ -1,5 +1,5 @@
-// The relay's surfaces in words (R3.4b: the relay half of device-view.ts): the pill's tooltip, the
-// note under Start, why Start is blocked. What each says is main's (relay:facts, relay-rules).
+// The relay's surfaces in words (R3.4b: the relay half of the old device view): the pill's tooltip,
+// the note under Start, why Start is blocked. What each says is main's (relay:facts, relay-rules).
 import type {
   EndpointLabel,
   RelayFacts,

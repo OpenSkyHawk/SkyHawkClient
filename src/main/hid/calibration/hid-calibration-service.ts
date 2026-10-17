@@ -1,5 +1,5 @@
-// Axis calibration (#46) over the SimGateway's serial port, as the app runs it (moved out of
-// DeviceLink, R2.2a): a CalLink per port, the read-on-open that drives the HID tab's badges, the
+// Axis calibration (#46) over the SimGateway's serial port, as the app runs it (its own service
+// since R2.2a): a CalLink per port, the read-on-open that drives the HID tab's badges, the
 // cal* commands as discriminated CalResults, the restore cache, RAW batching, the last-confirmed
 // snapshot and the export gate. It hosts the calibration workflow (R3.1): the cal* commands are
 // the workflow's, RAW batches feed it, and it pushes `cal:workflow`.

@@ -17,7 +17,7 @@ interface TelemetrySpec {
 }
 
 /**
- * A gauge ring's alert level (Overview.tsx gaugeColor before R3.3): fuel goes to its alert under
+ * A gauge ring's alert level (the Overview's gaugeColor before R3.3): fuel goes to its alert under
  * 25 %; the flap and altitude rings are the secondary ones. Keyed on the readout's id, so the idle
  * placeholders (X10: `D_ALT_NEEDLE`, not `ALT_FT`) keep the plain ring they had.
  */

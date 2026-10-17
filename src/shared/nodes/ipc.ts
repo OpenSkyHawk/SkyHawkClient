@@ -316,7 +316,7 @@ export interface PsuSetting {
 
 export const DEFAULT_PSU: PsuSetting = { mode: 'preset', preset: 'nx650', custom: {} }
 
-// Which values a PSU limit accepts (R3.4a: from shared/nodes/legacy-rules.ts). Part of the
+// Which values a PSU limit accepts (R3.4a). Part of the
 // contract because both sides need the same answer: main sanitizes a saved or imported limit with
 // it (psu-limits.ts), and the renderer marks a limit field invalid on every keystroke, from the text
 // typed since the form mounted, before anything is saved.

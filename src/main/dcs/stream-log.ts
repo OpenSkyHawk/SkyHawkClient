@@ -1,6 +1,6 @@
 // The Log tab's stream rows: panel commands from the device and the rows the decoder names from
 // the export, batched to the renderer on a 33 ms flush. The same flush pushes the event log's new
-// rows first (its `events:batch`), as it did in Session.
+// rows first (its `events:batch`).
 import type { StreamRow } from '@shared/dcs'
 import type { Emit } from '@shared/app'
 import type { DeviceLine } from '../gateway'

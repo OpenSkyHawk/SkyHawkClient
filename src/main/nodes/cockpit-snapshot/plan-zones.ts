@@ -1,4 +1,4 @@
-// The plan's grouping (moved from the renderer's planLayout in cockpit.ts, R3.2): which boards are
+// The plan's grouping (moved from the renderer's planLayout, R3.2): which boards are
 // drawn, the power zone each sits in and on which console, the outage under a PDU, and which feed
 // lines go gold. The renderer lays these groups out (plan-layout.ts); it decides none of them.
 import type {

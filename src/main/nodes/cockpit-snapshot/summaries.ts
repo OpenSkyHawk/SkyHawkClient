@@ -1,5 +1,5 @@
-// The Overview's and Connection's reading of the Cockpit's picture (moved from the renderer's
-// overview.ts, connection-summary.ts and their tabs, R3.2b): the Overview's Cockpit tile, its
+// The Overview's and Connection's reading of the Cockpit's picture (moved from the renderer,
+// R3.2b): the Overview's Cockpit tile, its
 // Attention banner and new-devices notice, and Connection › Connected nodes. The client adds no
 // thresholds of its own.
 //
@@ -119,7 +119,7 @@ export function newDevices(views: NodeView[], live: boolean): NewDevices | null 
 }
 
 /**
- * The Overview's tile, banner and notice, as Overview.tsx computed them: the band and the items
+ * The Overview's tile, banner and notice, as the Overview tab computed them: the band and the items
  * without strays (X3), the banner and the notice only while the link is up.
  */
 export function overviewSummary(

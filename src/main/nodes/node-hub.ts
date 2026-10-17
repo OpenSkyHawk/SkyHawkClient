@@ -343,7 +343,7 @@ export class NodeHub implements NodeLineSink {
     return this.mappedCache
   }
 
-  /** Session tick. Pushes telemetry at most once per NODE_TELEM_PUSH_MS, the model on change. */
+  /** The link's tick. Pushes telemetry at most once per NODE_TELEM_PUSH_MS, the model on change. */
   flush(rosterChanged: boolean, now = Date.now()): void {
     let changed = rosterChanged || this.modelDirty
     if (now - this.telemPushedAt >= NODE_TELEM_PUSH_MS && this.telem.takeChanged(now)) {

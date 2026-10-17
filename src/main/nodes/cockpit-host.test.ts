@@ -1,6 +1,6 @@
-// The Cockpit snapshot host (R3.2): the peak W the renderer's store tracked (store.test.ts's two
+// The Cockpit snapshot host (R3.2): the peak W the renderer's store tracked (its two store test
 // cases, ported with the same pushes and expected values), when it pushes, and the stray timer the
-// Cockpit tab ran (Cockpit.tsx: nextAt + 50 ms).
+// Cockpit tab ran (nextAt + 50 ms).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   COCKPIT_IDLE,

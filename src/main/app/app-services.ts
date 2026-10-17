@@ -89,8 +89,8 @@ export class AppServices {
       recorder: this.recorder,
       events: this.journal
     })
-    // The wiring order is load-bearing (R2.2b): it is the order DeviceLink ran these in before the
-    // split. At each of the connection's moments its riders run in the order added:
+    // The wiring order is load-bearing (R2.2b): it is the order these ran in before the split. At
+    // each of the connection's moments its riders run in the order added:
     //   start's timers   link tick (200, its own) → serial flush (50) → calibration RAW (50) →
     //                    HID rate (1000) → roster poll (5000); then the HID reader
     //   port opens       `opening`: node resets, then the line assembler → connected status →
@@ -99,7 +99,8 @@ export class AppServices {
     //   teardown         `release`: calibration → port stop → `released`: the Gateway's health
     //   200 ms tick      `flush`: HID → (link up) `tick`: node pushes, Gateway health
     //   shutdown         `closing`: nodes → timers cleared → teardown → `stop`: HID
-    // The DCS side keeps Session's order too (R2.3a). None of its constructors has a side effect.
+    // The DCS side keeps its order from before the split too (R2.3a). None of its constructors has
+    // a side effect.
     //   open             the stream log's flush (33) first, then the connection's start
     //   relay Start      Bridge / driven Replay refused unless the link is up → a running relay
     //                    stopped → decoder, parser, stats reset → DCS error forgotten → Replay:
@@ -128,13 +129,13 @@ export class AppServices {
     this.connection.ride(this.lines)
     // Port traffic: the serial monitor taps it raw, above the frame filter.
     this.connection.onTraffic((dir, chunk) => this.serialMonitor.onSerialTraffic(dir, chunk))
-    // Bytes below the frame filter: the relay to DCS first, then the line tap — the order
-    // DeviceLink handed them on in.
+    // Bytes below the frame filter: the relay to DCS first, then the line tap — the order they
+    // were handed on in before the split.
     this.connection.onBytes((bytes) => this.relay.fromDevice(bytes))
     this.connection.onBytes((bytes) => this.lines.push(bytes))
     // Panel commands to the stream log, relaying or not.
     this.lines.onLine((l) => this.streamLog.onLine(l))
-    // Link faults and the v2-Gateway warning: one path, as when DeviceLink raised both.
+    // Link faults and the v2-Gateway warning: one path, as before the split.
     const onError = (tag: string, message: string): void => {
       this.stats.error()
       this.journal.error(tag, message)

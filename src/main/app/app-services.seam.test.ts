@@ -63,7 +63,7 @@ describe('B29 a v2 Gateway is reported once per link, and raised again after a r
     app.serial.receive(v2 + v2 + '_NODE_STATUS_END 1\n')
     expect(raised(), 'raised again on the new link').toBe(2)
     // contract B29 says the warning repeats once after a reopen (2 rows total); today the code
-    // does raise it again (the error count above), but the event log keeps 1 row: Session's
+    // does raise it again (the error count above), but the event log keeps 1 row: the journal's
     // per-tag dedupe (lastErr) never clears 'NODES', so the identical second message is dropped.
     expect(warnings()).toHaveLength(1)
   })

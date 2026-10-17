@@ -38,7 +38,7 @@ export function nodeFaultTag(n: NodeStatus): string {
   return n.faultAbbr ?? `Fault ${n.faultId}`
 }
 
-// ── the Cockpit's flag text (moved from the renderer's cockpit.ts / cockpit-panels.ts, R3.2) ──
+// ── the Cockpit's flag text (moved from the renderer, R3.2) ──
 
 const RAIL_FLAG_TEXT: [number, string][] = [
   [RAIL_FLAG.UNDER_V, 'UNDER-V'],

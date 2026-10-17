@@ -1,4 +1,4 @@
-// The Adopt dialog's own state (adopt-view.ts; from cockpit-adopt.test.ts, R3.2): the form and the
+// The Adopt dialog's own state (adopt-view.ts, R3.2): the form and the
 // spec it sends, the rows kept while it is open, the identify dot, the next selection and "Add all".
 // The rows themselves are main's (adoptRows), built here from the same views.
 import { describe, expect, it } from 'vitest'

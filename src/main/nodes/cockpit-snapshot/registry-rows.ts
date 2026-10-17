@@ -1,5 +1,5 @@
-// What Settings shows about the node mapping (moved from the renderer's settings-view.ts and the
-// Settings sections, R3.2b): Reset…'s gate, the Hidden boards list, and About › Node registry — its
+// What Settings shows about the node mapping (moved from the renderer's Settings sections,
+// R3.2b): Reset…'s gate, the Hidden boards list, and About › Node registry — its
 // summary line and each row's "On the bus".
 //
 // Each keeps Settings' own answer where it differs from the Cockpit's (co-located, not unified):

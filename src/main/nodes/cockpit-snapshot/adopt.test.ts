@@ -1,4 +1,4 @@
-// Ported from the renderer's cockpit-adopt.test.ts (R3.2): the Adopt dialog's queue, evidence,
+// Ported from the renderer (R3.2): the Adopt dialog's queue, evidence,
 // adoptability, pre-fill and PDU choices, and the strays, now built in main. Same cases, same
 // expected values.
 import { describe, expect, it } from 'vitest'

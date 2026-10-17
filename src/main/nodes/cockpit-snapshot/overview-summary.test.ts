@@ -1,4 +1,4 @@
-// Ported from the renderer's overview.test.ts (R3.2b): the Overview's Cockpit tile, Attention
+// Ported from the renderer (R3.2b): the Overview's Cockpit tile, Attention
 // banner and new-devices count, now built in main (summaries.ts). Same cases, same expected values;
 // the notice's wording (newDevicesText) stays in the renderer with its own two cases.
 import { describe, expect, it } from 'vitest'
@@ -227,7 +227,7 @@ describe('newDevicesText', () => {
   })
 })
 
-// New in R3.2b: the section the snapshot pushes, composed as Overview.tsx composed it.
+// New in R3.2b: the section the snapshot pushes, composed as the Overview tab composed it.
 describe('overviewSummary', () => {
   const off = node(2, { availability: 'offline' })
   const waiting = fresh(42, { kind: 'pdu', identified: 'pdu', everHadReadings: true })

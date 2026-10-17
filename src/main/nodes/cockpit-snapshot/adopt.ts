@@ -1,4 +1,4 @@
-// The Adopt dialog's facts (moved from the renderer's cockpit-adopt.ts, R3.2; since #93 the
+// The Adopt dialog's facts (moved from the renderer, R3.2; since #93 the
 // onboarding for every board not in your cockpit): the queue and its order, what each new NODE_ID
 // is seen doing, whether it can be adopted, the registry pre-fill and the PDU it would be added
 // under. The form itself (what you type) and the dialog's own memory stay in the renderer.

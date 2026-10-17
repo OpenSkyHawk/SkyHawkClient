@@ -1,5 +1,5 @@
 // What a HID report means for the HID tab (pure, no Node/Electron deps): how fresh it is, and which
-// axis slots are live (R3.3). Moved from the renderer (freshness.ts, Hid.tsx) so HidService decides
+// axis slots are live (R3.3). Moved from the renderer so HidService decides
 // them; `hid:report` carries them.
 import type { CalSnapshot } from '@shared/hid/calibration'
 import type { HidFreshness, HidReportFacts } from '@shared/hid'

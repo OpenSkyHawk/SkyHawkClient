@@ -17,7 +17,7 @@ import {
 } from '@shared/nodes'
 import { buildCockpitSnapshot, sessionPeakW } from './cockpit-snapshot'
 
-/** The renderer's stray timer fired this long after `nextAt` (Cockpit.tsx before R3.2). */
+/** The renderer's stray timer fired this long after `nextAt` (the Cockpit tab's, before R3.2). */
 export const STRAY_RECHECK_MS = 50
 
 export interface CockpitTimers {

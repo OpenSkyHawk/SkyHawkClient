@@ -1,4 +1,4 @@
-// The Cockpit's side panels (moved from the renderer's cockpit-panels.ts and SidePanels.tsx, R3.2;
+// The Cockpit's side panels (moved from the renderer, R3.2;
 // one design for every board since #93): which actions a board offers, what its fault boxes say,
 // the rows each panel shows, which PDU feeds a panel group and which boards a PDU feeds, and the
 // power zones a panel can be given. Every value is something a board reported or the client

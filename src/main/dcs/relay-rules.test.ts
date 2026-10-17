@@ -1,6 +1,6 @@
-// R3.3: what the relay's surfaces show, decided here and pushed on relay:facts (the renderer's
-// device-view.ts, RelayPill.tsx, Connection.tsx, Overview.tsx and ConnectionSection.tsx before).
-// The wording stays in the renderer; device-view.test.ts runs these rules through it.
+// R3.3: what the relay's surfaces show, decided here and pushed on relay:facts (the renderer
+// decided them before). The wording stays in the renderer; gateway/link-view.test.ts runs these
+// rules through it.
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG } from '@shared/config'
 import { RELAY_FACTS_IDLE } from '@shared/dcs'

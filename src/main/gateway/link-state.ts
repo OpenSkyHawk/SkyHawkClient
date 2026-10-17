@@ -1,6 +1,6 @@
 // What the link's state means (pure, no Node/Electron deps): up, the board plugged in, the port held
 // by another program, and the facts `device:status` carries to the renderer (R3.3). Moved from the
-// renderer (freshness.ts, device-view.ts, store.ts) and from the gateway contract (isLinkUp) so the
+// renderer and from the gateway contract (isLinkUp) so the
 // link's owner decides them once; the renderer only reads what is pushed.
 import type { DeviceLinkFacts, DeviceState, DeviceStatus, LinkAction } from '@shared/gateway'
 

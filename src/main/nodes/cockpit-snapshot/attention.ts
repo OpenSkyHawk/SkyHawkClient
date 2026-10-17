@@ -1,6 +1,6 @@
-// Cockpit › Attention (moved from the renderer's cockpit.ts, cockpit-adopt.ts and Cockpit.tsx,
-// R3.2): which boards are items and in what order, the strays (new boards that can't be adopted),
-// the Gateway's own item, the cap and the "New on the bus" count.
+// Cockpit › Attention (moved from the renderer, R3.2): which boards are items and in what order,
+// the strays (new boards that can't be adopted), the Gateway's own item, the cap and the "New on
+// the bus" count.
 import type { GatewayStatus } from '@shared/gateway'
 import type {
   AttentionItem,

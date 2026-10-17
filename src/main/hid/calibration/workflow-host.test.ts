@@ -114,8 +114,8 @@ describe('the HID-tab view (cal:attach)', () => {
   })
 })
 
-// The store's calibration lifecycle before R3.1 (renderer store.test.ts): the device's report is
-// held while the link is up and dropped whenever it is not. The rule moved here with the workflow.
+// The store's calibration lifecycle before R3.1 (the renderer's store tests): the device's report
+// is held while the link is up and dropped whenever it is not. The rule moved here with the workflow.
 describe('calibration state lifecycle', () => {
   it('starts with no snapshot, which is not the same as uncalibrated', () => {
     const { snap } = host()

@@ -1,6 +1,6 @@
 // What the HID tab and the calibration dialog show, decided from the workflow's state (R3.1). Each
-// derivation is the one the renderer made before the workflow moved to main (CalibrationDialog.tsx,
-// tabs/Hid.tsx), kept verbatim; the renderer now only words and draws the result.
+// derivation is the one the renderer made before the workflow moved to main (the dialog and the
+// HID tab), kept verbatim; the renderer now only words and draws the result.
 import { HID_REPORT_LAYOUT } from '@shared/firmware'
 import type {
   CalBadge,
@@ -158,7 +158,7 @@ export function dialogState(s: WorkflowState, a: WorkflowAnswers): CalibrationDi
   }
 }
 
-/** The HID tab's calibration parts (tabs/Hid.tsx before R3.1). */
+/** The HID tab's calibration parts (the renderer's before R3.1). */
 export function tabState(
   snapshot: CalSnapshot | undefined,
   linkUp: boolean,

@@ -1,4 +1,4 @@
-// Ported from the renderer's cockpit-panels.test.ts (R3.2): what each board's side panel says and
+// Ported from the renderer (R3.2): what each board's side panel says and
 // offers, now built in main. Same cases, same expected values.
 import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeStatus, NodeTelemSnapshot } from '@shared/nodes'
