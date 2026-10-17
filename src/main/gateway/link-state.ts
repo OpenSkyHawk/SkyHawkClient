@@ -2,7 +2,7 @@
 // by another program, and the facts `device:status` carries to the renderer (R3.3). Moved from the
 // renderer (freshness.ts, device-view.ts, store.ts) and from the gateway contract (isLinkUp) so the
 // link's owner decides them once; the renderer only reads what is pushed.
-import type { DeviceLinkFacts, DeviceState, DeviceStatus } from '@shared/gateway'
+import type { DeviceLinkFacts, DeviceState, DeviceStatus, LinkAction } from '@shared/gateway'
 
 /**
  * Whether the device link is up. The single definition every consumer keys on — calibration,
@@ -46,6 +46,30 @@ export function isBusy(detail?: string): boolean {
 }
 
 /**
+ * The link's one action in each state (R3.4a: the renderer's deviceView table): Connect when
+ * released, Retry after an error, Disconnect otherwise — not while the port is mid-open.
+ */
+export function linkAction(state: DeviceState): LinkAction {
+  const disconnect = { offer: 'disconnect', intent: 'disconnect' } as const
+  const connect = { offer: 'connect', intent: 'connect' } as const
+  switch (state) {
+    case 'connected':
+      return disconnect
+    case 'scanning':
+      // While the port is mid-open there is nothing sensible to interrupt.
+      return { ...disconnect, disabled: true }
+    case 'reconnecting':
+      return disconnect
+    case 'no-device':
+      return disconnect
+    case 'disconnected':
+      return connect
+    case 'error':
+      return { offer: 'retry', intent: 'connect' }
+  }
+}
+
+/**
  * "When the link last went down after being up", as the renderer's store kept it for the
  * Cockpit's "last known" time, judged per `device:status` push: stamped on an up → down change,
  * cleared while up, otherwise left as it was. The page's own: a renderer that (re)loads starts
@@ -81,16 +105,22 @@ export class LinkDownClock {
   }
 }
 
-/** What `device:status` carries besides the status itself. */
+/**
+ * What `device:status` carries besides the status itself. `canRefresh` is NodeHub's (its roster
+ * request guard), handed in: none without a node layer.
+ */
 export function linkFacts(
   status: DeviceStatus,
-  page: { linkDownAt?: number; serialMonitor: boolean }
+  page: { linkDownAt?: number; serialMonitor: boolean },
+  canRefresh = false
 ): DeviceLinkFacts {
   return {
     linkUp: isLinkUp(status.state),
     boardPresent: isBoardPresent(status.state),
     busy: isBusy(status.detail),
     ...(page.linkDownAt !== undefined ? { linkDownAt: page.linkDownAt } : {}),
-    serialMonitor: page.serialMonitor
+    serialMonitor: page.serialMonitor,
+    action: linkAction(status.state),
+    canRefresh
   }
 }

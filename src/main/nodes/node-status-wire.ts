@@ -14,8 +14,9 @@ import {
   NODE_STATUS_FIELD,
   NODE_STATUS_ROW_BYTES
 } from '@shared/firmware'
+import type { DeviceState } from '@shared/gateway'
 import type { NodeSeen, NodeStatus } from '@shared/nodes'
-import { encodeExportFrame } from '../gateway'
+import { encodeExportFrame, isLinkUp } from '../gateway'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_NODE_PROTO = 3
@@ -100,6 +101,14 @@ export function cleanNodeLine(line: string): string {
 /** A DCS-BIOS export frame that asks PanelBridge for the full node roster. */
 export function nodeRosterRequest(): Uint8Array {
   return encodeExportFrame(NODE_REQ_ADDR, 1)
+}
+
+/**
+ * A roster request can go out — the poll, the seed on connect, and Refresh: a port is held and the
+ * link is up. NodeHub's guard; `device:status` carries it as Refresh's availability (R3.4a).
+ */
+export function canRequestRoster(attached: boolean, state: DeviceState): boolean {
+  return attached && isLinkUp(state)
 }
 
 /**

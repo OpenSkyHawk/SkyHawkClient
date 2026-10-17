@@ -1,4 +1,4 @@
-import type { DeviceState } from '@shared/gateway'
+import type { DeviceState, LinkAction } from '@shared/gateway'
 import type {
   EndpointLabel,
   RelayFacts,
@@ -27,13 +27,6 @@ export interface DeviceView {
   portRow: string
   /** Hint in the nodes card while the link is down. */
   nodesHint: string
-  /** The device card's Connect / Disconnect / Retry button. */
-  button: {
-    label: 'Connect' | 'Disconnect' | 'Retry'
-    action: 'connect' | 'disconnect'
-    /** While the port is mid-open there is nothing sensible to interrupt. */
-    disabled?: boolean
-  }
   /** Note under the device card, when the state needs explaining. */
   note?: string
   /** The note ends with a link to Settings › Connection, where auto-connect is switched. */
@@ -49,8 +42,6 @@ export function deviceView(
   opts: { port?: string; detail?: string; busy?: boolean; autoConnect: boolean }
 ): DeviceView {
   const port = opts.port ?? 'the Gateway port'
-  const disconnect = { label: 'Disconnect', action: 'disconnect' } as const
-  const connect = { label: 'Connect', action: 'connect' } as const
   const nodesDown = 'Connect the Gateway to see node status — it is reported over the device link.'
   switch (state) {
     case 'connected':
@@ -63,8 +54,7 @@ export function deviceView(
         // the Connection tab.
         popMeta: '',
         portRow: port,
-        nodesHint: '',
-        button: disconnect
+        nodesHint: ''
       }
     case 'scanning':
       return {
@@ -74,8 +64,7 @@ export function deviceView(
         tip: 'Looking for the Gateway…',
         popMeta: 'Looking for the Gateway…',
         portRow: 'scanning…',
-        nodesHint: 'Reconnecting to the Gateway…',
-        button: { ...disconnect, disabled: true }
+        nodesHint: 'Reconnecting to the Gateway…'
       }
     case 'reconnecting':
       return {
@@ -85,8 +74,7 @@ export function deviceView(
         tip: 'Link dropped — reopening the port (a relay keeps running)',
         popMeta: 'Link dropped — reopening the port. A running relay keeps going.',
         portRow: 'reconnecting…',
-        nodesHint: 'Reconnecting to the Gateway…',
-        button: disconnect
+        nodesHint: 'Reconnecting to the Gateway…'
       }
     case 'no-device':
       return {
@@ -96,8 +84,7 @@ export function deviceView(
         tip: 'No Gateway plugged in — it connects as soon as you plug it in',
         popMeta: 'Nothing plugged in — it connects as soon as you plug it in.',
         portRow: 'waiting for the board…',
-        nodesHint: nodesDown,
-        button: disconnect
+        nodesHint: nodesDown
       }
     case 'disconnected':
       return {
@@ -112,7 +99,6 @@ export function deviceView(
           : 'Automatic connection is off — press Connect when you need the link.',
         portRow: 'released',
         nodesHint: 'Device link released — press Connect to see node status.',
-        button: connect,
         note: opts.autoConnect
           ? 'Port released — other tools can use it. It stays closed through a replug until you press Connect or restart the app.'
           : 'Automatic connection is off, so the port stays free for other tools — press Connect when you need the link. Change it in',
@@ -130,12 +116,33 @@ export function deviceView(
           : `${port} would not open${opts.detail ? `: ${opts.detail}` : ''}. Retry, or replug the board.`,
         portRow: `${port} · ${busy ? 'busy' : 'error'}`,
         nodesHint: "Can't open the Gateway port — see the device card.",
-        button: { label: 'Retry', action: 'connect' },
         note: busy
           ? `${port} is open in another app (socat?). Close it, then Retry.`
           : `${port} would not open${opts.detail ? `: ${opts.detail}` : ''}. Retry, or replug the board.`
       }
     }
+  }
+}
+
+/** The device card's and the Device popover's button, for the action main offers (R3.4a). */
+export interface LinkButton {
+  label: 'Connect' | 'Disconnect' | 'Retry'
+  action: LinkAction['intent']
+  disabled?: boolean
+}
+
+const LINK_LABEL: Record<LinkAction['offer'], LinkButton['label']> = {
+  connect: 'Connect',
+  disconnect: 'Disconnect',
+  retry: 'Retry'
+}
+
+/** The Connect / Disconnect / Retry button: main's action (link-state linkAction), worded. */
+export function linkButton(a: LinkAction): LinkButton {
+  return {
+    label: LINK_LABEL[a.offer],
+    action: a.intent,
+    ...(a.disabled ? { disabled: true } : {})
   }
 }
 

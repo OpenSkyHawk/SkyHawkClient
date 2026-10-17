@@ -12,6 +12,7 @@
 // being relayed, and stopping the relay tore the port down with it.
 import type { DeviceStatus, DeviceStatusPush, GatewayStatus } from '@shared/gateway'
 import type { Emit } from '@shared/app'
+import { shownStatus } from './gateway-health'
 import { isLinkUp, LinkDownClock, linkFacts } from './link-state'
 import {
   findSimGatewayPort,
@@ -85,14 +86,17 @@ export interface LinkRider {
 /**
  * What GatewayConnection needs from app (P6: it never asks electron): the debug log
  * (SerialBridge), the calibration frame filter, the Gateway's health as the node layer follows
- * it (NodeHub drives GatewayWatch, UD-C), which the connected status carries, and whether the
- * page's serial monitor is on (SerialTrafficMonitor), which every status push carries (R3.3).
+ * it (NodeHub drives GatewayWatch, UD-C), which the connected status carries, whether the
+ * page's serial monitor is on (SerialTrafficMonitor), which every status push carries (R3.3), and
+ * whether a roster request can go out (NodeHub's guard), which every status push carries too as
+ * Refresh's availability (R3.4a).
  */
 export interface GatewayConnectionDeps {
   log: Log
   frames: CalFrameFilter
   health: () => GatewayStatus | undefined
   serialMonitor?: () => boolean
+  canRefresh?: () => boolean
 }
 
 /** The link's push tick: node status, node model and the HID snapshot. */
@@ -399,7 +403,10 @@ export class GatewayConnection {
     for (const cb of this.statusCbs) cb(status)
   }
 
-  /** Every `device:status`: the status, and what it means (link-state.ts), judged per push. */
+  /**
+   * Every `device:status`: the status, the Gateway's health only while the link is up
+   * (gateway-health.ts shownStatus), and what it means (link-state.ts), judged per push.
+   */
   private emitStatus(status: DeviceStatus): void {
     this.linkDown.pushed(status.state)
     this.emit('device:status', this.withFacts(status))
@@ -407,11 +414,15 @@ export class GatewayConnection {
 
   private withFacts(status: DeviceStatus): DeviceStatusPush {
     return {
-      ...status,
-      ...linkFacts(status, {
-        linkDownAt: this.linkDown.value,
-        serialMonitor: this.deps.serialMonitor?.() ?? false
-      })
+      ...shownStatus(status),
+      ...linkFacts(
+        status,
+        {
+          linkDownAt: this.linkDown.value,
+          serialMonitor: this.deps.serialMonitor?.() ?? false
+        },
+        this.deps.canRefresh?.() ?? false
+      )
     }
   }
 

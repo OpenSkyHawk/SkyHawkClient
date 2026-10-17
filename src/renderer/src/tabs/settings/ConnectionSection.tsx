@@ -6,9 +6,11 @@ export function ConnectionSection() {
   const s = useStore()
   const setConfigField = useStore((x) => x.setConfigField)
   const toggleCapture = useStore((x) => x.toggleCapture)
-  // The recording and whether this row may start one (X12: whenever), as main decides (R3.3).
+  // The recording and whether this row may start one (X12: whenever), as main decides (R3.3), and
+  // whether the row shows (always; R3.4a).
   const recording = s.relayFacts.recording
   const canRecord = relaySide(s.relayFacts, s.relaying).canRecord.settings
+  const recordShown = s.relayFacts.recordShown.settings
 
   return (
     <>
@@ -47,22 +49,24 @@ export function ConnectionSection() {
             <span />
           </button>
         </Row>
-        <Row
-          k="Record session"
-          sub={
-            recording.on
-              ? `Recording${recording.events != null ? ` · ${recording.events} events` : ''}…`
-              : 'Capture the DCS-BIOS stream to a file for replay'
-          }
-        >
-          <button
-            className={`browse${recording.on ? ' browse--rec' : ''}`}
-            onClick={() => toggleCapture()}
-            disabled={!canRecord}
+        {recordShown && (
+          <Row
+            k="Record session"
+            sub={
+              recording.on
+                ? `Recording${recording.events != null ? ` · ${recording.events} events` : ''}…`
+                : 'Capture the DCS-BIOS stream to a file for replay'
+            }
           >
-            {recording.on ? '■ Stop' : '● Record'}
-          </button>
-        </Row>
+            <button
+              className={`browse${recording.on ? ' browse--rec' : ''}`}
+              onClick={() => toggleCapture()}
+              disabled={!canRecord}
+            >
+              {recording.on ? '■ Stop' : '● Record'}
+            </button>
+          </Row>
+        )}
       </div>
     </>
   )

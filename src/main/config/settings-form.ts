@@ -4,7 +4,7 @@
 import type { AppConfig, ConfigEdit } from '@shared/config'
 
 /** The edited fields, with the command port as text (what the Connection forms show). */
-export type ConfigForm = Required<ConfigEdit>
+export type ConfigForm = Required<Omit<ConfigEdit, 'psuMode'>>
 
 /** The forms' fields as the settings hold them: the port as its digits. */
 export function formOf(cfg: AppConfig): ConfigForm {
@@ -41,8 +41,11 @@ export function buildConfig(s: ConfigForm): Partial<AppConfig> {
 
 /**
  * A form's change, read-modify-write: the forms' fields as the settings hold them, the change over
- * them, built into the save (buildConfig).
+ * them, built into the save (buildConfig). A PSU mode switch keeps the rest of the setting — the
+ * preset and the custom limits — as it is (R3.4a: Settings › Cockpit's `{ ...psu, mode }`).
  */
 export function editedConfig(current: AppConfig, edit: ConfigEdit): Partial<AppConfig> {
-  return buildConfig({ ...formOf(current), ...edit })
+  const { psuMode: mode, ...fields } = edit
+  const form = { ...formOf(current), ...fields }
+  return buildConfig(mode === undefined ? form : { ...form, psu: { ...form.psu, mode } })
 }

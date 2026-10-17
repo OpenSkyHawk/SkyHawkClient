@@ -30,7 +30,8 @@ export interface DeviceStatus {
   /**
    * The Gateway's own health (#94), only while `connected` and once there is something to say.
    * Computed once in main (shared/gateway.ts) and only read by the UI. Pushed on `device:status`
-   * when it changes; the link state itself is unchanged by it.
+   * when it changes; the link state itself is unchanged by it. `device:status` never carries it
+   * while the link is down (main/gateway/gateway-health.ts shownStatus, R3.4a).
    */
   gateway?: GatewayStatus
 }
@@ -55,6 +56,25 @@ export interface GatewayStatus {
   note?: string
   /** Serious faults only (severity err): the Overview alert. */
   alert?: { head: string; text: string }
+  /**
+   * It says how the link is, not something the Gateway reports (not responding): the popover's
+   * title and line show it, in place of a Health row (R3.4a: gateway-view.ts's choice before).
+   */
+  aboutLink?: true
+}
+
+/**
+ * The link's one action, for the state it is in (R3.4a): which button the device card and the
+ * Device popover offer, what it does, and whether it is available. GatewayConnection decides it
+ * (main/gateway/link-state.ts linkAction); the renderer words it.
+ */
+export interface LinkAction {
+  /** Which button shows. */
+  offer: 'connect' | 'disconnect' | 'retry'
+  /** What it does: the intent it sends (`device:connect` / `device:disconnect`). */
+  intent: 'connect' | 'disconnect'
+  /** While the port is mid-open there is nothing sensible to interrupt. */
+  disabled?: true
 }
 
 /**
@@ -77,6 +97,13 @@ export interface DeviceLinkFacts {
   linkDownAt?: number
   /** The Serial tab's raw monitor is on, as this page last set it; off for a reloaded page (N1). */
   serialMonitor: boolean
+  /** The device card's and the Device popover's button (R3.4a). */
+  action: LinkAction
+  /**
+   * A roster request can go out, so Connection's Refresh is available: NodeHub's own guard on it
+   * (main/nodes/node-status-wire.ts canRequestRoster, R3.4a).
+   */
+  canRefresh: boolean
 }
 
 /** `device:status` as main pushes it: the link's status and what it concludes from it. */
@@ -91,7 +118,9 @@ export const DEVICE_IDLE: DeviceStatusPush = {
   linkUp: false,
   boardPresent: false,
   busy: false,
-  serialMonitor: false
+  serialMonitor: false,
+  action: { offer: 'disconnect', intent: 'disconnect' },
+  canRefresh: false
 }
 
 /** One raw serial chunk for the live serial monitor. */

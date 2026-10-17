@@ -1,6 +1,6 @@
 // config's intents: the settings (config:get / config:set) and the configuration file's export and
 // import. app/ipc.ts registers them, in its order.
-import { readFileSync, statSync, writeFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import type { IpcRegistrar } from '@shared/app'
 import {
   CONFIG_CTRL,
@@ -31,16 +31,11 @@ export function registerConfigIpc(ipc: IpcRegistrar, deps: ConfigIpcDeps): void 
   ipc.handle(CONFIG_CTRL.configGet, () => settings.view())
   ipc.handle(CONFIG_CTRL.configSet, (_e, patch: Partial<AppConfig>) => settings.apply(patch))
   ipc.handle(CONFIG_CTRL.configEdit, (_e, edit: ConfigEdit) => settings.edit(edit))
-  ipc.handle(CONFIG_CTRL.configExport, async (): Promise<ConfigExportResult> => {
-    const filePath = await dialogs.saveConfig(transfer.defaultFileName())
-    if (!filePath) return {}
-    try {
-      writeFileSync(filePath, transfer.exportText())
-      return { path: filePath }
-    } catch (err) {
-      return { error: `Could not write the file: ${err instanceof Error ? err.message : err}` }
-    }
-  })
+  ipc.handle(
+    CONFIG_CTRL.configExport,
+    async (): Promise<ConfigExportResult> =>
+      transfer.exportTo(await dialogs.saveConfig(transfer.defaultFileName()))
+  )
   ipc.handle(CONFIG_CTRL.configImportOpen, async (): Promise<ConfigImportOpen> => {
     const path = await dialogs.openConfig()
     if (!path) return { status: 'canceled' }

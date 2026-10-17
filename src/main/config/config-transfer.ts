@@ -9,6 +9,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type {
   AppConfig,
+  ConfigExportResult,
   ConfigImportApplyResult,
   ConfigImportOpen,
   ConfigSnapshot,
@@ -86,6 +87,23 @@ export class ConfigTransfer {
 
   defaultFileName(): string {
     return `skyhawk-config-${this.now().toISOString().slice(0, 10)}.json`
+  }
+
+  /**
+   * Write the export to the file the save dialog picked, and say what came of it (R3.4a: the
+   * renderer read that from which field was set). No file: the dialog was cancelled.
+   */
+  exportTo(filePath: string | undefined): ConfigExportResult {
+    if (!filePath) return { outcome: 'canceled' }
+    try {
+      writeFileSync(filePath, this.exportText())
+      return { outcome: 'saved', path: filePath }
+    } catch (err) {
+      return {
+        outcome: 'failed',
+        error: `Could not write the file: ${err instanceof Error ? err.message : err}`
+      }
+    }
   }
 
   /** Validate a file's text and preview it against the current setup. */

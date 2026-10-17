@@ -13,9 +13,10 @@ export function ConfigurationSection() {
 
   const doExport = async () => {
     setExported(undefined)
+    // What came of it is ConfigTransfer's to say (R3.4a); the wording is the row's.
     const r = await window.skyhawk?.exportConfig()
-    if (r?.error) setExported({ text: r.error, err: true })
-    else if (r?.path) setExported({ text: `Saved ${r.path.split(/[/\\]/).pop()}` })
+    if (r?.outcome === 'failed') setExported({ text: r.error, err: true })
+    else if (r?.outcome === 'saved') setExported({ text: `Saved ${r.path.split(/[/\\]/).pop()}` })
   }
 
   const doImport = async () => {

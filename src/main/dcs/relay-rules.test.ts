@@ -10,6 +10,7 @@ import {
   overviewEndpoint,
   overviewLink,
   pillEndpoint,
+  recordShown,
   relayFacts,
   relayNote,
   relayTip,
@@ -83,6 +84,19 @@ describe('X12: each surface’s own Record rule', () => {
   it('the Connection card only while relaying; Settings › Connection whenever', () => {
     expect(canRecord(true)).toEqual({ connection: true, settings: true })
     expect(canRecord(false)).toEqual({ connection: false, settings: true })
+  })
+})
+
+describe('X12-style: each surface’s own Record visibility (R3.4a)', () => {
+  it('the Connection card hidden in Replay; Settings › Connection’s row always shown', () => {
+    expect(recordShown('bridge')).toEqual({ connection: true, settings: true })
+    expect(recordShown('monitor')).toEqual({ connection: true, settings: true })
+    expect(recordShown('replay')).toEqual({ connection: false, settings: true })
+    const f = facts({ config: { ...DEFAULT_CONFIG, sourceMode: 'replay' } })
+    expect(f.recordShown, 'pushed with the facts, the same for both sides').toEqual({
+      connection: false,
+      settings: true
+    })
   })
 })
 

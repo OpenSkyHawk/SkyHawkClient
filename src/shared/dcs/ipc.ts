@@ -85,6 +85,11 @@ export interface RelayFacts {
    * doing (N1). `events`: how many the last stop saved.
    */
   recording: { on: boolean; events?: number }
+  /**
+   * Whether each surface shows its Record control at all (R3.4a, X12-style: they disagree). It
+   * follows the source mode, not the on/off, so it is the same for both sides.
+   */
+  recordShown: { connection: boolean; settings: boolean }
   /** The capture this page loaded for Replay; none for a page that (re)loaded (N1). */
   replay?: { file: string; events: number; durationMs: number }
 }
@@ -130,7 +135,8 @@ export const RELAY_FACTS_IDLE: RelayFacts = {
   },
   deviceState: 'no-device',
   endpoint: { pill: { hostPort: { suffix: '' } }, overview: { hostPort: { suffix: ' · remote' } } },
-  recording: { on: false }
+  recording: { on: false },
+  recordShown: { connection: true, settings: true }
 }
 
 /** A gauge ring's colour: fuel low (alert), fuel, the secondary gauges, the rest. */

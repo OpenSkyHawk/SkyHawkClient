@@ -96,7 +96,6 @@ export function Overview() {
   const linkSub = endpointText(s.relayFacts.endpoint.overview, s.host, s.port)
   const relaySub = LINK_SUB[relaySide(s.relayFacts, s.relaying).overviewLink]
 
-  const connected = s.linkUp
   const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
   const acftSub = s.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
 
@@ -107,7 +106,7 @@ export function Overview() {
   const attention = s.attentionBanner ? summary.banner : null
   // Serious Gateway faults only (#94): panel input can't reach DCS. Its own link, so not behind the
   // board-problems setting.
-  const gatewayAlert = gatewayView(s.deviceGateway, connected).alert
+  const gatewayAlert = gatewayView(s.deviceGateway).alert
   const waitingText = summary.newDevices && newDevicesText(summary.newDevices)
 
   const tiles: {

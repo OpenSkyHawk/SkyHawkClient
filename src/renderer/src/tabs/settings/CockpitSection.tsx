@@ -14,6 +14,7 @@ const text = (v: number | undefined) => (v === undefined ? '' : String(v))
 function PowerSupply() {
   const psu = useStore((s) => s.psu)
   const setConfigField = useStore((s) => s.setConfigField)
+  const setPsuMode = useStore((s) => s.setPsuMode)
   // The preset as main resolves it (`config:changed`, R3.3).
   const preset = useStore((s) => s.psuView.preset)
   const isPreset = psu.mode === 'preset'
@@ -46,14 +47,14 @@ function PowerSupply() {
             <button
               className={isPreset ? 'on' : ''}
               aria-pressed={isPreset}
-              onClick={() => setConfigField({ psu: { ...psu, mode: 'preset' } })}
+              onClick={() => setPsuMode('preset')}
             >
               {preset.label}
             </button>
             <button
               className={isPreset ? '' : 'on'}
               aria-pressed={!isPreset}
-              onClick={() => setConfigField({ psu: { ...psu, mode: 'custom' } })}
+              onClick={() => setPsuMode('custom')}
             >
               Custom
             </button>

@@ -31,6 +31,13 @@
 // button's Stop-or-save-then-Start, run in main. `TelemetryReadout` gained `tone` (a type change
 // only: the channel's name and payload type are the same).
 //
+// R3.4a (the last renderer decisions move to main): type changes only — no channel, intent or
+// method was added, removed or renamed, so the frozen copy above still matches. `DeviceStatusPush`
+// gained `action` (LinkAction: the device card's and popover's button) and `canRefresh`;
+// `GatewayStatus` gained `aboutLink` (not responding is a link title); `RelayFacts` gained
+// `recordShown`; `ConfigEdit` gained `psuMode`; `ConfigExportResult` became a union on `outcome`
+// (`saved` with its path, `canceled`, `failed` with its error).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator

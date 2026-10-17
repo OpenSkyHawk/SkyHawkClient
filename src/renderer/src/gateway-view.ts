@@ -1,6 +1,7 @@
 // Where the Gateway's status lands in the UI (#94): the title-bar pill, the Device popover, the
 // Overview alert and the Cockpit's Attention item. Presentation only: severity, label, note and
-// alert all come from gatewayStatus (main/gateway/gateway-health.ts), computed once in main.
+// alert all come from gatewayStatus (main/gateway/gateway-health.ts), computed once in main, and so
+// do when it shows (only while the link is up) and where (aboutLink) (R3.4a).
 import type { GatewayStatus } from '@shared/gateway'
 
 export interface GatewayView {
@@ -18,15 +19,11 @@ export interface GatewayView {
 }
 
 /**
- * Nothing while the link is down: the link state says it all, and the last report would describe
- * a board that may be gone. `port` goes in the pill's tooltip.
+ * Nothing before there is anything to say; `device:status` carries none while the link is down
+ * (gateway-health shownStatus). `port` goes in the pill's tooltip.
  */
-export function gatewayView(
-  g: GatewayStatus | undefined,
-  linkUp: boolean,
-  port?: string
-): GatewayView {
-  if (!linkUp || !g) return {}
+export function gatewayView(g: GatewayStatus | undefined, port?: string): GatewayView {
+  if (!g) return {}
   if (g.severity === 'ok') return { health: { text: g.label } }
   const tone = g.severity
   const view: GatewayView = {
@@ -37,7 +34,7 @@ export function gatewayView(
     alert: g.alert,
     attention: { flag: g.label, state: tone === 'err' ? 'off' : 'warn' }
   }
-  // Not responding is about the link, not something it reports: the popover's title says it.
-  if (g.kind === 'not-responding') return { ...view, title: g.label, meta: g.note }
+  // About the link, not something it reports (main's aboutLink): the popover's title says it.
+  if (g.aboutLink) return { ...view, title: g.label, meta: g.note }
   return { ...view, health: { text: g.label, tone, note: g.note } }
 }

@@ -65,6 +65,11 @@ export interface ConfigEdit {
   debugMode?: boolean
   attentionBanner?: boolean
   psu?: PsuSetting
+  /**
+   * Settings › Cockpit's PSU switch (R3.4a): main switches the mode over the setting it holds,
+   * keeping the preset and the custom limits as they are.
+   */
+  psuMode?: PsuSetting['mode']
 }
 
 /** What the power supply setting comes to (R3.3): SettingsService resolves it. */
@@ -158,11 +163,14 @@ export interface SectionDiff {
   note?: string
 }
 
-export interface ConfigExportResult {
-  /** Where it was written; absent when the dialog was cancelled or the write failed. */
-  path?: string
-  error?: string
-}
+/**
+ * What came of an export (R3.4a: ConfigTransfer says so; the renderer read it from which field was
+ * set before): written to `path`, the save dialog cancelled, or the write failed.
+ */
+export type ConfigExportResult =
+  | { outcome: 'saved'; path: string }
+  | { outcome: 'canceled' }
+  | { outcome: 'failed'; error: string }
 
 export interface ImportPreview {
   /** Names the file held in main for `applyConfigImport`. */

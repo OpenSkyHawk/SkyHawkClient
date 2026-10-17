@@ -47,6 +47,15 @@ describe('the forms’ save (buildConfig)', () => {
     expect(editedConfig(current, { port: '77a' }).commandPort).toBe(7778)
     expect(editedConfig(current, {})).toEqual(buildConfig(formOf(current)))
   })
+
+  it('a PSU mode switch keeps the preset and the custom limits (R3.4a: `{ ...psu, mode }`)', () => {
+    const psu = { mode: 'preset' as const, preset: 'nx650' as const, custom: { a12: 40, w: 500 } }
+    const current = { ...DEFAULT_CONFIG, psu }
+    expect(editedConfig(current, { psuMode: 'custom' }).psu).toEqual({ ...psu, mode: 'custom' })
+    const custom = { ...current, psu: { ...psu, mode: 'custom' as const } }
+    expect(editedConfig(custom, { psuMode: 'preset' }).psu).toEqual(psu)
+    expect(Object.keys(editedConfig(current, { psuMode: 'custom' }))).not.toContain('psuMode')
+  })
 })
 
 describe('SettingsService: edits saved and pushed back (config:changed)', () => {
