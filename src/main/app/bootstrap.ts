@@ -27,7 +27,7 @@ export function start(): void {
 
   // After setPath: the lock is per <userData>, so dev worktrees still run side by side (D4/M5).
   // Without it, quit before any service, port or file is touched.
-  if (!claimSingleInstance(app, currentWindow)) return
+  if (!claimSingleInstance(app, currentWindow, createWindow)) return
 
   /** The <userData> files, handed to the topics that own them (P6: only app asks electron). */
   const paths = storePaths(() => app.getPath('userData'))

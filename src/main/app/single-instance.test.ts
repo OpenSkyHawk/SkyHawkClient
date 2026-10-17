@@ -37,7 +37,8 @@ function fakeWindow(minimized: boolean) {
 describe('claimSingleInstance (D4/M5)', () => {
   it('lock obtained: carries on, does not quit, and listens for a second launch', () => {
     const { app, calls } = fakeApp(true)
-    expect(claimSingleInstance(app, () => null)).toBe(true)
+    const create = () => calls.push('create')
+    expect(claimSingleInstance(app, () => null, create)).toBe(true)
     expect(calls).toEqual(['requestSingleInstanceLock', 'on second-instance'])
   })
 
@@ -48,7 +49,8 @@ describe('claimSingleInstance (D4/M5)', () => {
       asked = true
       return null
     }
-    expect(claimSingleInstance(app, window)).toBe(false)
+    const create = () => calls.push('create')
+    expect(claimSingleInstance(app, window, create)).toBe(false)
     expect(calls).toEqual(['requestSingleInstanceLock', 'quit'])
     expect(asked).toBe(false)
   })
@@ -56,7 +58,11 @@ describe('claimSingleInstance (D4/M5)', () => {
   it('second launch: restores the minimised window, then focuses it', () => {
     const { app, secondLaunch } = fakeApp(true)
     const { win, calls } = fakeWindow(true)
-    claimSingleInstance(app, () => win)
+    claimSingleInstance(
+      app,
+      () => win,
+      () => calls.push('create')
+    )
     expect(calls).toEqual([]) // nothing happens until a second launch
     secondLaunch()
     expect(calls).toEqual(['restore', 'focus'])
@@ -65,19 +71,41 @@ describe('claimSingleInstance (D4/M5)', () => {
   it('second launch: focuses a window that is not minimised, without restoring it', () => {
     const { app, secondLaunch } = fakeApp(true)
     const { win, calls } = fakeWindow(false)
-    claimSingleInstance(app, () => win)
+    claimSingleInstance(
+      app,
+      () => win,
+      () => calls.push('create')
+    )
     secondLaunch()
     expect(calls).toEqual(['focus'])
   })
 
-  it('second launch: reads the window at that moment, and does nothing when there is none', () => {
+  it('second launch with no window: creates one, as activate does, then focuses it', () => {
+    const { app, secondLaunch } = fakeApp(true)
+    const { win, calls } = fakeWindow(false)
+    let current: FocusableWindow | null = null
+    const create = () => {
+      calls.push('create')
+      current = win
+    }
+    claimSingleInstance(app, () => current, create)
+    secondLaunch()
+    expect(calls).toEqual(['create', 'focus'])
+  })
+
+  it('second launch: reads the window at that moment, and creates none when one is open', () => {
     const { app, secondLaunch } = fakeApp(true)
     let current: FocusableWindow | null = null
-    claimSingleInstance(app, () => current)
-    expect(() => secondLaunch()).not.toThrow()
+    let created = 0
+    claimSingleInstance(
+      app,
+      () => current,
+      () => created++
+    )
     const { win, calls } = fakeWindow(false)
     current = win // created after the lock was taken, as in start()
     secondLaunch()
     expect(calls).toEqual(['focus'])
+    expect(created).toBe(0)
   })
 })

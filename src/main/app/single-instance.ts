@@ -21,22 +21,25 @@ export interface FocusableWindow {
 
 /**
  * Takes the single-instance lock. `true`: this is the only instance, carry on; a later launch on
- * the same <userData> restores and focuses `window()` (when there is one). `false`: another
- * instance holds the lock and has been told; this one is quitting, and the caller must stop.
+ * the same <userData> brings the app in front of the user. It restores `window()` if minimised
+ * and focuses it; with no window (macOS keeps running with every window closed) it does what
+ * `activate` does, `create()` one, then focuses that. `false`: another instance holds the lock
+ * and has been told; this one is quitting, and the caller must stop.
  */
 export function claimSingleInstance(
   app: SingleInstanceApp,
-  window: () => FocusableWindow | null
+  window: () => FocusableWindow | null,
+  create: () => void
 ): boolean {
   if (!app.requestSingleInstanceLock()) {
     app.quit()
     return false
   }
   app.on('second-instance', () => {
-    const win = window()
-    if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.focus()
+    const open = window()
+    if (open?.isMinimized()) open.restore()
+    if (!open) create()
+    window()?.focus()
   })
   return true
 }
