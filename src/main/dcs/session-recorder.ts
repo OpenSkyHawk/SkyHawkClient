@@ -8,11 +8,6 @@ export class Recorder {
   private events: CaptureEvent[] = []
   private startedAt = Date.now()
 
-  reset(): void {
-    this.events = []
-    this.startedAt = Date.now()
-  }
-
   record(dir: 'in' | 'out', chunk: Buffer): void {
     this.events.push({ t: Date.now() - this.startedAt, dir, hex: chunk.toString('hex') })
   }

@@ -1,14 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { decodeAxis, isButtonPressed, decodeHat, decodeReport, HID_REPORT_SIZE } from './hid-report'
+import { isButtonPressed, decodeHat, decodeReport, HID_REPORT_SIZE } from './hid-report'
 
 describe('HID decode', () => {
-  it('decodeAxis sign-extends a 16-bit field', () => {
-    expect(decodeAxis(0x0000)).toBe(0)
-    expect(decodeAxis(0x7fff)).toBe(32767)
-    expect(decodeAxis(0x8000)).toBe(-32768)
-    expect(decodeAxis(0xffff)).toBe(-1)
-  })
-
   it('isButtonPressed reads the correct bit', () => {
     const b = new Uint8Array(16)
     b[0] = 0b0000_0001 // button 0

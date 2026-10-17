@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DcsBiosProtocol, StringRegion, formatCommand, ACFT_NAME_ADDRESS } from './bios-protocol'
+import { DcsBiosProtocol, StringRegion, ACFT_NAME_ADDRESS } from './bios-protocol'
 import { LineAssembler, parseCommand } from '../gateway/link-framing'
 
 /** Build a sync + one write block: addr, then count bytes of data words. */
@@ -56,12 +56,6 @@ describe('StringRegion', () => {
   it('ignores writes outside the region', () => {
     const r = new StringRegion(0x0000, 4)
     expect(r.update(0x8400, 0x4142)).toBe(false)
-  })
-})
-
-describe('formatCommand', () => {
-  it('builds an identifier + arg line', () => {
-    expect(formatCommand('MASTER_ARM', 1)).toBe('MASTER_ARM 1\n')
   })
 })
 

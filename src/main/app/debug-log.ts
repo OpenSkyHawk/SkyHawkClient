@@ -11,10 +11,6 @@ export function setDebugEnabled(value: boolean): void {
   enabled = value
 }
 
-export function isDebugEnabled(): boolean {
-  return enabled
-}
-
 export function debugLogPath(): string {
   return join(app.getPath('userData'), 'debug.log')
 }

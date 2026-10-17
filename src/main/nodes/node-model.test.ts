@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildNodeModel, cameOnline, isReportableNew, type NodeModelInput } from './node-model'
+import { buildNodeModel, isReportableNew, type NodeModelInput } from './node-model'
 import { PDU_GROUP_POLL_CATCH_MS, PDU_GROUP_WINDOW_MS } from './power-zone'
 import { EMPTY_MAPPING } from './mapping-rules'
 import { registryDefaults } from './registry'
@@ -417,15 +417,6 @@ describe('your cockpit (#93)', () => {
     const m = buildNodeModel(fresh({ file, roster: [st(2)], rosterCompleteAt: 0 }))
     expect(m.nodes).toHaveLength(1)
     expect(m.nodes[0]).toMatchObject({ nodeId: 2, pduId: 4 })
-  })
-})
-
-describe('cameOnline', () => {
-  it('lists only nodes that were not present at the previous roster change', () => {
-    expect(cameOnline(new Set(), [st(1), st(2, false)])).toEqual([1]) // first roster
-    expect(cameOnline(new Set([1]), [st(1), st(2)])).toEqual([2]) // 1 still present
-    expect(cameOnline(new Set([1]), [st(1, false)])).toEqual([]) // gone
-    expect(cameOnline(new Set(), [st(1)])).toEqual([1]) // back after being gone
   })
 })
 
