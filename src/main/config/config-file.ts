@@ -24,12 +24,8 @@ import type { CachedAxis, CalCache } from '@shared/hid/calibration'
 import type { MappedNode, NodeDefaults, NodeMappingFile, PsuSetting } from '@shared/nodes'
 import { PSU_PRESETS } from '@shared/nodes/legacy-rules'
 import { onOff, plural, PSU_LIMITS } from '@shared/format'
-// Deep imports of pure models, not the topic indexes: those also export services (NodeHub,
-// CalLink) that need Node types, and the renderer's test helpers import this file (and typecheck
-// it without them).
-import { sanitizeCache } from '../hid/calibration/cache-rules'
-import { effectiveMapping, importMapping, sanitizeNodeMapping } from '../nodes/mapping-rules'
-import { sanitizePsu } from '../nodes/psu-limits'
+import { sanitizeCache } from '../hid/calibration'
+import { effectiveMapping, importMapping, sanitizeNodeMapping, sanitizePsu } from '../nodes'
 
 /** File format this build writes. A higher version came from a newer client. */
 export const CONFIG_FILE_VERSION = 1
