@@ -6,9 +6,9 @@ import type { LogEvent } from '@shared/events'
 import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
 import type { HidSnapshot } from '@shared/hid'
 import { DEFAULT_CONFIG, PSU_VIEW_DEFAULT } from '@shared/config'
-import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
-import { relayFacts } from '../../main/dcs/relay-rules'
-import { hidFacts } from '../../main/hid/hid-facts'
+import { isLinkUp, LinkDownClock, linkFacts } from '../../../main/gateway/link-state'
+import { relayFacts } from '../../../main/dcs/relay-rules'
+import { hidFacts } from '../../../main/hid/hid-facts'
 
 // The store talks to main through window.skyhawk. Only the calls initBridge() makes need to be
 // real here; the rest exist so subscription setup does not throw.
@@ -148,21 +148,47 @@ const calibration = (snap: CalSnapshot): CalibrationState => ({
 /**
  * A fresh module instance per test.
  *
- * store.ts guards against duplicate IPC subscriptions with a module-level flag, so reusing the
- * import would make initBridge() a no-op after the first test — and a reload is exactly what is
+ * The IPC adapter guards against duplicate IPC subscriptions with a module-level flag, so reusing
+ * the import would make initBridge() a no-op after the first test — and a reload is exactly what is
  * under test here.
+ *
+ * Since R3.4b the renderer's state is split across the topic stores; the cases read it as one, the
+ * way the single store held it (the Log tab's Pause is the events slice's `togglePause`).
  */
 async function freshStore() {
   listeners.clear()
   linkDown = new LinkDownClock()
   vi.resetModules()
   ;(globalThis as { window?: unknown }).window = { skyhawk: fakeApi() }
-  const mod = await import('./store')
-  const { useStore } = mod
-  await useStore.getState().initBridge()
+  const { initBridge } = await import('./ipc-adapter')
+  const { useNav } = await import('./kit')
+  const { useGatewayStore } = await import('../gateway')
+  const { useDcsStore } = await import('../dcs')
+  const { useNodesStore } = await import('../nodes')
+  const { useHidStore } = await import('../hid')
+  const { useCalibrationStore } = await import('../hid/calibration')
+  const { useEventsStore } = await import('../events')
+  const { useConfigStore } = await import('../config')
+  await initBridge()
   await Promise.resolve()
   await Promise.resolve()
-  return useStore
+  const toggle = (key: 'logPaused' | 'autoscroll' | 'rawMode') =>
+    key === 'logPaused'
+      ? useEventsStore.getState().togglePause()
+      : useDcsStore.getState().toggle(key)
+  return {
+    getState: () => ({
+      ...useNav.getState(),
+      ...useGatewayStore.getState(),
+      ...useDcsStore.getState(),
+      ...useNodesStore.getState(),
+      ...useHidStore.getState(),
+      ...useCalibrationStore.getState(),
+      ...useEventsStore.getState(),
+      ...useConfigStore.getState(),
+      toggle
+    })
+  }
 }
 
 describe('calibration state lifecycle', () => {

@@ -1,11 +1,11 @@
-import { useStore } from '../../store'
-import { Row, SectionHead } from './Row'
+import { useConfigStore } from '../../config'
+import { Row, SectionHead } from '../kit'
 
 export function DiagnosticsSection() {
-  const s = useStore()
-  const setConfigField = useStore((x) => x.setConfigField)
-  const dumpSerialPorts = useStore((x) => x.dumpSerialPorts)
-  const revealDebugLog = useStore((x) => x.revealDebugLog)
+  const s = useConfigStore()
+  const setConfigField = useConfigStore((x) => x.setConfigField)
+  const dumpSerialPorts = useConfigStore((x) => x.dumpSerialPorts)
+  const revealDebugLog = useConfigStore((x) => x.revealDebugLog)
 
   return (
     <>

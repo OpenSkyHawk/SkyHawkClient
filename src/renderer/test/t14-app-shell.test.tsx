@@ -1,7 +1,7 @@
 // T14 — the app shell: title bar, tab bar, and the subscription to main that App starts on mount.
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { App } from '../src/App'
+import { App } from '../src/app/App'
 import pkg from '../../../package.json'
 import { renderScenario, settle } from './render'
 import { skyhawk } from './skyhawk-mock'

@@ -6,10 +6,10 @@ import {
   modelNode as node,
   nodeModel as model,
   nodeStatus as status
-} from '../../test-fixtures/nodes'
-import { attentionItems } from '../../main/nodes/cockpit-snapshot/attention'
-import { nodesSummary } from '../../main/nodes/cockpit-snapshot/summaries'
-import { nodeViews } from '../../main/nodes/cockpit-snapshot/views'
+} from '../../../test-fixtures/nodes'
+import { attentionItems } from '../../../main/nodes/cockpit-snapshot/attention'
+import { nodesSummary } from '../../../main/nodes/cockpit-snapshot/summaries'
+import { nodeViews } from '../../../main/nodes/cockpit-snapshot/views'
 import { STATE_SYMBOL, tileMatches } from './node-view'
 
 describe('nodeHealth', () => {

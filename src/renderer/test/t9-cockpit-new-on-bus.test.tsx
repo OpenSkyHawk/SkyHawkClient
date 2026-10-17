@@ -1,7 +1,7 @@
 // T9 — Cockpit › Attention: the "New on the bus · N / Adopt…" call to action.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario } from './render'
 import { connected, link, model, newBoard, panel } from './scenarios'
 

@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  hiddenRow,
-  importDoneText,
-  importRowKey,
-  importSubtitle,
-  resetButtonLabel,
-  resetRowDesc
-} from './settings-view'
+import { hiddenRow, resetButtonLabel, resetRowDesc } from './settings-view'
+import { importDoneText, importRowKey, importSubtitle } from '../../config/import-view'
 
 describe('reset texts', () => {
   it('describes the row and labels the confirm button', () => {

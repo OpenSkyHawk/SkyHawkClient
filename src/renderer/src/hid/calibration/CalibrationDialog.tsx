@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { CAL_PROTO, HID_REPORT_LAYOUT } from '@shared/firmware'
 import type { CalibrationDialogState } from '@shared/hid/calibration'
 import { AXIS_OFFSET, AXIS_SPAN, fmt, fmtSpan, pct, promptText } from './calibration-view'
-import { AXIS_LABELS, type CalibrationIntents } from './store'
+import { AXIS_LABELS } from '../index'
+import type { CalibrationIntents } from './store'
 
 type Point = 'stopA' | 'stopB' | 'centre'
 

@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, within } from '@testing-library/react'
 import type { CalDevice } from './skyhawk-mock'
-import { Hid } from '../src/tabs/Hid'
+import { HidTab as Hid } from '../src/app/hid/HidTab'
 import { renderScenario } from './render'
 import { calCache, calDevice, calSnapshot, connected, link, sweeps } from './scenarios'
 

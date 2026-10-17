@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from 'react'
-import { useModalFocus } from '../../useModalFocus'
+import { useModalFocus } from './use-modal-focus'
 
 /**
  * Modal review dialog (Settings › reset / registry). Esc and the scrim close it; Tab stays inside;

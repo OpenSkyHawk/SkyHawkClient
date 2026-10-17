@@ -1,20 +1,22 @@
 import { useState } from 'react'
 import type { ConfigImportApplyResult, ImportPreview, SectionId } from '@shared/config'
-import { AXIS_LABELS } from '../../store'
-import { Dialog } from './Dialog'
-import { importRowKey, importSubtitle } from './settings-view'
+import { Dialog } from '../app/kit'
+import { importRowKey, importSubtitle } from './import-view'
+import { useConfigStore } from './store'
 
 /**
  * Import configuration — review what the file changes, section by section, and apply the ones
  * ticked. Sections with no change are shown but cannot be picked; a file that changes nothing
- * says so and offers no Apply.
+ * says so and offers no Apply. `axisLabels` name the calibration rows.
  */
 export function ImportDialog({
   preview,
+  axisLabels,
   onClose,
   onApplied
 }: {
   preview: ImportPreview
+  axisLabels: readonly string[]
   onClose: () => void
   onApplied: (r: Extract<ConfigImportApplyResult, { ok: true }>) => void
 }) {
@@ -34,7 +36,7 @@ export function ImportDialog({
   const apply = async () => {
     setBusy(true)
     setError(undefined)
-    const r = await window.skyhawk?.applyConfigImport(preview.token, [...picked], backup)
+    const r = await useConfigStore.getState().applyConfigImport(preview.token, [...picked], backup)
     setBusy(false)
     if (r?.ok) onApplied(r)
     else setError(r?.error ?? 'Import failed')
@@ -116,7 +118,7 @@ export function ImportDialog({
                 </div>
                 {s.rows.map((r, i) => (
                   <div className="im__row" key={i}>
-                    <span>{importRowKey(r, AXIS_LABELS, boards.size > 1)}</span>
+                    <span>{importRowKey(r, axisLabels, boards.size > 1)}</span>
                     <span className="im__old">{r.from}</span>
                     <span className="im__arr">→</span>
                     <span className="im__new">{r.to}</span>

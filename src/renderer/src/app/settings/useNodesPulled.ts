@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useStore } from '../../store'
+import { useNodesStore } from '../../nodes'
 
 /**
  * Whether a Settings section has its node data yet. What it shows comes from main's snapshot
@@ -8,14 +8,14 @@ import { useStore } from '../../store'
  * `nodes:model` push — landed: the same pull, the same wait, the same frame without data.
  */
 export function useNodesPulled(): boolean {
-  const pushed = useStore((s) => s.nodeModel)
+  const pushed = useNodesStore((s) => s.nodeModel)
   const [atMount] = useState(pushed)
   const [pulled, setPulled] = useState(false)
   useEffect(() => {
-    const api = window.skyhawk
-    if (!api) return
+    const pull = useNodesStore.getState().pullNodes()
+    if (!pull) return
     let live = true
-    void api.getNodes().then(() => {
+    void pull.then(() => {
       if (live) setPulled(true)
     })
     return () => {

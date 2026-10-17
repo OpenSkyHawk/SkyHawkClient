@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import type { HidSnapshot } from '@shared/hid'
-import { Hid } from '../src/tabs/Hid'
+import { HidTab as Hid } from '../src/app/hid/HidTab'
 import { renderScenario } from './render'
 import { calCache, calDevice, calSnapshot, connected, link } from './scenarios'
 

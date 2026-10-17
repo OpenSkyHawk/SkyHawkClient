@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { PSU_LIMITS } from '@shared/format'
 import { parsePsuLimit, type PsuLimits } from '@shared/nodes'
-import { useStore } from '../../store'
+import { useConfigStore } from '../../config'
+import { useNodesStore } from '../../nodes'
+import { Row, SectionHead } from '../kit'
 import { ResetDialog } from './ResetDialog'
-import { Row, SectionHead } from './Row'
 import { hiddenRow, resetRowDesc } from './settings-view'
 import { useNodesPulled } from './useNodesPulled'
 
@@ -12,11 +13,11 @@ type LimitKey = keyof PsuLimits
 const text = (v: number | undefined) => (v === undefined ? '' : String(v))
 
 function PowerSupply() {
-  const psu = useStore((s) => s.psu)
-  const setPsuMode = useStore((s) => s.setPsuMode)
-  const setPsuLimit = useStore((s) => s.setPsuLimit)
+  const psu = useConfigStore((s) => s.psu)
+  const setPsuMode = useConfigStore((s) => s.setPsuMode)
+  const setPsuLimit = useConfigStore((s) => s.setPsuLimit)
   // The preset as main resolves it (`config:changed`, R3.3).
-  const preset = useStore((s) => s.psuView.preset)
+  const preset = useConfigStore((s) => s.psuView.preset)
   const isPreset = psu.mode === 'preset'
   // What is typed, per field: a refused value stays visible (and unsaved) until corrected.
   const [typed, setTyped] = useState<Record<LimitKey, string>>(() => ({
@@ -95,14 +96,14 @@ function PowerSupply() {
  */
 function HiddenNodes() {
   const pulled = useNodesPulled()
-  const nodes = useStore((s) => s.cockpit.settings)
+  const nodes = useNodesStore((s) => s.cockpit.settings)
   const [error, setError] = useState<string>()
   const hidden = pulled ? nodes.hidden : []
 
   // Main un-hides them one at a time and stops at the first it can't (R3.2b).
   const unhide = async (ids: number[]) => {
     setError(undefined)
-    const r = await window.skyhawk?.unhideNodes(ids)
+    const r = await useNodesStore.getState().unhideNodes(ids)
     if (r && !r.ok) setError(r.error)
   }
 
@@ -156,11 +157,11 @@ function HiddenNodes() {
 
 export function CockpitSection() {
   const pulled = useNodesPulled()
-  const nodes = useStore((s) => s.cockpit.settings)
+  const nodes = useNodesStore((s) => s.cockpit.settings)
   // The review asks main for a fresh preview each time the model is pushed.
-  const model = useStore((s) => s.nodeModel)
-  const attentionBanner = useStore((s) => s.attentionBanner)
-  const setConfigField = useStore((s) => s.setConfigField)
+  const model = useNodesStore((s) => s.nodeModel)
+  const attentionBanner = useConfigStore((s) => s.attentionBanner)
+  const setConfigField = useConfigStore((s) => s.setConfigField)
   const [resetOpen, setResetOpen] = useState(false)
   const differing = pulled ? nodes.differing : 0
 

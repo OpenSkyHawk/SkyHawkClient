@@ -1,26 +1,26 @@
 import { useEffect, useRef } from 'react'
-import { useStore } from './store'
-import { deviceView, linkButton } from './device-view'
+import { useNav } from '../app/kit'
+import { useGatewayStore } from './store'
+import { deviceView, linkButton } from './link-view'
 import { gatewayView } from './gateway-view'
 
 /**
  * The title-bar Device indicator (#69) and its popover: the link state at a glance on every tab,
  * with the same Connect / Disconnect / Retry as the Connection tab's device card. While connected
  * it also shows the Gateway's own health (#94): gold "!" when it reports a problem but still works,
- * red "!" when panel input can't reach DCS.
+ * red "!" when panel input can't reach DCS. `autoConnect` is Settings' (the title bar hands it in).
  */
-export function DevicePopover() {
-  const deviceState = useStore((s) => s.deviceState)
-  const devicePort = useStore((s) => s.devicePort)
-  const deviceDetail = useStore((s) => s.deviceDetail)
-  const deviceGateway = useStore((s) => s.deviceGateway)
-  const deviceAction = useStore((s) => s.deviceAction)
-  const deviceBusy = useStore((s) => s.deviceBusy)
-  const autoConnect = useStore((s) => s.autoConnect)
-  const connectDevice = useStore((s) => s.connectDevice)
-  const disconnectDevice = useStore((s) => s.disconnectDevice)
-  const open = useStore((s) => s.devicePopOpen)
-  const set = useStore((s) => s.set)
+export function DevicePopover({ autoConnect }: { autoConnect: boolean }) {
+  const deviceState = useGatewayStore((s) => s.deviceState)
+  const devicePort = useGatewayStore((s) => s.devicePort)
+  const deviceDetail = useGatewayStore((s) => s.deviceDetail)
+  const deviceGateway = useGatewayStore((s) => s.deviceGateway)
+  const deviceAction = useGatewayStore((s) => s.deviceAction)
+  const deviceBusy = useGatewayStore((s) => s.deviceBusy)
+  const connectDevice = useGatewayStore((s) => s.connectDevice)
+  const disconnectDevice = useGatewayStore((s) => s.disconnectDevice)
+  const open = useNav((s) => s.devicePopOpen)
+  const set = useNav((s) => s.set)
   const btn = useRef<HTMLButtonElement>(null)
 
   const dev = deviceView(deviceState, {

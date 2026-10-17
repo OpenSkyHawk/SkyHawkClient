@@ -1,8 +1,8 @@
 // T21 — Cockpit › Board events: the session's node events, and the way into Log › Events.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import { App } from '../src/App'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { App } from '../src/app/App'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario } from './render'
 import { connected, logEvent, model, panel } from './scenarios'
 

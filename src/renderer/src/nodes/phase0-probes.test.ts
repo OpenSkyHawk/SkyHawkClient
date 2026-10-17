@@ -5,32 +5,35 @@
 // src/main/nodes/phase0-probes.test.ts.
 import { describe, expect, it } from 'vitest'
 import type { NodeMappingFile } from '@shared/nodes'
-import { NODE_MSG, NodeRoster } from '../../main/nodes/node-status-wire'
-import { setHidden, EMPTY_MAPPING } from '../../main/nodes/mapping-rules'
-import { registryDefaults } from '../../main/nodes/registry'
-import { buildNodeModel } from '../../main/nodes/node-model'
+import { NODE_MSG, NodeRoster } from '../../../main/nodes/node-status-wire'
+import { setHidden, EMPTY_MAPPING } from '../../../main/nodes/mapping-rules'
+import { registryDefaults } from '../../../main/nodes/registry'
+import { buildNodeModel } from '../../../main/nodes/node-model'
 // Built in main since R3.2 (cockpit-snapshot): the Cockpit's half, and since R3.2b the Overview's
 // and Connection's (summaries.ts), each surface with its own variant.
 import {
   nodeViews,
   nodeViews as cockpitViews,
   nodeHealth as cockpitNodeHealth
-} from '../../main/nodes/cockpit-snapshot/views'
-import { healthBand, healthBand as cockpitHealthBand } from '../../main/nodes/cockpit-snapshot/band'
+} from '../../../main/nodes/cockpit-snapshot/views'
+import {
+  healthBand,
+  healthBand as cockpitHealthBand
+} from '../../../main/nodes/cockpit-snapshot/band'
 import {
   attentionItems,
   attentionItems as cockpitAttentionItems,
   strayNew
-} from '../../main/nodes/cockpit-snapshot/attention'
-import { adoptPduChoices, adoptRows } from '../../main/nodes/cockpit-snapshot/adopt'
-import { nodeFaultBoxes } from '../../main/nodes/cockpit-snapshot/panels'
+} from '../../../main/nodes/cockpit-snapshot/attention'
+import { adoptPduChoices, adoptRows } from '../../../main/nodes/cockpit-snapshot/adopt'
+import { nodeFaultBoxes } from '../../../main/nodes/cockpit-snapshot/panels'
 import { registrySpecs } from './adopt-view'
 import {
   cockpitTile,
   attentionSummary,
   newDevices,
   nodesSummary
-} from '../../main/nodes/cockpit-snapshot/summaries'
+} from '../../../main/nodes/cockpit-snapshot/summaries'
 
 const REG = {
   0: { name: 'PanelBridge', console: '—' },

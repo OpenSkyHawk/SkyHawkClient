@@ -1,14 +1,16 @@
 import { useEffect } from 'react'
-import { useStore, type TabId } from './store'
-import { DevicePopover } from './DevicePopover'
-import { RelayPill } from './RelayPill'
-import { Overview } from './tabs/Overview'
-import { Connection } from './tabs/Connection'
-import { Cockpit } from './tabs/Cockpit'
-import { Log } from './tabs/Log'
-import { Serial } from './tabs/Serial'
-import { Hid } from './tabs/Hid'
-import { Settings } from './tabs/Settings'
+import { useConfigStore } from '../config'
+import { SerialTab } from '../gateway'
+import { initBridge } from './ipc-adapter'
+import { useNav, type TabId } from './kit'
+import { DevicePopover } from './titlebar/DevicePopover'
+import { RelayPill } from './titlebar/RelayPill'
+import { Overview } from './overview/Overview'
+import { Connection } from './connection/Connection'
+import { Cockpit } from './cockpit/Cockpit'
+import { Log } from './log/Log'
+import { HidTab } from './hid/HidTab'
+import { Settings } from './settings/Settings'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -21,12 +23,11 @@ const TABS: { id: TabId; label: string }[] = [
 ]
 
 export function App() {
-  const tab = useStore((s) => s.tab)
-  const sourceMode = useStore((s) => s.sourceMode)
-  const set = useStore((s) => s.set)
-  const initBridge = useStore((s) => s.initBridge)
+  const tab = useNav((s) => s.tab)
+  const sourceMode = useConfigStore((s) => s.sourceMode)
+  const set = useNav((s) => s.set)
 
-  useEffect(() => initBridge(), [initBridge])
+  useEffect(() => initBridge(), [])
 
   return (
     <div className="app">
@@ -66,8 +67,8 @@ export function App() {
         {tab === 'connection' && <Connection />}
         {tab === 'cockpit' && <Cockpit />}
         {tab === 'log' && <Log />}
-        {tab === 'serial' && <Serial />}
-        {tab === 'hid' && <Hid />}
+        {tab === 'serial' && <SerialTab />}
+        {tab === 'hid' && <HidTab />}
         {tab === 'settings' && <Settings />}
       </main>
     </div>

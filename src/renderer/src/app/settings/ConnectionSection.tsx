@@ -1,16 +1,17 @@
-import { useStore } from '../../store'
-import { relaySide } from '../../device-view'
-import { Row, SectionHead } from './Row'
+import { useConfigStore } from '../../config'
+import { relaySide, useDcsStore } from '../../dcs'
+import { Row, SectionHead } from '../kit'
 
 export function ConnectionSection() {
-  const s = useStore()
-  const setConfigField = useStore((x) => x.setConfigField)
-  const toggleCapture = useStore((x) => x.toggleCapture)
+  const s = useConfigStore()
+  const dcs = useDcsStore()
+  const setConfigField = useConfigStore((x) => x.setConfigField)
+  const toggleCapture = useDcsStore((x) => x.toggleCapture)
   // The recording and whether this row may start one (X12: whenever), as main decides (R3.3), and
   // whether the row shows (always; R3.4a).
-  const recording = s.relayFacts.recording
-  const canRecord = relaySide(s.relayFacts, s.relaying).canRecord.settings
-  const recordShown = s.relayFacts.recordShown.settings
+  const recording = dcs.relayFacts.recording
+  const canRecord = relaySide(dcs.relayFacts, dcs.relaying).canRecord.settings
+  const recordShown = dcs.relayFacts.recordShown.settings
 
   return (
     <>

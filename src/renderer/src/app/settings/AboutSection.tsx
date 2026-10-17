@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { NodeRegistryInfo } from '@shared/nodes'
-import { useStore } from '../../store'
-import { Dialog } from './Dialog'
-import { Row, SectionHead } from './Row'
+import { useNodesStore } from '../../nodes'
+import { Dialog, Row, SectionHead } from '../kit'
 import { useNodesPulled } from './useNodesPulled'
 
 function RegistryDialog({ reg, onClose }: { reg: NodeRegistryInfo; onClose: () => void }) {
   const pulled = useNodesPulled()
   // Each row as main reads it (cockpit:snapshot settings, R3.2b).
-  const rows = useStore((s) => s.cockpit.settings.registry.rows)
+  const rows = useNodesStore((s) => s.cockpit.settings.registry.rows)
   const file = reg.file.split('/').pop()
   return (
     <Dialog
@@ -53,10 +52,10 @@ function RegistryDialog({ reg, onClose }: { reg: NodeRegistryInfo; onClose: () =
 export function AboutSection() {
   const [reg, setReg] = useState<NodeRegistryInfo>()
   const [open, setOpen] = useState(false)
-  const summary = useStore((s) => s.cockpit.settings.registry.summary)
+  const summary = useNodesStore((s) => s.cockpit.settings.registry.summary)
 
   useEffect(() => {
-    void window.skyhawk?.getNodeRegistry().then(setReg)
+    void useNodesStore.getState().getNodeRegistry()?.then(setReg)
   }, [])
 
   return (

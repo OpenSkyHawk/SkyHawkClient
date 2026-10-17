@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { DEFAULT_CONFIG, type ImportPreview } from '@shared/config'
 import { appSettings } from '../../main/config/config-file'
-import { Settings } from '../src/tabs/Settings'
+import { Settings } from '../src/app/settings/Settings'
 import { renderScenario, settle } from './render'
 import { configFileText, importPreview, setup } from './scenarios'
 

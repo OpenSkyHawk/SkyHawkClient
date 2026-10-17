@@ -1,7 +1,8 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { hhmmss } from '@shared/format'
-import { useStore } from '../../store'
-import { boardEventLine, rowsThatFit } from '../../log-view'
+import { useNav } from '../app/kit'
+import { useEventsStore } from './store'
+import { boardEventLine, rowsThatFit } from './events-view'
 
 /** Most rows the box renders before it has measured how many fit. */
 const MAX_ROWS = 30
@@ -11,8 +12,8 @@ const MAX_ROWS = 30
  * rows as the box has room for. The full list is Log › Events, filtered to Nodes.
  */
 export function BoardEvents() {
-  const events = useStore((s) => s.events)
-  const showEvents = useStore((s) => s.showEvents)
+  const events = useEventsStore((s) => s.events)
+  const showEvents = useNav((s) => s.showEvents)
   const rows = useMemo(() => events.filter((e) => e.source === 'node'), [events])
   const list = useRef<HTMLUListElement>(null)
   const [fit, setFit] = useState(MAX_ROWS)

@@ -2,7 +2,7 @@
 // same boards the same way — except a stray, which only the Cockpit counts (X1 today).
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import { App } from '../src/App'
+import { App } from '../src/app/App'
 import { renderScenario } from './render'
 import {
   connected,

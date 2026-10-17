@@ -1,8 +1,8 @@
 // T1 — Cockpit › Attention: strays (new boards on the bus that can't be adopted).
 import { describe, expect, it, vi } from 'vitest'
 import { act, screen, within } from '@testing-library/react'
-import { Cockpit } from '../src/tabs/Cockpit'
-import { Overview } from '../src/tabs/Overview'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
+import { Overview } from '../src/app/overview/Overview'
 import { renderScenario } from './render'
 import { connected, link, model, newBoard, panel } from './scenarios'
 

@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { AboutSection } from './settings/AboutSection'
-import { CockpitSection } from './settings/CockpitSection'
-import { ConfigurationSection } from './settings/ConfigurationSection'
-import { ConnectionSection } from './settings/ConnectionSection'
-import { DiagnosticsSection } from './settings/DiagnosticsSection'
+import { ConfigurationSection } from '../../config'
+import { AXIS_LABELS } from '../../hid'
+import { AboutSection } from './AboutSection'
+import { CockpitSection } from './CockpitSection'
+import { ConnectionSection } from './ConnectionSection'
+import { DiagnosticsSection } from './DiagnosticsSection'
 
 type SectionId = 'connection' | 'cockpit' | 'config' | 'diag' | 'about'
 
@@ -37,7 +38,7 @@ export function Settings() {
       <div className="sp">
         {section === 'connection' && <ConnectionSection />}
         {section === 'cockpit' && <CockpitSection />}
-        {section === 'config' && <ConfigurationSection />}
+        {section === 'config' && <ConfigurationSection axisLabels={AXIS_LABELS} />}
         {section === 'diag' && <DiagnosticsSection />}
         {section === 'about' && <AboutSection />}
       </div>

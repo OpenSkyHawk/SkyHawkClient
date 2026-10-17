@@ -15,8 +15,9 @@ import {
   keptQueue,
   nextSelection,
   registrySpecs
-} from '../../adopt-view'
-import { useModalFocus } from '../../useModalFocus'
+} from './adopt-view'
+import { useModalFocus } from '../app/kit'
+import { useNodesStore } from './store'
 import { Dot } from './Dot'
 
 /**
@@ -75,7 +76,7 @@ export function AdoptDialog(props: {
   // leave the queue.
   const addAll = async () => {
     setBulkError('')
-    const r = await window.skyhawk?.addAllNodes(bulk)
+    const r = await useNodesStore.getState().addAllNodes(bulk)
     setDone(new Set([...done, ...(r ? r.done : bulk.map((b) => b.nodeId))]))
     if (r && !r.ok) setBulkError(`NODE_ID ${r.nodeId}: ${r.error}`)
   }
@@ -340,7 +341,7 @@ function AdoptForm(props: {
         <button
           className="browse"
           disabled={busy || !spec}
-          onClick={() => spec && void run(() => window.skyhawk?.adoptNode(id, spec))}
+          onClick={() => spec && void run(() => useNodesStore.getState().adoptNode(id, spec))}
         >
           {e.registry ? 'Add to cockpit' : 'Adopt'}
         </button>

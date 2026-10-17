@@ -1,9 +1,9 @@
 // T3 — Overview: the Cockpit tile, the attention banner and the Gateway alert.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import { Overview } from '../src/tabs/Overview'
-import { Cockpit } from '../src/tabs/Cockpit'
-import { DevicePopover } from '../src/DevicePopover'
+import { Overview } from '../src/app/overview/Overview'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
+import { DevicePopover } from '../src/app/titlebar/DevicePopover'
 import { renderScenario } from './render'
 import { connected, gateway, model, newBoard, offline, outage, panel, pdu } from './scenarios'
 

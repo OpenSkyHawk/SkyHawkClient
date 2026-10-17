@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import type { ImportPreview } from '@shared/config'
+import { Row, SectionHead } from '../app/kit'
 import { ImportDialog } from './ImportDialog'
-import { Row, SectionHead } from './Row'
-import { importDoneText } from './settings-view'
+import { importDoneText } from './import-view'
+import { useConfigStore } from './store'
 
 type Note = { text: string; err?: boolean }
 
-export function ConfigurationSection() {
+/** Settings › Configuration. `axisLabels` name the calibration rows of an import's review. */
+export function ConfigurationSection({ axisLabels }: { axisLabels: readonly string[] }) {
   const [exported, setExported] = useState<Note>()
   const [imported, setImported] = useState<Note>()
   const [preview, setPreview] = useState<ImportPreview>()
@@ -14,14 +16,14 @@ export function ConfigurationSection() {
   const doExport = async () => {
     setExported(undefined)
     // What came of it is ConfigTransfer's to say (R3.4a); the wording is the row's.
-    const r = await window.skyhawk?.exportConfig()
+    const r = await useConfigStore.getState().exportConfig()
     if (r?.outcome === 'failed') setExported({ text: r.error, err: true })
     else if (r?.outcome === 'saved') setExported({ text: `Saved ${r.path.split(/[/\\]/).pop()}` })
   }
 
   const doImport = async () => {
     setImported(undefined)
-    const r = await window.skyhawk?.openConfigImport()
+    const r = await useConfigStore.getState().openConfigImport()
     if (r?.status === 'error') setImported({ text: r.error, err: true })
     else if (r?.status === 'ready') setPreview(r.preview)
   }
@@ -68,6 +70,7 @@ export function ConfigurationSection() {
       {preview && (
         <ImportDialog
           preview={preview}
+          axisLabels={axisLabels}
           onClose={() => setPreview(undefined)}
           onApplied={(r) => {
             // The settings come back on `config:changed` (R3.3).

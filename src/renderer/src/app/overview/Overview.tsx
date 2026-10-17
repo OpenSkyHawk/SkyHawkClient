@@ -1,11 +1,12 @@
 import { fmtBytes, fmtUptime } from '@shared/format'
-import { useStore, type TabId } from '../store'
 import type { DeviceState } from '@shared/gateway'
 import type { GaugeTone, OverviewLink } from '@shared/dcs'
-import { newDevicesText } from '../overview'
-import { gatewayView } from '../gateway-view'
-import { endpointText, relaySide } from '../device-view'
-import { Dot } from './cockpit/Dot'
+import { useConfigStore } from '../../config'
+import { endpointText, relaySide, useDcsStore } from '../../dcs'
+import { gatewayView, useGatewayStore } from '../../gateway'
+import { Dot, useNodesStore } from '../../nodes'
+import { useNav, type TabId } from '../kit'
+import { newDevicesText } from './overview-view'
 import logo from '../assets/logo.png'
 
 const C = 289.03 // 2·π·46
@@ -89,24 +90,29 @@ function Gauge({
   )
 }
 
+/** The Overview tab: a summary of every topic — the link, the relay and stream, the cockpit. */
 export function Overview() {
-  const s = useStore()
-  const link = s.transport === 'tcp' ? 'TCP' : s.transport === 'loop' ? 'Multicast' : 'Unicast'
+  const cfg = useConfigStore()
+  const dcs = useDcsStore()
+  const gw = useGatewayStore()
+  const nodes = useNodesStore()
+  const nav = useNav()
+  const link = cfg.transport === 'tcp' ? 'TCP' : cfg.transport === 'loop' ? 'Multicast' : 'Unicast'
   // The DCS Link tile's endpoint and the Link tile's sub-line are main's (relay:facts, R3.3).
-  const linkSub = endpointText(s.relayFacts.endpoint.overview, s.host, s.port)
-  const relaySub = LINK_SUB[relaySide(s.relayFacts, s.relaying).overviewLink]
+  const linkSub = endpointText(dcs.relayFacts.endpoint.overview, cfg.host, cfg.port)
+  const relaySub = LINK_SUB[relaySide(dcs.relayFacts, dcs.relaying).overviewLink]
 
-  const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
-  const acftSub = s.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
+  const acft = dcs.aircraft.name && dcs.aircraft.name !== 'NONE' ? dcs.aircraft.name : 'NONE'
+  const acftSub = dcs.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
 
   // The Cockpit's own picture (#63), summed up for the tile and the banners (#65): main's snapshot
   // (cockpit:snapshot, R3.2b). The banner also follows Settings › Cockpit's toggle.
-  const summary = s.cockpit.overview
+  const summary = nodes.cockpit.overview
   const cockpit = summary.tile
-  const attention = s.attentionBanner ? summary.banner : null
+  const attention = cfg.attentionBanner ? summary.banner : null
   // Serious Gateway faults only (#94): panel input can't reach DCS. Its own link, so not behind the
   // board-problems setting.
-  const gatewayAlert = gatewayView(s.deviceGateway).alert
+  const gatewayAlert = gatewayView(gw.deviceGateway).alert
   const waitingText = summary.newDevices && newDevicesText(summary.newDevices)
 
   const tiles: {
@@ -120,16 +126,16 @@ export function Overview() {
     {
       // The device link, not the relay (#69); the stream state rides underneath.
       label: 'Link',
-      value: LINK_VALUE[s.deviceState],
+      value: LINK_VALUE[gw.deviceState],
       sub: relaySub,
-      color: LINK_COLOR[s.deviceState] ?? 'var(--muted)',
+      color: LINK_COLOR[gw.deviceState] ?? 'var(--muted)',
       open: { tab: 'connection', title: 'Open the Connection tab' }
     },
     {
       label: 'Aircraft',
       value: acft,
       sub: acftSub,
-      color: s.aircraft.supported ? 'var(--text)' : 'var(--gold)'
+      color: dcs.aircraft.supported ? 'var(--text)' : 'var(--gold)'
     },
     { label: 'DCS Link', value: link, sub: linkSub, color: 'var(--blue)' },
     {
@@ -142,7 +148,7 @@ export function Overview() {
     }
   ]
 
-  const gauges = s.telemetry.map((r) => ({
+  const gauges = dcs.telemetry.map((r) => ({
     label: r.label,
     value: Number.isNaN(r.value) ? '—' : Math.round(r.value).toLocaleString(),
     unit: r.unit,
@@ -153,32 +159,37 @@ export function Overview() {
   const health = [
     {
       label: 'Bytes In',
-      value: fmtBytes(s.bytesIn),
+      value: fmtBytes(dcs.bytesIn),
       color: 'var(--green)',
       accent: 'rgba(110,231,160,0.5)'
     },
     {
       label: 'Bytes Out',
-      value: fmtBytes(s.bytesOut),
+      value: fmtBytes(dcs.bytesOut),
       color: 'var(--blue)',
       accent: 'rgba(30,143,255,0.5)'
     },
-    { label: 'Frames', value: s.fps + '/s', color: 'var(--text)', accent: 'rgba(255,255,255,0.2)' },
+    {
+      label: 'Frames',
+      value: dcs.fps + '/s',
+      color: 'var(--text)',
+      accent: 'rgba(255,255,255,0.2)'
+    },
     {
       label: 'Errors',
-      value: String(s.errors),
-      color: s.errors > 0 ? 'var(--red)' : 'var(--text)',
+      value: String(dcs.errors),
+      color: dcs.errors > 0 ? 'var(--red)' : 'var(--text)',
       accent: 'rgba(255,255,255,0.2)'
     },
     {
       label: 'Uptime',
-      value: fmtUptime(s.uptime),
+      value: fmtUptime(dcs.uptime),
       color: 'var(--text)',
       accent: 'rgba(255,255,255,0.2)'
     },
     {
       label: 'Reconnects',
-      value: String(s.reconnects),
+      value: String(dcs.reconnects),
       color: 'var(--muted)',
       accent: 'rgba(255,255,255,0.2)'
     }
@@ -201,9 +212,9 @@ export function Overview() {
                 role: 'button',
                 tabIndex: 0,
                 title: t.open.title,
-                onClick: () => s.set({ tab: t.open!.tab }),
+                onClick: () => nav.set({ tab: t.open!.tab }),
                 onKeyDown: (e: React.KeyboardEvent) => {
-                  if (e.key === 'Enter' || e.key === ' ') s.set({ tab: t.open!.tab })
+                  if (e.key === 'Enter' || e.key === ' ') nav.set({ tab: t.open!.tab })
                 }
               })}
             >
@@ -226,7 +237,7 @@ export function Overview() {
           <span>
             <b>{gatewayAlert.head}</b> — {gatewayAlert.text}
           </span>
-          <button className="ib__link" onClick={() => s.set({ devicePopOpen: true })}>
+          <button className="ib__link" onClick={() => nav.set({ devicePopOpen: true })}>
             Details
           </button>
         </div>
@@ -234,7 +245,7 @@ export function Overview() {
       {attention && (
         <div className="warn-banner" role="status">
           ⚠ <b>{attention.head}</b> — {attention.detail}.{' '}
-          <button className="wb__link" onClick={() => s.set({ tab: 'cockpit' })}>
+          <button className="wb__link" onClick={() => nav.set({ tab: 'cockpit' })}>
             Open Cockpit
           </button>
         </div>
@@ -246,15 +257,15 @@ export function Overview() {
             <b>{waitingText.head}</b> — {waitingText.detail}
           </span>
           {/* Opens the Cockpit with its Adopt dialog showing (#77). */}
-          <button className="ib__link" onClick={() => s.openAdopt()}>
+          <button className="ib__link" onClick={() => nav.openAdopt()}>
             Open Cockpit →
           </button>
         </div>
       )}
 
-      {!s.aircraft.supported && (
+      {!dcs.aircraft.supported && (
         <div className="warn-banner">
-          ⚠ <b>{s.aircraft.name}</b> loaded — named decode is A-4E-C only. Relaying &amp; stats
+          ⚠ <b>{dcs.aircraft.name}</b> loaded — named decode is A-4E-C only. Relaying &amp; stats
           continue; the log shows raw addresses.
         </div>
       )}
@@ -262,8 +273,8 @@ export function Overview() {
       <div className="row-between" style={{ margin: '26px 2px 14px' }}>
         <div className="section-h">Sim Telemetry</div>
         <div className="telemetry-meta">
-          CMD <b>{s.cmdsPerSec}/s</b> · {s.cmdsTotal.toLocaleString()} total · last{' '}
-          <span style={{ color: 'var(--muted-4)' }}>{s.lastCmd}</span>
+          CMD <b>{dcs.cmdsPerSec}/s</b> · {dcs.cmdsTotal.toLocaleString()} total · last{' '}
+          <span style={{ color: 'var(--muted-4)' }}>{dcs.lastCmd}</span>
         </div>
       </div>
       <div className="gauges">

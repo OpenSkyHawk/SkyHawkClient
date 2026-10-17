@@ -1,24 +1,27 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { PsuView } from '@shared/config'
 import type { CockpitAttention, CockpitBand, NodeView, PsuLimits } from '@shared/nodes'
 import { fmtPct, hhmm, voltsValue } from '@shared/format'
-import { useStore } from '../store'
-import { STATE_SYMBOL, tileMatches } from '../node-view'
-import { STAGE_W, planLayout, type PlanGroup, type PlanLayout } from '../plan-layout'
-import { headroom, type Headroom } from '../band-view'
-import { BoardEvents } from './cockpit/BoardEvents'
-import { Dot } from './cockpit/Dot'
-import { AdoptDialog } from './cockpit/AdoptDialog'
-import { NodePanel, PduPanel } from './cockpit/SidePanels'
+import { Cog, useNav } from '../app/kit'
+import { BoardEvents } from '../events'
+import { useGatewayStore } from '../gateway'
+import { useNodesStore } from './store'
+import { STATE_SYMBOL, tileMatches } from './node-view'
+import { STAGE_W, planLayout, type PlanGroup, type PlanLayout } from './plan-layout'
+import { headroom, type Headroom } from './band-view'
+import { Dot } from './Dot'
+import { AdoptDialog } from './AdoptDialog'
+import { NodePanel, PduPanel } from './SidePanels'
 
 const RING_C = 289.03 // 2π × 46, the ring's circumference
 
-export function Cockpit() {
+/** The Cockpit tab. `psuView` is the PSU setting as main resolves it (the app hands it in). */
+export function Cockpit({ psuView }: { psuView: PsuView }) {
   /** Everything the tab decides, as main built it (cockpit:snapshot, R3.2). */
-  const snap = useStore((s) => s.cockpit)
+  const snap = useNodesStore((s) => s.cockpit)
   const live = snap.live
-  const linkDownAt = useStore((s) => s.linkDownAt)
-  // The PSU setting as main resolves it (`config:changed`, R3.3).
-  const { limits, name: psuName } = useStore((s) => s.psuView)
+  const linkDownAt = useGatewayStore((s) => s.linkDownAt)
+  const { limits, name: psuName } = psuView
 
   const [query, setQuery] = useState('')
   const [issuesOnly, setIssuesOnly] = useState(false)
@@ -28,15 +31,15 @@ export function Cockpit() {
   const [open, setOpen] = useState<number | null>(null)
   const [adopting, setAdopting] = useState(false)
   /** A node another tab asked to open here (Connection's "›"). */
-  const pendingOpen = useStore((s) => s.cockpitOpen)
-  const set = useStore((s) => s.set)
+  const pendingOpen = useNav((s) => s.cockpitOpen)
+  const set = useNav((s) => s.set)
   useEffect(() => {
     if (pendingOpen === undefined) return
     setOpen(pendingOpen)
     set({ cockpitOpen: undefined })
   }, [pendingOpen, set])
   /** The Overview's new-devices notice asked for the Adopt dialog. */
-  const pendingAdopt = useStore((s) => s.cockpitAdopt)
+  const pendingAdopt = useNav((s) => s.cockpitAdopt)
   useEffect(() => {
     if (!pendingAdopt) return
     setAdopting(true)
@@ -579,7 +582,7 @@ function Attention(props: {
                 aria-label="Gateway details"
                 onClick={props.onOpenGateway}
               >
-                <CogIcon />
+                <Cog />
               </button>
             </li>
           )}
@@ -606,7 +609,7 @@ function Attention(props: {
                   props.onOpen(i.nodeId)
                 }}
               >
-                <CogIcon />
+                <Cog />
               </button>
             </li>
           ))}
@@ -621,24 +624,5 @@ function Attention(props: {
         </div>
       )}
     </div>
-  )
-}
-
-function CogIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
   )
 }

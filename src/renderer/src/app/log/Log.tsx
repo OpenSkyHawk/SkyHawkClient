@@ -1,28 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { EventSeverity } from '@shared/events'
-import { eventText, fileName, fmtTime } from '@shared/format'
-import { useStore, type DirFilter } from '../store'
-import {
-  eventSourceLabel,
-  filterEvents,
-  SEVERITY_GLYPH,
-  type EventSourceFilter,
-  type LogView
-} from '../log-view'
-
-const SEVERITY_COLOR: Record<EventSeverity, string> = {
-  error: 'var(--red)',
-  warn: 'var(--gold)',
-  new: 'var(--blue)',
-  info: 'var(--green)'
-}
-
-const SEVERITY_NAME: Record<EventSeverity, string> = {
-  error: 'Offline / error',
-  warn: 'Warning',
-  new: 'New',
-  info: 'Cleared / info'
-}
+import { fileName } from '@shared/format'
+import { StreamView, useDcsStore, type DirFilter } from '../../dcs'
+import { EventsView, filterEvents, useEventsStore } from '../../events'
+import { useNav, type EventSourceFilter, type LogView } from '../kit'
 
 /** How long the footer says where an export went. */
 const SAVED_NOTE_MS = 2600
@@ -30,14 +10,20 @@ const SAVED_NOTE_MS = 2600
 /** Most rows either view renders; the rest stay in memory and in the export. */
 const MAX_SHOWN = 1000
 
+/**
+ * The Log tab: the DCS-BIOS stream (dcs) and the session's events (events) under one toolbar; the
+ * sub-tab and the source filter are where-the-user-is state (nav).
+ */
 export function Log() {
-  const s = useStore()
-  const set = useStore((x) => x.set)
-  const toggle = useStore((x) => x.toggle)
-  const clearLog = useStore((x) => x.clearLog)
-  const exportLog = useStore((x) => x.exportLog)
-  const clearEvents = useStore((x) => x.clearEvents)
-  const exportEvents = useStore((x) => x.exportEvents)
+  const nav = useNav()
+  const dcs = useDcsStore()
+  const ev = useEventsStore()
+  const toggle = useDcsStore((x) => x.toggle)
+  const togglePause = useEventsStore((x) => x.togglePause)
+  const clearLog = useDcsStore((x) => x.clearLog)
+  const exportLog = useDcsStore((x) => x.exportLog)
+  const clearEvents = useEventsStore((x) => x.clearEvents)
+  const exportEvents = useEventsStore((x) => x.exportEvents)
   const [saved, setSaved] = useState<string>()
 
   useEffect(() => {
@@ -46,22 +32,22 @@ export function Log() {
     return () => clearTimeout(t)
   }, [saved])
 
-  const events = s.logView === 'events'
-  const q = s.search.trim().toLowerCase()
+  const events = nav.logView === 'events'
+  const q = dcs.search.trim().toLowerCase()
 
-  let rows = s.log
-  if (s.dirFilter !== 'all') rows = rows.filter((r) => r.dir === s.dirFilter)
+  let rows = dcs.log
+  if (dcs.dirFilter !== 'all') rows = rows.filter((r) => r.dir === dcs.dirFilter)
   if (q) rows = rows.filter((r) => (r.name + ' ' + r.addrHex).toLowerCase().includes(q))
 
-  const evRows = filterEvents(s.events, {
-    source: s.eventSource,
-    problemsOnly: s.problemsOnly,
-    search: s.search,
-    pauseMark: s.logPaused ? s.eventsPauseMark : undefined
+  const evRows = filterEvents(ev.events, {
+    source: nav.eventSource,
+    problemsOnly: ev.problemsOnly,
+    search: dcs.search,
+    pauseMark: ev.logPaused ? ev.eventsPauseMark : undefined
   })
 
   const doExport = async () => {
-    const count = events ? s.events.length : s.log.length
+    const count = events ? ev.events.length : dcs.log.length
     const path = await (events ? exportEvents() : exportLog())
     if (path) setSaved(`✓ Saved ${fileName(path)} · ${count.toLocaleString('en-US')} rows`)
   }
@@ -69,37 +55,40 @@ export function Log() {
   const viewBtn = (id: LogView, label: string, n: number) => (
     <button
       role="tab"
-      aria-selected={s.logView === id}
-      className={`subtab${s.logView === id ? ' on' : ''}`}
-      onClick={() => set({ logView: id })}
+      aria-selected={nav.logView === id}
+      className={`subtab${nav.logView === id ? ' on' : ''}`}
+      onClick={() => nav.set({ logView: id })}
     >
       {label} <span className="subtab__n">{n.toLocaleString('en-US')}</span>
     </button>
   )
 
   const dirBtn = (id: DirFilter, label: string) => (
-    <button className={s.dirFilter === id ? 'on' : ''} onClick={() => set({ dirFilter: id })}>
+    <button className={dcs.dirFilter === id ? 'on' : ''} onClick={() => dcs.set({ dirFilter: id })}>
       {label}
     </button>
   )
 
   const srcBtn = (id: EventSourceFilter, label: string) => (
-    <button className={s.eventSource === id ? 'on' : ''} onClick={() => set({ eventSource: id })}>
+    <button
+      className={nav.eventSource === id ? 'on' : ''}
+      onClick={() => nav.set({ eventSource: id })}
+    >
       {label}
     </button>
   )
 
-  const total = s.events.length
+  const total = ev.events.length
   const foot = saved
     ? saved
     : events
       ? `${evRows.length === total ? total : `${evRows.length} of ${total}`} events this session · in memory, cleared on restart`
-      : `${rows.length} rows · ${s.fps} frames/s`
+      : `${rows.length} rows · ${dcs.fps} frames/s`
 
   return (
     <div className="logview">
       <div className="subtabs" role="tablist" aria-label="Log views">
-        {viewBtn('stream', 'Stream', s.log.length)}
+        {viewBtn('stream', 'Stream', dcs.log.length)}
         {viewBtn('events', 'Events', total)}
       </div>
       <div className={`log${events ? ' log--node' : ''}`} role="tabpanel">
@@ -117,8 +106,8 @@ export function Log() {
               <path d="m21 21-4.3-4.3" />
             </svg>
             <input
-              value={s.search}
-              onChange={(e) => set({ search: e.target.value })}
+              value={dcs.search}
+              onChange={(e) => dcs.set({ search: e.target.value })}
               placeholder={events ? 'Search source or event…' : 'Search name or address…'}
             />
           </div>
@@ -130,9 +119,9 @@ export function Log() {
                 {srcBtn('client', 'Client')}
               </div>
               <button
-                className={`toolbtn${s.problemsOnly ? ' on' : ''}`}
-                aria-pressed={s.problemsOnly}
-                onClick={() => set({ problemsOnly: !s.problemsOnly })}
+                className={`toolbtn${ev.problemsOnly ? ' on' : ''}`}
+                aria-pressed={ev.problemsOnly}
+                onClick={() => ev.set({ problemsOnly: !ev.problemsOnly })}
               >
                 Problems only
               </button>
@@ -146,22 +135,22 @@ export function Log() {
           )}
           <div className="log__tools">
             <button
-              className={`toolbtn${s.logPaused ? ' warn' : ''}`}
-              onClick={() => toggle('logPaused')}
+              className={`toolbtn${ev.logPaused ? ' warn' : ''}`}
+              onClick={() => togglePause()}
             >
-              {s.logPaused ? '▶ Resume' : '❚❚ Pause'}
+              {ev.logPaused ? '▶ Resume' : '❚❚ Pause'}
             </button>
             <button
-              className={`toolbtn${s.autoscroll ? ' on' : ''}`}
+              className={`toolbtn${dcs.autoscroll ? ' on' : ''}`}
               onClick={() => toggle('autoscroll')}
             >
               Autoscroll
             </button>
             <button
-              className={`toolbtn${s.rawMode ? ' on' : ''}`}
+              className={`toolbtn${dcs.rawMode ? ' on' : ''}`}
               onClick={() => toggle('rawMode')}
             >
-              {s.rawMode ? 'Raw' : 'Decoded'}
+              {dcs.rawMode ? 'Raw' : 'Decoded'}
             </button>
             <button
               className="toolbtn"
@@ -185,73 +174,28 @@ export function Log() {
             <span>Time</span>
             <span />
             <span>Source</span>
-            <span>{s.rawMode ? 'Message (raw)' : 'Event'}</span>
+            <span>{dcs.rawMode ? 'Message (raw)' : 'Event'}</span>
           </div>
         ) : (
           <div className="log__grid log__head">
             <span>Time</span>
             <span>Dir</span>
-            <span>{s.rawMode ? 'Address' : 'Control'}</span>
+            <span>{dcs.rawMode ? 'Address' : 'Control'}</span>
             <span className="right">Value</span>
           </div>
         )}
 
         <div className="log__rows scroll">
-          {events
-            ? evRows.slice(0, MAX_SHOWN).map((e) => (
-                <div className="log__grid log__row" key={e.id}>
-                  <span className="log__time">{fmtTime(e.t)}</span>
-                  <span
-                    className="log__dir"
-                    style={{ color: SEVERITY_COLOR[e.severity] }}
-                    title={SEVERITY_NAME[e.severity]}
-                    aria-label={SEVERITY_NAME[e.severity]}
-                  >
-                    {SEVERITY_GLYPH[e.severity]}
-                  </span>
-                  <span className="log__name">{eventSourceLabel(e)}</span>
-                  <span
-                    className="log__val"
-                    style={{
-                      color:
-                        s.rawMode || e.severity === 'info'
-                          ? 'var(--muted-4)'
-                          : SEVERITY_COLOR[e.severity]
-                    }}
-                  >
-                    {s.rawMode ? e.raw : eventText(e)}
-                  </span>
-                </div>
-              ))
-            : rows.slice(0, MAX_SHOWN).map((r) => (
-                <div className="log__grid log__row" key={r.id}>
-                  <span className="log__time">{r.time}</span>
-                  <span
-                    className="log__dir"
-                    style={{ color: r.dir === 'in' ? 'var(--green)' : 'var(--blue)' }}
-                  >
-                    {r.dir === 'in' ? 'IN ▸' : '◂ OUT'}
-                  </span>
-                  <span className="log__name">{s.rawMode ? r.addrHex : r.name}</span>
-                  <span
-                    className="log__val"
-                    style={{
-                      color: s.rawMode
-                        ? 'var(--muted-4)'
-                        : r.dir === 'out'
-                          ? 'var(--blue)'
-                          : '#cdd6e6'
-                    }}
-                  >
-                    {s.rawMode ? r.raw : String(r.value)}
-                  </span>
-                </div>
-              ))}
+          {events ? (
+            <EventsView rows={evRows.slice(0, MAX_SHOWN)} rawMode={dcs.rawMode} />
+          ) : (
+            <StreamView rows={rows.slice(0, MAX_SHOWN)} rawMode={dcs.rawMode} />
+          )}
         </div>
 
         <div className="log__foot">
           <span>{foot}</span>
-          <span>{s.logPaused ? 'PAUSED' : 'LIVE'}</span>
+          <span>{ev.logPaused ? 'PAUSED' : 'LIVE'}</span>
         </div>
       </div>
     </div>

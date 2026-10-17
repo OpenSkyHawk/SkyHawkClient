@@ -9,7 +9,7 @@ import {
   mergeEvents,
   restoreEvents,
   rowsThatFit
-} from './log-view'
+} from './events-view'
 
 // From main/events/events.test.ts: the filter is the Events view's own since R3.3.
 describe('isProblem', () => {

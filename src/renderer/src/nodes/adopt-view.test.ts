@@ -3,10 +3,10 @@
 // The rows themselves are main's (adoptRows), built here from the same views.
 import { describe, expect, it } from 'vitest'
 import type { AdoptForm, NodeModelEntry, NodeStatus, NodeView } from '@shared/nodes'
-import { modelNode, nodeModel as model, nodeStatus } from '../../test-fixtures/nodes'
+import { modelNode, nodeModel as model, nodeStatus } from '../../../test-fixtures/nodes'
 import { seenAgo } from '@shared/format'
-import { adoptRows } from '../../main/nodes/cockpit-snapshot/adopt'
-import { nodeViews } from '../../main/nodes/cockpit-snapshot/views'
+import { adoptRows } from '../../../main/nodes/cockpit-snapshot/adopt'
+import { nodeViews } from '../../../main/nodes/cockpit-snapshot/views'
 import { adoptSpec, identState, keptQueue, nextSelection, registrySpecs } from './adopt-view'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>

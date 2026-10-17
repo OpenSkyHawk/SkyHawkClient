@@ -2,7 +2,7 @@
 // clock and the patch Save sends. What a panel says and offers moved to main with its tests.
 import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeStatus } from '@shared/nodes'
-import { modelNode, nodeStatus } from '../../test-fixtures/nodes'
+import { modelNode, nodeStatus } from '../../../test-fixtures/nodes'
 import { mappingPatch, reportAge } from './panel-view'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>

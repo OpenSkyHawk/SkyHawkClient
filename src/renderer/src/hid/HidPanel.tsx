@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { HID_REPORT_LAYOUT } from '@shared/firmware'
-import type { CalBadge } from '@shared/hid/calibration'
-import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
-import { freshnessView } from '../freshness'
-import { CalibrationDialog } from '../CalibrationDialog'
+import type { CalBadge, CalibrationState } from '@shared/hid/calibration'
+import { useNav } from '../app/kit'
+import { useGatewayStore } from '../gateway'
+import { useHidStore } from './store'
+import { AXIS_LABELS, freshnessView, HAT_DIRS } from './hid-view'
 
 /**
  * Per-axis stored-calibration state, as main reports it.
@@ -94,22 +95,33 @@ function Hat({ idx, dir, avail }: { idx: number; dir: number; avail: boolean }) 
   )
 }
 
-export function Hid() {
-  const s = useStore()
+/**
+ * The HID tab's live view: axes, hats, buttons and the report rate. Axis calibration is the
+ * calibration topic's (hid never imports it): the HID tab hands in its state, its dialog and the
+ * open intent (app/hid/HidTab.tsx).
+ */
+export function HidPanel({
+  dialog,
+  cal,
+  onCalibrate
+}: {
+  /** The calibration dialog while it is open. */
+  dialog?: ReactNode
+  /** The HID tab's calibration state as main pushes it (`cal:workflow`). */
+  cal: CalibrationState['tab']
+  /** Open the calibration dialog on `axis`; `review` expands the restore offer. */
+  onCalibrate: (axis: number, review?: boolean) => void
+}) {
+  const s = useHidStore()
+  const set = useNav((x) => x.set)
   // The joystick is read alongside DCS and never needs the serial link; calibration does (#74).
   // So the live view below ignores the link, and only calibration is gated on it.
-  const linkUp = s.linkUp
-  // The calibration workflow lives as long as this tab is mounted (main builds and disposes it).
-  const { attach } = s.calibrate
-  useEffect(() => {
-    attach(true)
-    return () => attach(false)
-  }, [attach])
-  const cal = s.calibration.tab
+  const linkUp = useGatewayStore((x) => x.linkUp)
+  const boardPresent = useGatewayStore((x) => x.boardPresent)
   const lit = new Set(s.buttons)
   const availHats = new Set(s.availHats)
   const availButtons = new Set(s.availButtons)
-  const fresh = freshnessView(s.boardPresent, s.hidBand)
+  const fresh = freshnessView(boardPresent, s.hidBand)
 
   // Which axis slots are live — catalogued and declared by this Gateway — is main's (hid:report,
   // R3.3: main/hid/hid-facts.ts), as is how many it declares.
@@ -122,9 +134,7 @@ export function Hid() {
 
   return (
     <div className="hid">
-      {s.calibration.dialog && (
-        <CalibrationDialog d={s.calibration.dialog} calibrate={s.calibrate} />
-      )}
+      {dialog}
       {cal.showOffer && cal.offer && (
         <div className="calrestore">
           <svg
@@ -145,7 +155,7 @@ export function Hid() {
             {cal.offer.confirmedAt ? ` on ${new Date(cal.offer.confirmedAt).toLocaleString()}` : ''}
             .
           </span>
-          <button className="calbtn" onClick={() => s.calibrate.open(cal.offerAxis!, true)}>
+          <button className="calbtn" onClick={() => onCalibrate(cal.offerAxis!, true)}>
             Review &amp; restore…
           </button>
         </div>
@@ -174,7 +184,7 @@ export function Hid() {
                   ? 'Calibrate an axis'
                   : 'Calibration needs the serial link — Connect on the Connection tab'
               }
-              onClick={() => s.calibrate.open(cal.calibrate.axis!)}
+              onClick={() => onCalibrate(cal.calibrate.axis!)}
             >
               <svg
                 width="13"
@@ -194,7 +204,7 @@ export function Hid() {
           <div className="devnote hid__calnote">
             Live axes, hats and buttons keep working — they come from the joystick, which never
             needs the serial link. <b>Calibration needs the serial link</b>:{' '}
-            <button className="devnote__link" onClick={() => s.set({ tab: 'connection' })}>
+            <button className="devnote__link" onClick={() => set({ tab: 'connection' })}>
               Connect on the Connection tab
             </button>
             .
@@ -207,7 +217,7 @@ export function Hid() {
             raw={v}
             avail={axisLive(i)}
             cal={calState(i)}
-            onCalibrate={calState(i) ? () => s.calibrate.open(i) : undefined}
+            onCalibrate={calState(i) ? () => onCalibrate(i) : undefined}
           />
         ))}
       </div>

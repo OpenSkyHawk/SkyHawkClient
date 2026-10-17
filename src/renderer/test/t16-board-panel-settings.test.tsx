@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import type { NodeRegistryInfo } from '@shared/nodes'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario, settle } from './render'
 import { connected, model, newBoard, panel, pdu } from './scenarios'
 

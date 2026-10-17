@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { NodeModel, ResetPreview } from '@shared/nodes'
-import { Dialog } from './Dialog'
+import { useNodesStore } from '../../nodes'
+import { Dialog } from '../kit'
 import { resetButtonLabel } from './settings-view'
 
 /**
@@ -15,7 +16,7 @@ export function ResetDialog({ model, onClose }: { model?: NodeModel; onClose: ()
   const [error, setError] = useState<string>()
 
   useEffect(() => {
-    void window.skyhawk?.previewNodeReset().then(setPreview)
+    void useNodesStore.getState().previewNodeReset()?.then(setPreview)
   }, [model])
 
   const nodes = preview?.nodeCount ?? 0
@@ -26,7 +27,7 @@ export function ResetDialog({ model, onClose }: { model?: NodeModel; onClose: ()
   const apply = async () => {
     setBusy(true)
     setError(undefined)
-    const r = await window.skyhawk?.resetNodeMapping({ forgetAdopted: forget })
+    const r = await useNodesStore.getState().resetNodeMapping({ forgetAdopted: forget })
     setBusy(false)
     if (r?.ok) onClose()
     else setError(r?.error ?? 'Reset failed')

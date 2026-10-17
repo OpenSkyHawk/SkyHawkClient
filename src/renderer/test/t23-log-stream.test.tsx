@@ -1,7 +1,7 @@
 // T23 — Log › Stream: the DCS-BIOS stream, its filters, Raw, Pause, Clear and Export.
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import { Log } from '../src/tabs/Log'
+import { Log } from '../src/app/log/Log'
 import { renderScenario } from './render'
 import { connected, streamRow } from './scenarios'
 

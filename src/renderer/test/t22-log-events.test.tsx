@@ -1,7 +1,7 @@
 // T22 — Log › Events: the session's event log, its filters, Pause, Clear and Export.
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import { Log } from '../src/tabs/Log'
+import { Log } from '../src/app/log/Log'
 import { renderScenario } from './render'
 import { connected, logEvent } from './scenarios'
 

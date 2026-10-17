@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { gatewayStatus, shownHealth } from '../../main/gateway/gateway-health'
+import { gatewayStatus, shownHealth } from '../../../main/gateway/gateway-health'
 import type { GatewayStatus } from '@shared/gateway'
 import type { NodeStatus } from '@shared/nodes'
 import { gatewayView as viewOf } from './gateway-view'
-import { nodeStatus } from '../../test-fixtures/nodes'
+import { nodeStatus } from '../../../test-fixtures/nodes'
 
 const PORT = '/dev/cu.usbmodem1101'
 

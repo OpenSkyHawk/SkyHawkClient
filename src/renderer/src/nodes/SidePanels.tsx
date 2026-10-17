@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { DASH, voltsValue } from '@shared/format'
 import {
   CONSOLE_OPTIONS,
@@ -12,49 +12,10 @@ import {
   type NodeView,
   type ZoneChoices
 } from '@shared/nodes'
-import { firstZone, mappingPatch, reportAge, zoneOptions } from '../../panel-view'
-import { useModalFocus } from '../../useModalFocus'
+import { Chevron, Sheet } from '../app/kit'
+import { useNodesStore } from './store'
+import { firstZone, mappingPatch, reportAge, zoneOptions } from './panel-view'
 import { Dot } from './Dot'
-
-/**
- * Side panel under the title bar: Esc, the scrim and Close shut it; focus returns to its opener.
- * A column (#93): the header, the board line and the tabs stay put on every tab; only the body
- * under them scrolls — or, with `fill`, a list inside it (the PDU's Feeds) takes what is left.
- */
-function Sheet(props: {
-  label: string
-  heading: string
-  onClose: () => void
-  /** Board head, sub-line and tabs: fixed above the body. */
-  top: ReactNode
-  fill?: boolean
-  children: ReactNode
-}) {
-  const ref = useRef<HTMLElement>(null)
-  useModalFocus(ref, props.onClose)
-  return (
-    <>
-      <div className="sheet__scrim" onClick={props.onClose} />
-      <aside
-        ref={ref}
-        className="sheet"
-        role="dialog"
-        aria-modal="true"
-        aria-label={props.label}
-        tabIndex={-1}
-      >
-        <div className="panel-h sheet__h">
-          <span className="section-h">{props.heading}</span>
-          <button className="toolbtn" onClick={props.onClose}>
-            Close
-          </button>
-        </div>
-        {props.top}
-        <div className={`sh__body${props.fill ? ' sh__body--fill' : ''}`}>{props.children}</div>
-      </aside>
-    </>
-  )
-}
 
 function Fault({ box }: { box: FaultBox }) {
   return (
@@ -98,9 +59,12 @@ function useRegistryEntry(nodeId: number) {
   const [reg, setReg] = useState<NodeRegistryInfo>()
   useEffect(() => {
     let live = true
-    void window.skyhawk?.getNodeRegistry().then((r) => {
-      if (live) setReg(r)
-    })
+    void useNodesStore
+      .getState()
+      .getNodeRegistry()
+      ?.then((r) => {
+        if (live) setReg(r)
+      })
     return () => {
       live = false
     }
@@ -155,24 +119,6 @@ function Tabs<T extends string>(props: {
         ))}
       </div>
     </div>
-  )
-}
-
-function Chevron() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="m9 18 6-6-6-6" />
-    </svg>
   )
 }
 
@@ -266,7 +212,7 @@ function BoardFooter(props: {
 }) {
   const { e, call } = props
   const a = props.actions
-  const api = window.skyhawk
+  const { resetNode, forgetNode, hideNode } = useNodesStore.getState()
   return (
     <>
       {call.error && <div className="set-err sh__err">{call.error}</div>}
@@ -279,7 +225,7 @@ function BoardFooter(props: {
             className="toolbtn"
             title={a.reset.tip}
             disabled={call.busy || a.reset.disabled}
-            onClick={() => void call.run(() => api?.resetNode(e.nodeId))}
+            onClick={() => void call.run(() => resetNode(e.nodeId))}
           >
             Reset to default
           </button>
@@ -288,7 +234,7 @@ function BoardFooter(props: {
           className="danger"
           title={a.forget.tip}
           disabled={call.busy || a.forget.disabled}
-          onClick={() => void call.run(() => api?.forgetNode(e.nodeId))}
+          onClick={() => void call.run(() => forgetNode(e.nodeId))}
         >
           Forget
         </button>
@@ -296,7 +242,7 @@ function BoardFooter(props: {
           className="danger"
           title={a.hide.tip}
           disabled={call.busy || a.hide.disabled}
-          onClick={() => void call.run(() => api?.hideNode(e.nodeId, true))}
+          onClick={() => void call.run(() => hideNode(e.nodeId, true))}
         >
           Hide
         </button>
@@ -356,7 +302,7 @@ export function NodePanel(props: {
   const save = () => {
     const patch = mappingPatch(e, { name, console: con, pduId })
     if (Object.keys(patch).length === 0) return props.onClose()
-    void call.run(() => window.skyhawk?.setNodeMapping(e.nodeId, patch))
+    void call.run(() => useNodesStore.getState().setNodeMapping(e.nodeId, patch))
   }
 
   return (
@@ -491,7 +437,7 @@ export function PduPanel(props: {
   const save = () => {
     const patch = mappingPatch(e, { name, console: con, pduId: e.pduId })
     if (Object.keys(patch).length === 0) return props.onClose()
-    void call.run(() => window.skyhawk?.setNodeMapping(e.nodeId, patch))
+    void call.run(() => useNodesStore.getState().setNodeMapping(e.nodeId, patch))
   }
 
   return (

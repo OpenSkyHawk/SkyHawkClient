@@ -1,27 +1,12 @@
 import { fmtTime } from '@shared/format'
-import { useStore } from '../store'
-
-const MAX_BYTES = 48 // truncate very long chunks in the display
-
-function render(hex: string): { hex: string; ascii: string; more: number } {
-  const bytes = Math.floor(hex.length / 2)
-  const shown = Math.min(bytes, MAX_BYTES)
-  let h = ''
-  let a = ''
-  for (let i = 0; i < shown; i++) {
-    const pair = hex.slice(i * 2, i * 2 + 2)
-    const b = parseInt(pair, 16)
-    h += (i ? ' ' : '') + pair.toUpperCase()
-    a += b >= 0x20 && b <= 0x7e ? String.fromCharCode(b) : '·'
-  }
-  return { hex: h, ascii: a, more: bytes - shown }
-}
+import { useGatewayStore } from './store'
+import { render } from './serial-view'
 
 export function Serial() {
-  const monitor = useStore((x) => x.serialMonitor)
-  const rows = useStore((x) => x.serialLog)
-  const setSerialMonitor = useStore((x) => x.setSerialMonitor)
-  const clearSerial = useStore((x) => x.clearSerial)
+  const monitor = useGatewayStore((x) => x.serialMonitor)
+  const rows = useGatewayStore((x) => x.serialLog)
+  const setSerialMonitor = useGatewayStore((x) => x.setSerialMonitor)
+  const clearSerial = useGatewayStore((x) => x.clearSerial)
   const view = rows.slice(0, 1000)
 
   return (

@@ -1,21 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceState } from '@shared/gateway'
-import { isBusy, linkAction } from '../../main/gateway/link-state'
+import { isBusy, linkAction } from '../../../main/gateway/link-state'
 import {
   relayNote as noteOf,
   relayTip as tipOf,
   relayWaiting,
   startBlocked
-} from '../../main/dcs/relay-rules'
+} from '../../../main/dcs/relay-rules'
+import { deviceView as viewOf, linkButton } from './link-view'
 import {
-  deviceView as viewOf,
-  linkButton,
   relayNote as noteText,
   relayTip as tipText,
   startBlockedCallout,
   startBlockedReason
-} from './device-view'
-import type { SourceMode } from './store'
+} from '../dcs/relay-view'
+import type { SourceMode } from '../config'
 import type { StreamState } from '@shared/dcs'
 
 /**

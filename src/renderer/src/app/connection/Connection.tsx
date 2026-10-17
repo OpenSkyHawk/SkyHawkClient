@@ -1,122 +1,7 @@
-import { useStore, type SourceMode, type Transport } from '../store'
-import { USB_IDENTITY } from '@shared/firmware'
-import { deviceView, linkButton, relayNote, relaySide, startBlockedReason } from '../device-view'
-import { Dot } from './cockpit/Dot'
-
-/** `0x2E8A`: a USB id as the device card prints it, four upper-case hex digits. */
-const usbId = (n: number) => '0x' + n.toString(16).toUpperCase().padStart(4, '0')
-const VID_PID = `${usbId(USB_IDENTITY.vid)} / ${usbId(USB_IDENTITY.pid)}`
-
-const REC_DOT = (
-  <span
-    style={{
-      display: 'inline-block',
-      width: 8,
-      height: 8,
-      borderRadius: '50%',
-      background: 'var(--red)',
-      marginRight: 6,
-      verticalAlign: 'middle'
-    }}
-  />
-)
-
-/**
- * Connected nodes (#66): counts and the nodes that need attention, most severe first — the same
- * order as Cockpit › Attention. Healthy nodes are left to the Cockpit tab.
- */
-function NodesCard() {
-  // Counts and rows as main summed them up (cockpit:snapshot, R3.2b).
-  const sum = useStore((x) => x.cockpit.nodesCard)
-  const deviceState = useStore((x) => x.deviceState)
-  const autoConnect = useStore((x) => x.autoConnect)
-  const refreshNodes = useStore((x) => x.refreshNodes)
-  const openInCockpit = useStore((x) => x.openInCockpit)
-  const set = useStore((x) => x.set)
-  // Node status rides on the device link, which is up in every source mode (#69).
-  const linkUp = useStore((x) => x.linkUp)
-  // Whether a roster request can go out, as NodeHub decides it (`device:status`, R3.4a).
-  const canRefresh = useStore((x) => x.canRefresh)
-
-  return (
-    <div className="card field ncard">
-      <div className="panel-h">
-        <span className="section-h">Connected nodes</span>
-        <button className="toolbtn" onClick={() => refreshNodes()} disabled={!canRefresh}>
-          Refresh
-        </button>
-      </div>
-      {!linkUp ? (
-        <div className="hint">{deviceView(deviceState, { autoConnect }).nodesHint}</div>
-      ) : sum.known === 0 ? (
-        <div className="hint">No nodes reported. Power on a PanelGroup, or press Refresh.</div>
-      ) : (
-        <>
-          <div className="nsum">
-            <div>
-              <b style={{ color: 'var(--green)' }}>{sum.healthy}</b>
-              <span>healthy</span>
-            </div>
-            <div>
-              <b style={{ color: 'var(--gold)' }}>{sum.warn}</b>
-              <span>warning</span>
-            </div>
-            <div>
-              <b style={{ color: 'var(--red)' }}>{sum.off}</b>
-              <span>offline</span>
-            </div>
-            <div title="Total W the client computes from the PDUs' rail readings">
-              <b>{sum.pdus}</b>
-              <span>PDUs · {sum.watts === null ? '—' : sum.watts.toFixed(1)} W</span>
-            </div>
-          </div>
-          {sum.rows.length === 0 ? (
-            <div className="hint">Nothing needs attention.</div>
-          ) : (
-            <div className="nodes ncard__rows">
-              {sum.rows.map((r) => (
-                <div className={`node${r.state === 'off' ? ' node--off' : ''}`} key={r.nodeId}>
-                  <Dot state={r.state} />
-                  <span className="node__id">{r.name}</span>
-                  <span className="node__meta">{r.meta}</span>
-                  <span className="node__flags">
-                    <b className={`flag flag--${r.tone}`}>{r.chip}</b>
-                    <button
-                      className="cog"
-                      title="Open in Cockpit"
-                      aria-label={`Open ${r.name} in Cockpit`}
-                      onClick={() => openInCockpit(r.nodeId)}
-                    >
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="m9 18 6-6-6-6" />
-                      </svg>
-                    </button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="ncard__foot">
-            <span className="hint">{sum.footer}</span>
-            <button className="browse" onClick={() => set({ tab: 'cockpit' })}>
-              Open Cockpit →
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  )
-}
+import { useConfigStore, type SourceMode, type Transport } from '../../config'
+import { CaptureCard, RecordCard, RelayStart } from '../../dcs'
+import { DeviceCard } from '../../gateway'
+import { NodesCard } from '../../nodes'
 
 const HINTS: Record<SourceMode, string> = {
   bridge:
@@ -133,105 +18,20 @@ const TRANSPORTS: { id: Transport; title: string; detail: string }[] = [
   { id: 'uni', title: 'Unicast listen', detail: 'BIOSConfig.lua send_address' }
 ]
 
+/**
+ * The Connection tab: the device card (gateway) and the connected nodes (nodes) on the left; the
+ * source mode and DCS link settings (config) between the relay's own controls (dcs) on the right.
+ */
 export function Connection() {
-  const s = useStore()
-  const setConfigField = useStore((x) => x.setConfigField)
-  const toggleRelay = useStore((x) => x.toggleRelay)
-  const openReplay = useStore((x) => x.openReplay)
-  const toggleCapture = useStore((x) => x.toggleCapture)
-  const connectDevice = useStore((x) => x.connectDevice)
-  const set = useStore((x) => x.set)
-  const disconnectDevice = useStore((x) => x.disconnectDevice)
-
-  // The device card shows the link (#69), which is automatic and independent of the relay.
-  // Before a SimGateway is found, only the match target (VID/PID) is shown — not real device data.
-  const connected = s.linkUp
-  const dev = deviceView(s.deviceState, {
-    port: s.devicePort,
-    detail: s.deviceDetail,
-    busy: s.deviceBusy,
-    autoConnect: s.autoConnect
-  })
-  // Connect / Disconnect / Retry, as main offers it for the link's state (R3.4a).
-  const button = linkButton(s.deviceAction)
-  // The relay controls as main decides them (relay:facts, R3.3), for the on/off as shown.
-  const facts = s.relayFacts
-  const side = relaySide(facts, s.relaying)
-  const blocked = side.startBlocked
-  const note = blocked
-    ? { text: startBlockedReason(blocked), info: true }
-    : relayNote(side.waiting, facts.stream)
-  const replay = facts.replay
-  const recording = facts.recording
-  const deviceRows = [
-    { k: 'Identity', v: connected ? USB_IDENTITY.product : '— no device' },
-    { k: 'VID / PID', v: connected ? VID_PID : `${VID_PID} · target` },
-    { k: 'Serial port', v: dev.portRow },
-    { k: 'Interfaces', v: connected ? 'CDC serial + HID' : '—' }
-  ]
+  const s = useConfigStore()
+  const setConfigField = useConfigStore((x) => x.setConfigField)
 
   return (
     <div className="conn">
       <div className="conn__left">
-        {/* device card */}
-        <div className="card" style={{ overflow: 'hidden' }}>
-          <div className="dev__head">
-            <div className="dev__icon">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#1e8fff"
-                strokeWidth="1.6"
-              >
-                <rect x="4" y="7" width="16" height="11" rx="2" />
-                <path d="M9 7V5h6v2M9 18v2M15 18v2" />
-              </svg>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div className="dev__name">{`${USB_IDENTITY.product} · Gateway`}</div>
-              <div className="dev__meta">composite USB · CDC + HID</div>
-            </div>
-            <span className={`devind ${dev.cls}`} title={dev.tip}>
-              <span className="devind__dot" />
-              {dev.chip}
-            </span>
-            <button
-              className={button.action === 'disconnect' ? 'toolbtn' : 'browse'}
-              style={{ padding: '7px 14px' }}
-              disabled={button.disabled}
-              onClick={() =>
-                button.action === 'disconnect' ? disconnectDevice() : connectDevice()
-              }
-            >
-              {button.label}
-            </button>
-          </div>
-          <div className="dev__body">
-            {deviceRows.map((d) => (
-              <div className="dev__row" key={d.k}>
-                <span className="dev__k">{d.k}</span>
-                <span className="dev__v">{d.v}</span>
-              </div>
-            ))}
-            {dev.note && (
-              <div className="devnote">
-                {dev.note}
-                {dev.noteSettingsLink && (
-                  <>
-                    {' '}
-                    <button className="devnote__link" onClick={() => set({ tab: 'settings' })}>
-                      Settings › Connection
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <DeviceCard autoConnect={s.autoConnect} />
 
-        <NodesCard />
+        <NodesCard autoConnect={s.autoConnect} />
       </div>
 
       {/* controls */}
@@ -255,49 +55,10 @@ export function Connection() {
         </div>
 
         {/* The Capture and Record cards flip together, in the same relay:facts push (R3.4a). */}
-        {facts.captureShown && (
-          <div className="card field">
-            <div className="card-h" style={{ marginBottom: 12 }}>
-              Capture
-            </div>
-            <button className="browse" onClick={() => openReplay()}>
-              Load capture…
-            </button>
-            <div className="hint">
-              {replay ? (
-                <>
-                  <span style={{ color: 'var(--text)' }}>{replay.file.split(/[/\\]/).pop()}</span>
-                  {` · ${replay.events} events · ${(replay.durationMs / 1000).toFixed(1)}s`}
-                  {' — press Start to play.'}
-                </>
-              ) : (
-                'No capture loaded. Load a recorded session to replay it with no DCS running.'
-              )}
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginTop: 14
-              }}
-            >
-              <div>
-                <div className="dev__k">Drive Gateway</div>
-                <div style={{ fontSize: 11, color: 'var(--muted-3)', marginTop: 2 }}>
-                  Also write the replay to the serial device
-                </div>
-              </div>
-              <button
-                className={`toggle${s.replayDriveSerial ? ' on' : ''}`}
-                onClick={() => setConfigField({ replayDriveSerial: !s.replayDriveSerial })}
-                aria-pressed={s.replayDriveSerial}
-              >
-                <span />
-              </button>
-            </div>
-          </div>
-        )}
+        <CaptureCard
+          driveSerial={s.replayDriveSerial}
+          onToggleDrive={() => setConfigField({ replayDriveSerial: !s.replayDriveSerial })}
+        />
 
         <div className="card field">
           <div className="card-h" style={{ marginBottom: 12 }}>
@@ -341,47 +102,9 @@ export function Connection() {
           </div>
         </div>
 
-        {facts.recordShown.connection && (
-          <div className="card field">
-            <div className="card-h" style={{ marginBottom: 12 }}>
-              Record
-            </div>
-            <button
-              className="browse"
-              onClick={() => toggleCapture()}
-              disabled={!side.canRecord.connection}
-            >
-              {recording.on ? (
-                <>
-                  {REC_DOT}Stop recording · {recording.events ?? 0} events
-                </>
-              ) : (
-                'Start recording…'
-              )}
-            </button>
-            <div className="hint">
-              {recording.on
-                ? 'Recording live DCS-BIOS stream. Stop to save — replay the file on any machine with no DCS.'
-                : side.canRecord.connection
-                  ? 'Capture a live session to replay later with no DCS running.'
-                  : 'Start the relay first to enable recording.'}
-            </div>
-          </div>
-        )}
+        <RecordCard />
 
-        <div>
-          <button
-            className={`bigbtn${s.relaying ? ' bigbtn--stop' : ''}`}
-            style={{ width: '100%' }}
-            disabled={!!blocked}
-            onClick={() => toggleRelay()}
-          >
-            {s.relaying ? 'Stop relay' : 'Start relay'}
-          </button>
-          {note && (
-            <div className={`waitnote${note.info ? ' waitnote--info' : ''}`}>{note.text}</div>
-          )}
-        </div>
+        <RelayStart />
       </div>
     </div>
   )

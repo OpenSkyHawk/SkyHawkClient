@@ -1,7 +1,7 @@
 // The new-devices notice's wording (overview.ts). The tile, the banner and the counts are main's
 // since R3.2b (main/nodes/cockpit-snapshot/overview-summary.test.ts).
 import { describe, expect, it } from 'vitest'
-import { newDevicesText } from './overview'
+import { newDevicesText } from './overview-view'
 
 describe('newDevicesText', () => {
   it('lists the reported kinds', () => {

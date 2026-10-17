@@ -1,9 +1,8 @@
-// Log tab › Events (#64): what the view shows of the session's events (pure, no React).
+// Log tab › Events (#64): what the view shows of the session's events (pure, no React). The view's
+// sub-tab and source filter are where-the-user-is state (app/kit nav store).
 import { eventText } from '@shared/format'
-import { MAX_EVENTS, type EventSeverity, type EventSource, type LogEvent } from '@shared/events'
-
-export type LogView = 'stream' | 'events'
-export type EventSourceFilter = 'all' | EventSource
+import { MAX_EVENTS, type EventSeverity, type LogEvent } from '@shared/events'
+import type { EventSourceFilter } from '../app/kit'
 
 export interface EventFilter {
   source: EventSourceFilter

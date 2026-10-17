@@ -1,7 +1,7 @@
 // T10 — the Adopt dialog: its queue, the badges, and the form for each kind of new board.
 import { describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import { Cockpit } from '../src/tabs/Cockpit'
+import { Cockpit } from '../src/app/cockpit/Cockpit'
 import { renderScenario, settle } from './render'
 import { connected, model, newBoard, pdu } from './scenarios'
 
