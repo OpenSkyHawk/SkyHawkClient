@@ -1702,9 +1702,8 @@ button.devind[aria-expanded='true'] {
   color: var(--muted-3);
   text-decoration: line-through;
   text-decoration-color: rgba(255, 255, 255, 0.25);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .im__row > span:first-child {
   overflow: hidden;
@@ -1714,11 +1713,11 @@ button.devind[aria-expanded='true'] {
 .im__arr {
   color: var(--muted-3);
 }
+/* Values wrap rather than cut off: a note such as "No power zone (not in your cockpit)" must read in full. */
 .im__new {
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .im__note {
   margin-top: 8px;
