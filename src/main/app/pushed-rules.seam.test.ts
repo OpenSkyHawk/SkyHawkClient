@@ -122,14 +122,20 @@ describe('R3.4a: the last renderer decisions, pushed by their owners', () => {
     })
   })
 
-  it('relay:facts: the Connection tab’s Record card hidden in Replay, Settings’ row never', () => {
+  it('relay:facts: Record hidden and Capture shown in Replay, together; Settings’ row always', () => {
     const app = makeServices(monitor)
-    expect(app.lastPush('relay:facts')?.recordShown).toEqual({ connection: true, settings: true })
+    expect(app.lastPush('relay:facts')).toMatchObject({
+      recordShown: { connection: true, settings: true },
+      captureShown: false
+    })
     app.invoke(CTRL.configEdit, { sourceMode: 'replay' })
-    expect(app.lastPush('relay:facts')?.recordShown).toEqual({ connection: false, settings: true })
+    expect(app.lastPush('relay:facts')).toMatchObject({
+      recordShown: { connection: false, settings: true },
+      captureShown: true
+    })
   })
 
-  it('config:edit: a PSU mode switch over the setting held; the setting comes back', () => {
+  it('config:edit: a PSU mode switch and a typed limit over the setting held; refused = nothing', () => {
     const custom = { a12: 40, w: 500 }
     const app = makeServices({
       paths: {
@@ -142,5 +148,12 @@ describe('R3.4a: the last renderer decisions, pushed by their owners', () => {
     const psu = { mode: 'custom', preset: 'nx650', custom }
     expect(app.files.json('config.json')).toMatchObject({ psu })
     expect(app.lastPush('config:changed')).toMatchObject({ source: 'edit', config: { psu } })
+    const n = app.pushesOf('config:changed').length
+    app.invoke(CTRL.configEdit, { psuLimit: { key: 'a5', text: '15' } })
+    expect(app.files.json('config.json')).toMatchObject({
+      psu: { custom: { a12: 40, a5: 15, w: 500 } }
+    })
+    app.invoke(CTRL.configEdit, { psuLimit: { key: 'a5', text: '15x' } })
+    expect(app.pushesOf('config:changed'), 'a refused limit pushes nothing').toHaveLength(n + 1)
   })
 })

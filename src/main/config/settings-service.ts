@@ -20,7 +20,7 @@ import {
 } from '@shared/config'
 import { resolvePsu } from '../nodes'
 import { sanitizeConfig } from './settings-schema'
-import { editedConfig } from './settings-form'
+import { savedEdit } from './settings-form'
 import { JSON_POLICY, jsonFile } from './json-store'
 
 /** Port: where config.json lives. app provides it; resolved at each use, as before. */
@@ -104,7 +104,9 @@ export class SettingsService {
    * read-modify-write over the settings held here, the port as typed (settings-form.ts).
    */
   edit(edit: ConfigEdit): AppConfig {
-    return this.apply(editedConfig(this.get(), edit))
+    const save = savedEdit(this.get(), edit)
+    // A refused PSU limit saves and pushes nothing: the form sent nothing for it before (R3.4a).
+    return save === undefined ? this.get() : this.apply(save)
   }
 
   /** A config import is applied: the forms start over from the settings, as from its answer. */

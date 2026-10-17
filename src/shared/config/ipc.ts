@@ -70,6 +70,11 @@ export interface ConfigEdit {
    * keeping the preset and the custom limits as they are.
    */
   psuMode?: PsuSetting['mode']
+  /**
+   * Settings › Cockpit's PSU limit field, as typed (R3.4a): main refuses it (nothing saved), deletes
+   * the limit (empty) or sets it, over the setting it holds (settings-form.ts withPsuLimit).
+   */
+  psuLimit?: { key: keyof PsuLimits; text: string }
 }
 
 /** What the power supply setting comes to (R3.3): SettingsService resolves it. */

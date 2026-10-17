@@ -34,6 +34,7 @@ import {
   type CockpitSnapshot,
   type NodeModel,
   type NodeTelemSnapshot,
+  type PsuLimits,
   type PsuSetting
 } from '@shared/nodes'
 import type { LogEvent } from '@shared/events'
@@ -234,6 +235,8 @@ export interface AppState {
   ) => void
   /** Settings › Cockpit's PSU switch: main switches the mode over the setting it holds (R3.4a). */
   setPsuMode: (mode: PsuSetting['mode']) => void
+  /** Settings › Cockpit's PSU limit, as typed: main refuses, deletes or sets it (R3.4a). */
+  setPsuLimit: (key: keyof PsuLimits, text: string) => void
   toggleRelay: () => void
   /** Open the device link now (also the Retry after an error). */
   connectDevice: () => void
@@ -441,6 +444,11 @@ export const useStore = create<AppState>((set, get) => ({
   // The switched setting comes back on `config:changed` (R3.4a).
   setPsuMode: (mode) => {
     editConfig({ psuMode: mode })
+  },
+
+  // The setting comes back on `config:changed` (R3.4a); the field keeps its own text.
+  setPsuLimit: (key, text) => {
+    editConfig({ psuLimit: { key, text } })
   },
 
   // Main stops, or saves the settings and starts (`relay:toggle`, R3.3); the click shows at once.

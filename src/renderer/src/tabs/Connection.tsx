@@ -254,7 +254,8 @@ export function Connection() {
           <div className="hint">{HINTS[s.sourceMode]}</div>
         </div>
 
-        {s.sourceMode === 'replay' && (
+        {/* The Capture and Record cards flip together, in the same relay:facts push (R3.4a). */}
+        {facts.captureShown && (
           <div className="card field">
             <div className="card-h" style={{ marginBottom: 12 }}>
               Capture

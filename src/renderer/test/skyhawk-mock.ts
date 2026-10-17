@@ -87,7 +87,7 @@ import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-stat
 import { shownStatus } from '../../main/gateway/gateway-health'
 import { canRequestRoster } from '../../main/nodes/node-status-wire'
 import { captureView, relayFacts, replayView } from '../../main/dcs/relay-rules'
-import { editedConfig } from '../../main/config/settings-form'
+import { savedEdit } from '../../main/config/settings-form'
 import { resolvePsu } from '../../main/nodes/psu-limits'
 import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
@@ -448,7 +448,9 @@ export function installSkyhawkMock(): SkyhawkMock {
    * `setConfig`, the spy, stands for that apply — the relay's facts follow, then `config:changed`.
    */
   const editSettings = (edit: ConfigEdit): Promise<AppConfig> => {
-    const built = editedConfig(config(), edit)
+    const built = savedEdit(config(), edit)
+    // A refused PSU limit: nothing saved, nothing pushed (SettingsService.edit).
+    if (built === undefined) return resolve(config())
     const saved = fns.setConfig(built)
     state = { ...state, config: { ...config(), ...built } }
     act(() => {

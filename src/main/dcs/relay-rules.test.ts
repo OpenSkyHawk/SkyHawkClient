@@ -9,6 +9,7 @@ import {
   captureView,
   overviewEndpoint,
   overviewLink,
+  captureShown,
   pillEndpoint,
   recordShown,
   relayFacts,
@@ -97,6 +98,14 @@ describe('X12-style: each surface’s own Record visibility (R3.4a)', () => {
       connection: false,
       settings: true
     })
+  })
+
+  it('the Capture card is the Record card’s mirror, in the same facts', () => {
+    for (const mode of ['bridge', 'monitor', 'replay'] as const) {
+      expect(captureShown(mode), mode).toBe(mode === 'replay')
+      const f = facts({ config: { ...DEFAULT_CONFIG, sourceMode: mode } })
+      expect(f.captureShown, mode).toBe(!f.recordShown.connection)
+    }
   })
 })
 

@@ -90,6 +90,12 @@ export interface RelayFacts {
    * follows the source mode, not the on/off, so it is the same for both sides.
    */
   recordShown: { connection: boolean; settings: boolean }
+  /**
+   * The Connection tab's Capture card shows (R3.4a: Replay only). The mirror of
+   * `recordShown.connection`, decided beside it and pushed with it, so the two cards always flip
+   * in the same push and are never on screen together.
+   */
+  captureShown: boolean
   /** The capture this page loaded for Replay; none for a page that (re)loaded (N1). */
   replay?: { file: string; events: number; durationMs: number }
 }
@@ -136,7 +142,8 @@ export const RELAY_FACTS_IDLE: RelayFacts = {
   deviceState: 'no-device',
   endpoint: { pill: { hostPort: { suffix: '' } }, overview: { hostPort: { suffix: ' · remote' } } },
   recording: { on: false },
-  recordShown: { connection: true, settings: true }
+  recordShown: { connection: true, settings: true },
+  captureShown: false
 }
 
 /** A gauge ring's colour: fuel low (alert), fuel, the secondary gauges, the rest. */
