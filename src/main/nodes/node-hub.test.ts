@@ -542,10 +542,14 @@ describe('board kind (#344)', () => {
     roster.applyMessage(NODE_MSG, row(1, 0x02), 5000) // the same report again: no write
     h.flush(true, 5000)
     expect(disk.saves).toBe(saves)
-    // PDU pages are a report too.
+    // PDU pages are a report too — and, online by them, it was seen now (D8 / S5, #133).
     h.telemetry('020100E02E182EBC02', 6000)
     h.flush(false, 6000)
-    expect(disk.file.nodes[2]).toEqual({ added: true, kind: 'pdu' })
+    expect(disk.file.nodes[2]).toEqual({
+      added: true,
+      kind: 'pdu',
+      lastSeen: new Date(6000).toISOString()
+    })
   })
 
   it('Forget of a PDU that has not reported this session unlinks its boards (S1)', () => {

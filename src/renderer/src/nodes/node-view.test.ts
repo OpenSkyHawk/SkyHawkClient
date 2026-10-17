@@ -51,6 +51,7 @@ const summary = (
   return nodesSummary(
     nodeViews(m, telemetry),
     outages,
+    [],
     boardZones(m.nodes, cockpitMembers(m).get),
     true
   )

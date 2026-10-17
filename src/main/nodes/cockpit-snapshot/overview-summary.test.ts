@@ -232,20 +232,34 @@ describe('overviewSummary', () => {
   const off = node(2, { availability: 'offline' })
   const waiting = fresh(42, { kind: 'pdu', identified: 'pdu', everHadReadings: true })
 
-  it('is the tile, the banner and the notice over the band and items without strays', () => {
+  it('is the tile, the banner and the notice over the band and items, the strays counted (X3)', () => {
     const views = nodeViews(model([node(1), off, waiting]), [])
     const band = healthBand(views)
-    expect(overviewSummary(views, [], true)).toEqual({
+    expect(overviewSummary(views, [], [], true)).toEqual({
       tile: cockpitTile(band, true),
       banner: attentionSummary(band, attentionItems(views, [])),
       newDevices: newDevices(views, true)
     })
-    expect(overviewSummary(views, [], true).banner).not.toBeNull()
+    expect(overviewSummary(views, [], [], true).banner).not.toBeNull()
+  })
+
+  it('counts a stray as the Cockpit does: one board up and a warning, named in the banner (D1)', () => {
+    const views = nodeViews(model([node(1), fresh(9, { identified: 'bridge' })]), [])
+    const strays = [{ nodeId: 9, flag: 'SECOND GATEWAY · can’t be adopted' }]
+    expect(overviewSummary(views, [], [], true)).toMatchObject({
+      tile: { value: '1 / 1', tone: 'ok' },
+      banner: null
+    })
+    expect(overviewSummary(views, [], strays, true)).toMatchObject({
+      tile: { value: '2 / 2', symbol: 'warn', tone: 'issue' },
+      banner: { head: '1 node needs attention', detail: '1 warning (NODE_ID 9)' },
+      newDevices: null
+    })
   })
 
   it('has no banner and no notice while the link is down; the tile says so', () => {
     const views = nodeViews(model([node(1), off, waiting]), [])
-    expect(overviewSummary(views, [], false)).toEqual({
+    expect(overviewSummary(views, [], [], false)).toEqual({
       tile: { value: '—', sub: 'no live node status', tone: 'none' },
       banner: null,
       newDevices: null

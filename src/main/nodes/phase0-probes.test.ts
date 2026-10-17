@@ -3,6 +3,9 @@
 // nothing. A fix ticket that changes one of these behaviours on purpose updates its probe.
 // Main and shared only; the probes that read renderer helpers are in
 // src/renderer/src/phase0-probes.test.ts (main never imports renderer code).
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PSU, type NodeDefaults, type NodeKind, type NodeMappingFile } from '@shared/nodes'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from './node-status-wire'
@@ -121,7 +124,7 @@ describe('fix-track probes (today)', () => {
     expect(a.h.forget(1).ok).toBe(false)
   })
 
-  it('C4: a node identified only by PDU telemetry logs "new on the bus" only at its next status row', () => {
+  it('C4 (fixed, #133): a node identified only by PDU telemetry logs "new on the bus" when its pages identify it', () => {
     const a = hubWith({ version: 4, nodes: {} })
     a.status(1, 1, 0)
     a.roster.applyMessage(NODE_END_MSG, '1', 0)
@@ -129,11 +132,43 @@ describe('fix-track probes (today)', () => {
     a.status(9, 0, 2000) // kind 0, never reports a kind
     a.h.telemetry('090100E02E182EBC02', 2500, '_NODE_TELEM 090100E02E182EBC02')
     expect(a.h.snapshot(2500).model.nodes.find((n) => n.nodeId === 9)?.identified).toBe('pdu')
-    expect(a.events.filter((e) => e.nodeId === 9 && e.event === 'new on the bus')).toEqual([])
-    a.status(9, 0, 7000) // next roster poll row: only now is it news
+    // Was: no row until its next status row (7000).
     expect(a.events.filter((e) => e.nodeId === 9 && e.event === 'new on the bus')).toMatchObject([
-      { t: 7000 }
+      { t: 2500 }
     ])
+    a.status(9, 0, 7000) // next roster poll row: no second row
+    expect(a.events.filter((e) => e.nodeId === 9 && e.event === 'new on the bus')).toHaveLength(1)
+  })
+
+  it('C4 (fixed, #133): the "seen new" record is cleared on Forget — re-plugged, it is new again', () => {
+    const a = hubWith({ version: 4, nodes: {} })
+    a.status(1, 1, 0)
+    a.roster.applyMessage(NODE_END_MSG, '1', 0)
+    a.h.statusLine(NODE_END_MSG, '_NODE_STATUS_END 1', 0)
+    const news = () => a.events.filter((e) => e.nodeId === 41 && e.event === 'new on the bus')
+    a.status(41, 1, 1000) // a panel group, not in your cockpit: new
+    expect(news()).toHaveLength(1)
+    const spec = { name: 'Left_Oxygen', console: 'Left', pduId: null, kind: 'panel' } as const
+    expect(a.h.adopt(41, spec).ok).toBe(true)
+    a.status(41, 1, 2000, false) // unplugged
+    a.h.flush(true, 2000)
+    expect(a.h.forget(41, 2000).ok).toBe(true)
+    a.status(41, 1, 3000) // plugged back in
+    expect(news()).toHaveLength(2)
+  })
+
+  it('X8 / C6 (fixed, #133): no source file words a new board the old way', () => {
+    // The old wording for a board outside your cockpit — the flag, the fault box's title and the
+    // log's detail — and the log's old detail for a registry one. Built here so this file passes.
+    const old = [new RegExp(['not', 'in', 'registry'].join(' '), 'i'), /'in NODE_IDS\.md'/]
+    const src = fileURLToPath(new URL('../..', import.meta.url))
+    const hits = readdirSync(src, { recursive: true, encoding: 'utf8' })
+      .filter((f) => /\.(ts|tsx)$/.test(f))
+      .flatMap((f) => {
+        const text = readFileSync(join(src, f), 'utf8')
+        return old.filter((re) => re.test(text)).map((re) => `${f}: ${re.source}`)
+      })
+    expect(hits).toEqual([])
   })
 
   it('M7: hub.reset() (port reopen after error) clears wasPresent without writing lastSeen', () => {

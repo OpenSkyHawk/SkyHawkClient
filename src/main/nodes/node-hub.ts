@@ -47,7 +47,7 @@ import {
   NODE_REGISTRY_SOURCE,
   type NodeFaultName
 } from '@shared/firmware'
-import { availabilityOf, buildNodeModel } from './node-model'
+import { availabilityOf, buildNodeModel, type AvailabilitySignals } from './node-model'
 import { NodeEventTracker } from './node-events'
 import { boardIdentity, identityOf, isAdoptableKind } from './node-kind'
 import {
@@ -162,19 +162,20 @@ export class NodeHub implements NodeLineSink {
   private modelDirty = true
   /** Rises with every `nodes:model` push; every model main hands out carries it (C5). */
   private modelRev = 0
-  /** Present NODE_IDs at the last roster change, to tell "came back" from "still listed". */
+  /** On the bus at the last change (onBusIds), to tell "came back" from "still listed". */
   private wasPresent = new Set<number>()
-  /** Node changes for the event log (#64), named by the mapping. */
+  /**
+   * Node changes for the event log (#64), named by the mapping. Whether a board is new is the
+   * model's answer (node-model.ts newState), read from the model as it stands with the line just
+   * applied — built at most once per line, and only when a row needs it (eventModel).
+   */
   private readonly events = new NodeEventTracker({
     name: (id) => this.mapped().get(id)?.name ?? `Node ${id}`,
-    // "New on the bus" once a node not in your cockpit has identified as something adoptable — not
-    // at first sight, and never for the bridge's own row (node 0, our link). A registry board not
-    // added yet is new too (#93); its kind comes from the registry, so it is news at once.
-    unmapped: (id) => !this.mapped().get(id)?.known,
-    inRegistry: (id) => this.defaults.has(id),
-    isNew: (id) =>
-      id !== BRIDGE_NODE_ID && !this.mapped().get(id)?.known && isAdoptableKind(this.kindOf(id))
+    outside: (id) => !this.mapped().get(id)?.known,
+    entry: (id) => this.eventModel().nodes.find((e) => e.nodeId === id)
   })
+  /** The model for the line being turned into events: when it arrived, and the model once built. */
+  private eventLine?: { at: number; model?: NodeModel }
   private mappedFor?: NodeMappingFile
   private mappedCache = new Map<number, MappedNode>()
   /** The node mapping and its file. */
@@ -357,13 +358,24 @@ export class NodeHub implements NodeLineSink {
     const t = parseNodeTelem(arg.trim())
     if (!t) return
     this.telem.apply(t, now)
+    this.eventLine = { at: now }
     this.report(this.events.telemetry(t, line, now))
+    this.eventLine = undefined
   }
 
   /** After a `_NODE_STATUS` / `_NODE_STATUS_END` line reached the roster: what it changed. */
   statusLine(identifier: string, line: string, now = Date.now()): void {
     const roster = this.roster.snapshot().map(withFaultInfo)
+    this.eventLine = { at: now }
     this.report(this.events.status(roster, identifier, line, now))
+    this.eventLine = undefined
+  }
+
+  /** The model with the current line applied, for the event log's "new" (built once per line). */
+  private eventModel(): NodeModel {
+    const line = this.eventLine
+    if (!line) return this.model(Date.now())
+    return (line.model ??= this.model(line.at))
   }
 
   private report(events: LogEventInput[]): void {
@@ -386,17 +398,21 @@ export class NodeHub implements NodeLineSink {
    */
   flush(rosterChanged: boolean, now = Date.now()): void {
     let changed = rosterChanged || this.modelDirty
+    let pages = false
     if (now - this.telemPushedAt >= NODE_TELEM_PUSH_MS && this.telem.takeChanged(now)) {
       this.telemPushedAt = now
       // The Cockpit's snapshot follows the pages; the renderer reads them only through it (R3.4d:
       // the `nodes:telemetry` push it no longer listened to is gone).
       this.cockpit.telemetryPushed(this.telem.snapshot(now))
-      changed = true
+      changed = pages = true
     }
-    if (rosterChanged) this.rosterTransitions(now)
+    // Pages are a report too (X2): a board online by them alone comes and goes like one the
+    // roster lists — its last seen, and its online / offline rows (D8 / S5).
+    if (rosterChanged || pages) this.busTransitions(now)
     if (changed) {
       this.recordReportedKinds(now)
-      this.pushModel(now)
+      const model = this.pushModel(now)
+      if (rosterChanged || pages) this.report(this.events.pagesOnline(model.nodes, now))
     }
   }
 
@@ -479,14 +495,37 @@ export class NodeHub implements NodeLineSink {
    * availability by the model's one rule, and whether fresh PDU pages say it is live.
    */
   private offlineSignals(nodeId: number, now: number): OfflineSignals {
-    const { availability } = availabilityOf({
-      status: this.roster.snapshot().find((n) => n.nodeId === nodeId),
-      seen: this.roster.seenInfo().get(nodeId),
-      rosterComplete: this.roster.rosterCompleteAt() !== undefined,
-      telemetry: this.telem.snapshot(now).find((t) => t.nodeId === nodeId),
+    const { availability } = availabilityOf(this.signals(now)(nodeId))
+    return { availability }
+  }
+
+  /** What the one availability rule reads for each board, as it stands now. */
+  private signals(now: number): (nodeId: number) => AvailabilitySignals {
+    const rows = new Map(this.roster.snapshot().map((n) => [n.nodeId, n]))
+    const pages = new Map(this.telem.snapshot(now).map((t) => [t.nodeId, t]))
+    const seen = this.roster.seenInfo()
+    const rosterComplete = this.roster.rosterCompleteAt() !== undefined
+    return (nodeId) => ({
+      status: rows.get(nodeId),
+      seen: seen.get(nodeId),
+      rosterComplete,
+      telemetry: pages.get(nodeId),
       now
     })
-    return { availability }
+  }
+
+  /**
+   * The boards on the bus now by the one availability rule (X2): listed present by the roster, or
+   * online by their PDU pages. The bridge's own row is the link, not a board.
+   */
+  private onBusIds(now: number): Set<number> {
+    const of = this.signals(now)
+    const ids = new Set([
+      ...this.roster.snapshot().map((n) => n.nodeId),
+      ...this.telem.snapshot(now).map((t) => t.nodeId)
+    ])
+    ids.delete(BRIDGE_NODE_ID)
+    return new Set([...ids].filter((id) => availabilityOf(of(id)).availability === 'online'))
   }
 
   private refusal(gate: OfflineGate, what: 'hidden' | 'forgotten'): NodeMappingResult | undefined {
@@ -591,20 +630,16 @@ export class NodeHub implements NodeLineSink {
   }
 
   /**
-   * What a roster change means for the saved mapping:
+   * What a change on the bus means for the saved mapping — the roster's, or a board's PDU pages
+   * (one availability rule, onBusIds):
    * - a board that came (back) online is no longer hidden, and it was seen now — that is how a
    *   registry board joins your cockpit the first time it reports;
    * - a board that dropped off was last seen now.
    * Only transitions count: a board the bridge still lists (within its 3 s heartbeat timeout, or
    * about to be removed) stays hidden through later polls, and steady polls write nothing.
    */
-  private rosterTransitions(now: number): void {
-    const present = new Set(
-      this.roster
-        .snapshot()
-        .filter((n) => n.present)
-        .map((n) => n.nodeId)
-    )
+  private busTransitions(now: number): void {
+    const present = this.onBusIds(now)
     const came = [...present].filter((id) => !this.wasPresent.has(id))
     const went = [...this.wasPresent].filter((id) => !present.has(id))
     this.wasPresent = present
@@ -634,6 +669,8 @@ export class NodeHub implements NodeLineSink {
       }
       throw err
     }
+    // A board now in your cockpit has no "seen new" record: forgotten later, it is new again (C4).
+    if (next !== before) this.events.cockpitChanged()
     // A no-op change (forget an unmapped id, hide a hidden node) writes and pushes nothing.
     return { ok: true, model: next === before ? this.model(Date.now()) : this.pushModel() }
   }

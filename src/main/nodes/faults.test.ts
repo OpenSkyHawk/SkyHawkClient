@@ -28,8 +28,8 @@ const st = (over: Partial<NodeStatus> = {}): NodeStatus =>
 function logRows(over: Partial<NodeStatus>): string[] {
   const t = new NodeEventTracker({
     name: () => 'Right_Navigation',
-    isNew: () => false,
-    unmapped: () => false
+    outside: () => false, // in your cockpit
+    entry: () => undefined
   })
   t.status([st()], NODE_MSG, '', 0)
   t.status([st()], NODE_END_MSG, '', 10)

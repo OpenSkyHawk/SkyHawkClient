@@ -124,6 +124,7 @@ export const newBoard = (nodeId: number, firstSeenAt: number, over: Partial<Node
     console: null,
     source: 'new',
     firstSeenAt,
+    onlineSince: firstSeenAt,
     reportedAt: firstSeenAt,
     ...over
   })
