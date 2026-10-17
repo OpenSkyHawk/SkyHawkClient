@@ -11,7 +11,7 @@ import { HID_CONTROLS, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
 import { ConfigTransfer } from '../config'
 import { listSerialPorts } from '../gateway'
 import { loadCalCache, saveCalCache } from '../hid/calibration'
-import { Session } from './session'
+import { AppServices } from './app-services'
 import { debugLog, debugLogPath } from './debug-log'
 import { storeFiles, storePaths, userDataOverride } from './user-data'
 
@@ -67,7 +67,7 @@ function emit<C extends PushChannel>(channel: C, payload: PushChannels[C]): void
   mainWindow?.webContents.send(channel, payload)
 }
 
-const session = new Session(emit, paths)
+const session = new AppServices(emit, paths)
 
 const transfer = new ConfigTransfer({
   getConfig: () => session.settings.get(),

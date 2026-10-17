@@ -184,7 +184,7 @@ export class NodeHub implements NodeLineSink {
 
   // ── the link's moments (gateway LinkRider) ────────────────────────────────
 
-  /** NodeHub's part of the Gateway connection's moments. Session rides it after HID. */
+  /** NodeHub's part of the Gateway connection's moments. AppServices rides it after HID. */
   readonly rider: LinkRider = {
     // Poll the node roster so silent deaths get reconciled — relaying or not.
     timers: (every) => every(NODES_REFRESH_MS, () => this.requestNodes()),

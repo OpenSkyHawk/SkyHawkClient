@@ -1,7 +1,9 @@
 // The main process's services, built and wired: the Gateway link (gateway/), the nodes (nodes/),
 // HID and calibration (hid/), and the DCS side — the relay, its network end, the stream log, the
 // stats and the recorder (dcs/), the settings (config/) and the event log (events/). Each lives
-// with its owner; Session only builds and connects them, and answers the rehydrate bundle.
+// with its owner; AppServices only builds and connects them, and answers the rehydrate bundle.
+// It holds no rules and no state (UD-F): it is the seam the contract tests build with the edges
+// faked (test-harness/services.ts).
 //
 // The device link is not started or stopped by the relay. It is up whenever the board is plugged
 // in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
@@ -21,7 +23,7 @@ import { storeFiles, storePaths, type StorePaths } from './user-data'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
-export class Session {
+export class AppServices {
   /** The Gateway's USB serial port. Up independently of the relay. */
   readonly connection: GatewayConnection
   /** The port's text lines, read: node lines to NodeHub, panel commands to the log. */
@@ -49,8 +51,8 @@ export class Session {
   private readonly stats = new Stats()
 
   /**
-   * `paths`: the <userData> files, from app/index.ts. The default resolves the same paths the
-   * same way, for callers that build a Session on its own.
+   * `paths`: the <userData> files, from app/index.ts. The default resolves the same paths
+   * the same way, for callers that build an AppServices on its own.
    */
   constructor(emit: Emit, paths: StorePaths = storePaths(() => app.getPath('userData'))) {
     const { mappingFile, cacheFile } = storeFiles(paths)
