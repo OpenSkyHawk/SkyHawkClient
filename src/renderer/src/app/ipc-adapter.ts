@@ -48,6 +48,7 @@ export function initBridge(): (() => void) | void {
   void api.getNodes().then(({ model }) => nodesFromMain.nodes(model))
 
   void api.getConfig().then((v) => configFromMain.config(v))
+  void api.getConfigBackups().then((list) => configFromMain.backups(list))
 
   // Events live in main for the whole app run; a reloaded renderer picks the list back up.
   void api.getEvents().then((rows) => eventsFromMain.restore(rows))
@@ -70,6 +71,7 @@ export function initBridge(): (() => void) | void {
     api.on('nodes:model', (m) => nodesFromMain.model(m)),
     api.on('cockpit:snapshot', (c) => nodesFromMain.cockpit(c)),
     api.on('config:changed', (c) => configFromMain.changed(c)),
+    api.on('config:backups', (list) => configFromMain.backups(list)),
     api.on('serial:traffic', (frames) => gatewayFromMain.serialTraffic(frames)),
     api.on('telemetry:tick', (t) => dcsFromMain.telemetry(t)),
     api.on('stats:tick', (st) => dcsFromMain.stats(st)),

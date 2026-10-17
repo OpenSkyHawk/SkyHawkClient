@@ -102,6 +102,41 @@ describe('parseConfigFile', () => {
   })
 })
 
+describe('an automatic backup’s record of what it was saved before (#136)', () => {
+  const at = '2026-10-12T21:02:00Z'
+  const before = { kind: 'import', fileName: 'cockpit.json' } as const
+
+  it('is written inside the file, beside the sections, with the format version unchanged', () => {
+    const file = buildConfigFile(current, at, '0.2.0', before)
+    expect(file).toMatchObject({ format: CONFIG_FORMAT, version: 1, backup: { before } })
+    expect(buildConfigFile(current, at, '0.2.0')).not.toHaveProperty('backup') // an export
+  })
+
+  it('is read back, an import’s or a restore’s', () => {
+    const restore = { kind: 'restore', savedAt: '2026-10-10T08:40:00.000Z' } as const
+    for (const b of [before, restore]) {
+      const r = parseConfigFile(JSON.stringify(buildConfigFile(current, at, '0.2.0', b)))
+      expect(r.ok && r.config.backupBefore).toEqual(b)
+      expect(r.ok && r.config.sections).toEqual(current) // the sections it holds, as any file's
+    }
+  })
+
+  it('is optional and additive: without it, or with one not understood, the file reads the same', () => {
+    const plain = roundTrip(current)
+    expect(plain.ok && plain.config.backupBefore).toBeUndefined()
+    for (const backup of [
+      'yes',
+      { before: 'an import' },
+      { before: { kind: 'import' } },
+      { before: { kind: 'import', fileName: '' } },
+      { before: { kind: 'restore', savedAt: 'yesterday' } },
+      { before: { kind: 'export', fileName: 'a.json' } }
+    ]) {
+      expect(roundTrip(current, { backup })).toEqual(plain)
+    }
+  })
+})
+
 describe('parseConfigFile: strict import validation (C1)', () => {
   /** Parse a file with `sections`; what each known section came to: its value or its reason. */
   const read = (sections: Record<string, unknown>) => {

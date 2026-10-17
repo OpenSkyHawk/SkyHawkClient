@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import type { ImportPreview } from '@shared/config'
+import type { BackupEntry, ConfigImportOpen, ImportPreview } from '@shared/config'
 import { Row, SectionHead } from '../app/kit'
+import { AutomaticBackups } from './AutomaticBackups'
 import { ImportDialog } from './ImportDialog'
-import { importDoneText } from './import-view'
+import { importDoneText, restoreDoneText } from './import-view'
 import { useConfigStore } from './store'
 
 type Note = { text: string; err?: boolean }
@@ -21,11 +22,20 @@ export function ConfigurationSection({ axisLabels }: { axisLabels: readonly stri
     else if (r?.outcome === 'saved') setExported({ text: `Saved ${r.path.split(/[/\\]/).pop()}` })
   }
 
-  const doImport = async () => {
-    setImported(undefined)
-    const r = await useConfigStore.getState().openConfigImport()
+  /** The review of what main read: an import's file, or a backup's for a restore. */
+  const review = (r: ConfigImportOpen | undefined) => {
     if (r?.status === 'error') setImported({ text: r.error, err: true })
     else if (r?.status === 'ready') setPreview(r.preview)
+  }
+
+  const doImport = async () => {
+    setImported(undefined)
+    review(await useConfigStore.getState().openConfigImport())
+  }
+
+  const doRestore = async (entry: BackupEntry) => {
+    setImported(undefined)
+    review(await useConfigStore.getState().openConfigBackup(entry.file))
   }
 
   return (
@@ -67,14 +77,20 @@ export function ConfigurationSection({ axisLabels }: { axisLabels: readonly stri
             </div>
           )
       )}
+      <AutomaticBackups onRestore={(entry) => void doRestore(entry)} />
       {preview && (
         <ImportDialog
           preview={preview}
           axisLabels={axisLabels}
           onClose={() => setPreview(undefined)}
           onApplied={(r) => {
-            // The settings come back on `config:changed` (R3.3).
-            setImported({ text: importDoneText(r.applied.length, r.backupPath) })
+            // The settings come back on `config:changed` (R3.3), the backups on `config:backups`.
+            const backedUp = r.backupPath !== undefined
+            setImported({
+              text: preview.backup
+                ? restoreDoneText(preview.backup.savedAt, backedUp)
+                : importDoneText(r.applied.length, backedUp)
+            })
             setPreview(undefined)
           }}
         />

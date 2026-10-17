@@ -5,9 +5,11 @@
 import { create } from 'zustand'
 import type { SkyhawkApi } from '@shared/app'
 import {
+  BACKUP_LIST_DEFAULT,
   DEFAULT_CONFIG,
   PSU_VIEW_DEFAULT,
   type AppConfig,
+  type BackupList,
   type ConfigChanged,
   type ConfigEdit,
   type ConfigView,
@@ -54,6 +56,15 @@ export interface ConfigState {
   exportConfig: Ask<'exportConfig'>
   openConfigImport: Ask<'openConfigImport'>
   applyConfigImport: Ask<'applyConfigImport'>
+
+  /** The automatic backups, as main pushes them (`config:backups`, #136). */
+  backups: BackupList
+  /** Ask main for the list as it is on disk now (Settings › Configuration opening). */
+  loadConfigBackups: () => void
+  /** Read a backup into the import review, as a restore. */
+  openConfigBackup: Ask<'openConfigBackup'>
+  /** Open the backups folder in the file manager. */
+  revealConfigBackups: () => void
 }
 
 /** Main, as the IPC adapter hands it over; nothing until it binds. */
@@ -149,7 +160,18 @@ export const useConfigStore = create<ConfigState>((set) => ({
 
   exportConfig: () => api()?.exportConfig(),
   openConfigImport: () => api()?.openConfigImport(),
-  applyConfigImport: (token, sections, backup) => api()?.applyConfigImport(token, sections, backup)
+  applyConfigImport: (token, sections, backup) => api()?.applyConfigImport(token, sections, backup),
+
+  backups: BACKUP_LIST_DEFAULT,
+  loadConfigBackups: () => {
+    void api()
+      ?.getConfigBackups()
+      .then((list) => configFromMain.backups(list))
+  },
+  openConfigBackup: (file) => api()?.openConfigBackup(file),
+  revealConfigBackups: () => {
+    void api()?.revealConfigBackups()
+  }
 }))
 
 /** What main sends this slice; the IPC adapter calls each as its push or pull lands. */
@@ -168,5 +190,8 @@ export const configFromMain = {
       psuView: c.psu,
       psu: c.config.psu,
       ...(c.source === 'import' ? configState(c.config) : {})
-    })
+    }),
+
+  /** `config:backups`, and `config:backups-get`'s answer. */
+  backups: (list: BackupList): void => useConfigStore.setState({ backups: list })
 }

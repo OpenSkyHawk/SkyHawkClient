@@ -147,7 +147,48 @@ export interface ConfigFile {
   /** Client version that wrote it. */
   client: string
   sections: Partial<ConfigSnapshot>
+  /**
+   * Set on an automatic backup only: what it was saved before, kept in the file itself so it still
+   * says so if the file is moved. Optional and additive — a reader that does not know it ignores
+   * it, so the format version stays the same. The sections it holds are its `sections`.
+   */
+  backup?: { before: BackupBefore }
 }
+
+/**
+ * What an automatic backup was saved before: the import of a file (its name), or the restore of
+ * another backup (when that one was saved, as an ISO time).
+ */
+export type BackupBefore =
+  | { kind: 'import'; fileName: string }
+  | { kind: 'restore'; savedAt: string }
+
+/** One automatic backup in `<userData>/backups`, as Settings › Configuration lists it. */
+export interface BackupEntry {
+  /** Its name in the backups folder: what `config:backup-restore` opens. */
+  file: string
+  /** When it was saved, as an ISO time. */
+  savedAt: string
+  /** What it was saved before; absent for a backup written before backups said so (an import). */
+  before?: BackupBefore
+  /** The titles of the sections it holds, in section order ("App settings", …). */
+  sections: string[]
+}
+
+/**
+ * `config:backups` (and `config:backups-get`'s answer): the automatic backups, newest first, at
+ * most `keep` of them — main deletes older ones after each new backup.
+ */
+export interface BackupList {
+  backups: BackupEntry[]
+  /** How many main keeps. */
+  keep: number
+  /** The file manager Show in … opens the folder in, by platform. */
+  fileManager: 'finder' | 'explorer' | 'folder'
+}
+
+/** Before main has said anything: no backups. */
+export const BACKUP_LIST_DEFAULT: BackupList = { backups: [], keep: 5, fileManager: 'folder' }
 
 /** One `key  from → to` line. `axis` set: the renderer names the axis (it owns the labels). */
 export interface DiffRow {
@@ -194,6 +235,11 @@ export interface ImportPreview {
   rejected: RejectedSection[]
   /** Every section matches the current setup: nothing to apply. */
   identical: boolean
+  /**
+   * Set when the file is one of the automatic backups (`config:backup-restore`): the review is a
+   * restore, of the backup saved then, before what it names.
+   */
+  backup?: { savedAt: string; before?: BackupBefore }
 }
 
 /** A known section an import left out (C1): the review says "Skipped — {title}: {reason}." */
@@ -216,11 +262,13 @@ export type ConfigImportApplyResult =
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */
 export interface ConfigPushChannels {
   'config:changed': ConfigChanged
+  'config:backups': BackupList
 }
 
 /** Push channel names (main -> renderer). */
 export const CONFIG_PUSH = {
-  configChanged: 'config:changed'
+  configChanged: 'config:changed',
+  configBackups: 'config:backups'
 } as const
 
 /** Intent channel names (renderer -> main, invoke/response). */
@@ -230,5 +278,8 @@ export const CONFIG_CTRL = {
   configExport: 'config:export',
   configImportOpen: 'config:import-open',
   configImportApply: 'config:import-apply',
-  configEdit: 'config:edit'
+  configEdit: 'config:edit',
+  configBackupsGet: 'config:backups-get',
+  configBackupRestore: 'config:backup-restore',
+  configBackupsReveal: 'config:backups-reveal'
 } as const

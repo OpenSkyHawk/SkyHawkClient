@@ -14,11 +14,16 @@
 //                                              board `confirmedAt` and `axes`
 // Calibration only ever refills the client's copy. Writing a device is the HID tab's Review &
 // restore offer, never an import.
+//
+// An automatic backup is the same file with one more top-level field, `backup` (what it was saved
+// before). It is optional and additive: the strict read is of the sections only, and any other
+// top-level key is ignored, so the format version stays 1 and a file with it imports as any other.
 import { sanitizeConfig } from './settings-schema'
 import {
   CONFIG_FORMAT,
   type AppConfig,
   type AppSettings,
+  type BackupBefore,
   type ConfigFile,
   type ConfigSnapshot,
   type DiffRow,
@@ -62,14 +67,17 @@ export function appSettings(config: AppConfig): AppSettings {
 export function buildConfigFile(
   current: ConfigSnapshot,
   exportedAt: string,
-  client: string
+  client: string,
+  /** An automatic backup: what it is saved before. */
+  backupBefore?: BackupBefore
 ): ConfigFile {
   return {
     format: CONFIG_FORMAT,
     version: CONFIG_FILE_VERSION,
     exportedAt,
     client,
-    sections: current
+    sections: current,
+    ...(backupBefore ? { backup: { before: backupBefore } } : {})
   }
 }
 
@@ -82,6 +90,8 @@ export interface ParsedConfig {
   skipped: string[]
   /** Sections this client knows that are malformed or incomplete (C1), left out, with why. */
   rejected: { id: SectionId; reason: string }[]
+  /** An automatic backup's record of what it was saved before, when it has a readable one. */
+  backupBefore?: BackupBefore
 }
 
 export type ParseResult = { ok: true; config: ParsedConfig } | { ok: false; error: string }
@@ -155,7 +165,29 @@ export function parseConfigFile(text: string): ParseResult {
   const config: ParsedConfig = { version, sections, skipped, rejected }
   if (typeof raw.exportedAt === 'string') config.exportedAt = raw.exportedAt
   if (typeof raw.client === 'string') config.client = raw.client
+  const before = readBackupBefore(raw.backup)
+  if (before) config.backupBefore = before
   return { ok: true, config }
+}
+
+/**
+ * A backup's `backup.before`, read tolerantly: it only labels the file, so one that is missing or
+ * not understood is left out (the list then says "Before an import") and never refuses the file.
+ */
+function readBackupBefore(raw: unknown): BackupBefore | undefined {
+  if (!isPlainObject(raw) || !isPlainObject(raw.before)) return undefined
+  const b = raw.before
+  if (b.kind === 'import' && typeof b.fileName === 'string' && b.fileName !== '') {
+    return { kind: 'import', fileName: b.fileName }
+  }
+  if (
+    b.kind === 'restore' &&
+    typeof b.savedAt === 'string' &&
+    !Number.isNaN(Date.parse(b.savedAt))
+  ) {
+    return { kind: 'restore', savedAt: b.savedAt }
+  }
+  return undefined
 }
 
 // ── review: what applying a section would change ─────────────────────────────
@@ -379,11 +411,14 @@ export function buildImportPreview(
     online: number[]
   },
   token: string,
-  fileName: string
+  fileName: string,
+  /** The file is the automatic backup saved then: the review is a restore of it (#136). */
+  restoreOf?: { savedAt: string }
 ): ImportPreview {
   const sections = withSectionNotes(
     diffImport(against.defaults, against.current, config.sections, against.online)
   )
+  const before = config.backupBefore
   return {
     token,
     fileName,
@@ -392,7 +427,8 @@ export function buildImportPreview(
     sections,
     skipped: config.skipped,
     rejected: rejectedSections(config),
-    identical: sections.every((s) => s.rows.length === 0)
+    identical: sections.every((s) => s.rows.length === 0),
+    ...(restoreOf ? { backup: { savedAt: restoreOf.savedAt, ...(before ? { before } : {}) } } : {})
   }
 }
 

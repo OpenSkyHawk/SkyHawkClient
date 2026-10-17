@@ -207,7 +207,7 @@ describe('T13 Settings › Configuration › Import preview (B90, B94, F1, C1, S
     )
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(
-      screen.getByText('Applied 2 sections · backup saved as skyhawk-config-backup-2026-10-16.json')
+      screen.getByText('Applied 2 sections · backup saved, listed under Automatic backups')
     ).toBeInTheDocument()
   })
 

@@ -5,7 +5,7 @@ import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import type { LogEvent } from '@shared/events'
 import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
 import type { HidSnapshot } from '@shared/hid'
-import { DEFAULT_CONFIG, PSU_VIEW_DEFAULT } from '@shared/config'
+import { BACKUP_LIST_DEFAULT, DEFAULT_CONFIG, PSU_VIEW_DEFAULT } from '@shared/config'
 import { isLinkUp, LinkDownClock, linkFacts } from '../../../main/gateway/link-state'
 import { relayFacts } from '../../../main/dcs/relay-rules'
 import { hidFacts } from '../../../main/hid/hid-facts'
@@ -96,6 +96,8 @@ function fakeApi() {
         },
         psu: PSU_VIEW_DEFAULT
       }),
+    // The automatic backups (`config:backups-get`, #136): none.
+    getConfigBackups: () => Promise.resolve(BACKUP_LIST_DEFAULT),
     getHidAvailability: () => Promise.resolve({ axes: [0, 1], hats: [], buttons: [] }),
     setConfig: (patch: unknown) => Promise.resolve(patch),
     editConfig: (edit: unknown) => Promise.resolve(edit),
