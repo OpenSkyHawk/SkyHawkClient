@@ -7,7 +7,7 @@
 // (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
 import type { RelayResult, RelayState } from '@shared/dcs'
-import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
+import type { Emit, RelayStatus } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
 import { isLinkUp, type DeviceStatus } from '@shared/gateway'
 import { DcsBiosProtocol } from './bios-protocol'
@@ -19,8 +19,6 @@ import type { SessionRecorder } from './session-recorder'
 import { Decoder, flushTelemetry } from './sim-telemetry-decoder'
 import { STATS_MS, type Stats } from './stream-stats'
 import type { StreamLog } from './stream-log'
-
-type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 const TELEMETRY_MS = 200
 

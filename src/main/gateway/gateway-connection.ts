@@ -11,7 +11,7 @@
 // Bundled together, there was no node status, PDU telemetry, HID or calibration unless DCS was
 // being relayed, and stopping the relay tore the port down with it.
 import { isLinkUp, type DeviceStatus, type GatewayStatus } from '@shared/gateway'
-import type { PushChannel, PushChannels } from '@shared/app'
+import type { Emit } from '@shared/app'
 import {
   findSimGatewayPort,
   listSerialPorts,
@@ -21,8 +21,6 @@ import {
   SIMGATEWAY_VID,
   type Log
 } from './serial-bridge'
-
-type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 /**
  * The calibration frame filter on the incoming byte path (hid/calibration's HidCalibrationService

@@ -9,7 +9,7 @@
 // in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
 import type { DeviceStatus } from '@shared/gateway'
-import type { RelayStatus } from '@shared/app'
+import type { Emit, RelayStatus } from '@shared/app'
 import { app } from 'electron'
 import { DcsConnection, DcsRelay, SessionRecorder, Stats, StreamLog } from '../dcs'
 import { SettingsService } from '../config'
@@ -20,7 +20,6 @@ import { HidCalibrationService } from '../hid/calibration'
 import { NodeHub, NodeRoster } from '../nodes'
 import { debugLog, setDebugEnabled } from './debug-log'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
-import type { Emit } from './window'
 
 export class AppServices {
   /** The Gateway's USB serial port. Up independently of the relay. */

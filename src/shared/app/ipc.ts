@@ -94,6 +94,15 @@ export interface PushChannels
 
 export type PushChannel = keyof PushChannels
 
+/**
+ * A main → renderer push, as AppServices hands it to each service. `Emit<C>` narrows it to some
+ * channels (EventJournal pushes only `events:batch`); the full `Emit` is assignable to any of them.
+ */
+export type Emit<Channels extends PushChannel = PushChannel> = <C extends Channels>(
+  channel: C,
+  payload: PushChannels[C]
+) => void
+
 export const IPC = {
   ...GATEWAY_PUSH,
   ...DCS_PUSH,

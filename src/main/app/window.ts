@@ -3,9 +3,6 @@ import { BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import type { PushChannel, PushChannels } from '@shared/app'
 
-/** A main → renderer push: what AppServices hands each service. */
-export type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
-
 let mainWindow: BrowserWindow | null = null
 
 export function emit<C extends PushChannel>(channel: C, payload: PushChannels[C]): void {

@@ -2,11 +2,9 @@
 // lifecycle, the throttled push to the renderer, the rate window, and the reopen when the serial
 // port comes back. It rides on the Gateway connection (gateway LinkRider) for those moments; its
 // I/O is the HID reader.
-import type { PushChannel, PushChannels } from '@shared/app'
+import type { Emit } from '@shared/app'
 import type { LinkRider, LinkTimer } from '../gateway'
 import { HidReader } from './hid-reader'
-
-type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
