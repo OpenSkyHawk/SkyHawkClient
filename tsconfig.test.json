@@ -1,0 +1,12 @@
+// The renderer's tests and the shared test fixtures: DOM and Node types. They import main's pure
+// builders (config-file, gateway-health, ...) and so, through main's topic indexes, its services.
+// tsconfig.json leaves these files out and loads no Node types, so the renderer's app code
+// can't use them.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src/renderer", "src/shared", "src/test-fixtures"],
+  "exclude": []
+}

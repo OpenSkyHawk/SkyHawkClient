@@ -1,0 +1,15 @@
+{
+  "process": "error",
+  "crossProcess": "error",
+  "electron": "error",
+  "rendererShared": "error",
+  "contracts": "error",
+  "cycles": "error",
+  "firmwareLeaf": "error",
+  "formatLeaf": "error",
+  "kitLeaf": "error",
+  "topicsMain": "error",
+  "topicsRenderer": "error",
+  "deepMain": "error",
+  "deepRenderer": "error"
+}

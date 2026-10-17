@@ -2,43 +2,57 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { LogEvent } from '@shared/events'
 import {
   CTRL,
-  type AppConfig,
-  type CalCacheEntry,
-  type CalCommitAxis,
-  type CalHello,
-  type CalResult,
-  type CalSnapshot,
-  type CaptureState,
-  type ConfigExportResult,
-  type ConfigImportApplyResult,
-  type ConfigImportOpen,
+  deliverPushes,
+  PUSH_BATCH,
   type DebugDumpResult,
-  type ExportResult,
-  type HidAvailability,
-  type NodeMappingResult,
-  type NodeRegistryInfo,
-  type NodeSnapshot,
+  type PushBatch,
   type PushChannel,
   type PushChannels,
-  type RelayResult,
   type RelayStatus,
-  type ReplayLoad,
   type SkyhawkApi
-} from '@shared/ipc'
-import type { CachedBoard } from '@shared/cal-cache'
-import type { ResetPreview } from '@shared/node-mapping'
+} from '@shared/app'
+import type {
+  AppConfig,
+  ConfigExportResult,
+  ConfigImportApplyResult,
+  ConfigImportOpen,
+  ConfigView
+} from '@shared/config'
+import type { RecordState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs'
+import type { HidAvailability } from '@shared/hid'
+import type {
+  NodeBatchResult,
+  NodeMappingResult,
+  NodeRegistryInfo,
+  NodeSnapshot,
+  ResetPreview
+} from '@shared/nodes'
+
+// Each push channel's subscribers, in the order they subscribed.
+const subscribers = new Map<PushChannel, Set<(data: never) => void>>()
+
+// Main sends every push of one turn as one `push:batch` message (R3.4c). Its pushes reach their
+// channels' subscribers in main's order, all inside this one IPC event, so the renderer applies
+// them in one task and React commits them as one frame.
+ipcRenderer.on(PUSH_BATCH, (_e: unknown, batch: PushBatch) =>
+  deliverPushes(batch, (channel) => subscribers.get(channel))
+)
 
 // Typed bridge: main -> renderer push subscriptions + renderer -> main control.
 const api: SkyhawkApi = {
   on<C extends PushChannel>(channel: C, cb: (data: PushChannels[C]) => void): () => void {
-    const listener = (_e: unknown, data: PushChannels[C]): void => cb(data)
-    ipcRenderer.on(channel, listener)
+    // A wrapper per subscription, as ipcRenderer.on made one: the same callback twice is two.
+    const listener = (data: PushChannels[C]): void => cb(data)
+    const set = subscribers.get(channel) ?? new Set()
+    set.add(listener as (data: never) => void)
+    subscribers.set(channel, set)
     return () => {
-      ipcRenderer.removeListener(channel, listener)
+      set.delete(listener as (data: never) => void)
     }
   },
-  getConfig: () => ipcRenderer.invoke(CTRL.configGet) as Promise<AppConfig>,
+  getConfig: () => ipcRenderer.invoke(CTRL.configGet) as Promise<ConfigView>,
   setConfig: (patch) => ipcRenderer.invoke(CTRL.configSet, patch) as Promise<AppConfig>,
+  editConfig: (edit) => ipcRenderer.invoke(CTRL.configEdit, edit) as Promise<AppConfig>,
   exportConfig: () => ipcRenderer.invoke(CTRL.configExport) as Promise<ConfigExportResult>,
   openConfigImport: () => ipcRenderer.invoke(CTRL.configImportOpen) as Promise<ConfigImportOpen>,
   applyConfigImport: (token, sections, backup) =>
@@ -50,6 +64,8 @@ const api: SkyhawkApi = {
     ) as Promise<ConfigImportApplyResult>,
   startRelay: () => ipcRenderer.invoke(CTRL.relayStart) as Promise<RelayResult>,
   stopRelay: () => ipcRenderer.invoke(CTRL.relayStop) as Promise<RelayResult>,
+  toggleRelay: (relaying: boolean) =>
+    ipcRenderer.invoke(CTRL.relayToggle, relaying) as Promise<RelayResult>,
   getStatus: () => ipcRenderer.invoke(CTRL.relayStatus) as Promise<RelayStatus>,
   connectDevice: () => ipcRenderer.invoke(CTRL.deviceConnect) as Promise<void>,
   disconnectDevice: () => ipcRenderer.invoke(CTRL.deviceDisconnect) as Promise<void>,
@@ -57,7 +73,7 @@ const api: SkyhawkApi = {
   getEvents: () => ipcRenderer.invoke(CTRL.eventsGet) as Promise<LogEvent[]>,
   clearEvents: () => ipcRenderer.invoke(CTRL.eventsClear) as Promise<void>,
   exportEvents: () => ipcRenderer.invoke(CTRL.eventsExport) as Promise<ExportResult>,
-  toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<CaptureState>,
+  toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<RecordState>,
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
   getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,
   refreshNodes: () => ipcRenderer.invoke(CTRL.nodesRefresh) as Promise<void>,
@@ -76,29 +92,27 @@ const api: SkyhawkApi = {
   getNodeRegistry: () => ipcRenderer.invoke(CTRL.nodeRegistry) as Promise<NodeRegistryInfo>,
   hideNode: (nodeId, on) =>
     ipcRenderer.invoke(CTRL.nodeMappingHide, nodeId, on) as Promise<NodeMappingResult>,
+  addAllNodes: (bulk) =>
+    ipcRenderer.invoke(CTRL.nodeMappingAddAll, bulk) as Promise<NodeBatchResult>,
+  unhideNodes: (nodeIds) =>
+    ipcRenderer.invoke(CTRL.nodeMappingUnhide, nodeIds) as Promise<NodeBatchResult>,
   setSerialMonitor: (on: boolean) => ipcRenderer.invoke(CTRL.serialMonitor, on) as Promise<void>,
   dumpSerialPorts: () => ipcRenderer.invoke(CTRL.debugDumpPorts) as Promise<DebugDumpResult>,
   revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>,
-  calHello: () => ipcRenderer.invoke(CTRL.calHello) as Promise<CalResult<CalHello>>,
-  calRead: () => ipcRenderer.invoke(CTRL.calRead) as Promise<CalResult<CalSnapshot>>,
-  calSessionOpen: (axisIdx: number) =>
-    ipcRenderer.invoke(CTRL.calSessionOpen, axisIdx) as Promise<
-      CalResult<{ timeoutMs: number; axisIdx: number }>
-    >,
-  calStreamSelect: (axisIdx: number) =>
-    ipcRenderer.invoke(CTRL.calStreamSelect, axisIdx) as Promise<CalResult<null>>,
-  calCommit: (axis: CalCommitAxis) =>
-    ipcRenderer.invoke(CTRL.calCommit, axis) as Promise<CalResult<null>>,
-  calReset: (idx: number) => ipcRenderer.invoke(CTRL.calReset, idx) as Promise<CalResult<null>>,
-  calCacheRead: () =>
-    ipcRenderer.invoke(CTRL.calCacheRead) as Promise<
-      CalResult<{ board?: CachedBoard; regressed: number[] }>
-    >,
-  calCacheStore: (axes: CalCacheEntry[]) =>
-    ipcRenderer.invoke(CTRL.calCacheStore, axes) as Promise<CalResult<null>>,
-  calCacheDrop: (idx: number) =>
-    ipcRenderer.invoke(CTRL.calCacheDrop, idx) as Promise<CalResult<null>>,
-  calSessionClose: () => ipcRenderer.invoke(CTRL.calSessionClose) as Promise<CalResult<null>>
+  calOpen: (axis: number, review?: boolean) =>
+    ipcRenderer.invoke(CTRL.calOpen, axis, review) as Promise<void>,
+  calClose: () => ipcRenderer.invoke(CTRL.calClose) as Promise<void>,
+  calSelectAxis: (axis: number) => ipcRenderer.invoke(CTRL.calSelectAxis, axis) as Promise<void>,
+  calStartCapture: () => ipcRenderer.invoke(CTRL.calStartCapture) as Promise<void>,
+  calRetry: () => ipcRenderer.invoke(CTRL.calRetry) as Promise<void>,
+  calSetSelfCentring: (selfCentring: boolean) =>
+    ipcRenderer.invoke(CTRL.calSetSelfCentring, selfCentring) as Promise<void>,
+  calSave: () => ipcRenderer.invoke(CTRL.calSave) as Promise<void>,
+  calRestore: () => ipcRenderer.invoke(CTRL.calRestore) as Promise<void>,
+  calDeleteAxis: (idx: number) => ipcRenderer.invoke(CTRL.calDeleteAxis, idx) as Promise<void>,
+  calSetRestoreOpen: (open: boolean) =>
+    ipcRenderer.invoke(CTRL.calSetRestoreOpen, open) as Promise<void>,
+  calAttach: (on: boolean) => ipcRenderer.invoke(CTRL.calAttach, on) as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('skyhawk', api)

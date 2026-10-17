@@ -58,10 +58,16 @@ and from the installed app. Delete `.userdata/` to start clean. Set `SKYHAWK_USE
 to use another folder; it also works for a packaged build, e.g. to try a release against a
 scratch folder. Packaged builds without it use the normal OS app-data folder.
 
+## Contributing
+
+[ARCHITECTURE.md](./ARCHITECTURE.md) explains how the code is laid out: the main / renderer
+wall, the IPC contract, the topic folders and which way they may depend, and where each piece
+of a new feature goes.
+
 ## Sync script
 
 `scripts/sync-a4ec.ts` (`npm run sync`) sparse-fetches a **pinned OpenSkyhawk commit**
-and regenerates `src/main/reference/*.generated.ts` — the A-4E-C control map, HID layout,
+and regenerates `src/shared/firmware/*.generated.ts` — the A-4E-C control map, HID layout,
 and SimGateway constants. Generated files are committed so normal builds need no network.
 CI runs a freshness check on every PR.
 
