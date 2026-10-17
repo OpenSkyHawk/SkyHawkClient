@@ -1,5 +1,11 @@
 import { create } from 'zustand'
-import { isLinkUp, type DeviceState, type GatewayStatus, type SerialFrame } from '@shared/gateway'
+import {
+  DEVICE_IDLE,
+  type DeviceState,
+  type DeviceStatusPush,
+  type GatewayStatus,
+  type SerialFrame
+} from '@shared/gateway'
 import { HID_CONTROLS_BY_ID, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
 import { fmtTime, hex2, hex4 } from '@shared/format'
 import type {
@@ -106,6 +112,12 @@ export interface AppState {
   deviceDetail?: string
   /** The Gateway's own health (#94); only while connected. */
   deviceGateway?: GatewayStatus
+  /** The link is up, as main concludes it (`device:status`, R3.3). */
+  linkUp: boolean
+  /** The board is plugged in as far as the link can tell: HID reports can arrive (#74). */
+  boardPresent: boolean
+  /** The port would not open because another program holds it. */
+  deviceBusy: boolean
   /** The title-bar Device popover is open — also opened by Overview's Details and Attention's cog (#94). */
   devicePopOpen: boolean
   aircraft: AircraftStatus
@@ -117,7 +129,10 @@ export interface AppState {
    * (peak W included), Attention, side panels and the Adopt queue. Kept, dimmed, while the link is down.
    */
   cockpit: CockpitSnapshot
-  /** When the device link last went down after being up — "last known" time on the Cockpit. */
+  /**
+   * When the device link last went down after being up — "last known" time on the Cockpit. Main
+   * stamps it (`device:status`, R3.3).
+   */
   linkDownAt?: number
 
   // record / replay
@@ -175,6 +190,7 @@ export interface AppState {
   eventsPauseMark?: number
 
   // raw serial monitor
+  /** The Serial tab's monitor, as main reports this page last set it (`device:status`, R3.3). */
   serialMonitor: boolean
   serialLog: SerialRow[]
   private_serialSeq: number
@@ -276,6 +292,34 @@ export function configState(cfg: AppConfig): Partial<AppState> {
   }
 }
 
+/** The store fields `device:status` sets — on each push, and from the rehydrate bundle. */
+function linkState(
+  d: DeviceStatusPush
+): Pick<
+  AppState,
+  | 'deviceState'
+  | 'devicePort'
+  | 'deviceDetail'
+  | 'deviceGateway'
+  | 'linkUp'
+  | 'boardPresent'
+  | 'deviceBusy'
+  | 'linkDownAt'
+  | 'serialMonitor'
+> {
+  return {
+    deviceState: d.state,
+    devicePort: d.portPath,
+    deviceDetail: d.detail,
+    deviceGateway: d.gateway,
+    linkUp: d.linkUp,
+    boardPresent: d.boardPresent,
+    deviceBusy: d.busy,
+    linkDownAt: d.linkDownAt,
+    serialMonitor: d.serialMonitor
+  }
+}
+
 function buildConfig(s: AppState): Partial<AppConfig> {
   return {
     sourceMode: s.sourceMode,
@@ -307,7 +351,7 @@ export const useStore = create<AppState>((set, get) => ({
   eventSource: 'all',
   problemsOnly: false,
 
-  deviceState: 'no-device',
+  ...linkState(DEVICE_IDLE),
   devicePopOpen: false,
   aircraft: { name: 'NONE', inferred: false, supported: true },
   nodeTelemetry: [],
@@ -346,7 +390,6 @@ export const useStore = create<AppState>((set, get) => ({
   private_logSeq: 1000,
   events: [],
 
-  serialMonitor: false,
   serialLog: [],
   private_serialSeq: 0,
 
@@ -422,8 +465,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   clearLog: () => set({ log: [] }),
 
+  // Main pushes the flag back on `device:status` (R3.3).
   setSerialMonitor: (on) => {
-    set({ serialMonitor: on })
     void window.skyhawk?.setSerialMonitor(on)
   },
 
@@ -479,10 +522,7 @@ export const useStore = create<AppState>((set, get) => ({
       set({
         relaying: st.running,
         relayStream: st.relay.stream,
-        deviceState: st.device.state,
-        devicePort: st.device.portPath,
-        deviceDetail: st.device.detail,
-        deviceGateway: st.device.gateway,
+        ...linkState(st.device),
         // The device's report is only pushed when the port opens. A renderer reload builds a
         // fresh store while the main-process session keeps running, so without carrying the
         // calibration here the badges would stay blank until the next reconnect — forever, on a
@@ -505,17 +545,7 @@ export const useStore = create<AppState>((set, get) => ({
           hidAgeMs: h.ageMs
         })
       ),
-      api.on('device:status', (d) => {
-        const wasUp = isLinkUp(get().deviceState)
-        set({
-          deviceState: d.state,
-          devicePort: d.portPath,
-          deviceDetail: d.detail,
-          deviceGateway: d.gateway
-        })
-        if (wasUp && !isLinkUp(d.state)) set({ linkDownAt: Date.now() })
-        else if (isLinkUp(d.state)) set({ linkDownAt: undefined })
-      }),
+      api.on('device:status', (d) => set(linkState(d))),
       api.on('relay:state', (r) => set({ relaying: r.running, relayStream: r.stream })),
       api.on('cal:workflow', (c) => set({ calibration: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),

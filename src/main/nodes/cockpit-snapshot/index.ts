@@ -38,7 +38,8 @@
 //   X4 zone                 a Connected nodes row names its zone's PDU wherever it is, else "no
 //                           power zone" (summaries.ts nodesSummary)
 //   X8 registry wording     the registry's bridge row is "Gateway" (registry-rows.ts registryName)
-import { isLinkUp, type DeviceStatus } from '@shared/gateway'
+import type { DeviceStatus } from '@shared/gateway'
+import { isLinkUp } from '../../gateway'
 import type {
   CockpitSnapshot,
   NodeModel,

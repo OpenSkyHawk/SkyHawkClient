@@ -1,6 +1,6 @@
 import { fmtBytes, fmtUptime } from '@shared/format'
 import { useStore, type TabId } from '../store'
-import { isLinkUp, type DeviceState } from '@shared/gateway'
+import type { DeviceState } from '@shared/gateway'
 import { newDevicesText } from '../overview'
 import { gatewayView } from '../gateway-view'
 import { Dot } from './cockpit/Dot'
@@ -79,7 +79,7 @@ export function Overview() {
   const linkSub =
     s.transport === 'tcp' ? `${s.host}:${s.port} · remote` : '239.255.50.10:5010 · local'
 
-  const connected = isLinkUp(s.deviceState)
+  const connected = s.linkUp
   const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
   const acftSub = s.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
 

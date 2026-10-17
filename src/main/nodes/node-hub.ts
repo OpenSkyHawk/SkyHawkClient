@@ -23,8 +23,8 @@ import type {
 } from '@shared/nodes'
 import type { Emit } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
-import { isLinkUp, type DeviceStatus, type GatewayStatus } from '@shared/gateway'
-import { GatewayWatch, type LinkRider, type NodeLineSink } from '../gateway'
+import type { DeviceStatus, GatewayStatus } from '@shared/gateway'
+import { GatewayWatch, isLinkUp, type LinkRider, type NodeLineSink } from '../gateway'
 import {
   adoptNode,
   clearReportedHidden,

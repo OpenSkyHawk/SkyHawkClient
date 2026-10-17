@@ -21,18 +21,6 @@ export type DeviceState =
   | 'error'
   | 'disconnected'
 
-/**
- * Whether the device link is up. The single definition every consumer keys on — calibration,
- * the nodes card, the Cockpit tab (#63) — so none of them invents its own.
- *
- * While it is down, link-scoped data (node model, telemetry) is left at its last state and
- * should be shown dimmed; there is no separate "stale" signal. HID is not link-scoped: the
- * joystick is read alongside DCS and keeps reporting with the serial port released (#74).
- */
-export function isLinkUp(state: DeviceState): boolean {
-  return state === 'connected'
-}
-
 export interface DeviceStatus {
   state: DeviceState
   portPath?: string
@@ -69,6 +57,43 @@ export interface GatewayStatus {
   alert?: { head: string; text: string }
 }
 
+/**
+ * What main concludes from the link (R3.3), pushed with every `device:status` and in the
+ * rehydrate bundle: GatewayConnection decides it (main/gateway/link-state.ts), the renderer only
+ * reads it. While the link is down, link-scoped data (node model, telemetry) is left at its last
+ * state and shown dimmed; there is no separate "stale" signal.
+ */
+export interface DeviceLinkFacts {
+  /** The port is open: the one state in which the link is up. */
+  linkUp: boolean
+  /** The board is plugged in as far as the link can tell, so HID reports can arrive (#74). */
+  boardPresent: boolean
+  /** The port would not open because another program holds it (from `detail`). */
+  busy: boolean
+  /**
+   * When the link last went down after being up: the Cockpit's "last known" time. Absent while up,
+   * and, as before, for a page that (re)loaded until the link next drops (N1).
+   */
+  linkDownAt?: number
+  /** The Serial tab's raw monitor is on, as this page last set it; off for a reloaded page (N1). */
+  serialMonitor: boolean
+}
+
+/** `device:status` as main pushes it: the link's status and what it concludes from it. */
+export type DeviceStatusPush = DeviceStatus & DeviceLinkFacts
+
+/**
+ * The link as the renderer holds it before main has answered: no device, nothing concluded. Main's
+ * linkFacts() of `{ state: 'no-device' }` (pinned by main/gateway/link-state.test.ts).
+ */
+export const DEVICE_IDLE: DeviceStatusPush = {
+  state: 'no-device',
+  linkUp: false,
+  boardPresent: false,
+  busy: false,
+  serialMonitor: false
+}
+
 /** One raw serial chunk for the live serial monitor. */
 export interface SerialFrame {
   t: number
@@ -78,7 +103,7 @@ export interface SerialFrame {
 
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */
 export interface GatewayPushChannels {
-  'device:status': DeviceStatus
+  'device:status': DeviceStatusPush
   'serial:traffic': SerialFrame[]
 }
 

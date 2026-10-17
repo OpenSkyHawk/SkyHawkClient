@@ -18,6 +18,10 @@
 // were added — the Adopt dialog's "Add all" and Settings' "Un-hide all" loops, now run in main.
 // `CockpitSnapshot` gained its Overview, Connection and Settings sections (a type change only).
 //
+// R3.3 (link, relay, HID and settings rules pushed from main): `device:status` and the rehydrate
+// bundle's `device` became `DeviceStatusPush` — the status plus what main concludes from it
+// (linkUp, boardPresent, busy, linkDownAt, serialMonitor; additive fields).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -42,7 +46,7 @@ import type {
   TelemetryReadout
 } from '../dcs/ipc'
 import type { CTRL, DebugDumpResult, IPC, PushChannels, RelayStatus, SkyhawkApi } from './ipc'
-import type { DeviceStatus, SerialFrame } from '../gateway/ipc'
+import type { DeviceStatusPush, SerialFrame } from '../gateway/ipc'
 import type { HidAvailability, HidSnapshot } from '../hid/ipc'
 import type {
   AdoptRequest,
@@ -68,12 +72,12 @@ type Expect<T extends true> = T
 interface OldRelayStatus {
   running: boolean
   relay: RelayState
-  device: DeviceStatus
+  device: DeviceStatusPush
   cal?: CalibrationState
 }
 
 interface OldPushChannels {
-  'device:status': DeviceStatus
+  'device:status': DeviceStatusPush
   'relay:state': RelayState
   'aircraft:changed': AircraftStatus
   'stats:tick': StatsSnapshot

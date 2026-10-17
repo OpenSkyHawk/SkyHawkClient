@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceState } from '@shared/gateway'
+import { isBusy } from '../../main/gateway/link-state'
 import {
-  deviceView,
+  deviceView as viewOf,
   relayNote,
   relayTip,
   relayWaiting,
@@ -9,6 +10,10 @@ import {
   startBlockedCallout,
   startBlockedReason
 } from './device-view'
+
+/** The link as the user sees it: main's verdict on the port (`busy`, R3.3), worded here. */
+const deviceView = (state: DeviceState, opts: Omit<Parameters<typeof viewOf>[1], 'busy'>) =>
+  viewOf(state, { ...opts, busy: isBusy(opts.detail) })
 
 const STATES: DeviceState[] = [
   'connected',

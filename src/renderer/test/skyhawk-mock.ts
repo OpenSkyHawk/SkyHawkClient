@@ -66,7 +66,7 @@ import type {
   CalResult,
   CalSnapshot
 } from '@shared/hid/calibration'
-import type { DeviceStatus, SerialFrame } from '@shared/gateway'
+import type { DeviceStatus, DeviceStatusPush, SerialFrame } from '@shared/gateway'
 import type { HidAvailability, HidSnapshot } from '@shared/hid'
 import {
   boardFor,
@@ -78,6 +78,7 @@ import {
 import type { CalibrationCommands } from '../../main/hid/calibration/calibration-workflow'
 import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
+import { LinkDownClock, linkFacts } from '../../main/gateway/link-state'
 import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app'
@@ -215,10 +216,13 @@ export function installSkyhawkMock(): SkyhawkMock {
       void Promise.resolve().then(() =>
         cockpit.rendererLoaded(state.model ?? EMPTY_MODEL, state.telemetry ?? [])
       )
+      // …and what the old page held for itself starts over (GatewayConnection, SerialTrafficMonitor).
+      linkDown.pageLoaded(device().state)
+      monitorShown = false
       return resolve({
         running: state.relay?.running ?? false,
         relay: state.relay ?? { running: false },
-        device: state.device ?? { state: 'no-device' },
+        device: devicePush(),
         cal: host.state()
       })
     }),
@@ -258,7 +262,12 @@ export function installSkyhawkMock(): SkyhawkMock {
     // ── node-mapping sequences: main's loop, over the per-board intents above ──
     addAllNodes: vi.fn((bulk) => addAllInTurn(bulk, (id, spec) => fns.adoptNode(id, spec))),
     unhideNodes: vi.fn((ids) => unhideInTurn(ids, (id, on) => fns.hideNode(id, on))),
-    setSerialMonitor: vi.fn(() => resolve(undefined)),
+    // Main's SerialTrafficMonitor: the page's flag comes back on `device:status`.
+    setSerialMonitor: vi.fn((on: boolean) => {
+      monitorShown = on
+      act(() => push('device:status', statusPush()))
+      return resolve(undefined)
+    }),
     dumpSerialPorts: vi.fn(() => resolve({ path: '/tmp/serial-ports.txt', count: 0 })),
     revealDebugLog: vi.fn(() => resolve(undefined)),
     // ── calibration intents: main's workflow answers them (the host below) ──
@@ -336,6 +345,22 @@ export function installSkyhawkMock(): SkyhawkMock {
         }, true) ?? { ok: true as const, value: null }
       )
     )
+  }
+
+  // ── the device link, as main's GatewayConnection pushes it (link-state.ts) ──
+  const device = (): DeviceStatus => state.device ?? { state: 'no-device' }
+  /** The Cockpit's "last known" time and the serial monitor's flag: the page's, kept in main. */
+  const linkDown = new LinkDownClock()
+  let monitorShown = false
+  /** The status with what main concludes from it, as the last push carried it. */
+  const devicePush = (): DeviceStatusPush => ({
+    ...device(),
+    ...linkFacts(device(), { linkDownAt: linkDown.value, serialMonitor: monitorShown })
+  })
+  /** One `device:status` push, judged as GatewayConnection judges each. */
+  const statusPush = (): DeviceStatusPush => {
+    linkDown.pushed(device().state)
+    return devicePush()
   }
 
   /** A mapping intent main accepted: it answers with the model (and would push it). */
@@ -416,7 +441,8 @@ export function installSkyhawkMock(): SkyhawkMock {
         for (const [key, ch] of Object.entries(PUSHES) as [keyof Scenario, PushChannel][]) {
           const data = s[key]
           if (data === undefined) continue
-          push(ch, data as never)
+          // `device:status` carries what main concludes from the link (R3.3).
+          push(ch, (key === 'device' ? statusPush() : data) as never)
           // What main does next, inside the same step: the workflow follows the link's state
           // (onStatus, after `device:status`) and takes the report (calRead, after `cal:data`);
           // the Cockpit snapshot follows the link and each node push (NodeHub).

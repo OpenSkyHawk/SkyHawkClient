@@ -34,14 +34,13 @@ export interface DeviceView {
   noteSettingsLink?: boolean
 }
 
-/** A failure to open that means another program holds the port. */
-function isBusy(detail?: string): boolean {
-  return !!detail && /busy|denied|in use|access/i.test(detail)
-}
-
+/**
+ * `busy`: main's verdict that another program holds the port (`device:status`, R3.3); it only
+ * changes how an `error` reads.
+ */
 export function deviceView(
   state: DeviceState,
-  opts: { port?: string; detail?: string; autoConnect: boolean }
+  opts: { port?: string; detail?: string; busy?: boolean; autoConnect: boolean }
 ): DeviceView {
   const port = opts.port ?? 'the Gateway port'
   const disconnect = { label: 'Disconnect', action: 'disconnect' } as const
@@ -114,7 +113,7 @@ export function deviceView(
         noteSettingsLink: !opts.autoConnect
       }
     case 'error': {
-      const busy = isBusy(opts.detail)
+      const busy = !!opts.busy
       return {
         cls: 'devind--err',
         label: 'Error',

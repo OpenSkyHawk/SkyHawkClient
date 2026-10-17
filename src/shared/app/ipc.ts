@@ -26,7 +26,7 @@ import { EVENTS_CTRL, EVENTS_PUSH, type EventsPushChannels, type LogEvent } from
 import {
   GATEWAY_CTRL,
   GATEWAY_PUSH,
-  type DeviceStatus,
+  type DeviceStatusPush,
   type GatewayPushChannels
 } from '../gateway/ipc'
 import { HID_CTRL, HID_PUSH, type HidAvailability, type HidPushChannels } from '../hid/ipc'
@@ -55,7 +55,8 @@ import {
 export interface RelayStatus {
   running: boolean
   relay: RelayState
-  device: DeviceStatus
+  /** The link, with what main concludes from it, as `device:status` carries it (R3.3). */
+  device: DeviceStatusPush
   /**
    * The calibration workflow's last `cal:workflow` push: the device's last report (if the link is
    * still up), the badges and the restore offer, and the dialog if it is open.
@@ -76,7 +77,7 @@ export interface DebugDumpResult {
 //
 // Two scopes (#69). **Link-scoped** pushes flow whenever the device link is up, relaying or not:
 // device:status, nodes:*, serial:traffic, cal:data. On link down they stop and the renderer keeps
-// the last state, dimmed via isLinkUp(). hid:report is neither: the joystick is read for as long
+// the last state, dimmed while device:status says the link is down. hid:report is neither: the joystick is read for as long
 // as the app runs, serial port open or not; nor is cal:workflow, which follows the link's state
 // and the dialog's actions. **Relay-scoped** pushes flow only while
 // relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries

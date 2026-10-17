@@ -26,6 +26,7 @@ export function RelayPill() {
   const deviceState = useStore((s) => s.deviceState)
   const devicePort = useStore((s) => s.devicePort)
   const deviceDetail = useStore((s) => s.deviceDetail)
+  const deviceBusy = useStore((s) => s.deviceBusy)
   const autoConnect = useStore((s) => s.autoConnect)
   const replayDriveSerial = useStore((s) => s.replayDriveSerial)
   const replayFile = useStore((s) => s.replayFile)
@@ -55,6 +56,7 @@ export function RelayPill() {
         deviceLabel: deviceView(deviceState, {
           port: devicePort,
           detail: deviceDetail,
+          busy: deviceBusy,
           autoConnect
         }).label,
         endpoint,

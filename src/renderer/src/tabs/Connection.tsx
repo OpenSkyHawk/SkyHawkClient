@@ -1,6 +1,5 @@
 import { useStore, type SourceMode, type Transport } from '../store'
 import { USB_IDENTITY } from '@shared/firmware'
-import { isLinkUp } from '@shared/gateway'
 import { deviceView, relayNote, startBlocked, startBlockedReason } from '../device-view'
 import { Dot } from './cockpit/Dot'
 
@@ -35,7 +34,7 @@ function NodesCard() {
   const openInCockpit = useStore((x) => x.openInCockpit)
   const set = useStore((x) => x.set)
   // Node status rides on the device link, which is up in every source mode (#69).
-  const linkUp = isLinkUp(deviceState)
+  const linkUp = useStore((x) => x.linkUp)
 
   return (
     <div className="card field ncard">
@@ -144,10 +143,11 @@ export function Connection() {
 
   // The device card shows the link (#69), which is automatic and independent of the relay.
   // Before a SimGateway is found, only the match target (VID/PID) is shown — not real device data.
-  const connected = isLinkUp(s.deviceState)
+  const connected = s.linkUp
   const dev = deviceView(s.deviceState, {
     port: s.devicePort,
     detail: s.deviceDetail,
+    busy: s.deviceBusy,
     autoConnect: s.autoConnect
   })
   const blocked =

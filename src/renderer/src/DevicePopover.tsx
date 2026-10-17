@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react'
-import { isLinkUp } from '@shared/gateway'
 import { useStore } from './store'
 import { deviceView } from './device-view'
 import { gatewayView } from './gateway-view'
@@ -15,6 +14,8 @@ export function DevicePopover() {
   const devicePort = useStore((s) => s.devicePort)
   const deviceDetail = useStore((s) => s.deviceDetail)
   const deviceGateway = useStore((s) => s.deviceGateway)
+  const linkUp = useStore((s) => s.linkUp)
+  const deviceBusy = useStore((s) => s.deviceBusy)
   const autoConnect = useStore((s) => s.autoConnect)
   const connectDevice = useStore((s) => s.connectDevice)
   const disconnectDevice = useStore((s) => s.disconnectDevice)
@@ -22,8 +23,13 @@ export function DevicePopover() {
   const set = useStore((s) => s.set)
   const btn = useRef<HTMLButtonElement>(null)
 
-  const dev = deviceView(deviceState, { port: devicePort, detail: deviceDetail, autoConnect })
-  const gw = gatewayView(deviceGateway, isLinkUp(deviceState), devicePort)
+  const dev = deviceView(deviceState, {
+    port: devicePort,
+    detail: deviceDetail,
+    busy: deviceBusy,
+    autoConnect
+  })
+  const gw = gatewayView(deviceGateway, linkUp, devicePort)
   const cls = gw.pill?.cls ?? dev.cls
   const meta = gw.meta ?? dev.popMeta
 

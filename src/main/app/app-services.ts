@@ -8,7 +8,6 @@
 // The device link is not started or stopped by the relay. It is up whenever the board is plugged
 // in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
-import type { DeviceStatus } from '@shared/gateway'
 import type { Emit, RelayStatus } from '@shared/app'
 import { app } from 'electron'
 import { DcsConnection, DcsRelay, SessionRecorder, Stats, StreamLog } from '../dcs'
@@ -66,7 +65,8 @@ export class AppServices {
     this.connection = new GatewayConnection(emit, {
       log: debugLog,
       frames: this.calibration,
-      health: () => this.nodes.gatewayHealth()
+      health: () => this.nodes.gatewayHealth(),
+      serialMonitor: () => this.serialMonitor.shown
     })
     this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,
@@ -117,6 +117,8 @@ export class AppServices {
     //                    switch the debug log and write config.json; the launch seed only
     //                    switches the debug log
     //   stream-log flush the event log's new rows (`events:batch`), then the stream's (`log:batch`)
+    // The page's serial-monitor flag rides on `device:status` (R3.3): setting it pushes the status.
+    this.serialMonitor.onShownChange(() => this.connection.pushStatus())
     this.connection.ride(this.serialMonitor)
     this.connection.ride(this.calibration)
     this.connection.ride(this.hid)
@@ -173,9 +175,18 @@ export class AppServices {
     this.nodes.dispose()
   }
 
+  /**
+   * A renderer (re)loaded (`relay:status`, its first pull): what the page held for itself starts
+   * over, as its store did (N1) — the link's "last known" time and the serial monitor's flag.
+   */
+  rendererLoaded(): void {
+    this.connection.rendererLoaded()
+    this.serialMonitor.rendererLoaded()
+  }
+
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
   status(): RelayStatus {
-    const device: DeviceStatus = this.connection.deviceStatus()
+    const device = this.connection.statusPush()
     const { running, relay } = this.relay.status()
     return { running, relay, device, cal: this.calibration.workflow.state() }
   }

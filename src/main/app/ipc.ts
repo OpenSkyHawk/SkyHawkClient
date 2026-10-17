@@ -109,6 +109,8 @@ export function registerIpc(ipcMain: IpcRegistrar, deps: IpcDeps): void {
     services.calibration.workflow.rendererLoaded()
     // …and the Cockpit snapshot starts over from what main holds, as the old page's store did (R3.2).
     services.nodes.rendererLoaded()
+    // …and what the old page's store held for itself goes with it (R3.3, N1).
+    services.rendererLoaded()
     return services.status()
   })
   ipc.handle(APP_CTRL.debugDumpPorts, async () => {

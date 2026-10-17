@@ -10,7 +10,8 @@
 //
 // HidCalibrationService hosts one, over its own cal* commands. The component tests' mock hosts one
 // over a scripted Gateway, so the dialog under test runs this code.
-import { isLinkUp, type DeviceState } from '@shared/gateway'
+import type { DeviceState } from '@shared/gateway'
+import { isLinkUp } from '../../gateway'
 import type {
   CachedBoard,
   CalibrationState,
