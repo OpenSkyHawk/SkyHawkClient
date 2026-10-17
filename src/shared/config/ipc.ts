@@ -187,8 +187,21 @@ export interface ImportPreview {
   sections: SectionDiff[]
   /** Sections from a newer client, left out. */
   skipped: string[]
+  /**
+   * Sections this client knows that are malformed or incomplete (C1), left out: never read as an
+   * empty or default setting. The review lists each as skipped, with main's reason.
+   */
+  rejected: RejectedSection[]
   /** Every section matches the current setup: nothing to apply. */
   identical: boolean
+}
+
+/** A known section an import left out (C1): the review says "Skipped — {title}: {reason}." */
+export interface RejectedSection {
+  id: SectionId
+  title: string
+  /** Why, completing "{title}: …", e.g. "it has no list of boards". */
+  reason: string
 }
 
 export type ConfigImportOpen =

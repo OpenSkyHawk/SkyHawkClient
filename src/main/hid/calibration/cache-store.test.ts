@@ -109,6 +109,26 @@ describe('calibration-cache.json', () => {
     }
   )
 
+  it.skipIf(process.getuid?.() === 0)(
+    'a save says why it did not reach the disk (a config import reads it, C2/M10)',
+    () => {
+      expect(saveCalCache(cache(10), io)).toBeUndefined()
+      chmodSync(dir, 0o500)
+      expect(saveCalCache(cache(20), io)).toMatch(
+        /^calibration-cache\.json could not be saved: EACCES: /
+      )
+      chmodSync(dir, 0o700)
+      const broken = storeFiles(
+        storePaths(() => {
+          throw new Error('no userData')
+        })
+      ).cacheFile
+      expect(saveCalCache(cache(1), broken)).toBe(
+        'calibration-cache.json could not be saved: no userData'
+      )
+    }
+  )
+
   it('a path that cannot be resolved reads empty and saves nothing, without a throw or a row', () => {
     const broken = storeFiles(
       storePaths(() => {

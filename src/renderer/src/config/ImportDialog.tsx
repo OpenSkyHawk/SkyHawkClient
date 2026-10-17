@@ -7,7 +7,9 @@ import { useConfigStore } from './store'
 /**
  * Import configuration — review what the file changes, section by section, and apply the ones
  * ticked. Sections with no change are shown but cannot be picked; a file that changes nothing
- * says so and offers no Apply. `axisLabels` name the calibration rows.
+ * says so and offers no Apply. A section main rejected (malformed or incomplete) is listed as
+ * skipped with main's reason, and one from a newer client as skipped too. `axisLabels` name the
+ * calibration rows.
  */
 export function ImportDialog({
   preview,
@@ -129,6 +131,11 @@ export function ImportDialog({
             </div>
           )
         })}
+      {preview.rejected.map((s) => (
+        <div className="im__note" style={{ margin: '12px 0' }} key={s.id}>
+          {`Skipped — ${s.title}: ${s.reason}.`}
+        </div>
+      ))}
       {preview.skipped.length > 0 && (
         <div className="im__note" style={{ margin: '12px 0' }}>
           Skipped — written by a newer client: {preview.skipped.join(', ')}. Update this client to

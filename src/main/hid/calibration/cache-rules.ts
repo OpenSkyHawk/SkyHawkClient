@@ -64,6 +64,42 @@ export function sanitizeCache(raw: unknown): CalCache {
   return out
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * A config import's calibration section, read strictly (C1). calibration-cache.json is read
+ * tolerantly (sanitizeCache: whatever does not survive is dropped), but an import must never read a
+ * section that lost its structure as an empty copy. Its markers are the cache's own: `version`
+ * (CAL_CACHE_VERSION) and `boards` (an object), and each board an object with its `confirmedAt`
+ * date and an `axes` object. With those, the axes go through sanitizeCache as a local file's do:
+ * an axis the device would refuse is dropped — never imported — and since an import only adds to
+ * the copy (mergeCalibration), nothing already there is lost. `reason` completes
+ * "Axis calibration: …".
+ */
+export function checkImportedCache(
+  raw: unknown
+): { ok: true; value: CalCache } | { ok: false; reason: string } {
+  if (!isRecord(raw)) return { ok: false, reason: 'it is not a settings section' }
+  const v = raw.version
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+    return { ok: false, reason: 'it has no version' }
+  }
+  if (v > CAL_CACHE_VERSION) return { ok: false, reason: 'it was written by a newer client' }
+  if (!isRecord(raw.boards)) return { ok: false, reason: 'it has no list of boards' }
+  for (const [serial, board] of Object.entries(raw.boards)) {
+    if (
+      !serial ||
+      !isRecord(board) ||
+      typeof board.confirmedAt !== 'string' ||
+      !isRecord(board.axes)
+    ) {
+      return { ok: false, reason: `its entry for board ${serial || '(no serial)'} is incomplete` }
+    }
+  }
+  return { ok: true, value: sanitizeCache(raw) }
+}
+
 /** Record axes the device has confirmed storing. Merges — other axes on the board are untouched. */
 export function storeAxes(
   cache: CalCache,

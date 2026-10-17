@@ -405,40 +405,50 @@ describe('adopted, then in the registry (#93 re-review F)', () => {
   })
 })
 
-describe('importMapping (#93 review)', () => {
+describe('importMapping (#93 review; D3, S4)', () => {
   const seen = '2026-10-14T21:14:00.000Z'
-  it('takes the settings from the file and keeps added / last-seen from this computer', () => {
+  it('takes everything from the file, membership included; this computer keeps its last seen', () => {
     const cur: NodeMappingFile = {
       version: 3,
       nodes: {
         1: { added: true, lastSeen: seen, name: 'Arm' },
+        2: { added: true, lastSeen: seen },
         41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen }
       }
     }
     const imported: NodeMappingFile = {
       version: 3,
       nodes: {
-        1: { name: 'Armament', lastSeen: '2020-01-01T00:00:00.000Z' }, // older export
+        1: { name: 'Armament', lastSeen: '2020-01-01T00:00:00.000Z' }, // not in that cockpit
         3: { added: true, lastSeen: seen }, // another setup's cockpit
         41: { name: 'Trim_B', console: 'Left', pduId: null, kind: 'panel' }
       }
     }
     expect(importMapping(cur, imported).nodes).toEqual({
-      1: { name: 'Armament', added: true, lastSeen: seen },
+      1: { name: 'Armament' }, // leaves, with nothing observed kept
+      3: { added: true }, // joins; the other computer's last seen is not imported
       41: { name: 'Trim_B', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen }
-    })
+    }) // 2: the file does not have it, so it leaves
   })
 
   it('never hides a board on the bus (#93 re-review K): Hide is offline-only', () => {
     const cur: NodeMappingFile = { version: 3, nodes: { 1: { added: true }, 2: { added: true } } }
     const imported: NodeMappingFile = {
       version: 3,
-      nodes: { 1: { hidden: true, name: 'Arm' }, 2: { hidden: true } }
+      nodes: { 1: { added: true, hidden: true, name: 'Arm' }, 2: { added: true, hidden: true } }
     }
     expect(importMapping(cur, imported, [1]).nodes).toEqual({
       1: { name: 'Arm', added: true }, // online: its other settings come in, not the hidden flag
       2: { hidden: true, added: true } // offline: hidden as the file says
     })
+  })
+
+  it('stores no hidden flag on a board outside your cockpit (S4)', () => {
+    const imported: NodeMappingFile = {
+      version: 3,
+      nodes: { 2: { hidden: true, name: 'Nav' }, 52: { hidden: true } }
+    }
+    expect(importMapping(EMPTY_MAPPING, imported).nodes).toEqual({ 2: { name: 'Nav' } })
   })
 
   it('an adopted board the file drops leaves, with nothing left behind', () => {

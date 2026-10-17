@@ -73,24 +73,15 @@ function hubWith(file: NodeMappingFile) {
 }
 
 describe('fix-track probes (today)', () => {
-  it('C1: nodeMapping {} parses OK and applying it drops adopted boards + renames', () => {
+  it('C1 (fixed, #136): nodeMapping {} and app {} are rejected, never read as empty or defaults', () => {
     const r = parseConfigFile(
       JSON.stringify({ format: CONFIG_FORMAT, version: 1, sections: { nodeMapping: {}, app: {} } })
     )
-    expect(r.ok).toBe(true)
-    const sec = r.ok ? r.config.sections : {}
-    expect(sec.nodeMapping).toEqual({ version: 3, nodes: {} })
-    expect(sec.app).toEqual(DEFAULT_APP_SETTINGS) // app: {} = reset to defaults
-    const cur: NodeMappingFile = {
-      version: 3,
-      nodes: {
-        2: { added: true, name: 'Nav' },
-        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
-      }
-    }
-    expect(importMapping(cur, sec.nodeMapping!)).toEqual({
-      version: 3,
-      nodes: { 2: { added: true } }
+    expect(r).toEqual({
+      ok: false,
+      error:
+        'This file has no settings this client can read. Node mapping: it has no version. ' +
+        'App settings: it has no “Source mode” setting.'
     })
   })
 
@@ -163,10 +154,13 @@ describe('fix-track probes (today)', () => {
     expect(g.nodes[2]).toEqual({ added: true, pduId: 3 })
   })
 
-  it("D3: import keeps this machine's added marker; it never adds a registry board", () => {
+  it('D3 (fixed, #136): membership is imported as written, and the review lists the join', () => {
     const cur: NodeMappingFile = { version: 3, nodes: {} }
     const imp: NodeMappingFile = { version: 3, nodes: { 2: { added: true, name: 'Nav' } } }
-    expect(importMapping(cur, imp)).toEqual({ version: 3, nodes: { 2: { name: 'Nav' } } })
+    expect(importMapping(cur, imp)).toEqual({
+      version: 3,
+      nodes: { 2: { added: true, name: 'Nav' } }
+    })
     const diff = diffImport(
       defaults,
       {
@@ -177,7 +171,9 @@ describe('fix-track probes (today)', () => {
       },
       { nodeMapping: imp }
     )
-    expect(diff[0]!.rows.some((r) => /added|cockpit/i.test(`${r.k}${r.to}`))).toBe(false)
+    expect(diff[0]!.rows).toEqual([
+      { k: 'Right_Navigation', from: 'not in your cockpit', to: 'Nav · Right · PDU_Right' }
+    ])
   })
 
   it('#95 bug 1: an adopted board renamed to its later registry name drops out', () => {

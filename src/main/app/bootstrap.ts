@@ -38,7 +38,7 @@ export function start(): void {
 
   const transfer = new ConfigTransfer({
     getConfig: () => services.settings.get(),
-    setConfig: (config) => services.settings.apply(config, false),
+    replaceConfig: (config) => services.settings.replace(config),
     imported: () => services.settings.imported(),
     nodes: services.nodes,
     loadCalCache: () => loadCalCache(cacheFile, services.journal),

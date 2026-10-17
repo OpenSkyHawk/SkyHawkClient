@@ -1,6 +1,6 @@
 // Configuration export / import (#67) in main: gathers the four stores into one file, previews a
-// file against them, and applies the sections the user picked. The rules are in
-// config-file.ts; this file only reads and writes. Dialogs stay in index.ts.
+// file against them, and applies the sections the user picked as one transaction (C2/M10). The
+// rules are in config-file.ts; this file only reads and writes. Dialogs stay in index.ts.
 //
 // Calibration is written to the client's copy only (calibration-cache.json). The device is never
 // touched here: if it has lost calibration, the HID tab's Review & restore offer picks up the copy.
@@ -20,20 +20,25 @@ import {
   applyToConfig,
   appSettings,
   buildConfigFile,
-  diffImport,
+  buildImportPreview,
   parseConfigFile,
   SECTION_IDS,
-  withSectionNotes,
+  SECTION_TITLES,
   type ParsedConfig
 } from './config-file'
 import type { CalCache } from '@shared/hid/calibration'
 import { errorText, stamp } from '@shared/format'
 import { mergeCalibration } from '../hid/calibration'
+import { importMapping } from '../nodes'
+import type { SettingsReplace } from './settings-service'
 
 export interface ConfigTransferDeps {
   getConfig(): AppConfig
-  /** Apply and persist a whole AppConfig (the config:set path). */
-  setConfig(config: AppConfig): AppConfig
+  /**
+   * Save a whole AppConfig, then make it live — only once it is on disk (SettingsService.replace).
+   * Says why when config.json was not written; nothing changed then.
+   */
+  replaceConfig(config: AppConfig): SettingsReplace
   /**
    * An import was applied (R3.3): the renderer is told the settings, and its forms start over
    * from them — as they did from the import's answer, whatever sections it held.
@@ -42,13 +47,14 @@ export interface ConfigTransferDeps {
   nodes: {
     mappingFile(): NodeMappingFile
     registryDefaults(): Map<number, NodeDefaults>
-    /** The imported settings over the current mapping; observed state (added, lastSeen) stays. */
-    importMapping(file: NodeMappingFile): NodeMappingResult
+    /** Save this whole mapping: an import's staged result, or its rollback (NodeHub). */
+    replaceMapping(file: NodeMappingFile): NodeMappingResult
     /** NODE_IDs on the bus now — an import never hides one. */
     onlineIds(): number[]
   }
   loadCalCache(): CalCache
-  saveCalCache(cache: CalCache): void
+  /** Save the calibration copy; says why when it did not reach the disk. */
+  saveCalCache(cache: CalCache): string | undefined
   /** Directory backups go to (<userData>/backups). */
   backupDir(): string
   clientVersion(): string
@@ -114,34 +120,24 @@ export class ConfigTransfer {
       return { status: 'error', error: parsed.error }
     }
     const { config } = parsed
-    const sections = withSectionNotes(
-      diffImport(
-        this.deps.nodes.registryDefaults(),
-        this.snapshot(),
-        config.sections,
-        this.deps.nodes.onlineIds()
-      )
-    )
     const token = randomUUID()
     this.pending = { token, config }
-    return {
-      status: 'ready',
-      preview: {
-        token,
-        fileName: basename(path),
-        ...(config.exportedAt ? { exportedAt: config.exportedAt } : {}),
-        ...(config.client ? { client: config.client } : {}),
-        sections,
-        skipped: config.skipped,
-        identical: sections.every((s) => s.rows.length === 0)
-      }
+    const against = {
+      defaults: this.deps.nodes.registryDefaults(),
+      current: this.snapshot(),
+      online: this.deps.nodes.onlineIds()
     }
+    return { status: 'ready', preview: buildImportPreview(config, against, token, basename(path)) }
   }
 
   /**
-   * Apply the picked sections. The backup, when asked for, is written first and its failure stops
-   * everything. The node mapping goes next because it is the one store that can refuse a save
-   * (read-only, or written by a newer client); if it does, nothing else is applied either.
+   * Apply the picked sections as one transaction (C2/M10). Every picked target is staged first —
+   * its new content worked out, nothing written. The backup, when asked for, is written next and
+   * its failure stops everything. Then the targets are committed in turn: the node mapping first
+   * (the one store that can refuse a save: read-only, or written by a newer client), then the
+   * calibration copy, then the settings (config.json; live only once it is on disk). If one fails,
+   * the targets already written are put back as they were before the import, and the answer says
+   * which section failed — and, if a rollback failed too, that the import is only partly applied.
    */
   apply(token: string, sections: unknown, backup: unknown): ConfigImportApplyResult {
     const pending = this.pending
@@ -159,6 +155,9 @@ export class ConfigTransfer {
     const picked = new Set((sections as SectionId[]).filter((id) => imported[id] !== undefined))
     if (picked.size === 0) return { ok: false, error: 'No sections picked' }
 
+    // Staged first: every target's new content worked out before anything is written.
+    const targets = this.stage(imported, picked)
+
     let backupPath: string | undefined
     if (backup) {
       try {
@@ -171,20 +170,105 @@ export class ConfigTransfer {
       }
     }
 
-    if (picked.has('nodeMapping')) {
-      const r = this.deps.nodes.importMapping(imported.nodeMapping!)
-      if (!r.ok) return { ok: false, error: `Nothing was changed: ${r.error}` }
-    }
-    if (picked.has('calibration')) {
-      this.deps.saveCalCache(mergeCalibration(this.deps.loadCalCache(), imported.calibration!))
-    }
-    let config = this.deps.getConfig()
-    if (picked.has('app') || picked.has('powerSupply')) {
-      config = this.deps.setConfig(applyToConfig(config, imported, picked))
+    const done: Target[] = []
+    for (const t of targets) {
+      const failed = t.commit()
+      if (failed === undefined) {
+        done.push(t)
+        continue
+      }
+      return {
+        ok: false,
+        error: rolledBack(`${t.title} could not be saved: ${failed}`, done, backupPath)
+      }
     }
     this.pending = undefined
     this.deps.imported?.()
     const applied = SECTION_IDS.filter((id) => picked.has(id))
-    return { ok: true, applied, ...(backupPath ? { backupPath } : {}), config }
+    return {
+      ok: true,
+      applied,
+      ...(backupPath ? { backupPath } : {}),
+      config: this.deps.getConfig()
+    }
+  }
+
+  /**
+   * Every picked target's new content, worked out before anything is written, with how to write
+   * it and how to put back what was there. In commit order.
+   */
+  private stage(imported: Partial<ConfigSnapshot>, picked: ReadonlySet<SectionId>): Target[] {
+    const { nodes } = this.deps
+    const targets: Target[] = []
+    if (picked.has('nodeMapping')) {
+      const before = nodes.mappingFile()
+      const next = importMapping(before, imported.nodeMapping!, nodes.onlineIds())
+      const write = (f: NodeMappingFile) => {
+        const r = nodes.replaceMapping(f)
+        return r.ok ? undefined : r.error
+      }
+      targets.push({
+        title: SECTION_TITLES.nodeMapping,
+        commit: () => write(next),
+        rollback: () => write(before)
+      })
+    }
+    if (picked.has('calibration')) {
+      const before = this.deps.loadCalCache()
+      const next = mergeCalibration(before, imported.calibration!)
+      targets.push({
+        title: SECTION_TITLES.calibration,
+        commit: () => this.deps.saveCalCache(next),
+        rollback: () => this.deps.saveCalCache(before)
+      })
+    }
+    if (picked.has('app') || picked.has('powerSupply')) {
+      const before = this.deps.getConfig()
+      const next = applyToConfig(before, imported, picked)
+      const write = (c: AppConfig) => {
+        const r = this.deps.replaceConfig(c)
+        return r.ok ? undefined : r.error
+      }
+      const titles = (['app', 'powerSupply'] as const).filter((id) => picked.has(id))
+      targets.push({
+        title: titles.map((id) => SECTION_TITLES[id]).join(' and '),
+        commit: () => write(next),
+        rollback: () => write(before)
+      })
+    }
+    return targets
   }
 }
+
+/** One store an import writes: its sections' title, and its write and rollback (each: why not). */
+interface Target {
+  title: string
+  commit(): string | undefined
+  rollback(): string | undefined
+}
+
+/**
+ * Put back the targets already written, newest first, and say what came of the import: nothing
+ * changed, or — when a rollback failed too — which sections are left as the file has them.
+ */
+function rolledBack(failed: string, done: readonly Target[], backupPath?: string): string {
+  const restored: string[] = []
+  const stuck: string[] = []
+  for (const t of [...done].reverse()) {
+    const error = t.rollback()
+    if (error === undefined) restored.unshift(t.title)
+    else stuck.unshift(`${t.title} could not be put back (${error})`)
+  }
+  const back = restored.length
+    ? `. ${and(restored)} ${restored.length === 1 ? 'was' : 'were'} put back as before`
+    : ''
+  if (stuck.length === 0) return `Nothing was changed — ${failed}${back}`
+  const keep = stuck.length === 1 ? 'it keeps' : 'they keep'
+  const copy = backupPath ? ` Your previous setup is in ${basename(backupPath)}.` : ''
+  const left = `${stuck.join('; ')}, so ${keep} the imported settings`
+  return `The import is only partly applied — ${failed}. ${left}${back}.${copy}`
+}
+
+/** "a", "a and b", "a, b and c". */
+const and = (items: string[]): string =>
+  items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`

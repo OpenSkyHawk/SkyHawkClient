@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NodeMappingFile } from '@shared/nodes'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from './node-status-wire'
+import { importMapping } from './mapping-rules'
 
 const disk: {
   file: NodeMappingFile
@@ -338,18 +339,46 @@ describe('NodeHub', () => {
     roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // node 1 online
     h.flush(roster.takeDirty(), 0)
     expect(h.onlineIds()).toEqual([1])
-    expect(
-      h.importMapping({ version: 3, nodes: { 1: { hidden: true }, 2: { hidden: true } } }).ok
-    ).toBe(true)
+    // ConfigTransfer stages the import over the hub's mapping and online boards, then saves it.
+    const file: NodeMappingFile = {
+      version: 3,
+      nodes: { 1: { added: true, hidden: true }, 2: { added: true, hidden: true } }
+    }
+    expect(h.replaceMapping(importMapping(h.mappingFile(), file, h.onlineIds())).ok).toBe(true)
     expect(disk.file.nodes[1]?.hidden).toBeUndefined()
     expect(disk.file.nodes[2]?.hidden).toBe(true)
   })
 
-  it('a config import keeps what this computer observed: added and last seen (#93 review)', () => {
-    disk.file = { version: 3, nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' } } }
+  it('a config import brings membership as written; this computer keeps only its last seen (D3)', () => {
+    disk.file = {
+      version: 3,
+      nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' }, 3: { added: true, lastSeen: T0 } }
+    }
     const { h } = hub()
-    expect(h.importMapping({ version: 3, nodes: { 2: { name: 'Nav_2' } } }).ok).toBe(true)
-    expect(disk.file.nodes).toEqual({ 2: { name: 'Nav_2', added: true, lastSeen: T0 } })
+    const file: NodeMappingFile = {
+      version: 3,
+      nodes: {
+        2: { added: true, name: 'Nav_2', lastSeen: '2020-01-01T00:00:00.000Z' },
+        4: { added: true }
+      }
+    }
+    expect(h.replaceMapping(importMapping(h.mappingFile(), file)).ok).toBe(true)
+    // 3 left (the file does not have it), 4 joined; 2 kept this computer's last seen.
+    expect(disk.file.nodes).toEqual({
+      2: { name: 'Nav_2', added: true, lastSeen: T0 },
+      4: { added: true }
+    })
+  })
+
+  it('replaceMapping saves before it adopts: a failed save changes nothing (C2/M10)', () => {
+    const { h } = hub()
+    const before = h.mappingFile()
+    disk.fail = true
+    expect(h.replaceMapping({ version: 3, nodes: {} })).toEqual({
+      ok: false,
+      error: 'Could not save node mapping: EROFS'
+    })
+    expect(h.mappingFile()).toBe(before)
   })
 
   it('serves the bundled registry with PanelBridge and its source commit', () => {

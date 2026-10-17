@@ -10,6 +10,7 @@
 // a bad file falls back to its backup and is moved aside).
 import { emptyCache, sanitizeCache } from './cache-rules'
 import type { CalCache } from '@shared/hid/calibration'
+import { errorText } from '@shared/format'
 
 /**
  * Port: calibration-cache.json. `read` resolves the path and reports what it found, `note` saying
@@ -61,14 +62,24 @@ export function loadCalCache(io: CacheFileIO, events = NO_EVENTS): CalCache {
   }
 }
 
-/** Never throws; see the note at the top of this file. One row per failure until a write works. */
-export function saveCalCache(cache: CalCache, io: CacheFileIO, events = NO_EVENTS): void {
+/**
+ * Never throws; see the note at the top of this file. One row per failure until a write works.
+ * Says what went wrong when the file did not reach the disk (a config import, which must not
+ * report a section saved that was not, reads it; the calibration flow ignores it).
+ */
+export function saveCalCache(
+  cache: CalCache,
+  io: CacheFileIO,
+  events = NO_EVENTS
+): string | undefined {
   let failed: { note: string } | undefined
   try {
     failed = io.write(cache)
-  } catch {
-    return // the path could not be resolved: nothing was written
+  } catch (err) {
+    // the path could not be resolved: nothing was written
+    return `${CACHE_FILE_TAG} could not be saved: ${errorText(err)}`
   }
   if (failed) events.error(CACHE_FILE_TAG, failed.note)
   else events.forget(CACHE_FILE_TAG)
+  return failed?.note
 }

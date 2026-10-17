@@ -1,5 +1,8 @@
 // XFER-seam contract test (Phase 0, row B94): how ConfigTransfer reads an import file's sections —
-// open → preview → apply — with the four stores held in memory.
+// open → preview → apply — with the four stores held in memory. Since C1 each known section is
+// read strictly: without its structural markers it is rejected (listed with its reason), never
+// read as an empty or default setting; inside a complete collection the entries are still read
+// by the store's tolerant sanitizer.
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,7 +26,7 @@ let stores: { config: AppConfig; mapping: NodeMappingFile; cache: CalCache }
 function transfer() {
   return new ConfigTransfer({
     getConfig: () => stores.config,
-    setConfig: (c) => (stores.config = c),
+    replaceConfig: (c) => ({ ok: true, config: (stores.config = c) }),
     nodes: {
       mappingFile: () => stores.mapping,
       registryDefaults: () =>
@@ -33,13 +36,16 @@ function transfer() {
           4: { name: 'PDU_Right', console: 'Right' }
         }),
       onlineIds: () => [],
-      importMapping: (f) => {
+      replaceMapping: (f) => {
         stores.mapping = f
         return { ok: true, model: {} as never }
       }
     },
     loadCalCache: () => stores.cache,
-    saveCalCache: (c) => (stores.cache = c),
+    saveCalCache: (c) => {
+      stores.cache = c
+      return undefined
+    },
     backupDir: () => join(dir, 'backups'),
     clientVersion: () => '0.2.0',
     now: () => new Date('2026-10-16T10:00:00Z')
@@ -65,23 +71,27 @@ describe('B94 an import reads each section on its own', () => {
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-  it('a section that is not an object, or that this client does not know, is skipped', () => {
+  it('a broken known section is rejected with its reason; an unknown one is skipped', () => {
     const t = transfer()
     const opened = t.preview(
       file({
         app: 'not an object',
         nodeMapping: [1, 2],
         macros: { x: 1 },
-        powerSupply: { mode: 'custom', custom: { a12: 40 } }
+        powerSupply: { mode: 'custom', preset: 'nx650', custom: { a12: 40 } }
       }),
       '/x/a.json'
     )
     expect(opened.status).toBe('ready')
     if (opened.status !== 'ready') return
-    expect(opened.preview.skipped).toEqual(['app', 'nodeMapping', 'macros'])
+    expect(opened.preview.skipped).toEqual(['macros'])
+    expect(opened.preview.rejected).toEqual([
+      { id: 'app', title: 'App settings', reason: 'it is not a settings section' },
+      { id: 'nodeMapping', title: 'Node mapping', reason: 'it is not a settings section' }
+    ])
     expect(opened.preview.sections.map((s) => s.id)).toEqual(['powerSupply'])
 
-    // A skipped section can't be applied; the readable one can.
+    // A rejected section can't be applied; the readable one can.
     expect(t.apply(opened.preview.token, ['app'], false)).toEqual({
       ok: false,
       error: 'No sections picked'
@@ -98,28 +108,49 @@ describe('B94 an import reads each section on its own', () => {
     const t = transfer()
     expect(t.preview(file({ app: null, macros: { x: 1 } }), '/x/a.json')).toEqual({
       status: 'error',
-      error: 'This file has no settings this client can read.'
+      error:
+        'This file has no settings this client can read. App settings: it is not a settings section.'
     })
     expect(t.apply('any', ['macros'], false)).toMatchObject({ ok: false })
     expect(stores.config).toBe(DEFAULT_CONFIG)
   })
 
-  it("every known section goes through its own store's tolerant sanitizer: bad fields are dropped", () => {
+  it('"nodeMapping": {} and "app": {} are rejected, so adopted boards and settings stay (C1)', () => {
+    stores.mapping = {
+      version: 3,
+      nodes: {
+        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' },
+        1: { added: true }
+      }
+    }
+    stores.config = { ...DEFAULT_CONFIG, host: '10.0.0.9' }
+    const before = structuredClone(stores)
+    const t = transfer()
+    const opened = t.preview(
+      file({ nodeMapping: {}, app: {}, powerSupply: DEFAULT_CONFIG.psu }),
+      '/x/a.json'
+    )
+    if (opened.status !== 'ready') throw new Error(JSON.stringify(opened))
+    expect(opened.preview.rejected.map((r) => `${r.title}: ${r.reason}`)).toEqual([
+      'Node mapping: it has no version',
+      'App settings: it has no “Source mode” setting'
+    ])
+    expect(opened.preview.identical).toBe(true) // the readable section changes nothing
+    expect(t.apply(opened.preview.token, ['nodeMapping', 'app'], false)).toEqual({
+      ok: false,
+      error: 'No sections picked'
+    })
+    expect(stores).toEqual(before)
+  })
+
+  it('inside complete sections, the stores’ tolerant sanitizers still drop bad entries', () => {
     const t = transfer()
     const opened = t.preview(
       file({
-        app: {
-          host: '',
-          commandPort: 'x',
-          sourceMode: 'nonsense',
-          debugMode: true,
-          psu: { mode: 'custom' }
-        },
         nodeMapping: {
           version: 3,
           nodes: { 99: { name: 'out of range' }, 2: { name: 'Nav', pduId: 'x' } }
         },
-        powerSupply: { mode: 'custom', preset: 'no-such-psu', custom: { a12: 40, a5: 'x' } },
         calibration: {
           version: 1,
           boards: {
@@ -134,19 +165,9 @@ describe('B94 an import reads each section on its own', () => {
     )
     if (opened.status !== 'ready') throw new Error(JSON.stringify(opened))
     expect(opened.preview.skipped).toEqual([])
-    const r = t.apply(
-      opened.preview.token,
-      ['app', 'nodeMapping', 'powerSupply', 'calibration'],
-      false
-    )
+    expect(opened.preview.rejected).toEqual([])
+    const r = t.apply(opened.preview.token, ['nodeMapping', 'calibration'], false)
     expect(r).toMatchObject({ ok: true })
-
-    // app: junk fields fall back to their defaults, the good one is kept, its psu is ignored.
-    expect(stores.config).toEqual({
-      ...DEFAULT_CONFIG,
-      debugMode: true,
-      psu: { mode: 'custom', preset: 'nx650', custom: { a12: 40 } }
-    })
     // nodeMapping: an out-of-range NODE_ID and a bad power zone are dropped.
     expect(stores.mapping).toEqual({ version: 3, nodes: { 2: { name: 'Nav' } } })
     // calibration: an axis that is not min < centre < max is dropped.
