@@ -23,8 +23,9 @@ import {
 import { sanitizeCache } from './cal-cache'
 import type { CachedAxis, CalCache } from './hid/calibration/ipc'
 import { effectiveMapping, importMapping, sanitizeNodeMapping } from './node-mapping'
-import type { MappedNode, NodeDefaults, NodeMappingFile, PsuLimits, PsuSetting } from './nodes/ipc'
+import type { MappedNode, NodeDefaults, NodeMappingFile, PsuSetting } from './nodes/ipc'
 import { PSU_PRESETS, sanitizePsu } from './psu'
+import { onOff, plural, PSU_LIMITS } from './format'
 
 /** File format this build writes. A higher version came from a newer client. */
 export const CONFIG_FILE_VERSION = 1
@@ -116,9 +117,6 @@ export function parseConfigFile(text: string): ParseResult {
 
 // ── review: what applying a section would change ─────────────────────────────
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
-const onOff = (b: boolean) => (b ? 'On' : 'Off')
-
 const APP_FIELDS: { key: keyof AppSettings; label: string; show?: (v: never) => string }[] = [
   { key: 'sourceMode', label: 'Source mode' },
   { key: 'transport', label: 'DCS transport' },
@@ -141,19 +139,13 @@ function diffApp(cur: AppSettings, next: AppSettings): DiffRow[] {
   return rows
 }
 
-const LIMITS: { key: keyof PsuLimits; label: string; unit: string }[] = [
-  { key: 'a12', label: '12 V rail limit', unit: 'A' },
-  { key: 'a5', label: '5 V rail limit', unit: 'A' },
-  { key: 'w', label: 'Total power', unit: 'W' }
-]
-
 function diffPsu(cur: PsuSetting, next: PsuSetting): DiffRow[] {
   const name = (p: PsuSetting) =>
     p.mode === 'preset' ? `${PSU_PRESETS[p.preset].label} preset` : 'Custom'
   const rows: DiffRow[] = []
   if (name(cur) !== name(next)) rows.push({ k: 'PSU', from: name(cur), to: name(next) })
   // Custom limits are kept while a preset is picked, so they are compared either way.
-  for (const l of LIMITS) {
+  for (const l of PSU_LIMITS) {
     const a = cur.custom[l.key]
     const b = next.custom[l.key]
     if (a === b) continue

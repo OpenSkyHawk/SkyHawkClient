@@ -26,6 +26,7 @@ import {
   type ParsedConfig
 } from '@shared/config-file'
 import type { CalCache } from '@shared/hid/calibration/ipc'
+import { errorText, stamp } from '@shared/format'
 
 export interface ConfigTransferDeps {
   getConfig(): AppConfig
@@ -46,8 +47,6 @@ export interface ConfigTransferDeps {
   clientVersion(): string
   now?(): Date
 }
-
-const stamp = (d: Date) => d.toISOString().replace(/[:.]/g, '-')
 
 export class ConfigTransfer {
   /** The file last previewed, until it is applied or another is opened. */
@@ -142,8 +141,7 @@ export class ConfigTransfer {
         backupPath = join(dir, `skyhawk-config-${stamp(this.now())}.json`)
         writeFileSync(backupPath, this.exportText())
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        return { ok: false, error: `Backup failed, nothing was changed: ${msg}` }
+        return { ok: false, error: `Backup failed, nothing was changed: ${errorText(err)}` }
       }
     }
 

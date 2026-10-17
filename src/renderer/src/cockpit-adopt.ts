@@ -1,13 +1,13 @@
 // Cockpit Adopt dialog (#77; since #93 the onboarding for every board not in your cockpit): the
 // pure decisions behind it — queue order, what each new NODE_ID is seen doing, the registry
 // pre-fill, when the form is complete, the identify row and where the selection goes next.
+import { amps, fmtUptime, volts } from '@shared/format'
 import type { AdoptSpec, NodeKind, NodeModelEntry } from '@shared/nodes/ipc'
 import { reportedIdentity } from '@shared/node-kind'
 import { displayCurrentMa } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
 import type { NodeView } from './cockpit'
 import { consoleLabel, powerZoneOptions } from './cockpit-panels'
-import { fmtUptime } from './store'
 
 /**
  * New NODE_IDs, oldest first seen first, then by NODE_ID. Not-yet-seen times sort last. Every new
@@ -58,16 +58,6 @@ export function adoptPduChoices(
     waiting?.entry.name ??
     ((e.registry?.pduId === chosen && e.registry.pduName) || `PDU #${chosen}`)
   return { zones, pending: name }
-}
-
-/** "first seen 2 min ago" — this session's first sighting (it is not persisted). */
-export function seenAgo(firstSeenAt: number | undefined, now: number): string {
-  if (firstSeenAt === undefined) return 'first seen this session'
-  const s = Math.max(0, Math.round((now - firstSeenAt) / 1000))
-  if (s < 60) return 'first seen just now'
-  const m = Math.floor(s / 60)
-  if (m < 60) return `first seen ${m} min ago`
-  return `first seen ${Math.floor(m / 60)} h ago`
 }
 
 export interface Adoptability {
@@ -134,9 +124,7 @@ function detectedAs(e: NodeModelEntry): string {
 }
 
 const rail = (label: string, p?: { vAvgMv: number; iAvgMa: number }) =>
-  p
-    ? `${label} ${(p.vAvgMv / 1000).toFixed(2)} V · ${(displayCurrentMa(p.iAvgMa) / 1000).toFixed(2)} A`
-    : ''
+  p ? `${label} ${volts(p.vAvgMv)} · ${amps(displayCurrentMa(p.iAvgMa))}` : ''
 
 /** What the dialog can say about a new NODE_ID: only what it has reported. */
 export function adoptEvidence(v: NodeView): Evidence {

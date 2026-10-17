@@ -11,6 +11,7 @@
 import { faultLabel, STATUS_FLAGS, type StatusFlag } from './events'
 import type { LogEventInput } from './events/ipc'
 import { NODE_FAULT_CODES, type NodeFaultName } from './firmware'
+import { title } from './format'
 import type { NodeStatus } from './nodes/ipc'
 import type { GatewayKind, GatewayStatus } from './gateway/ipc'
 
@@ -21,9 +22,6 @@ const SECS = GATEWAY_NO_ANSWER_MS / 1000
 
 type Flag = (typeof STATUS_FLAGS)[number]
 const flag = (key: StatusFlag): Flag => STATUS_FLAGS.find((f) => f.key === key)!
-
-/** `bus-off` → `Bus-off`: the node rows' flag names, as a title. */
-const title = (s: string): string => s[0].toUpperCase() + s.slice(1)
 
 /**
  * Client wording for the faults a Gateway reports about itself, keyed by NODE_FAULT_CODES name.

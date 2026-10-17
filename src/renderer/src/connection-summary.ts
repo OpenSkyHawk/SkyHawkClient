@@ -1,17 +1,16 @@
 // Connection › Connected nodes (#66): the pure decisions behind the summary card. Counts and the
 // most severe nodes come from the same helpers as the Cockpit health band and Attention, so the
 // two tabs always agree; the full picture lives in the Cockpit tab.
+import { hhmmss, lastSeenLabel } from '@shared/format'
 import type { PduOutage } from '@shared/nodes/ipc'
 import {
   affected,
   ATTENTION_SHOWN,
   attentionItems,
   healthBand,
-  lastSeenLabel,
   type NodeState,
   type NodeView
 } from './cockpit'
-import { fmtTime } from './store'
 
 export interface SummaryRow {
   nodeId: number
@@ -48,8 +47,6 @@ export interface NodesSummary {
   footer: string
 }
 
-const clock = (ms: number) => fmtTime(ms).slice(0, 8)
-
 export function nodesSummary(views: NodeView[], outages: PduOutage[]): NodesSummary {
   const band = healthBand(views)
   const known = views.filter((v) => v.entry.source !== 'new')
@@ -69,7 +66,7 @@ export function nodesSummary(views: NodeView[], outages: PduOutage[]): NodesSumm
       meta.push('not seen this session')
       if (e.lastSeenAt !== undefined) meta.push(`last seen ${lastSeenLabel(e.lastSeenAt)}`)
     } else if (e.availability === 'offline' && e.offlineAt !== undefined) {
-      meta.push(`offline since ${clock(e.offlineAt)}`)
+      meta.push(`offline since ${hhmmss(e.offlineAt)}`)
     }
     return {
       nodeId: i.nodeId,

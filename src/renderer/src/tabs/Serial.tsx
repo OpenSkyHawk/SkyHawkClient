@@ -1,11 +1,5 @@
+import { fmtTime } from '@shared/format'
 import { useStore } from '../store'
-
-const pad = (n: number) => String(n).padStart(2, '0')
-const pad3 = (n: number) => String(n).padStart(3, '0')
-function fmtTime(ms: number): string {
-  const d = new Date(ms)
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad3(d.getMilliseconds())}`
-}
 
 const MAX_BYTES = 48 // truncate very long chunks in the display
 

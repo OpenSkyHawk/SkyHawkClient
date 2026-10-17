@@ -10,17 +10,13 @@ import { BRIDGE_NODE_ID, NODE_END_MSG, ROSTER_REPLY_MS } from './nodes'
 import type { NodeStatus, NodeTelem, PduRailPage } from './nodes/ipc'
 import { displayCurrentMa, PDU_FLAG, RAIL_FLAG, TELEM_PAGE } from './node-telem'
 import { MAX_EVENTS, type EventSeverity, type LogEvent, type LogEventInput } from './events/ipc'
+import { amps, fmtDateTime, volts } from './format'
 
 export const SEVERITY_GLYPH: Record<EventSeverity, string> = {
   error: '✕',
   warn: '!',
   new: '+',
   info: '●'
-}
-
-/** `event · detail`, as the Events view and the Cockpit box print it. */
-export function eventText(e: Pick<LogEvent, 'event' | 'detail'>): string {
-  return e.detail ? `${e.event} · ${e.detail}` : e.event
 }
 
 /** What "Problems only" keeps: something is wrong — not a new node, a cleared flag or a link up. */
@@ -72,12 +68,10 @@ const PDU_STATUS_FLAGS: [number, string, EventSeverity][] = [
 
 const TEMP_FLAGS = PDU_FLAG.TEMP_CRIT | PDU_FLAG.TEMP_WARN
 
-const volts = (mv: number): string => `${(mv / 1000).toFixed(2)} V`
-
 /** The reading that goes with a raised rail flag: the window minimum for under-voltage. */
 function railReading(bit: number, p: PduRailPage): string {
   if (bit === RAIL_FLAG.UNDER_V) return volts(p.vMinMv)
-  if (bit === RAIL_FLAG.OVER_CURRENT) return `${(displayCurrentMa(p.iAvgMa) / 1000).toFixed(2)} A`
+  if (bit === RAIL_FLAG.OVER_CURRENT) return amps(displayCurrentMa(p.iAvgMa))
   return volts(p.vAvgMv)
 }
 
@@ -404,17 +398,6 @@ export class EventLog {
 }
 
 // ── export ──────────────────────────────────────────────────────────────────
-
-const pad = (n: number, w = 2): string => String(n).padStart(w, '0')
-
-/** Local time, `2026-10-16 21:14:07.412`. */
-export function fmtDateTime(t: number): string {
-  const d = new Date(t)
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`
-  )
-}
 
 /** A tab or line break inside a field would shift every column after it. */
 const cell = (s: string | number | undefined): string =>

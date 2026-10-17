@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { seenAgo } from '@shared/format'
 import type { NodeMappingResult } from '@shared/nodes/ipc'
 import type { NodeView } from '../../cockpit'
 import {
@@ -12,7 +13,6 @@ import {
   nextSelection,
   prefill,
   registrySpecs,
-  seenAgo,
   type AdoptForm as FormValues
 } from '../../cockpit-adopt'
 import { CONSOLE_OPTIONS } from '../../cockpit-panels'

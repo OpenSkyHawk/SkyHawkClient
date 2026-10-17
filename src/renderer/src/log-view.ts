@@ -1,5 +1,6 @@
 // Log tab › Events (#64): what the view shows of the session's events (pure, no React).
-import { eventText, isProblem } from '@shared/events'
+import { isProblem } from '@shared/events'
+import { eventText } from '@shared/format'
 import { MAX_EVENTS, type EventSource, type LogEvent } from '@shared/events/ipc'
 
 export type LogView = 'stream' | 'events'
@@ -73,9 +74,4 @@ export function boardEventLine(e: Pick<LogEvent, 'nodeId' | 'name' | 'event' | '
 export function rowsThatFit(height: number, rowHeight: number, max: number): number {
   if (rowHeight <= 0) return max
   return Math.min(max, Math.max(1, Math.floor(height / rowHeight)))
-}
-
-/** `skyhawk-events-….tsv` from a full save path, for the footer's "Saved" note. */
-export function fileName(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path
 }

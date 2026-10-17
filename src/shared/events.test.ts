@@ -5,13 +5,13 @@ import {
   EventLog,
   EVENTS_TSV_HEADER,
   eventsToTsv,
-  eventText,
   isProblem,
   NodeEventTracker,
   relayEvents,
   type NodeLookup
 } from './events'
 import type { LogEventInput } from './events/ipc'
+import { eventText } from './format'
 import { NODE_END_MSG, NODE_MSG, ROSTER_REPLY_MS } from './nodes'
 import type { NodeStatus, NodeTelem } from './nodes/ipc'
 import { PDU_FLAG, RAIL_FLAG } from './node-telem'

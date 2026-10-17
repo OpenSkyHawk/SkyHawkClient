@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { fmtTime, useStore } from '../../store'
+import { hhmmss } from '@shared/format'
+import { useStore } from '../../store'
 import { boardEventLine, rowsThatFit } from '../../log-view'
 
 /** Most rows the box renders before it has measured how many fit. */
@@ -43,7 +44,7 @@ export function BoardEvents() {
             const line = boardEventLine(e)
             return (
               <li key={e.id}>
-                <time>{fmtTime(e.t).slice(0, 8)}</time>
+                <time>{hhmmss(e.t)}</time>
                 <span title={line}>{line}</span>
               </li>
             )

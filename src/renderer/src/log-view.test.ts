@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { LogEvent } from '@shared/events/ipc'
+import { fileName } from '@shared/format'
 import {
   boardEventLine,
   eventSourceLabel,
-  fileName,
   filterEvents,
   mergeEvents,
   restoreEvents,

@@ -1,6 +1,7 @@
 // Overview (#65): the pure decisions behind the Cockpit tile, the Attention banner and the
 // new-devices notice. All of it is read off the Cockpit's own picture (`healthBand`,
 // `attentionItems`); the client adds no thresholds of its own.
+import { plural } from '@shared/format'
 import { isAdoptableKind } from '@shared/node-kind'
 import { isReportableNew } from '@shared/node-rules'
 import type { NodeModelEntry } from '@shared/nodes/ipc'
@@ -16,8 +17,6 @@ export interface CockpitTile {
   /** ok = all up and healthy; issue = something offline or warning; none = no live status. */
   tone: 'ok' | 'issue' | 'none'
 }
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /** `37 / 40` nodes up, total W the client computes and the PDUs on the plan. */
 export function cockpitTile(band: HealthBand, live: boolean): CockpitTile {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeStatus, NodeTelemSnapshot } from '@shared/nodes/ipc'
 import { modelNode, nodeModel as model, nodeStatus } from '../../test-fixtures/nodes'
 import { TELEM_PAGE } from '@shared/node-telem'
+import { seenAgo } from '@shared/format'
 import { nodeViews } from './cockpit'
 import {
   adoptEvidence,
@@ -14,7 +15,6 @@ import {
   nextSelection,
   prefill,
   registrySpecs,
-  seenAgo,
   strayFlag,
   strayNew
 } from './cockpit-adopt'
