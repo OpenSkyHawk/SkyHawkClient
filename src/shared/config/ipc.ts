@@ -1,6 +1,6 @@
 // Config topic contract (arch-phase0-v2 §2.3): the app settings, their defaults, and configuration
 // export / import (#67). Imported by main, preload and the renderer.
-import { COMMAND_PORT, EXPORT_PORT } from '../dcs/ipc'
+import { COMMAND_PORT, EXPORT_PORT, type DcsTransport, type SourceMode } from '../dcs/ipc'
 import {
   DEFAULT_PSU,
   type NodeMappingFile,
@@ -10,8 +10,8 @@ import {
 } from '../nodes/ipc'
 import type { CalCache } from '../hid/calibration/ipc'
 
-export type SourceMode = 'bridge' | 'monitor' | 'replay'
-export type DcsTransport = 'loopback-multicast' | 'unicast-listen' | 'tcp-to-host'
+// Declared beside the relay's facts, which carry both (R3.4c); settings keep exporting them.
+export type { DcsTransport, SourceMode }
 
 export const SOURCE_MODES: SourceMode[] = ['bridge', 'monitor', 'replay']
 export const TRANSPORTS: DcsTransport[] = ['loopback-multicast', 'unicast-listen', 'tcp-to-host']

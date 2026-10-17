@@ -227,6 +227,8 @@ function surfaces(i: RelayInputs, relaying: boolean): RelaySurfaces {
 /** `relay:facts`: both sides of the on/off, the endpoints, the recording and the capture. */
 export function relayFacts(i: RelayInputs): RelayFacts {
   return {
+    mode: i.config.sourceMode,
+    transport: i.config.transport,
     running: surfaces(i, true),
     stopped: surfaces(i, false),
     ...(i.stream !== undefined ? { stream: i.stream } : {}),

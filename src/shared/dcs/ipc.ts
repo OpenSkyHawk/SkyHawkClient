@@ -7,6 +7,11 @@ export const EXPORT_MULTICAST_ADDR = '239.255.50.10'
 export const EXPORT_PORT = 5010
 export const COMMAND_PORT = 7778
 
+/** Where the relay's stream comes from (the settings' source mode). */
+export type SourceMode = 'bridge' | 'monitor' | 'replay'
+/** How the relay reaches DCS-BIOS (the settings' transport). */
+export type DcsTransport = 'loopback-multicast' | 'unicast-listen' | 'tcp-to-host'
+
 /**
  * Where the DCS-BIOS stream stands while relaying. TCP connects and can drop; UDP has nothing to
  * connect, so it is `connected` once the socket is bound; Replay is `connected` while playing and
@@ -71,6 +76,16 @@ export type EndpointLabel = { text: string } | { hostPort: { suffix: string } }
  * a recording or a capture.
  */
 export interface RelayFacts {
+  /**
+   * The source mode these were judged against (R3.4c). The Source Mode segment, its hint and the
+   * title bar's SOURCE read it, so they flip in the same push as the cards, Start and the pill.
+   */
+  mode: SourceMode
+  /**
+   * The transport these were judged against (R3.4c). The Transport radios and the Overview's DCS
+   * Link name read it, so they flip in the same push as the endpoints below.
+   */
+  transport: DcsTransport
   /** As the surfaces read while the relay is shown running… */
   running: RelaySurfaces
   /** …and while it is shown stopped. */
@@ -127,6 +142,8 @@ export interface LogRow {
  * main/dcs/relay-rules.test.ts).
  */
 export const RELAY_FACTS_IDLE: RelayFacts = {
+  mode: 'monitor',
+  transport: 'tcp-to-host',
   running: {
     waiting: 'dcs',
     tip: 'waiting-dcs',

@@ -43,6 +43,14 @@ describe('relayFacts', () => {
     expect(replay.stopped.startBlocked).toBe('replay')
     expect(replay.running.tip).toBe('replay-playing')
   })
+
+  it('carries the mode and the transport it was judged against (R3.4c)', () => {
+    const f = facts({
+      config: { ...DEFAULT_CONFIG, sourceMode: 'replay', transport: 'unicast-listen' }
+    })
+    expect(f).toMatchObject({ mode: 'replay', transport: 'unicast-listen', captureShown: true })
+    expect(f.endpoint.pill).toEqual(pillEndpoint('unicast-listen'))
+  })
 })
 
 describe('N3: waiting for the Gateway is Bridge only; a driven Replay is blocked, never waiting', () => {
