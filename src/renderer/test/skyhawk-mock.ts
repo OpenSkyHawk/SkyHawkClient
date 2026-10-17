@@ -25,7 +25,9 @@
 // pure builder main pushes `cockpit:snapshot` from, its peak W and its stray timer — on the test's
 // clock and timers. It is handed what main would hand it, in the same steps: each `nodes:model` and
 // `nodes:telemetry` push and each `device:status` push (the link and the Gateway's health), and
-// the renderer's load (`getStatus`, main's relay:status).
+// the renderer's load (`getStatus`, main's relay:status). The Overview, Connection and Settings
+// read their sections of the same snapshot (R3.2b); the registry it lists is the scenario's, as
+// `getNodeRegistry` answers it.
 //
 // Calibration runs main's own workflow (R3.1): the mock hosts a real CalibrationWorkflowHost — the
 // workflow, the dialog's start/close sequencing, the restore offer and the derived CalibrationState
@@ -386,7 +388,8 @@ export function installSkyhawkMock(): SkyhawkMock {
 
   /** Main's Cockpit snapshot (NodeHub hosts the same), over the scenario as main holds it. */
   const cockpit = new CockpitSnapshotHost((snap) => push('cockpit:snapshot', snap), {
-    device: () => state.device ?? { state: 'no-device' }
+    device: () => state.device ?? { state: 'no-device' },
+    registry: () => state.registry ?? EMPTY_REGISTRY
   })
 
   const mock = Object.defineProperty(Object.assign(fns, calSpies), 'scenario', {

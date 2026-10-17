@@ -24,14 +24,35 @@
 //                           outage's fed count is power-zone.ts pduOutages
 //   X8 registry wording     NOT IN REGISTRY / "Not in registry" for a new board (views.ts,
 //                           panels.ts)
-// Overview, Connection and Settings keep their own copies until R3.2b.
+//
+// The Overview, Connection and Settings read their own sections (R3.2b), each with its own answer
+// where it differs from the Cockpit's — the same option a, co-located:
+//   X1 in cockpit           Settings' Reset… misses a hidden adopted board (registry-rows.ts
+//                           settingsNodes)
+//   X2 on the bus unplugged the Overview's banner and notice only while the link is up; Connected
+//                           nodes and the registry's CAN rows read the last model whatever the link
+//                           (summaries.ts, registry-rows.ts registryOnBus)
+//   X3 strays               the Overview and Connection count none (summaries.ts: healthBand and
+//                           attentionItems with no strays); the notice is isReportableNew
+//                           (newDevices)
+//   X4 zone                 a Connected nodes row names its zone's PDU wherever it is, else "no
+//                           power zone" (summaries.ts nodesSummary)
+//   X8 registry wording     the registry's bridge row is "Gateway" (registry-rows.ts registryName)
 import { isLinkUp, type DeviceStatus } from '@shared/gateway'
-import type { CockpitSnapshot, NodeModel, NodeTelemSnapshot, StrayItem } from '@shared/nodes'
+import type {
+  CockpitSnapshot,
+  NodeModel,
+  NodeRegistryInfo,
+  NodeTelemSnapshot,
+  StrayItem
+} from '@shared/nodes'
 import { adoptRows } from './adopt'
 import { cockpitAttention, strayFlag, strayNew } from './attention'
 import { cockpitBand, totalWatts } from './band'
 import { boardPanels, zoneChoices } from './panels'
 import { planZones } from './plan-zones'
+import { settingsNodes } from './registry-rows'
+import { nodesSummary, overviewSummary } from './summaries'
 import { nodeViews } from './views'
 
 export interface CockpitSnapshotInput {
@@ -43,6 +64,8 @@ export interface CockpitSnapshotInput {
   device: DeviceStatus
   /** The highest total W this session so far (sessionPeakW). */
   peakW: number
+  /** The bundled NODE_IDS registry (`nodes:registry`), for Settings › About. */
+  registry?: NodeRegistryInfo
   now: number
   rev: number
 }
@@ -73,7 +96,10 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     attention: cockpitAttention(i.model, views, outages, strays, live, i.device.gateway),
     panels: boardPanels(views, outages),
     zones: zoneChoices(views),
-    adopt: adoptRows(views)
+    adopt: adoptRows(views),
+    overview: overviewSummary(views, outages, live),
+    nodesCard: nodesSummary(views, outages),
+    settings: settingsNodes(i.model, i.registry, live)
   }
   return stray.nextAt === undefined ? { snapshot } : { snapshot, nextAt: stray.nextAt }
 }

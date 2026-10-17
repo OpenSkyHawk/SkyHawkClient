@@ -12,6 +12,7 @@ import {
   COCKPIT_IDLE,
   type CockpitSnapshot,
   type NodeModel,
+  type NodeRegistryInfo,
   type NodeTelemSnapshot
 } from '@shared/nodes'
 import { buildCockpitSnapshot, sessionPeakW } from './cockpit-snapshot'
@@ -34,6 +35,8 @@ const SYSTEM_TIMERS: CockpitTimers = {
 export interface CockpitSource {
   /** The link as last pushed on `device:status`, the Gateway's health included. */
   device(): DeviceStatus
+  /** The bundled NODE_IDS registry, as `nodes:registry` answers it (Settings › About). */
+  registry?(): NodeRegistryInfo
 }
 
 export interface CockpitHostOptions {
@@ -117,6 +120,7 @@ export class CockpitSnapshotHost {
       telemetry: this.telemetry,
       device: this.source.device(),
       peakW: this.peakW,
+      registry: this.source.registry?.(),
       now: this.strayClock,
       rev: ++this.rev
     })

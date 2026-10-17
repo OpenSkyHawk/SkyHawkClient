@@ -173,7 +173,8 @@ export class NodeHub implements NodeLineSink {
       }
     })
     this.cockpit = new CockpitSnapshotHost((snapshot) => this.emit('cockpit:snapshot', snapshot), {
-      device: () => this.link.deviceStatus()
+      device: () => this.link.deviceStatus(),
+      registry: () => this.registry()
     })
   }
 
