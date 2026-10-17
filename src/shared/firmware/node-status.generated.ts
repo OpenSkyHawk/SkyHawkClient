@@ -14,6 +14,52 @@ export const NODE_STATUS = {
   endMsgName: '_NODE_STATUS_END'
 } as const
 
+/**
+ * NODE_ID of the Gateway board's PanelBridge MCU, the CAN master. Its own row leads every
+ * _NODE_STATUS roster reply (#344); CAN nodes are 1..MAX_NODE_ID.
+ */
+export const GATEWAY_NODE_ID = 0
+
+/** _NODE_STATUS row length in bytes. Sent as hex, so the argument is twice as many chars. */
+export const NODE_STATUS_ROW_BYTES = 14
+
+/**
+ * _NODE_STATUS row field offsets, in bytes of the decoded row — from NodeStatusField
+ * (NodeStatus.h). Hex index = 2 × offset. Each field is fixed-width hex, most-significant byte
+ * first; a field runs to the next offset, the last to NODE_STATUS_ROW_BYTES.
+ */
+export const NODE_STATUS_FIELD = {
+  ID: 0, // u8: node ID; GATEWAY_NODE_ID = the bridge's own row, 1-63 = CAN nodes
+  PRESENT: 1, // u8: 01 alive, 00 removed
+  HB_FLAGS: 2, // u8: HeartbeatFlag bits
+  UPTIME: 3, // u16: seconds since boot, wraps at 65535
+  RX_COUNT: 5, // u16: node-owned accepted RX count, wraps at 65535
+  ESR: 7, // u16: TEC at HB_ESR_TEC_SHIFT, REC at HB_ESR_REC_SHIFT
+  DIE_TEMP_C: 9, // i8: whole degC, DIE_TEMP_UNAVAILABLE = not seen
+  HEALTH_FLAGS: 10, // u8: NodeHealthFlag bits
+  FAULT_MASK: 11, // u8: reserved, 00
+  FAULT_ID: 12, // u8: NodeFaultCode
+  NODE_KIND: 13 // u8: NodeKind
+} as const
+
+/** HB_n `flags` bits (the row's HB_FLAGS field) — from HeartbeatFlag (NodeStatus.h). */
+export const HEARTBEAT_FLAGS = {
+  BOFF: 0x1,
+  EPVF: 0x2
+} as const
+
+/** HB_n `esr` (the row's ESR field): bit position of the transmit error counter, the low byte. */
+export const HB_ESR_TEC_SHIFT = 0
+
+/** HB_n `esr`: bit position of the receive error counter, the high byte. */
+export const HB_ESR_REC_SHIFT = 8
+
+/**
+ * HEALTH_n `dieTempC` meaning "unavailable / not yet seen". Signed (int8): the row carries its
+ * two's-complement byte.
+ */
+export const DIE_TEMP_UNAVAILABLE = -128
+
 /** HEALTH_n `flags` bits — from NodeHealthFlag (NodeStatus.h). Decoder masks against these. */
 export const NODE_HEALTH_FLAGS = {
   OVERHEAT: 0x1,
@@ -126,6 +172,40 @@ export const NODE_TELEM = {
   protoVersion: 1,
   msgName: '_NODE_TELEM'
 } as const
+
+/** _NODE_TELEM row length in bytes. Sent as hex, so the argument is twice as many chars. */
+export const NODE_TELEM_ROW_BYTES = 9
+
+/**
+ * _NODE_TELEM row field offsets, in bytes of the decoded row — from NodeTelemField (NodeStatus.h).
+ * Hex index = 2 × offset. FRAME is the TELEM_n frame unread, in wire order; its byte 0 is the page.
+ */
+export const NODE_TELEM_FIELD = {
+  ID: 0, // u8: sending node ID (from the CAN ID)
+  FRAME: 1 // 8 bytes: the TELEM_n frame unread, wire order (TelemPage at FRAME + 0)
+} as const
+
+/**
+ * PDU_RAIL_12V / PDU_RAIL_5V field offsets, in bytes of the TELEM_n frame — from PduRailField
+ * (NodeStatus.h). Little-endian; a field runs to the next offset, the last to the frame's end.
+ */
+export const PDU_RAIL_FIELD = {
+  FLAGS: 1, // u8: PduRailFlag bits
+  V_AVG_MV: 2, // u16: window-average rail voltage, mV
+  V_MIN_MV: 4, // u16: window-minimum rail voltage, mV
+  I_AVG_MA: 6 // int16: window-average rail current, mA (signed: zero offset stays visible)
+} as const
+
+/** PDU_STATUS field offsets, in bytes of the TELEM_n frame — from PduStatusField (NodeStatus.h). */
+export const PDU_STATUS_FIELD = {
+  FLAGS: 1, // u8: PduStatusFlag bits
+  NTC_TEMP_DC: 2, // int16: board temperature, 0.1 degC (NTC_TEMP_UNAVAILABLE = no reading)
+  I12_PEAK_MA: 4, // u16: 12 V rail peak current since the last page, mA
+  I5_PEAK_MA: 6 // u16: 5 V rail peak current since the last page, mA
+} as const
+
+/** PDU_STATUS `ntcTempDC` meaning "unavailable": no reading yet, or the NTC is open/shorted. int16. */
+export const NTC_TEMP_UNAVAILABLE = -32768
 
 /** TELEM_n page ids — from TelemPage (NodeStatus.h). Global and append-only; 0x00 is invalid. */
 export const TELEM_PAGES = {

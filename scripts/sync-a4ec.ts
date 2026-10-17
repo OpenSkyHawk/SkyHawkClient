@@ -205,17 +205,52 @@ const labelize = (name: string): string =>
  * `<value>` is a literal, or a sum of literals and other constants from the same source
  * (`CAL_MAX_FRAME = CAL_ENVELOPE_BYTES + CAL_MAX_PAYLOAD`), each resolved the same way. Anything
  * else (a cast, a product, a call) is not a value this parser can vouch for, so it fails the sync.
+ * The first term may carry a leading `-`, for the signed sentinels
+ * (`DIE_TEMP_UNAVAILABLE = -128`); a `-` anywhere else is a subtraction, which still fails.
  */
 function constexprNum(src: string, name: string, where: string): number {
   const m = new RegExp(`constexpr\\s+\\w+\\s+${name}\\s*=\\s*([^;]+);`).exec(src)
   if (!m) throw new Error(`[sync] constant ${name} not found in ${where}`)
-  return m[1]!.split('+').reduce((sum, raw) => {
-    const term = raw.trim()
-    if (/^(0x[0-9A-Fa-f]+|\d+)$/.test(term)) return sum + Number(term)
-    if (/^[A-Z_][A-Z0-9_]*$/.test(term)) return sum + constexprNum(src, term, where)
+  return m[1]!.split('+').reduce((sum, raw, i) => {
+    let term = raw.trim()
+    let sign = 1
+    if (i === 0 && term.startsWith('-')) {
+      sign = -1
+      term = term.slice(1).trim()
+    }
+    if (/^(0x[0-9A-Fa-f]+|\d+)$/.test(term)) return sum + sign * Number(term)
+    if (/^[A-Z_][A-Z0-9_]*$/.test(term)) return sum + sign * constexprNum(src, term, where)
     throw new Error(`[sync] ${name} in ${where}: cannot evaluate '${m[1]!.trim()}'`)
   }, 0)
 }
+
+/**
+ * A field-offset enum (`NodeStatusField`, `CalCommitField`, …): parseEnum, plus the checks an
+ * offset table must pass — strictly ascending (a field runs to the next offset) and inside
+ * `bytes`, the length of the row or payload it indexes. A firmware layout the decoders cannot
+ * read field-by-field fails the sync here rather than mis-decoding.
+ */
+function parseOffsets(
+  header: string,
+  enumName: string,
+  where: string,
+  bytes: number
+): { name: string; value: number; comment: string }[] {
+  const es = parseEnum(header, enumName, where)
+  es.forEach((e, i) => {
+    if (i > 0 && e.value <= es[i - 1]!.value) {
+      throw new Error(`[sync] ${enumName}.${e.name} in ${where}: offsets must ascend`)
+    }
+    if (e.value >= bytes) {
+      throw new Error(`[sync] ${enumName}.${e.name} = ${e.value} in ${where}: past ${bytes} bytes`)
+    }
+  })
+  return es
+}
+
+/** Offset entries -> `NAME: offset, // firmware comment` lines of a name-keyed object. */
+const offsetLines = (es: { name: string; value: number; comment: string }[]): string =>
+  es.map((e) => `  ${e.name}: ${e.value},${e.comment ? ` // ${e.comment}` : ''}`).join('\n')
 
 /** Enum entry names -> a TS string-literal union, so name-keyed lookups are typo-checked. */
 const nameUnion = (names: string[]): string => names.map(q).join(' | ')
@@ -560,6 +595,21 @@ function genNodeStatus(header: string): string {
       .map((e) => `  ${hex(e.value)}: { name: ${q(e.name)}, description: ${q(e.comment)} }`)
       .join(',\n')
 
+  // Wire layout named by #346: the row offsets, flag bits and sentinels the decoders read.
+  const nsNum = (name: string) => constexprNum(header, name, 'NodeStatus.h')
+  const statusRowBytes = nsNum('NODE_STATUS_ROW_BYTES')
+  const statusFields = parseOffsets(header, 'NodeStatusField', 'NodeStatus.h', statusRowBytes)
+  const telemRowBytes = nsNum('NODE_TELEM_ROW_BYTES')
+  const telemFields = parseOffsets(header, 'NodeTelemField', 'NodeStatus.h', telemRowBytes)
+  const hbFlags = parseEnum(header, 'HeartbeatFlag', 'NodeStatus.h')
+  // The TELEM_n frame a PDU page lives in: the _NODE_TELEM row after its FRAME offset (8 bytes).
+  const frameAt = telemFields.find((e) => e.name === 'FRAME')?.value
+  if (frameAt === undefined)
+    throw new Error('[sync] NodeTelemField.FRAME not found in NodeStatus.h')
+  const frameBytes = telemRowBytes - frameAt
+  const railFields = parseOffsets(header, 'PduRailField', 'NodeStatus.h', frameBytes)
+  const pduStatusFields = parseOffsets(header, 'PduStatusField', 'NodeStatus.h', frameBytes)
+
   const faultAbbr = abbrs(faultCodes.map((e) => e.name))
   const flagEntries = healthFlags.map((e) => `  ${e.name}: ${hex(e.value)}`).join(',\n')
   const faultEntries = faultCodes
@@ -585,6 +635,41 @@ export const NODE_STATUS = {
   msgName: ${q(msgName)},
   endMsgName: ${q(endMsgName)}
 } as const
+
+/**
+ * NODE_ID of the Gateway board's PanelBridge MCU, the CAN master. Its own row leads every
+ * _NODE_STATUS roster reply (#344); CAN nodes are 1..MAX_NODE_ID.
+ */
+export const GATEWAY_NODE_ID = ${nsNum('GATEWAY_NODE_ID')}
+
+/** _NODE_STATUS row length in bytes. Sent as hex, so the argument is twice as many chars. */
+export const NODE_STATUS_ROW_BYTES = ${statusRowBytes}
+
+/**
+ * _NODE_STATUS row field offsets, in bytes of the decoded row — from NodeStatusField
+ * (NodeStatus.h). Hex index = 2 × offset. Each field is fixed-width hex, most-significant byte
+ * first; a field runs to the next offset, the last to NODE_STATUS_ROW_BYTES.
+ */
+export const NODE_STATUS_FIELD = {
+${offsetLines(statusFields)}
+} as const
+
+/** HB_n \`flags\` bits (the row's HB_FLAGS field) — from HeartbeatFlag (NodeStatus.h). */
+export const HEARTBEAT_FLAGS = {
+${bits(hbFlags)}
+} as const
+
+/** HB_n \`esr\` (the row's ESR field): bit position of the transmit error counter, the low byte. */
+export const HB_ESR_TEC_SHIFT = ${nsNum('HB_ESR_TEC_SHIFT')}
+
+/** HB_n \`esr\`: bit position of the receive error counter, the high byte. */
+export const HB_ESR_REC_SHIFT = ${nsNum('HB_ESR_REC_SHIFT')}
+
+/**
+ * HEALTH_n \`dieTempC\` meaning "unavailable / not yet seen". Signed (int8): the row carries its
+ * two's-complement byte.
+ */
+export const DIE_TEMP_UNAVAILABLE = ${nsNum('DIE_TEMP_UNAVAILABLE')}
 
 /** HEALTH_n \`flags\` bits — from NodeHealthFlag (NodeStatus.h). Decoder masks against these. */
 export const NODE_HEALTH_FLAGS = {
@@ -630,6 +715,33 @@ export const NODE_TELEM = {
   protoVersion: ${telemProto},
   msgName: ${q(telemMsgName)}
 } as const
+
+/** _NODE_TELEM row length in bytes. Sent as hex, so the argument is twice as many chars. */
+export const NODE_TELEM_ROW_BYTES = ${telemRowBytes}
+
+/**
+ * _NODE_TELEM row field offsets, in bytes of the decoded row — from NodeTelemField (NodeStatus.h).
+ * Hex index = 2 × offset. FRAME is the TELEM_n frame unread, in wire order; its byte 0 is the page.
+ */
+export const NODE_TELEM_FIELD = {
+${offsetLines(telemFields)}
+} as const
+
+/**
+ * PDU_RAIL_12V / PDU_RAIL_5V field offsets, in bytes of the TELEM_n frame — from PduRailField
+ * (NodeStatus.h). Little-endian; a field runs to the next offset, the last to the frame's end.
+ */
+export const PDU_RAIL_FIELD = {
+${offsetLines(railFields)}
+} as const
+
+/** PDU_STATUS field offsets, in bytes of the TELEM_n frame — from PduStatusField (NodeStatus.h). */
+export const PDU_STATUS_FIELD = {
+${offsetLines(pduStatusFields)}
+} as const
+
+/** PDU_STATUS \`ntcTempDC\` meaning "unavailable": no reading yet, or the NTC is open/shorted. int16. */
+export const NTC_TEMP_UNAVAILABLE = ${nsNum('NTC_TEMP_UNAVAILABLE')}
 
 /** TELEM_n page ids — from TelemPage (NodeStatus.h). Global and append-only; 0x00 is invalid. */
 export const TELEM_PAGES = {
@@ -748,6 +860,42 @@ function genAxisCal(header: string, cpp: string, simGateway: string): string {
 
   const lenEntries = types.map((t) => `  ${hex(t.value)}: ${lens[t.name]}`).join(',\n')
 
+  // Payload field offsets (#346): one enum per type with a payload, entries prefixed by the type
+  // (CAL_COMMIT_MIN). Each is bounded by its type's payload length; CAL_DATA's per-axis record by
+  // CAL_DATA_REC_BYTES. The prefix is stripped so the generated table reads CAL_COMMIT_FIELD.MIN.
+  const dataRecBytes = constexprNum(header, 'CAL_DATA_REC_BYTES', 'AxisCal.h')
+  const fieldTables = [
+    ['CalHelloAckField', 'CAL_HELLO_ACK', lens.CAL_T_HELLO_ACK],
+    ['CalDataField', 'CAL_DATA', lens.CAL_T_CAL_DATA],
+    ['CalDataRecField', 'CAL_DATA_REC', dataRecBytes],
+    ['CalSessionOpenField', 'CAL_SESSION_OPEN', lens.CAL_T_SESSION_OPEN],
+    ['CalSessionAckField', 'CAL_SESSION_ACK', lens.CAL_T_SESSION_ACK],
+    ['CalStreamSelectField', 'CAL_STREAM_SELECT', lens.CAL_T_STREAM_SELECT],
+    ['CalCommitField', 'CAL_COMMIT', lens.CAL_T_COMMIT],
+    ['CalResetField', 'CAL_RESET', lens.CAL_T_RESET],
+    ['CalAckField', 'CAL_ACK', lens.CAL_T_ACK],
+    ['CalNackField', 'CAL_NACK', lens.CAL_T_NACK],
+    ['CalRawField', 'CAL_RAW', lens.CAL_T_RAW]
+  ] as const
+  const fieldConsts = fieldTables
+    .map(([enumName, prefix, bytes]) => {
+      if (bytes === undefined) throw new Error(`[sync] no payload length bounds ${enumName}`)
+      const es = parseOffsets(header, enumName, 'AxisCal.h', bytes).map((e) => {
+        if (!e.name.startsWith(`${prefix}_`)) {
+          throw new Error(
+            `[sync] ${enumName}.${e.name} in AxisCal.h: expected the ${prefix}_ prefix`
+          )
+        }
+        return { ...e, name: e.name.slice(prefix.length + 1) }
+      })
+      const into = enumName === 'CalDataRecField' ? 'one CAL_DATA record' : 'the payload'
+      return `/** ${enumName} (AxisCal.h): byte offsets into ${into}, ${bytes} byte${bytes === 1 ? '' : 's'}. */
+export const ${prefix}_FIELD = {
+${offsetLines(es)}
+} as const`
+    })
+    .join('\n\n')
+
   return (
     banner([
       `${SRC.axisCal} (calibration wire contract)`,
@@ -780,6 +928,8 @@ export const CAL_PROTO = {
   maxFrame: ${constexprNum(header, 'CAL_MAX_FRAME', 'AxisCal.h')},
   /** The gateway closes a calibration session idle this long. SESSION_ACK reports it too. */
   sessionTimeoutMs: ${constexprNum(simGateway, 'CAL_SESSION_TIMEOUT_MS', 'SimGateway.cpp')},
+  /** One CAL_DATA per-axis record, in bytes. Record i starts at CAL_DATA_FIELD.RECORDS + i × this. */
+  dataRecBytes: ${dataRecBytes},
   /** Frame lead-in "\\xAA S K C". Not collision-proof outbound, which is why the CRC is mandatory. */
   magic: [${magic.map(hex).join(', ')}]
 } as const
@@ -835,6 +985,11 @@ ${nackEntries}
 export const CAL_PAYLOAD_LEN: Partial<Record<number, number>> = {
 ${lenEntries}
 } as const
+
+// Payload field offsets — byte offsets into a type's payload (not the frame). Multi-byte fields
+// are little-endian; a field runs to the next offset, the last to the type's payload length.
+
+${fieldConsts}
 `
   )
 }

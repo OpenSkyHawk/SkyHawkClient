@@ -14,6 +14,29 @@ import {
   NODE_NAMES,
   CAL_PROTO,
   CAL_TYPES,
+  CAL_ACK_FIELD,
+  CAL_COMMIT_FIELD,
+  CAL_DATA_FIELD,
+  CAL_DATA_REC_FIELD,
+  CAL_HELLO_ACK_FIELD,
+  CAL_NACK_FIELD,
+  CAL_RAW_FIELD,
+  CAL_RESET_FIELD,
+  CAL_SESSION_ACK_FIELD,
+  CAL_SESSION_OPEN_FIELD,
+  CAL_STREAM_SELECT_FIELD,
+  DIE_TEMP_UNAVAILABLE,
+  GATEWAY_NODE_ID,
+  HB_ESR_REC_SHIFT,
+  HB_ESR_TEC_SHIFT,
+  HEARTBEAT_FLAGS,
+  NODE_STATUS_FIELD,
+  NODE_STATUS_ROW_BYTES,
+  NODE_TELEM_FIELD,
+  NODE_TELEM_ROW_BYTES,
+  NTC_TEMP_UNAVAILABLE,
+  PDU_RAIL_FIELD,
+  PDU_STATUS_FIELD,
   CAL_PAYLOAD_LEN,
   MAX_NODE_ID,
   TELEM_PERIOD_MS,
@@ -176,6 +199,35 @@ describe('node-status.generated', () => {
     const tags = Object.values(NODE_FAULT_CODES).map((e) => e?.abbr)
     expect(new Set(tags).size).toBe(tags.length)
   })
+
+  // shared/nodes.ts decodes the row by these names (#346). Pinned at the values the decoder was
+  // proven against, so a firmware relayout fails here before it mis-decodes a node.
+  it('pins the _NODE_STATUS row layout the decoder reads', () => {
+    expect(GATEWAY_NODE_ID).toBe(0)
+    expect(NODE_STATUS_ROW_BYTES).toBe(14)
+    expect(NODE_STATUS_FIELD).toEqual({
+      ID: 0,
+      PRESENT: 1,
+      HB_FLAGS: 2,
+      UPTIME: 3,
+      RX_COUNT: 5,
+      ESR: 7,
+      DIE_TEMP_C: 9,
+      HEALTH_FLAGS: 10,
+      FAULT_MASK: 11,
+      FAULT_ID: 12,
+      NODE_KIND: 13
+    })
+  })
+
+  it('pins the heartbeat flag bits, the ESR split and the die-temperature sentinel', () => {
+    expect(HEARTBEAT_FLAGS).toEqual({ BOFF: 0x01, EPVF: 0x02 })
+    expect(HB_ESR_TEC_SHIFT).toBe(0)
+    expect(HB_ESR_REC_SHIFT).toBe(8)
+    // Signed int8; the row carries its byte, 0x80.
+    expect(DIE_TEMP_UNAVAILABLE).toBe(-128)
+    expect(DIE_TEMP_UNAVAILABLE & 0xff).toBe(0x80)
+  })
 })
 
 // shared/node-telem.ts imports its page ids and flag bits from here; only the decoder's protocol
@@ -183,6 +235,16 @@ describe('node-status.generated', () => {
 describe('node-telem contract', () => {
   it('matches the shared decoder (fails loudly on a firmware bump)', () => {
     expect(NODE_TELEM.protoVersion).toBe(SUPPORTED_TELEM_PROTO)
+  })
+
+  it('pins the _NODE_TELEM framing and the PDU page offsets the decoder reads (#346)', () => {
+    expect(NODE_TELEM_ROW_BYTES).toBe(9)
+    expect(NODE_TELEM_FIELD).toEqual({ ID: 0, FRAME: 1 })
+    expect(PDU_RAIL_FIELD).toEqual({ FLAGS: 1, V_AVG_MV: 2, V_MIN_MV: 4, I_AVG_MA: 6 })
+    expect(PDU_STATUS_FIELD).toEqual({ FLAGS: 1, NTC_TEMP_DC: 2, I12_PEAK_MA: 4, I5_PEAK_MA: 6 })
+    // Signed int16; the frame carries 0x8000.
+    expect(NTC_TEMP_UNAVAILABLE).toBe(-32768)
+    expect(NTC_TEMP_UNAVAILABLE & 0xffff).toBe(0x8000)
   })
 })
 
@@ -214,6 +276,32 @@ describe('axis-cal.generated', () => {
     for (const [code, info] of Object.entries(CAL_TYPES)) {
       expect(info!.fromDevice, info!.name).toBe(Number(code) >= 0x80)
     }
+  })
+
+  it('pins the payload field offsets the codec reads and writes (#346)', () => {
+    expect(CAL_HELLO_ACK_FIELD).toEqual({
+      PROTO: 0,
+      BLOB_VERSION: 1,
+      AXIS_SLOTS: 2,
+      FW_MAJOR: 3,
+      FW_MINOR: 4,
+      FW_PATCH: 5
+    })
+    expect(CAL_DATA_FIELD).toEqual({ PRESENT_MASK: 0, CALIBRATED_MASK: 1, RECORDS: 2 })
+    expect(CAL_PROTO.dataRecBytes).toBe(10)
+    expect(CAL_DATA_REC_FIELD).toEqual({ CONTROL_ID: 0, MIN: 2, CENTRE: 4, MAX: 6, DEADZONE: 8 })
+    // CAL_DATA is exactly the two masks and the eight records.
+    expect(CAL_DATA_FIELD.RECORDS + CAL_PROTO.axisSlots * CAL_PROTO.dataRecBytes).toBe(
+      CAL_PROTO.maxPayload
+    )
+    expect(CAL_SESSION_OPEN_FIELD).toEqual({ AXIS_IDX: 0 })
+    expect(CAL_SESSION_ACK_FIELD).toEqual({ TIMEOUT_MS: 0, AXIS_IDX: 4 })
+    expect(CAL_STREAM_SELECT_FIELD).toEqual({ AXIS_IDX: 0 })
+    expect(CAL_COMMIT_FIELD).toEqual({ IDX: 0, MIN: 1, CENTRE: 3, MAX: 5, DEADZONE: 7 })
+    expect(CAL_RESET_FIELD).toEqual({ IDX: 0 })
+    expect(CAL_ACK_FIELD).toEqual({ TYPE: 0 })
+    expect(CAL_NACK_FIELD).toEqual({ TYPE: 0, REASON: 1, DETAIL: 2 })
+    expect(CAL_RAW_FIELD).toEqual({ IDX: 0, RAW: 1, CAL: 3 })
   })
 
   it('COMMIT carries exactly one axis — 9 bytes, never a batch', () => {
