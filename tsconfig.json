@@ -14,10 +14,17 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "types": [],
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@renderer/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer", "src/shared", "src/test-fixtures"]
+  "include": ["src/renderer", "src/shared"],
+  "exclude": [
+    "src/renderer/test",
+    "src/renderer/**/*.test.ts",
+    "src/renderer/**/*.test.tsx",
+    "src/shared/**/*.test.ts"
+  ]
 }
