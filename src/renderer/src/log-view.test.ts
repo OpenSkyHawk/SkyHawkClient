@@ -5,10 +5,20 @@ import {
   boardEventLine,
   eventSourceLabel,
   filterEvents,
+  isProblem,
   mergeEvents,
   restoreEvents,
   rowsThatFit
 } from './log-view'
+
+// From main/events/events.test.ts: the filter is the Events view's own since R3.3.
+describe('isProblem', () => {
+  it('keeps errors and warnings only', () => {
+    expect(
+      ['error', 'warn', 'new', 'info'].map((s) => isProblem({ severity: s as never }))
+    ).toEqual([true, true, false, false])
+  })
+})
 
 describe('Board events (Cockpit)', () => {
   it('a node row is its name and event; the roster summary stands alone', () => {

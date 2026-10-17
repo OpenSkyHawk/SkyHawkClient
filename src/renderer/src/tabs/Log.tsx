@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
-import { SEVERITY_GLYPH } from '@shared/events/legacy-rules'
 import type { EventSeverity } from '@shared/events'
 import { eventText, fileName, fmtTime } from '@shared/format'
 import { useStore, type DirFilter } from '../store'
-import { eventSourceLabel, filterEvents, type EventSourceFilter, type LogView } from '../log-view'
+import {
+  eventSourceLabel,
+  filterEvents,
+  SEVERITY_GLYPH,
+  type EventSourceFilter,
+  type LogView
+} from '../log-view'
 
 const SEVERITY_COLOR: Record<EventSeverity, string> = {
   error: 'var(--red)',
