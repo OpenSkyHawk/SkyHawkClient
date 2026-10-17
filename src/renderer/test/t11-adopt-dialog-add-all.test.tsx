@@ -65,7 +65,9 @@ describe('T11 Adopt dialog: Add all, PDU choices, power-cycle (B74, F15, F24, X3
     await addAll(2)
     expect(sky.adoptNode).toHaveBeenCalledTimes(2)
     expect(sky.adoptNode.mock.calls.map(([id]) => id)).toEqual([2, 7])
-    expect(options().map((o) => o.textContent)).toEqual(['NODE_ID 6PDUPDU_Center · in NODE_IDS.md'])
+    expect(options().map((o) => o.textContent)).toEqual([
+      'NODE_ID 6PDUPDU_Center · from NODE_IDS.md'
+    ])
   })
 
   it('a double click on Add all runs it once; the dialog is busy until it lands (R6)', async () => {

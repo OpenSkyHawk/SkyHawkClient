@@ -157,7 +157,7 @@ export function AdoptDialog(props: {
                   </div>
                   <div className="ad__im">
                     {v.entry.registry
-                      ? `${v.entry.registry.name} · in NODE_IDS.md`
+                      ? `${v.entry.registry.name} · from NODE_IDS.md`
                       : seenAgo(v.entry.firstSeenAt, Date.now())}
                   </div>
                 </button>

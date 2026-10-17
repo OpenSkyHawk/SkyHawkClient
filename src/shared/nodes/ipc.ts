@@ -30,6 +30,11 @@ export interface NodeStatus {
 /** When a node was first seen and, while it is offline, when and how it went offline. */
 export interface NodeSeen {
   firstSeenAt: number
+  /**
+   * Set while its roster row says present: when it last came online — its first present row, or
+   * the first one after an absent one (S6: a new board's identify grace counts from here).
+   */
+  onlineSince?: number
   /** When its latest status row arrived while it was present — what "updated N s ago" counts from. */
   reportedAt?: number
   /** Set while offline: when the client learned of it. */
@@ -256,6 +261,11 @@ export interface NodeModelEntry {
   reportedAt?: number
   /** New nodes: when this session first saw it. Not persisted. */
   firstSeenAt?: number
+  /**
+   * New nodes on the roster: when they last came online this session (offline → online resets it).
+   * The identify grace counts from here (node-model.ts newState, S6). Not persisted.
+   */
+  onlineSince?: number
   /** Online PDUs: 'none' = status but no fresh telemetry (never, or > TELEM_STALE_MS). */
   readings?: 'live' | 'none'
   /** PDUs: telemetry has arrived at least once since the session started. */
@@ -757,7 +767,10 @@ export interface SummaryRow {
 
 /** Connection › Connected nodes. */
 export interface NodesSummary {
-  /** Known nodes (registry + adopted, PDUs included); new nodes are not counted. */
+  /**
+   * Known nodes (registry + adopted, PDUs included) plus the strays on the bus (X3: the Cockpit's
+   * band total); other new nodes are not counted.
+   */
   known: number
   healthy: number
   warn: number

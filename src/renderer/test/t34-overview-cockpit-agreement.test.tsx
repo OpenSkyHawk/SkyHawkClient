@@ -1,5 +1,5 @@
 // T34 — one node model, three surfaces: the Overview, the Cockpit and the Connection tab count the
-// same boards the same way — except a stray, which only the Cockpit counts (X1 today).
+// same boards the same way — a stray included (D1 / X3, #133).
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { App } from '../src/app/App'
@@ -61,30 +61,29 @@ const connection = () =>
   ['healthy', 'warning', 'offline'].map((l) => screen.getByText(l).previousSibling!.textContent)
 
 describe('T34 Overview ↔ Cockpit ↔ Connection agreement (X1, B58, B63, B67)', () => {
-  it('one nodes:model push: the same offline and warning counts on every tab, but the stray', async () => {
+  it('one nodes:model push: the same offline and warning counts on every tab, the stray too', async () => {
     const { sky, user } = await renderScenario(<App />, { device: connected() })
     sky.emitScenario({ model: scene() })
 
-    // Overview: 3 of 6 up; 2 offline and 1 warning. The stray is not counted (X1 today).
+    // Overview: 4 of 7 up; 2 offline and 2 warnings — the stray is one up and one warning (D1).
     expect(overview()).toEqual({
-      value: '✕3 / 6',
+      value: '✕4 / 7',
       sub: 'nodes up · — W · 2 PDUs',
-      banner: '⚠ 3 nodes need attention — 2 offline (PDU_Right + 1 node) · 1 warning. Open Cockpit'
+      banner: '⚠ 4 nodes need attention — 2 offline (PDU_Right + 1 node) · 2 warnings. Open Cockpit'
     })
 
-    // Cockpit: the same 2 offline and 1 no status yet; the stray adds one up, one warning and one
-    // to the total (contract D1 says every tab counts it; today only the Cockpit does — X1).
+    // Cockpit: the same 2 offline, 2 warnings and 1 no status yet.
     await user.click(tab('Cockpit'))
     expect(cockpit()).toEqual(['4/ 7', '2 warning · 2 offline · 1 no status yet'])
 
-    // Connection: 3 up = 2 healthy + 1 warning, 2 offline — the Overview's numbers, no stray.
+    // Connection: 4 up = 2 healthy + 2 warnings, 2 offline — the same numbers, with the stray's row.
     await user.click(tab('Connection'))
-    expect(connection()).toEqual(['2', '1', '2'])
+    expect(connection()).toEqual(['2', '2', '2'])
     expect(screen.getByText('PDUs · — W').parentElement).toHaveTextContent('2PDUs · — W')
     expect(
-      screen.queryByRole('button', { name: 'Open Node 9 in Cockpit' }),
-      'no row for the stray'
-    ).toBeNull()
+      screen.getByRole('button', { name: 'Open NODE_ID 9 in Cockpit' }),
+      'a row for the stray'
+    ).toBeInTheDocument()
   })
 
   it('without the stray, all three agree exactly', async () => {
@@ -115,11 +114,16 @@ describe('T34 Overview ↔ Cockpit ↔ Connection agreement (X1, B58, B63, B67)'
         newBoard(9, 0, { identified: 'bridge' })
       ])
     })
-    expect(overview()).toEqual({ value: '5 / 6', sub: 'nodes up · — W · 2 PDUs', banner: null })
+    // The stray stays: one warning on every tab.
+    expect(overview()).toEqual({
+      value: '!6 / 7',
+      sub: 'nodes up · — W · 2 PDUs',
+      banner: '⚠ 1 node needs attention — 1 warning (NODE_ID 9). Open Cockpit'
+    })
     await user.click(tab('Cockpit'))
     expect(cockpit()).toEqual(['6/ 7', '1 warning · 0 offline · 1 no status yet'])
     await user.click(tab('Connection'))
-    expect(connection()).toEqual(['5', '0', '0'])
-    expect(screen.getByText('Nothing needs attention.')).toBeInTheDocument()
+    expect(connection()).toEqual(['5', '1', '0'])
+    expect(screen.queryByText('Nothing needs attention.')).toBeNull()
   })
 })

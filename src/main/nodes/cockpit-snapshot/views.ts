@@ -10,6 +10,7 @@ import type {
   PduReadings
 } from '@shared/nodes'
 import { nodeFlagChips, pduAlertFlags } from '../faults'
+import { newReason } from '../node-model'
 
 /** A PDU's pages that are fresh right now. A stale page is not a reading. */
 function freshReadings(t: NodeTelemSnapshot | undefined): PduReadings {
@@ -20,9 +21,15 @@ function freshReadings(t: NodeTelemSnapshot | undefined): PduReadings {
   return r
 }
 
+/** newReason as a flag: its words in capitals, the file's name as it is spelled. */
+function newReasonFlag(e: NodeModelEntry): string {
+  return newReason(e).replace(/^[a-z ]+/, (w) => w.toUpperCase())
+}
+
 /** Offline wins, then bus-off, then any flag the node (or, for a PDU, its pages) raised. */
 export function nodeHealth(e: NodeModelEntry, r: PduReadings = {}): NodeHealth {
-  if (e.source === 'new') return { state: 'new', flag: 'NOT IN REGISTRY' }
+  // Where it comes from, worded once (X8): `FROM NODE_IDS.md` / `NOT IN NODE_IDS.md`.
+  if (e.source === 'new') return { state: 'new', flag: newReasonFlag(e) }
   if (e.availability === 'unknown') return { state: 'unknown' }
   if (e.notSeen) return { state: 'off', flag: 'NOT SEEN THIS SESSION' }
   if (e.availability === 'offline') return { state: 'off', flag: 'OFFLINE' }

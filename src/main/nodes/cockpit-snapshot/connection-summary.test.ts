@@ -47,6 +47,7 @@ const summary = (
   return nodesSummary(
     nodeViews(m, telemetry),
     outages,
+    [],
     boardZones(m.nodes, cockpitMembers(m).get),
     true
   )
@@ -95,6 +96,29 @@ describe('nodesSummary counts', () => {
   })
 })
 
+describe('nodesSummary strays (D1 / X3)', () => {
+  it('counts a stray as the Cockpit band does — one up, one warning — with its Attention row', () => {
+    const m = model([node(1), node(41, { name: 'Node 41', source: 'new', identified: 'bridge' })])
+    const views = nodeViews(m, [])
+    const zones = boardZones(m.nodes, cockpitMembers(m).get)
+    const strays = [{ nodeId: 41, flag: 'SECOND GATEWAY · can’t be adopted' }]
+    const before = nodesSummary(views, [], [], zones, true)
+    expect([before.known, before.healthy, before.warn, before.rows.length]).toEqual([1, 1, 0, 0])
+    const s = nodesSummary(views, [], strays, zones, true)
+    expect([s.known, s.healthy, s.warn, s.off]).toEqual([2, 1, 1, 0])
+    expect(s.rows).toEqual([
+      {
+        nodeId: 41,
+        name: 'NODE_ID 41',
+        state: 'warn',
+        chip: 'SECOND GATEWAY · can’t be adopted',
+        tone: 'warn',
+        meta: '#41'
+      }
+    ])
+  })
+})
+
 describe('nodesSummary rows', () => {
   it('a board not seen this session: no false "offline since", but when it was last seen (#93)', () => {
     const t = Date.UTC(2026, 9, 14, 21, 13)
@@ -136,7 +160,9 @@ describe('nodesSummary rows', () => {
       ]
     }
     const meta = (mem: ReturnType<typeof cockpitMembers>) =>
-      nodesSummary(nodeViews(m, []), [], boardZones(m.nodes, mem.get), true).rows.map((r) => r.meta)
+      nodesSummary(nodeViews(m, []), [], [], boardZones(m.nodes, mem.get), true).rows.map(
+        (r) => r.meta
+      )
     expect(meta(cockpitMembers(m))).toEqual([
       `#13 · PDU_Left (hidden) · offline since ${fmtTime(T).slice(0, 8)}`
     ])

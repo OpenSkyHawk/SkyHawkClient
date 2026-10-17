@@ -24,6 +24,7 @@ import {
 import { PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
 import type { StatusFlag } from '../../events'
 import { nodeFaultTag, pduAlertFlags, pduFlagMeanings, raisedNodeFlags } from '../faults'
+import { newReason } from '../node-model'
 import { displayCurrentMa } from '../node-telem'
 import { canForget, canHide, type OfflineGate } from '../offline-actions'
 import { fedBy, zoneLabel } from '../power-zone'
@@ -108,11 +109,15 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
   const e = v.entry
   const st = e.status
   if (e.source === 'new') {
+    // Where it comes from, worded once (X8, node-model.ts newReason).
+    const reason = newReason(e)
     return [
       {
         tone: 'new',
-        title: 'Not in registry',
-        text: 'this NODE_ID is not in the bundled NODE_IDS.md. Name it and place it on the map.'
+        title: reason.charAt(0).toUpperCase() + reason.slice(1),
+        text: e.registry
+          ? 'this NODE_ID is in the bundled NODE_IDS.md and not added to your cockpit yet.'
+          : 'this NODE_ID is not in the bundled NODE_IDS.md. Name it and place it on the map.'
       }
     ]
   }
