@@ -154,3 +154,16 @@ export class Decoder {
     })
   }
 }
+
+/** The two pushes the telemetry tick makes. */
+interface TelemetryEmit {
+  (channel: 'telemetry:tick', payload: TelemetryReadout[]): void
+  (channel: 'aircraft:changed', payload: AircraftStatus): void
+}
+
+/** The telemetry tick: the five readouts, then the aircraft if it changed since the last tick. */
+export function flushTelemetry(decoder: Decoder, emit: TelemetryEmit): void {
+  emit('telemetry:tick', decoder.telemetrySnapshot())
+  const ac = decoder.aircraft()
+  if (ac) emit('aircraft:changed', ac)
+}

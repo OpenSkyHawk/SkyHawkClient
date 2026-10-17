@@ -1,34 +1,16 @@
-// The relay (#69): the DCS-BIOS stream, and the one on/off. Orchestrates a live source —
-// transport -> protocol parser -> decoder -> stats — batching pushes to the renderer.
-// Source-agnostic across Bridge (DCS <-> device), Monitor (LAN, read-only) and Replay (recorded
-// capture); recording can tap any live mode.
+// The main process's services, built and wired: the Gateway link (gateway/), the nodes (nodes/),
+// HID and calibration (hid/), and the DCS side — the relay, its network end, the stream log, the
+// stats and the recorder (dcs/). Session owns the settings, the event log and the rehydrate
+// bundle; everything else lives with its owner, and Session only connects them.
 //
-// The device link is not started or stopped here. It is up whenever the board is plugged in
-// (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
+// The device link is not started or stopped by the relay. It is up whenever the board is plugged
+// in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
-import {
-  EXPORT_MULTICAST_ADDR,
-  EXPORT_PORT,
-  type LogRow,
-  type RelayResult,
-  type RelayState
-} from '@shared/dcs'
 import { DEFAULT_CONFIG, type AppConfig } from '@shared/config'
-import { isLinkUp, type DeviceState, type DeviceStatus } from '@shared/gateway'
+import type { DeviceState, DeviceStatus } from '@shared/gateway'
 import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import { app } from 'electron'
-import {
-  createTransport,
-  DcsBiosProtocol,
-  Decoder,
-  Recorder,
-  relayEvents,
-  ReplaySource,
-  Stats,
-  type RelayContext,
-  type ReplayInfo,
-  type Transport
-} from '../dcs'
+import { DcsConnection, DcsRelay, SessionRecorder, Stats, StreamLog } from '../dcs'
 import { clientErrorEvent, EventJournal, EventLog } from '../events'
 import { deviceEvent, DeviceLineTap, GatewayConnection, SerialTrafficMonitor } from '../gateway'
 import { HidService } from '../hid'
@@ -38,54 +20,6 @@ import { debugLog } from './debug-log'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
-
-const LOG_FLUSH_MS = 33
-const TELEMETRY_MS = 200
-const STATS_MS = 1000
-const MAX_BATCH = 250
-
-type ForwardConfig = Pick<AppConfig, 'sourceMode' | 'replayDriveSerial'>
-
-/**
- * Whether the export stream is written to the SimGateway — and so whether Start needs the board.
- *
- * Bridge always; Replay only with "Drive SimGateway"; Monitor never. Monitor has to say so
- * explicitly now that the port is open in every mode — before #69 it was read-only only because
- * it had no port to write to.
- */
-export function exportToDevice(cfg: ForwardConfig): boolean {
-  return cfg.sourceMode === 'bridge' || (cfg.sourceMode === 'replay' && cfg.replayDriveSerial)
-}
-
-/** Whether device traffic goes on to DCS: only a running Bridge relay has a DCS to send it to. */
-export function deviceToDcs(cfg: ForwardConfig, running: boolean): boolean {
-  return running && cfg.sourceMode === 'bridge'
-}
-
-/** Settings a running relay is built from. Changing anything else must not restart it. */
-const RELAY_KEYS = [
-  'sourceMode',
-  'transport',
-  'host',
-  'commandPort',
-  'listenPort',
-  'replayDriveSerial'
-] as const satisfies readonly (keyof AppConfig)[]
-
-export function relayConfigChanged(prev: AppConfig, next: AppConfig): boolean {
-  return RELAY_KEYS.some((k) => prev[k] !== next[k])
-}
-
-/** Where the stream comes from, for the relay's event-log rows. */
-export function relayContext(cfg: AppConfig): RelayContext {
-  const tcp = cfg.transport === 'tcp-to-host'
-  const endpoint = tcp
-    ? `${cfg.host}:${cfg.commandPort}`
-    : cfg.transport === 'loopback-multicast'
-      ? `${EXPORT_MULTICAST_ADDR}:${EXPORT_PORT}`
-      : `:${cfg.listenPort}`
-  return { mode: cfg.sourceMode, endpoint, tcp }
-}
 
 export class Session {
   /** The Gateway's USB serial port. Up independently of the relay. */
@@ -102,35 +36,28 @@ export class Session {
   readonly hid: HidService
   /** Where the link's event-log rows are reported. */
   readonly journal = new EventJournal()
+  /** The relay: Start/Stop, the source mode, the stream and its ticks. */
+  readonly relay: DcsRelay
+  /** Recording a live session to a capture file. */
+  readonly recorder: SessionRecorder
+  /** The relay's network end: the link to DCS-BIOS. */
+  private readonly dcs: DcsConnection
+  /** The Log tab's stream rows and their flush. */
+  private readonly streamLog: StreamLog
   private config: AppConfig = { ...DEFAULT_CONFIG }
-  private transport?: Transport
-  private replay?: ReplaySource
-  private recorder?: Recorder
-  private recordPath?: string
-  private readonly parser: DcsBiosProtocol
-  private decoder = new Decoder()
   private readonly stats = new Stats()
-  private logBuf: LogRow[] = []
   /** The event log (#64): node and client events, this app run only. */
   readonly events = new EventLog()
   /** Last device state the event log reported (scanning never is). */
   private lastDevice?: DeviceState
-  private running = false
-  private relay: RelayState = { running: false }
   /** Last message per error tag: a retry loop repeating one failure is one row, not one per try. */
   private lastErr = new Map<string, string>()
-  private logTimer?: ReturnType<typeof setInterval>
-  private timers: ReturnType<typeof setInterval>[] = []
 
   /**
    * `paths`: the <userData> files, from app/index.ts. The default resolves the same paths the
    * same way, for callers that build a Session on its own.
    */
-  constructor(
-    private readonly emit: Emit,
-    paths: StorePaths = storePaths(() => app.getPath('userData'))
-  ) {
-    this.parser = new DcsBiosProtocol((addr, val) => this.onWrite(addr, val))
+  constructor(emit: Emit, paths: StorePaths = storePaths(() => app.getPath('userData'))) {
     const { mappingFile, cacheFile } = storeFiles(paths)
     this.calibration = new HidCalibrationService(emit, {
       write: (data) => this.connection.write(data),
@@ -151,6 +78,22 @@ export class Session {
     })
     this.serialMonitor = new SerialTrafficMonitor(emit)
     this.lines = new DeviceLineTap(this.nodes)
+    this.recorder = new SessionRecorder()
+    this.streamLog = new StreamLog(emit, this.stats, this.events)
+    this.dcs = new DcsConnection()
+    this.relay = new DcsRelay(emit, {
+      options: () => this.config,
+      device: this.connection,
+      dcs: this.dcs,
+      stats: this.stats,
+      log: this.streamLog,
+      recorder: this.recorder,
+      events: {
+        add: (events) => this.events.add(events),
+        error: (tag, message) => this.logError(tag, message),
+        forget: (tag) => this.lastErr.delete(tag)
+      }
+    })
     // The wiring order is load-bearing (R2.2b): it is the order DeviceLink ran these in before the
     // split. At each of the connection's moments its riders run in the order added:
     //   start's timers   link tick (200, its own) → serial flush (50) → cal:raw (50) →
@@ -161,6 +104,19 @@ export class Session {
     //   teardown         `release`: calibration → port stop → `released`: the Gateway's health
     //   200 ms tick      `flush`: HID → (link up) `tick`: node pushes, Gateway health
     //   shutdown         `closing`: nodes → timers cleared → teardown → `stop`: HID
+    // The DCS side keeps Session's order too (R2.3a). None of its constructors has a side effect.
+    //   open             the stream log's flush (33) first, then the connection's start
+    //   relay Start      Bridge / driven Replay refused unless the link is up → a running relay
+    //                    stopped → decoder, parser, stats reset → DCS error forgotten → Replay:
+    //                    `connected`, playback; else the transport built and subscribed →
+    //                    `connecting` → transport start; then the telemetry (200) and stats
+    //                    (1000) ticks
+    //   relay Stop       ticks cleared → replay stopped → transport stopped (forgotten first, so
+    //                    its close is stale) → the stream log flushed → `stopped`
+    //   export chunk     stats in → parser (named rows: stats frames, then the log) → recorder →
+    //                    device write (Bridge / driven Replay, not while calibration gates it)
+    //   setConfig        auto-connect → the relay rebuilt if a setting it is built from changed
+    //   shutdown         relay Stop → the connection's shutdown → the stream log's flush cleared
     this.connection.ride(this.serialMonitor)
     this.connection.ride(this.calibration)
     this.connection.ride(this.hid)
@@ -170,14 +126,10 @@ export class Session {
     this.connection.onTraffic((dir, chunk) => this.serialMonitor.onSerialTraffic(dir, chunk))
     // Bytes below the frame filter: the relay to DCS first, then the line tap — the order
     // DeviceLink handed them on in.
-    this.connection.onBytes((bytes) => this.fromDevice(bytes))
+    this.connection.onBytes((bytes) => this.relay.fromDevice(bytes))
     this.connection.onBytes((bytes) => this.lines.push(bytes))
-    this.lines.onLine((l) => {
-      if (l.kind !== 'command') return
-      // Logged relaying or not: watching panel commands with no DCS is how a panel gets tested.
-      this.stats.command(l.line)
-      this.logBuf.push({ t: l.t, dir: 'out', address: 0, name: l.identifier, value: l.arg })
-    })
+    // Panel commands to the stream log, relaying or not.
+    this.lines.onLine((l) => this.streamLog.onLine(l))
     // Link faults and the v2-Gateway warning: one path, as when DeviceLink raised both.
     const onError = (tag: string, message: string): void => {
       this.stats.error()
@@ -199,17 +151,15 @@ export class Session {
 
   /** App launch: bring up the device link and the log, independent of any relay. */
   open(): void {
-    if (this.logTimer) return
-    this.logTimer = setInterval(() => this.flushLog(), LOG_FLUSH_MS)
+    if (!this.streamLog.open()) return
     this.connection.start(this.config.autoConnect)
   }
 
   /** App quit. */
   shutdown(): void {
-    this.stop()
+    this.relay.stop()
     this.connection.shutdown()
-    if (this.logTimer) clearInterval(this.logTimer)
-    this.logTimer = undefined
+    this.streamLog.close()
   }
 
   getConfig(): AppConfig {
@@ -222,176 +172,15 @@ export class Session {
     if (prev.autoConnect !== this.config.autoConnect) {
       this.connection.setAutoConnect(this.config.autoConnect)
     }
-    if (this.running && relayConfigChanged(prev, this.config)) {
-      // A rebuild of a relay already running, not a new Start: it is not gated on the device,
-      // or editing a setting during a drop would end a relay that only Stop may end.
-      this.stop()
-      this.run()
-    }
+    this.relay.reconfigure(prev, this.config)
     return this.config
-  }
-
-  /**
-   * Start relaying. Attaches the stream to the device link; never opens or closes the port.
-   *
-   * Refused while a mode that delivers to the board has no board to deliver to: nothing can be
-   * relayed before the link is up. Once running, a drop does not end the relay — it waits, and
-   * resumes when the link returns.
-   */
-  start(): RelayResult {
-    if (exportToDevice(this.config) && !isLinkUp(this.connection.deviceStatus().state)) {
-      return { ok: false, error: 'Gateway is not connected' }
-    }
-    return this.run()
-  }
-
-  private run(): RelayResult {
-    if (this.running) this.stop()
-    this.decoder = new Decoder()
-    this.parser.reset()
-    this.stats.reset()
-    this.lastErr.delete('DCS') // a new relay reports its stream afresh
-    const mode = this.config.sourceMode
-
-    try {
-      if (mode === 'replay') {
-        const replay = this.replay
-        if (!replay) return { ok: false, error: 'No capture loaded' }
-        this.running = true
-        this.setRelay({ running: true, stream: 'connected' })
-        replay.play(
-          (chunk) => this.onExport(chunk), // optionally drives the real cockpit from the capture
-          () => this.setRelay({ running: true, stream: 'ended' })
-        )
-      } else {
-        const t = createTransport(this.config)
-        this.transport = t
-        t.onExport((chunk) => this.onExport(chunk))
-        t.onError((err) => {
-          if (this.transport !== t) return
-          this.stats.error()
-          this.logError('DCS', err.message)
-          this.setRelay({ running: true, stream: 'error', detail: err.message })
-        })
-        t.onConnected((connected) => {
-          if (this.transport !== t) return // a transport being stopped reports its own close
-          if (connected) {
-            this.setRelay({ running: true, stream: 'connected' })
-          } else {
-            this.stats.reconnect()
-            this.setRelay({ running: true, stream: 'reconnecting' })
-          }
-        })
-        this.running = true
-        this.setRelay({ running: true, stream: 'connecting' })
-        t.start()
-      }
-
-      this.timers = [
-        setInterval(() => this.flushTelemetry(), TELEMETRY_MS),
-        setInterval(() => this.emit('stats:tick', this.stats.snapshot()), STATS_MS)
-      ]
-      return { ok: true }
-    } catch (err) {
-      this.stop()
-      return { ok: false, error: (err as Error).message }
-    }
-  }
-
-  /** Stop relaying. The device link — HID, calibration, nodes — stays up. */
-  stop(): RelayResult {
-    this.running = false
-    for (const t of this.timers) clearInterval(t)
-    this.timers = []
-    this.replay?.stop()
-    const t = this.transport
-    this.transport = undefined // first, so its closing callbacks are recognised as stale
-    t?.stop()
-    this.flushLog()
-    this.setRelay({ running: false })
-    return { ok: true }
-  }
-
-  // ── record / replay control ────────────────────────────────────────────────
-
-  startRecording(path: string): void {
-    this.recorder = new Recorder()
-    this.recordPath = path
-  }
-
-  stopRecording(): { path?: string; events: number } {
-    const events = this.recorder?.count ?? 0
-    if (this.recorder && this.recordPath) this.recorder.save(this.recordPath)
-    const path = this.recordPath
-    this.recorder = undefined
-    this.recordPath = undefined
-    return { path, events }
-  }
-
-  isRecording(): boolean {
-    return !!this.recorder
-  }
-
-  loadReplay(path: string): ReplayInfo {
-    this.replay?.stop()
-    this.replay = ReplaySource.load(path)
-    return this.replay.info()
-  }
-
-  // ── pipeline ───────────────────────────────────────────────────────────────
-
-  /** One chunk of the DCS-BIOS export, from DCS or a capture. */
-  private onExport(chunk: Buffer): void {
-    this.stats.addIn(chunk.length)
-    this.parser.processBuffer(chunk)
-    this.recorder?.record('in', chunk)
-    // Forward byte-for-byte to the SimGateway — unless a calibration exchange is in flight.
-    // Parsing for our own UI continues; only the forward pauses.
-    if (exportToDevice(this.config) && !this.calibration.exportGated) this.connection.write(chunk)
-  }
-
-  /** Device traffic, calibration frames already removed by the link: relay to DCS:7778. */
-  private fromDevice(bytes: Buffer): void {
-    if (!deviceToDcs(this.config, this.running)) return
-    this.transport?.send(bytes)
-    this.stats.addOut(bytes.length)
-    this.recorder?.record('out', bytes)
-  }
-
-  private onWrite(address: number, value: number): void {
-    const rows = this.decoder.handle(address, value, Date.now())
-    if (rows.length) {
-      this.stats.addFrames(rows.length)
-      for (const r of rows) this.logBuf.push(r)
-    }
-  }
-
-  private flushLog(): void {
-    const events = this.events.take()
-    if (events.length) this.emit('events:batch', events)
-    if (this.logBuf.length === 0) return
-    const batch = this.logBuf.splice(0, MAX_BATCH)
-    this.emit('log:batch', batch)
-  }
-
-  private flushTelemetry(): void {
-    this.emit('telemetry:tick', this.decoder.telemetrySnapshot())
-    const ac = this.decoder.aircraft()
-    if (ac) this.emit('aircraft:changed', ac)
-  }
-
-  private setRelay(relay: RelayState): void {
-    this.events.add(relayEvents(this.relay, relay, relayContext(this.config), Date.now()))
-    if (relay.stream === 'connected') this.lastErr.delete('DCS') // a later drop's error is news
-
-    this.relay = relay
-    this.emit('relay:state', relay)
   }
 
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
   status(): RelayStatus {
     const device: DeviceStatus = this.connection.deviceStatus()
-    return { running: this.running, relay: this.relay, device, cal: this.calibration.calSnapshot() }
+    const { running, relay } = this.relay.status()
+    return { running, relay, device, cal: this.calibration.calSnapshot() }
   }
 
   /** Push a client diagnostic into the event log + the debug log file. */

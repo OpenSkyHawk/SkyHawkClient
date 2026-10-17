@@ -6,7 +6,7 @@
 //
 // What else rides on the port is told about the link's moments through `ride()` (LinkRider): the
 // serial monitor, calibration, HID, the node layer and the line tap (R2.2a, R2.2b). Device traffic
-// goes out through onBytes(), below the frame filter: the relay (app/session.ts) and the line tap
+// goes out through onBytes(), below the frame filter: the relay (dcs/dcs-relay.ts) and the line tap
 // (device-line-tap.ts) subscribe to it. Export goes in through write(). That split is the point.
 // Bundled together, there was no node status, PDU telemetry, HID or calibration unless DCS was
 // being relayed, and stopping the relay tore the port down with it.

@@ -126,7 +126,8 @@ vi.mock('../hid/hid-reader', () => ({
   }
 }))
 
-const { Session, deviceToDcs, exportToDevice, relayConfigChanged } = await import('./session')
+const { Session } = await import('./session')
+const { deviceToDcs, exportToDevice, relayConfigChanged } = await import('../dcs/relay-rules')
 const { PortNotFoundError } = await import('../gateway/serial-bridge')
 const { nodeRosterRequest } = await import('../nodes/node-status-wire')
 const { DEFAULT_CONFIG } = await import('@shared/config')
@@ -138,7 +139,7 @@ function bridgeSession() {
   session.setConfig({ sourceMode: 'bridge' })
   session.open()
   FakeSerial.last!.openCb('/dev/fake') // a Bridge relay starts only with the board connected
-  session.start()
+  session.relay.start()
   const serial = FakeSerial.last!
   const transport = FakeTransport.last!
   transport.sent.length = 0 // drop the roster request seeded on open
@@ -216,7 +217,7 @@ describe('node telemetry tap', () => {
       session.open()
       const serial = FakeSerial.last!
       serial.openCb('/dev/fake') // node pushes flow only while the link is up
-      session.start()
+      session.relay.start()
       const transport = FakeTransport.last!
       transport.sent.length = 0
 
@@ -266,7 +267,7 @@ describe('HID reporting latency', () => {
     })
     session.setConfig({ sourceMode: 'bridge' })
     session.open()
-    session.start()
+    session.relay.start()
 
     const { HidReader } = (await import('../hid/hid-reader')) as unknown as {
       HidReader: { last?: { fire(b: boolean[]): void } }
@@ -358,8 +359,8 @@ describe('device link is independent of the relay (#69)', () => {
   it('leaves serial, HID and calibration up when the relay stops', async () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
     serial.openCb('/dev/fake')
-    session.start()
-    session.stop()
+    session.relay.start()
+    session.relay.stop()
     expect(serial.stopped).toBe(false)
     expect((await HID()).stopped).toBe(false)
     expect(session.status().device.state).toBe('connected')
@@ -401,8 +402,8 @@ describe('device link is independent of the relay (#69)', () => {
     try {
       const { session, serial, of } = launched({ sourceMode: 'bridge' })
       serial.openCb('/dev/fake')
-      session.start()
-      session.stop()
+      session.relay.start()
+      session.relay.stop()
       serial.dataCb(ascii('_NODE_TELEM 030100E02E182EBC02\n'))
       vi.advanceTimersByTime(250)
       expect(of('nodes:telemetry')).toHaveLength(1)
@@ -526,11 +527,11 @@ describe('device link is independent of the relay (#69)', () => {
 
   it('refuses Start until the board is connected when the mode delivers to it', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
-    expect(session.start()).toEqual({ ok: false, error: 'Gateway is not connected' })
+    expect(session.relay.start()).toEqual({ ok: false, error: 'Gateway is not connected' })
     expect(session.status().running).toBe(false)
     expect(FakeTransport.last, 'no DCS transport is opened').toBeUndefined()
     serial.openCb('/dev/fake')
-    expect(session.start().ok).toBe(true)
+    expect(session.relay.start().ok).toBe(true)
     session.shutdown()
   })
 
@@ -538,7 +539,7 @@ describe('device link is independent of the relay (#69)', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
     serial.openCb('/dev/fake')
     session.connection.disconnect()
-    expect(session.start().ok).toBe(false)
+    expect(session.relay.start().ok).toBe(false)
     expect(FakeSerial.last, 'Start leaves the link alone').toBe(serial)
     expect(session.status().device.state).toBe('disconnected')
     session.shutdown()
@@ -546,22 +547,22 @@ describe('device link is independent of the relay (#69)', () => {
 
   it('lets Monitor and an undriven Replay start with no board', () => {
     const monitor = launched({ sourceMode: 'monitor' })
-    expect(monitor.session.start().ok).toBe(true)
+    expect(monitor.session.relay.start().ok).toBe(true)
     monitor.session.shutdown()
 
     const driven = launched({ sourceMode: 'replay', replayDriveSerial: true })
-    expect(driven.session.start()).toEqual({ ok: false, error: 'Gateway is not connected' })
+    expect(driven.session.relay.start()).toEqual({ ok: false, error: 'Gateway is not connected' })
     driven.session.shutdown()
     // Undriven Replay is only refused for having no capture, never for the board.
     const plain = launched({ sourceMode: 'replay', replayDriveSerial: false })
-    expect(plain.session.start()).toEqual({ ok: false, error: 'No capture loaded' })
+    expect(plain.session.relay.start()).toEqual({ ok: false, error: 'No capture loaded' })
     plain.session.shutdown()
   })
 
   it('does not end a running relay when a setting changes during a drop', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
     serial.openCb('/dev/fake')
-    session.start()
+    session.relay.start()
     serial.closeCb() // the board drops; the relay waits
     session.setConfig({ host: '10.0.0.2' }) // rebuilds the relay
     expect(session.status().running, 'only Stop ends a relay').toBe(true)
@@ -571,7 +572,7 @@ describe('device link is independent of the relay (#69)', () => {
   it('keeps the relay running through a device drop', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
     serial.openCb('/dev/fake')
-    session.start()
+    session.relay.start()
     serial.closeCb()
     expect(session.status().running, 'only Stop relay ends the relay').toBe(true)
     session.shutdown()
@@ -587,7 +588,7 @@ describe('relay forwarding by source mode (#69)', () => {
   it('Monitor is read-only even though the port is open', () => {
     const { session, serial } = launched({ sourceMode: 'monitor' })
     serial.openCb('/dev/fake')
-    session.start()
+    session.relay.start()
     const transport = FakeTransport.last!
     serial.written.length = 0
     transport.exportCb(Buffer.from([0x55, 0x55, 0x55, 0x55]))
@@ -600,7 +601,7 @@ describe('relay forwarding by source mode (#69)', () => {
   it('Bridge forwards both ways while relaying', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
     serial.openCb('/dev/fake')
-    session.start()
+    session.relay.start()
     const transport = FakeTransport.last!
     serial.written.length = 0
     transport.exportCb(Buffer.from([0x55, 0x55]))
@@ -649,7 +650,7 @@ describe('relay forwarding by source mode (#69)', () => {
     expect(relayConfigChanged(base, { ...base, debugMode: true })).toBe(false)
 
     const { session } = launched()
-    session.start()
+    session.relay.start()
     const first = FakeTransport.last
     session.setConfig({ autoConnect: false })
     expect(FakeTransport.last, 'toggling auto-connect must not restart the relay').toBe(first)
@@ -660,13 +661,13 @@ describe('relay forwarding by source mode (#69)', () => {
 describe('relay state (#69)', () => {
   it('reports the stream separately from the device', () => {
     const { session, of } = launched({ sourceMode: 'monitor' })
-    session.start()
+    session.relay.start()
     expect(of('relay:state').at(-1)).toEqual({ running: true, stream: 'connecting' })
     FakeTransport.last!.connectedCb(true)
     expect(of('relay:state').at(-1)).toEqual({ running: true, stream: 'connected' })
     FakeTransport.last!.connectedCb(false)
     expect(of('relay:state').at(-1)).toEqual({ running: true, stream: 'reconnecting' })
-    session.stop()
+    session.relay.stop()
     expect(of('relay:state').at(-1)).toEqual({ running: false })
     expect(session.status().relay).toEqual({ running: false })
     expect(session.status().device.state, 'the device knows nothing of the relay').toBe('scanning')
@@ -849,7 +850,7 @@ describe('event log (#64)', () => {
 
   it('a retry loop is one row per error, even with two loops interleaved', () => {
     const { session, serial } = launched({ sourceMode: 'monitor' })
-    session.start()
+    session.relay.start()
     const t = FakeTransport.last!
     for (let i = 0; i < 3; i++) {
       serial.errorCb(new Error('Cannot lock port'))
@@ -866,7 +867,7 @@ describe('event log (#64)', () => {
 
   it('a DCS link that came up and dropped reports its next error again (review of #86)', () => {
     const { session } = launched({ sourceMode: 'monitor' })
-    session.start()
+    session.relay.start()
     const t = FakeTransport.last!
     t.errorCb(new Error('connect ECONNREFUSED')) // started before DCS
     t.connectedCb(true) // DCS starts: link up
@@ -900,9 +901,9 @@ describe('event log (#64)', () => {
   it('records relay start and stop', () => {
     const { session, serial } = launched({ sourceMode: 'monitor' })
     serial.openCb('/dev/fake')
-    session.start()
+    session.relay.start()
     FakeTransport.last!.connectedCb(true)
-    session.stop()
+    session.relay.stop()
     expect(rows(session).slice(1)).toEqual([
       'client:Relay: started · Monitor mode',
       'client:DCS: link up · 127.0.0.1:7778',

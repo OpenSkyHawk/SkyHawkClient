@@ -1,7 +1,6 @@
 // dcs: the DCS-BIOS side of the relay. Exports only what other topics use (arch-phase0-v2 §2.1).
-export { DcsBiosProtocol } from './bios-protocol'
-export { relayEvents, type RelayContext } from './relay-events'
-export { createTransport, type Transport } from './transports'
-export { Decoder } from './sim-telemetry-decoder'
-export { Recorder, ReplaySource, type ReplayInfo } from './replay-source'
+export { DcsConnection } from './dcs-connection'
+export { DcsRelay } from './dcs-relay'
+export { SessionRecorder } from './session-recorder'
 export { Stats } from './stream-stats'
+export { StreamLog } from './stream-log'

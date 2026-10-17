@@ -3,6 +3,9 @@
 // so it is expected to be called on a steady ~1 Hz tick.
 import type { StatsSnapshot } from '@shared/dcs'
 
+/** The stats tick: one `stats:tick` a second while a relay runs. */
+export const STATS_MS = 1000
+
 export class Stats {
   private bytesIn = 0
   private bytesOut = 0

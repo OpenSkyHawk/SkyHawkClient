@@ -1,6 +1,6 @@
 // The device line tap: the Gateway's byte stream, below the calibration frame filter, assembled
 // into text lines and read — never changed. Node lines go to the node layer (NodeHub, through the
-// NodeLineSink port), and every line is handed on to its subscribers (Session logs the panel
+// NodeLineSink port), and every line is handed on to its subscribers (dcs StreamLog logs the panel
 // commands). The bytes the relay sends to DCS are GatewayConnection's onBytes(), untouched by this.
 import { LineAssembler, parseCommand } from './link-framing'
 import type { LinkRider } from './gateway-connection'
