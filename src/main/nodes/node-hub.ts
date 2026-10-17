@@ -30,7 +30,6 @@ import {
   clearReportedHidden,
   effectiveMapping,
   forgetNode,
-  importMapping,
   MappingError,
   markSeen,
   resetMapping,
@@ -441,12 +440,13 @@ export class NodeHub implements NodeLineSink {
   }
 
   /**
-   * Config import: the file's settings over the current mapping, keeping what this computer
-   * observed — each board's `added` and `lastSeen` — and never hiding a board on the bus (#93).
-   * Same save path and read-only guard as any edit.
+   * Config import (C2/M10): save this whole mapping — the import's staged result, which
+   * ConfigTransfer builds with importMapping over mappingFile() and onlineIds(), or, when a later
+   * section of the import fails, the mapping from before it (the rollback). Same save path and
+   * read-only guard as any edit: nothing is adopted in memory unless it reached the disk.
    */
-  importMapping(file: NodeMappingFile): NodeMappingResult {
-    return this.update((cur) => importMapping(cur, file, this.onlineIds()))
+  replaceMapping(file: NodeMappingFile): NodeMappingResult {
+    return this.update(() => file)
   }
 
   /** NODE_IDs present in the roster now (the bridge's own row excluded). */

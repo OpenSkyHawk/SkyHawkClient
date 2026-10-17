@@ -180,6 +180,48 @@ describe('B97 config.json load / save round trip', () => {
     }
   )
 
+  it('SettingsService.replace (an import, C2/M10): on disk first, then live', () => {
+    const service = new SettingsService({ paths, debugMode: () => {} })
+    service.load()
+    expect(service.replace(custom)).toEqual({ ok: true, config: custom })
+    expect(service.get()).toEqual(custom)
+    expect(loadConfig(paths)).toEqual(custom)
+  })
+
+  it.skipIf(process.getuid?.() === 0)(
+    'SettingsService.replace: a save that fails changes nothing in memory and says why',
+    () => {
+      const log = eventLog()
+      const debug: boolean[] = []
+      const service = new SettingsService({
+        paths,
+        events: log.events,
+        debugMode: (on) => debug.push(on)
+      })
+      service.load()
+      chmodSync(dir, 0o500)
+      const r = service.replace(custom)
+      expect(r.ok).toBe(false)
+      expect(!r.ok && r.error).toMatch(/^config\.json could not be saved: EACCES: /)
+      expect(service.get()).toEqual(DEFAULT_CONFIG) // not live: it never reached the disk
+      expect(debug).toEqual([false]) // only load() set the debug log
+      expect(log.rows).toHaveLength(1)
+      const broken = new SettingsService({
+        paths: {
+          configFile: () => {
+            throw new Error('no userData')
+          }
+        },
+        debugMode: () => {}
+      })
+      expect(broken.replace(custom)).toEqual({
+        ok: false,
+        error: 'config.json could not be saved: no userData'
+      })
+      expect(broken.get()).toEqual(DEFAULT_CONFIG)
+    }
+  )
+
   it('a path that cannot be resolved loads the defaults and saves nothing, without throwing', () => {
     const broken: SettingsPaths = {
       configFile: () => {

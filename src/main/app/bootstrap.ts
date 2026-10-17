@@ -3,7 +3,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { ConfigTransfer } from '../config'
+import { ConfigTransfer, jsonFile } from '../config'
 import { loadCalCache, saveCalCache } from '../hid/calibration'
 import { AppServices } from './app-services'
 import { dialogs } from './dialogs'
@@ -31,18 +31,23 @@ export function start(): void {
 
   /** The <userData> files, handed to the topics that own them (P6: only app asks electron). */
   const paths = storePaths(() => app.getPath('userData'))
-  /** The same files as ports, for ConfigTransfer's calibration section. */
-  const { cacheFile } = storeFiles(paths)
+  /** The same files as ports, for ConfigTransfer's calibration section and its rollback copies. */
+  const { cacheFile, mappingFile } = storeFiles(paths)
 
   const services = new AppServices(emit, paths)
 
   const transfer = new ConfigTransfer({
     getConfig: () => services.settings.get(),
-    setConfig: (config) => services.settings.apply(config, false),
+    replaceConfig: (config) => services.settings.replace(config),
     imported: () => services.settings.imported(),
     nodes: services.nodes,
     loadCalCache: () => loadCalCache(cacheFile, services.journal),
     saveCalCache: (cache) => saveCalCache(cache, cacheFile, services.journal),
+    files: {
+      mapping: mappingFile,
+      calibration: cacheFile,
+      config: jsonFile(() => paths.configFile())
+    },
     backupDir: () => join(app.getPath('userData'), 'backups'),
     clientVersion: () => app.getVersion()
   })

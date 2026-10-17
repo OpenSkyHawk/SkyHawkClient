@@ -12,6 +12,7 @@ import {
   type PsuPresetId,
   type PsuSetting
 } from '@shared/nodes'
+import { PSU_LIMITS } from '@shared/format'
 
 /** Supplies bundled with the client. Limits are read-only in Settings. */
 export const PSU_PRESETS: Record<PsuPresetId, PsuPreset> = {
@@ -53,4 +54,35 @@ export function sanitizePsu(raw: unknown): PsuSetting {
     preset: isPreset(p.preset) ? p.preset : DEFAULT_PSU.preset,
     custom: sanitizeLimits(p.custom)
   }
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * A config import's power supply section, read strictly (C1): a local config.json is read
+ * tolerantly (sanitizePsu: a bad field falls back to its default), but an import must never turn
+ * a damaged section into the default supply. Its markers are the three fields every PsuSetting
+ * has — `mode` (preset or custom), `preset` (one this client bundles) and `custom` (an object) —
+ * and each limit the file sets must be a valid limit. `reason` completes "Power supply: …".
+ */
+export function checkImportedPsu(
+  raw: unknown
+): { ok: true; value: PsuSetting } | { ok: false; reason: string } {
+  if (!isRecord(raw)) return { ok: false, reason: 'it is not a settings section' }
+  if (raw.mode !== 'preset' && raw.mode !== 'custom') {
+    return { ok: false, reason: 'it does not say whether the supply is a preset or custom' }
+  }
+  if (!isPreset(raw.preset)) return { ok: false, reason: 'its preset is not one this client knows' }
+  if (!isRecord(raw.custom)) return { ok: false, reason: 'it has no custom limits' }
+  for (const l of PSU_LIMITS) {
+    const v = raw.custom[l.key]
+    if (v !== undefined && !isLimit(v)) {
+      return {
+        ok: false,
+        reason: `its custom ${l.label.charAt(0).toLowerCase()}${l.label.slice(1)} is not valid`
+      }
+    }
+  }
+  return { ok: true, value: sanitizePsu(raw) }
 }

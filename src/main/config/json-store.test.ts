@@ -321,3 +321,66 @@ describe('a read', () => {
     })
   })
 })
+
+describe('a copy (snapshot / restore: an import rollback, C2/M10)', () => {
+  it('puts the file and its .bak back byte for byte, undoing the writes since', () => {
+    // Bytes no write of the store would produce: a restore is not a re-serialisation.
+    writeFileSync(file(), '{"a":1}\n')
+    writeFileSync(`${file()}.bak`, '{ "a": 0 }')
+    const store = jsonFile(file)
+    const copy = store.snapshot()
+    store.write({ a: 2 })
+    store.write({ a: 3 })
+    expect(onDisk('store.json.bak')).toBe(text({ a: 2 })) // rotated by the writes
+    expect(store.restore(copy)).toBeUndefined()
+    expect(onDisk('store.json')).toBe('{"a":1}\n')
+    expect(onDisk('store.json.bak')).toBe('{ "a": 0 }')
+    expect(listing()).toEqual(['store.json', 'store.json.bak'])
+  })
+
+  it('removes what did not exist when the copy was taken', () => {
+    const store = jsonFile(file)
+    const copy = store.snapshot()
+    expect(copy).toEqual({ file: null, bak: null })
+    store.write({ a: 1 })
+    store.write({ a: 2 })
+    expect(store.restore(copy)).toBeUndefined()
+    expect(listing()).toEqual([])
+  })
+
+  it('restores by the durable steps: temp file, fsync, rename, folder fsync', () => {
+    writeFileSync(file(), text({ a: 1 }))
+    const copy = jsonFile(file).snapshot()
+    const rec = recordingFs()
+    expect(jsonFile(file, { fs: rec.fs, platform: 'darwin' }).restore(copy)).toBeUndefined()
+    expect(rec.ops).toEqual([
+      'rm store.json.bak',
+      'open <dir>',
+      'fsync <dir>',
+      'close <dir>',
+      'open store.json.tmp',
+      'write store.json.tmp',
+      'fsync store.json.tmp',
+      'close store.json.tmp',
+      'rename store.json.tmp -> store.json',
+      'open <dir>',
+      'fsync <dir>',
+      'close <dir>'
+    ])
+  })
+
+  it.skipIf(process.getuid?.() === 0)('a restore that cannot reach the disk says so', () => {
+    writeFileSync(file(), text({ a: 1 }))
+    const store = jsonFile(file)
+    const copy = store.snapshot()
+    store.write({ a: 2 })
+    fs.chmodSync(dir, 0o500)
+    const failed = store.restore(copy)
+    expect(failed?.note).toMatch(/^store\.json could not be put back: EACCES/)
+  })
+
+  it('a file that exists but cannot be read cannot be copied: the snapshot throws', () => {
+    mkdirSync(file()) // a folder where the file should be
+    expect(() => jsonFile(file).snapshot()).toThrow(/EISDIR/)
+  })
+})

@@ -9,6 +9,9 @@
 //   read   a file that cannot be read or does not parse falls back to `<file>.bak`. A damaged
 //          file is moved aside to `<file>.bad-<stamp>` before anything can overwrite it, and a
 //          backup that was loaded is copied back in its place.
+//   copy   `snapshot` takes the file and its `.bak` byte for byte (or that they are missing);
+//          `restore` puts exactly that back, each by the same tmp + fsync + rename, so whatever
+//          was written since — the file and the `.bak` its writes rotated — is undone.
 //
 // The store knows nothing about what a file means. It reports what it found and what it did, in
 // words (`note`); the owner decides what that means — defaults, an empty mapping, a read-only
@@ -61,6 +64,22 @@ export interface JsonFile {
    * outside that guard, so a path that cannot be resolved throws.
    */
   write(value: unknown): JsonWriteError | undefined
+  /**
+   * The file and its `.bak` as they are now, byte for byte. Throws when either exists but cannot
+   * be read (nothing could be put back exactly then).
+   */
+  snapshot(): JsonSnapshot
+  /**
+   * Put the file and its `.bak` back exactly as `snapshot` took them: rewritten byte for byte, or
+   * removed where they were missing. Returns the failure when that did not reach the disk.
+   */
+  restore(snapshot: JsonSnapshot): JsonWriteError | undefined
+}
+
+/** A file and its `.bak` as they were: their bytes, or null where there was none. Opaque. */
+export interface JsonSnapshot {
+  readonly file: Buffer | null
+  readonly bak: Buffer | null
 }
 
 /** The file-system calls the store makes: node:fs, or a fake in a test. */
@@ -96,6 +115,20 @@ export function jsonFile(path: () => string, opts: JsonFileOptions = {}): JsonFi
         io.write(p, JSON.stringify(value, null, 2))
       } catch (error) {
         return { error, note: `${basename(p)} could not be saved: ${errorText(error)}` }
+      }
+      return undefined
+    },
+    snapshot: () => {
+      const p = path()
+      return { file: io.bytes(p), bak: io.bytes(`${p}.bak`) }
+    },
+    restore: (snapshot) => {
+      const p = path()
+      try {
+        io.put(`${p}.bak`, snapshot.bak)
+        io.put(p, snapshot.file)
+      } catch (error) {
+        return { error, note: `${basename(p)} could not be put back: ${errorText(error)}` }
       }
       return undefined
     }
@@ -157,8 +190,21 @@ class Mechanics {
     this.replace(p, text)
   }
 
+  /** A file's bytes, or null when there is none. Throws when it exists but cannot be read. */
+  bytes(p: string): Buffer | null {
+    return this.fs.existsSync(p) ? this.fs.readFileSync(p) : null
+  }
+
+  /** Put these exact bytes at `p` (durably, as a write does), or remove it for null. */
+  put(p: string, bytes: Buffer | null): void {
+    if (bytes === null) {
+      this.fs.rmSync(p, { force: true })
+      this.syncDir(dirname(p))
+    } else this.replace(p, bytes)
+  }
+
   /** Write `<p>.tmp`, fsync it, rename it over `p`, then fsync the folder. */
-  private replace(p: string, text: string): void {
+  private replace(p: string, text: string | Buffer): void {
     const tmp = `${p}.tmp`
     try {
       const fd = this.fs.openSync(tmp, 'w')

@@ -455,10 +455,33 @@ export function resetPreview(
 }
 
 /**
- * A config import (#93): what you set — names, consoles, power zones, adopted boards, hidden flags —
- * comes from the file; what this computer observed stays. Each board keeps its current `added`
- * (registry boards in your cockpit) and `lastSeen`, so an import, which may come from another
- * setup or an older export, never drops a board from your cockpit or forgets when it was seen.
+ * A config import's node mapping section, read strictly (C1). A local file is read tolerantly
+ * (sanitizeNodeMapping: whatever is malformed is dropped), but an import replaces your cockpit as
+ * written, so a section that lost its structure must never read as an intentionally empty mapping.
+ * Its markers are the two fields every node-mapping.json has: `version` (an integer this client
+ * reads: 1 to NODE_MAPPING_VERSION) and `nodes` (an object of entries). With both, the entries go
+ * through the same tolerant sanitizer a local file does. `reason` completes "Node mapping: …".
+ */
+export function checkImportedMapping(
+  raw: unknown
+): { ok: true; value: NodeMappingFile } | { ok: false; reason: string } {
+  if (!isPlainObject(raw)) return { ok: false, reason: 'it is not a settings section' }
+  const v = raw.version
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+    return { ok: false, reason: 'it has no version' }
+  }
+  if (v > NODE_MAPPING_VERSION) return { ok: false, reason: 'it was written by a newer client' }
+  if (!isPlainObject(raw.nodes)) return { ok: false, reason: 'it has no list of boards' }
+  return { ok: true, value: sanitizeNodeMapping(raw) }
+}
+
+/**
+ * A config import (D3): the mapping comes in as written — names, consoles, power zones, hidden
+ * flags and membership, both the registry boards you added and the boards you adopted — so a board
+ * the file has in its cockpit joins yours, and one it does not have leaves. Only what this
+ * computer observed stays: each board's `lastSeen`, kept for a board that is in your cockpit
+ * after the import. Hidden is stored only on a board in your cockpit (S4), and never on one on the
+ * bus: Hide is for offline boards only.
  */
 export function importMapping(
   current: NodeMappingFile,
@@ -470,12 +493,12 @@ export function importMapping(
   const nodes: Record<number, NodeOverride> = {}
   const ids = new Set([...Object.keys(current.nodes), ...Object.keys(imported.nodes)].map(Number))
   for (const id of [...ids].sort((a, b) => a - b)) {
-    const { added: _added, lastSeen: _seen, ...set } = imported.nodes[id] ?? {}
-    const cur = current.nodes[id]
+    const { lastSeen: _seen, ...set } = imported.nodes[id] ?? {}
     const o: NodeOverride = { ...set }
-    if (onBus.has(id)) delete o.hidden
-    if (cur?.added) o.added = true
-    if (cur?.lastSeen && (o.added || adopted(o))) o.lastSeen = cur.lastSeen
+    const member = inCockpit(o)
+    if (onBus.has(id) || !member) delete o.hidden
+    const seen = current.nodes[id]?.lastSeen
+    if (member && seen) o.lastSeen = seen
     if (Object.keys(o).length) nodes[id] = o
   }
   return { version: 3, nodes }

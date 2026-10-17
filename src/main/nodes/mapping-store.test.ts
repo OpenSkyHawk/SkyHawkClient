@@ -60,7 +60,8 @@ describe('node-mapping.json', () => {
   it('a v3 file is read as written: an import never adds boards on the next load', () => {
     const imported: NodeMappingFile = {
       version: 3,
-      nodes: { 1: { name: 'Armament' }, 2: { hidden: true } } // no `added`: not in this cockpit
+      // No `added`: not in this cockpit. (A pre-v3 file would read both as added.)
+      nodes: { 1: { name: 'Armament' }, 2: { console: 'Left' } }
     }
     saveNodeMapping(importMapping(EMPTY_MAPPING, imported))
     expect(loadNodeMapping().file).toEqual(imported) // after the restart: still not added

@@ -24,6 +24,7 @@ import { resolvePsu } from '../nodes'
 import { sanitizeConfig } from './settings-schema'
 import { savedEdit } from './settings-form'
 import { jsonFile, type JsonWriteError } from './json-store'
+import { errorText } from '@shared/format'
 
 /** Port: where config.json lives. app provides it; resolved at each use, as before. */
 export interface SettingsPaths {
@@ -71,18 +72,28 @@ export function loadConfig(paths: SettingsPaths, events = NO_EVENTS): AppConfig 
 
 /**
  * Never throws: a read-only userData dir must not crash the app, and the change stays in memory.
- * A failed write is an event row, one per failure until a write succeeds again.
+ * A failed write is an event row, one per failure until a write succeeds again. Says what went
+ * wrong when the file did not reach the disk (a config import reads it; see `replace`).
  */
-export function saveConfig(config: AppConfig, paths: SettingsPaths, events = NO_EVENTS): void {
+export function saveConfig(
+  config: AppConfig,
+  paths: SettingsPaths,
+  events = NO_EVENTS
+): string | undefined {
   let failed: JsonWriteError | undefined
   try {
     failed = configFile(paths).write(config)
-  } catch {
-    return // the path could not be resolved (no <userData>): nothing was written
+  } catch (err) {
+    // the path could not be resolved (no <userData>): nothing was written
+    return `${CONFIG_FILE_TAG} could not be saved: ${errorText(err)}`
   }
   if (failed) events.error(CONFIG_FILE_TAG, failed.note)
   else events.forget(CONFIG_FILE_TAG)
+  return failed?.note
 }
+
+/** What came of `replace`: the settings now live, or why config.json was not written. */
+export type SettingsReplace = { ok: true; config: AppConfig } | { ok: false; error: string }
 
 /** A settings store of its own, starting at `initial` (a copy). Not a singleton: each owner builds one. */
 function createSettingsStore(initial: AppConfig = DEFAULT_CONFIG) {
@@ -149,6 +160,19 @@ export class SettingsService {
     const save = savedEdit(this.get(), edit)
     // A refused PSU limit saves and pushes nothing: the form sent nothing for it before (R3.4a).
     return save === undefined ? this.get() : this.apply(save)
+  }
+
+  /**
+   * A config import's settings (C2/M10): written to config.json first, and live only once they are
+   * on disk, so an import that cannot save them changes nothing here and says why. Not pushed:
+   * the import tells the renderer once it is done (imported()). Also its rollback's path.
+   */
+  replace(config: AppConfig): SettingsReplace {
+    const failed = saveConfig(config, this.deps.paths, this.deps.events)
+    if (failed !== undefined) return { ok: false, error: failed }
+    const live = this.update(config)
+    this.deps.debugMode(live.debugMode)
+    return { ok: true, config: live }
   }
 
   /** A config import is applied: the forms start over from the settings, as from its answer. */

@@ -53,6 +53,10 @@
 // with their shapes unchanged — `LogRow` → `StreamRow` (`log:batch`) and the DCS `CaptureState` →
 // `RecordState` (`capture:toggle`); the frozen copies below pin both shapes under the old names.
 //
+// Fix track #136 (C1/S4, import safety): a type change only — no channel, intent or method was
+// added, removed or renamed. `ImportPreview` (`config:import-open`'s answer) gained `rejected`:
+// the known sections main left out as malformed or incomplete, each with its title and reason.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
