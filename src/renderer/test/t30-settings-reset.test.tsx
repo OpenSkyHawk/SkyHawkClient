@@ -76,16 +76,18 @@ describe('T30 Settings › Cockpit › Reset… (B89, B24)', () => {
     expect(resetBtn()).toBeEnabled()
   })
 
-  it('the only adopted board is hidden: greyed out (X3 today)', async () => {
-    // contract X3: main counts a hidden board as in your cockpit, so Reset would offer to forget
-    // it; today the UI looks only at the boards it shows, and Reset… stays greyed out.
+  it('the only adopted board is hidden: enabled (X1, R4: still in your cockpit)', async () => {
+    // contract X3: main counts a hidden board as in your cockpit, so Reset offers to forget it,
+    // and Reset… is enabled for it like for any adopted board.
     const { resetBtn } = await openCockpit(
       model([panel(1, 'Center_Armament')], [], {
         hidden: [41],
-        hiddenNodes: [{ nodeId: 41, name: 'Left_Trim', console: 'Left' }]
+        hiddenNodes: [
+          { nodeId: 41, name: 'Left_Trim', console: 'Left', kind: 'panel', source: 'adopted' }
+        ]
       })
     )
-    expect(resetBtn()).toBeDisabled()
+    expect(resetBtn()).toBeEnabled()
   })
 
   it('the review lists each field old → new, from main’s preview', async () => {

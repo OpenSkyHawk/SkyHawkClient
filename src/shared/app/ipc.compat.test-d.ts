@@ -66,6 +66,11 @@
 // `ImportPreview` gained `backup` (set when the review is a restore) and `ConfigFile` gained the
 // optional `backup.before` record (type changes only).
 //
+// Fix track #131 (X1, cockpit membership): a type change only — no channel, intent or method was
+// added, removed or renamed. `HiddenNode` (`nodes:model`'s `hiddenNodes`) gained `kind` and
+// `source`: a hidden board is still in your cockpit, so the snapshot counts a hidden PDU as one a
+// board can be powered by and a hidden adopted board as one Reset… can forget.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator

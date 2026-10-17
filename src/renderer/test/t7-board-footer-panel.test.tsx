@@ -51,9 +51,9 @@ describe('T7 Board panel footer: panel group (B73, X4)', () => {
     expect(within(sheet).getByText(ONLINE)).toBeInTheDocument()
   })
 
-  it('no roster yet: Forget and Hide are greyed out until it shows offline (X4 today)', async () => {
-    // contract X4: main accepts Forget/Hide whenever the roster doesn't list the board present,
-    // `unknown` included (F3); today the footer allows them only once it is `offline`.
+  it('no roster yet: Forget and Hide are greyed out until it shows offline (X4, M1/C3)', async () => {
+    // contract X4: one rule for the footer and main (offline-actions.ts) — `unknown` is not
+    // offline, so main refuses Forget/Hide too, with this same reason.
     const { sheet, button } = await openSettings(noStatusYet())
     expect(button('Forget')).toBeDisabled()
     expect(button('Forget')).toHaveAttribute('title', NO_ROSTER)

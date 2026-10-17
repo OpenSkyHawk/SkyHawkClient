@@ -14,7 +14,9 @@ const EMPTY = 'No hidden boards. Hide in an offline board’s Cockpit panel list
 const radarHidden = () =>
   model([panel(1, 'Center_Armament')], [], {
     hidden: [8],
-    hiddenNodes: [{ nodeId: 8, name: 'Right_Radar', console: 'Right' }]
+    hiddenNodes: [
+      { nodeId: 8, name: 'Right_Radar', console: 'Right', kind: 'panel', source: 'registry' }
+    ]
   })
 
 async function openCockpit() {
@@ -46,8 +48,14 @@ describe('T35 Settings › Cockpit › Hidden boards after a push (B88, F10)', (
       model: model([panel(1, 'Center_Armament')], [], {
         hidden: [2, 8],
         hiddenNodes: [
-          { nodeId: 2, name: 'Right_Navigation', console: 'Right' },
-          { nodeId: 8, name: 'Right_Radar', console: 'Right' }
+          {
+            nodeId: 2,
+            name: 'Right_Navigation',
+            console: 'Right',
+            kind: 'panel',
+            source: 'registry'
+          },
+          { nodeId: 8, name: 'Right_Radar', console: 'Right', kind: 'panel', source: 'registry' }
         ]
       })
     })
@@ -70,7 +78,9 @@ describe('T35 Settings › Cockpit › Hidden boards after a push (B88, F10)', (
     sky.emitScenario({
       model: model([panel(1, 'Center_Armament', offline())], [], {
         hidden: [8],
-        hiddenNodes: [{ nodeId: 8, name: 'Right_Radar', console: 'Right' }]
+        hiddenNodes: [
+          { nodeId: 8, name: 'Right_Radar', console: 'Right', kind: 'panel', source: 'registry' }
+        ]
       })
     })
     expect(screen.getByText('#8')).toBeInTheDocument()

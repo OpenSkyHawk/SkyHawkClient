@@ -140,10 +140,9 @@ describe('T11 Adopt dialog: Add all, PDU choices, power-cycle (B74, F15, F24, X3
     ).toBeInTheDocument()
   })
 
-  it('a hidden PDU in your cockpit reads "(not added)", and Add all drops its link (#95 bug 2 today)', async () => {
-    // contract X3 / F15: a hidden board is still in your cockpit, so its boards should keep the
-    // link; today the dialog sees only the boards on the plan, so a hidden PDU is "(not added)"
-    // and Add all sends None for it.
+  it('a hidden PDU in your cockpit is offered as one, and Add all keeps its link (#95 bug 2, X1)', async () => {
+    // contract X3 / F15: a hidden board is still in your cockpit, so its boards keep the link: the
+    // Powered by list offers the hidden PDU like any PDU in your cockpit, never "(not added)".
     const nav = waiting(2, 'Right_Navigation', 'Right', 4, {
       registry: { name: 'Right_Navigation', console: 'Right', pduId: 4, pduName: 'PDU_Right' }
     })
@@ -153,19 +152,22 @@ describe('T11 Adopt dialog: Add all, PDU choices, power-cycle (B74, F15, F24, X3
     const { dlg, sky, zoneChoices, addAll } = await openAdopt(
       model([PDU_LEFT, nav, radio], [], {
         hidden: [4],
-        hiddenNodes: [{ nodeId: 4, name: 'PDU_Right', console: 'Right' }]
+        hiddenNodes: [
+          { nodeId: 4, name: 'PDU_Right', console: 'Right', kind: 'pdu', source: 'registry' }
+        ]
       })
     )
-    expect(within(dlg).getByLabelText('Powered by')).toHaveDisplayValue('PDU_Right (not added)')
-    expect(zoneChoices()).toEqual(['Choose…', 'None', 'PDU_Right (not added)'])
+    expect(within(dlg).getByLabelText('Powered by')).toHaveDisplayValue('PDU_Right')
+    expect(zoneChoices()).toEqual(['Choose…', 'None', 'PDU_Right'])
+    expect(within(dlg).queryByText(/isn’t in your cockpit yet/)).toBeNull()
     await addAll(2)
     expect(sky.adoptNode).toHaveBeenCalledWith(2, {
       name: 'Right_Navigation',
       console: 'Right',
-      pduId: null,
+      pduId: 4,
       kind: 'panel'
     })
-    expect(sky.adoptNode).toHaveBeenCalledWith(9, expect.objectContaining({ pduId: null }))
+    expect(sky.adoptNode).toHaveBeenCalledWith(9, expect.objectContaining({ pduId: 4 }))
   })
 
   it('a board power-cycled while the dialog is open stays listed, red, keeping its form; green when back', async () => {

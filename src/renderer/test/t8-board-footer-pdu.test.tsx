@@ -20,7 +20,9 @@ const scene = (over: Partial<NodeModel> = {}) =>
     [],
     {
       hidden: [8],
-      hiddenNodes: [{ nodeId: 8, name: 'Right_Radar', console: 'Right' }],
+      hiddenNodes: [
+        { nodeId: 8, name: 'Right_Radar', console: 'Right', kind: 'panel', source: 'registry' }
+      ],
       ...over
     }
   )

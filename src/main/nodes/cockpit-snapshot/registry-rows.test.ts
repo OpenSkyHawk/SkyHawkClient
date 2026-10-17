@@ -65,15 +65,25 @@ describe('settingsNodes', () => {
     expect(settingsNodes(m([entry(41, { source: 'adopted' })]), REG, true).canReset).toBe(true)
   })
 
-  it('misses an adopted board that is hidden (X1 today), and has nothing before a model', () => {
-    const hiddenAdopted = m([entry(1)], {
-      hidden: [41],
-      hiddenNodes: [{ nodeId: 41, name: 'Left_Trim', console: 'Left' }]
-    })
+  it('counts an adopted board that is hidden (X1: still in your cockpit), and has nothing before a model', () => {
+    const trim = {
+      nodeId: 41,
+      name: 'Left_Trim',
+      console: 'Left',
+      kind: 'panel',
+      source: 'adopted'
+    } as const
+    const hiddenAdopted = m([entry(1)], { hidden: [41], hiddenNodes: [trim] })
     expect(settingsNodes(hiddenAdopted, REG, true)).toMatchObject({
-      canReset: false,
-      hidden: [{ nodeId: 41, name: 'Left_Trim', console: 'Left' }]
+      canReset: true,
+      hidden: [trim]
     })
+    // A hidden registry board that matches NODE_IDS.md is nothing to reset: the test can fail.
+    const hiddenRegistry = m([entry(1)], {
+      hidden: [41],
+      hiddenNodes: [{ ...trim, source: 'registry' }]
+    })
+    expect(settingsNodes(hiddenRegistry, REG, true).canReset).toBe(false)
     expect(settingsNodes(undefined, REG, true)).toMatchObject({
       differing: 0,
       canReset: false,

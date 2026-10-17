@@ -13,8 +13,8 @@ const twoHidden = () =>
   model([panel(1, 'Center_Armament')], [], {
     hidden: [8, 30],
     hiddenNodes: [
-      { nodeId: 8, name: 'Right_Radar', console: 'Right' },
-      { nodeId: 30, name: 'Left_Spare', console: '' }
+      { nodeId: 8, name: 'Right_Radar', console: 'Right', kind: 'panel', source: 'registry' },
+      { nodeId: 30, name: 'Left_Spare', console: '', kind: 'panel', source: 'adopted' }
     ]
   })
 

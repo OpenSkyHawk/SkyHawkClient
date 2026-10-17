@@ -4,15 +4,18 @@
 // Main and shared only; the probes that read renderer helpers are in
 // src/renderer/src/phase0-probes.test.ts (main never imports renderer code).
 import { describe, expect, it, vi } from 'vitest'
-import { DEFAULT_PSU, type NodeMappingFile } from '@shared/nodes'
+import { DEFAULT_PSU, type NodeDefaults, type NodeKind, type NodeMappingFile } from '@shared/nodes'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from './node-status-wire'
 import {
   importMapping,
   setNodeMapping,
   adoptNode,
   effectiveMapping,
-  EMPTY_MAPPING
+  EMPTY_MAPPING,
+  type KindOf
 } from './mapping-rules'
+import { boardIdentity } from './node-kind'
+import { NODE_KINDS } from '@shared/firmware'
 import { registryDefaults } from './registry'
 import { diffImport, parseConfigFile } from '../config/config-file'
 import { CONFIG_FORMAT } from '@shared/config'
@@ -43,6 +46,18 @@ const REG = {
   5: { name: 'PDU_Center', console: 'Center' }
 }
 const defaults = registryDefaults(REG)
+
+/**
+ * main's KindOf (NodeHub.kindOf, node-kind.ts boardIdentity): what a board reports now (`said`),
+ * else the kind stored for a board in your cockpit. kindOf is required (S7), so every call says it.
+ */
+const kinds =
+  (f: NodeMappingFile, d: Map<number, NodeDefaults>, said: Record<number, NodeKind> = {}): KindOf =>
+  (id) =>
+    boardIdentity(effectiveMapping(d, f), id, {
+      reported: said[id] === undefined ? undefined : REPORTS[said[id]]
+    })
+const REPORTS = { panel: NODE_KINDS.PANEL_GROUP, pdu: NODE_KINDS.PDU } as const
 const row = (id: number, kind: number, present = true) =>
   `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind.toString(16).padStart(2, '0')}`.toUpperCase()
 const added = (): NodeMappingFile => ({
@@ -85,13 +100,14 @@ describe('fix-track probes (today)', () => {
     })
   })
 
-  it('M1/C3: Forget is accepted while availability is unknown, and for a PDU with fresh telemetry', () => {
+  it('M1/C3 (fixed, #131): Forget is refused while availability is unknown, and for a PDU with fresh telemetry', () => {
     const a = hubWith(added())
     expect(a.h.snapshot(0).model.nodes.find((n) => n.nodeId === 2)?.availability).toBe('unknown')
-    expect(a.h.forget(2).ok).toBe(true)
+    expect(a.h.forget(2).ok).toBe(false)
     const b = hubWith(added())
+    b.roster.applyMessage(NODE_END_MSG, '0', 0) // a complete roster: PDU_Right is offline by it
     b.h.telemetry('040100E02E182EBC02', Date.now()) // PDU_Right pages, fresh; not in roster
-    expect(b.h.forget(4).ok).toBe(true)
+    expect(b.h.forget(4).ok).toBe(false)
   })
 
   it('M3: a v2 bridge — END completes the roster, added boards read offline, Forget allowed', () => {
@@ -150,7 +166,7 @@ describe('fix-track probes (today)', () => {
 
   it('D7: a zone to a registry PDU that is not in your cockpit is accepted by main', () => {
     const f: NodeMappingFile = { version: 4, nodes: { 2: { added: true } } }
-    const g = setNodeMapping(f, defaults, 2, { pduId: 3 }) // PDU_Left, not added
+    const g = setNodeMapping(f, defaults, 2, { pduId: 3 }, kinds(f, defaults)) // PDU_Left, not added
     expect(g.nodes[2]).toEqual({ added: true, pduId: 3 })
   })
 
@@ -177,14 +193,20 @@ describe('fix-track probes (today)', () => {
   })
 
   it('#95 bug 1 (fixed, S1): an adopted board renamed to its later registry name stays in', () => {
-    const f = adoptNode(EMPTY_MAPPING, defaults, 41, {
-      name: 'Left_Oxygen',
-      console: 'Left',
-      pduId: 3,
-      kind: 'panel'
-    })
+    const f = adoptNode(
+      EMPTY_MAPPING,
+      defaults,
+      41,
+      {
+        name: 'Left_Oxygen',
+        console: 'Left',
+        pduId: 3,
+        kind: 'panel'
+      },
+      kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+    )
     const later = registryDefaults({ ...REG, 41: { name: 'Left_Oxy', console: 'Left' } })
-    const g = setNodeMapping(f, later, 41, { name: 'Left_Oxy' })
+    const g = setNodeMapping(f, later, 41, { name: 'Left_Oxy' }, kinds(f, later))
     expect(effectiveMapping(later, g).get(41)?.known).toBe(true)
   })
 

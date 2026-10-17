@@ -13,7 +13,7 @@ import type {
   NodeTelemSnapshot
 } from '@shared/nodes'
 import { differingCount, effectiveMapping } from './mapping-rules'
-import { isAdoptableKind, resolveKind } from './node-kind'
+import { boardIdentity, isAdoptableKind } from './node-kind'
 import { BRIDGE_NODE_ID } from './node-status-wire'
 import { hasFreshPduPage } from './node-telem'
 import { pduOutages } from './power-zone'
@@ -25,6 +25,19 @@ export interface NodeModelInput {
   telemetry: NodeTelemSnapshot[]
   defaults: Map<number, NodeDefaults>
   file: NodeMappingFile
+}
+
+/**
+ * The one availability rule: online while the roster lists it present, offline once it lists it
+ * absent or a complete roster left it out (there is no "waiting"), else unknown — no complete
+ * roster since the link opened, and it has not reported.
+ */
+export function nodeAvailability(
+  st: NodeStatus | undefined,
+  rosterComplete: boolean
+): NodeAvailability {
+  if (st) return st.present ? 'online' : 'offline'
+  return rosterComplete ? 'offline' : 'unknown'
 }
 
 /**
@@ -59,30 +72,29 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     const mapped = mapping.get(nodeId)
     const m = mapped?.known ? mapped : undefined
     if (m?.hidden) {
+      // Still in your cockpit (X1): what every surface needs to count it as a member.
       hidden.push(nodeId)
-      hiddenNodes.push({ nodeId, name: m.name, console: m.console })
+      hiddenNodes.push({
+        nodeId,
+        name: m.name,
+        console: m.console,
+        kind: m.kind,
+        source: m.source
+      })
       continue
     }
     const st = roster.get(nodeId)
     const seen = i.seen.get(nodeId)
     const t = telem.get(nodeId)
     const source = m ? m.source : 'new'
-    const identified = resolveKind({
+    // Only a board in your cockpit has a stored kind. A new one — registry boards included — is
+    // identified by what it reports (or PDU pages), never by its NODE_ID (#93 re-review C).
+    const identified = boardIdentity(mapping, nodeId, {
       reported: st?.nodeKind,
-      pduTelemetry: t?.isPdu,
-      // Only a board in your cockpit has a stored kind. A new one — registry boards included — is
-      // identified by what it reports (or PDU pages), never by its NODE_ID (#93 re-review C).
-      stored: m?.kind
+      pduTelemetry: t?.isPdu
     })
     const kind: NodeKind = identified === 'pdu' ? 'pdu' : 'panel'
-    // A board missing from the first complete roster is offline — there is no "waiting".
-    const availability: NodeAvailability = st
-      ? st.present
-        ? 'online'
-        : 'offline'
-      : complete
-        ? 'offline'
-        : 'unknown'
+    const availability = nodeAvailability(st, complete)
     const e: NodeModelEntry = {
       nodeId,
       name: mapped?.name ?? `Node ${nodeId}`,
