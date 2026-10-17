@@ -6,6 +6,9 @@ import net from 'node:net'
 import { EXPORT_MULTICAST_ADDR, EXPORT_PORT } from '@shared/dcs'
 import type { AppConfig } from '@shared/config'
 
+/** The settings a transport is built from. */
+export type TransportOptions = Pick<AppConfig, 'transport' | 'host' | 'commandPort' | 'listenPort'>
+
 export interface Transport {
   start(): void
   stop(): void
@@ -39,10 +42,10 @@ abstract class BaseTransport implements Transport {
 /** Export over UDP — either loopback multicast join or a plain unicast listen. */
 class UdpTransport extends BaseTransport {
   private sock?: dgram.Socket
-  private readonly cfg: AppConfig
+  private readonly cfg: TransportOptions
   private readonly multicast: boolean
 
-  constructor(cfg: AppConfig, multicast: boolean) {
+  constructor(cfg: TransportOptions, multicast: boolean) {
     super()
     this.cfg = cfg
     this.multicast = multicast
@@ -82,9 +85,9 @@ class TcpTransport extends BaseTransport {
   private sock?: net.Socket
   private reconnectTimer?: ReturnType<typeof setTimeout>
   private stopped = false
-  private readonly cfg: AppConfig
+  private readonly cfg: TransportOptions
 
-  constructor(cfg: AppConfig) {
+  constructor(cfg: TransportOptions) {
     super()
     this.cfg = cfg
   }
@@ -122,7 +125,7 @@ class TcpTransport extends BaseTransport {
   }
 }
 
-export function createTransport(cfg: AppConfig): Transport {
+export function createTransport(cfg: TransportOptions): Transport {
   switch (cfg.transport) {
     case 'loopback-multicast':
       return new UdpTransport(cfg, true)

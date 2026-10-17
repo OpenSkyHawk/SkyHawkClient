@@ -223,8 +223,8 @@ function launch(opts: ServicesOptions) {
   const intents = {
     [CTRL.configGet]: () => session.getConfig(),
     [CTRL.configSet]: (patch: Partial<AppConfig>) => applyConfig(patch),
-    [CTRL.relayStart]: () => session.start(),
-    [CTRL.relayStop]: () => session.stop(),
+    [CTRL.relayStart]: () => session.relay.start(),
+    [CTRL.relayStop]: () => session.relay.stop(),
     [CTRL.relayStatus]: () => session.status(),
     [CTRL.deviceConnect]: () => session.connection.connect(),
     [CTRL.deviceDisconnect]: () => session.connection.disconnect(),
@@ -375,7 +375,7 @@ function launch(opts: ServicesOptions) {
 
     /** The window closes (`window-all-closed`): the relay stops, the app keeps running. */
     closeWindow(): void {
-      session.stop()
+      session.relay.stop()
     },
 
     /** The app quits (`will-quit`). */

@@ -134,8 +134,8 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.configImportApply, (_e, token: string, sections: unknown, backup: unknown) =>
     transfer.apply(token, sections, backup)
   )
-  ipcMain.handle(CTRL.relayStart, () => session.start())
-  ipcMain.handle(CTRL.relayStop, () => session.stop())
+  ipcMain.handle(CTRL.relayStart, () => session.relay.start())
+  ipcMain.handle(CTRL.relayStop, () => session.relay.stop())
   ipcMain.handle(CTRL.relayStatus, () => session.status())
   ipcMain.handle(CTRL.deviceConnect, () => session.connection.connect())
   ipcMain.handle(CTRL.deviceDisconnect, () => session.connection.disconnect())
@@ -213,8 +213,8 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(CTRL.captureToggle, async (): Promise<CaptureState> => {
-    if (session.isRecording()) {
-      const { path, events } = session.stopRecording()
+    if (session.recorder.isRecording()) {
+      const { path, events } = session.recorder.stopRecording()
       return { recording: false, path, events }
     }
     const res = await dialog.showSaveDialog({
@@ -223,7 +223,7 @@ function registerIpc(): void {
       filters: CAPTURE_FILTER
     })
     if (res.canceled || !res.filePath) return { recording: false }
-    session.startRecording(res.filePath)
+    session.recorder.startRecording(res.filePath)
     return { recording: true, path: res.filePath }
   })
 
@@ -236,7 +236,7 @@ function registerIpc(): void {
     const path = res.filePaths[0]
     if (res.canceled || !path) return { loaded: false }
     try {
-      const info = session.loadReplay(path)
+      const info = session.relay.loadReplay(path)
       return { loaded: true, path, events: info.events, durationMs: info.durationMs }
     } catch {
       return { loaded: false }
@@ -291,7 +291,7 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  session.stop()
+  session.relay.stop()
   if (process.platform !== 'darwin') app.quit()
 })
 

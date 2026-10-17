@@ -1,7 +1,7 @@
 // Relay events (pure, no Node/Electron deps): the event-log rows the relay and the DCS-BIOS stream
 // make as they start, stop, come up and drop.
-import type { SourceMode } from '@shared/config'
-import type { RelayState } from '@shared/dcs'
+import type { AppConfig, SourceMode } from '@shared/config'
+import { EXPORT_MULTICAST_ADDR, EXPORT_PORT, type RelayState } from '@shared/dcs'
 import type { LogEventInput } from '@shared/events'
 
 export interface RelayContext {
@@ -10,6 +10,19 @@ export interface RelayContext {
   endpoint: string
   /** TCP connects; UDP only binds, so "connected" there is "listening". */
   tcp: boolean
+}
+
+/** Where the stream comes from, for the relay's event-log rows. */
+export function relayContext(
+  cfg: Pick<AppConfig, 'sourceMode' | 'transport' | 'host' | 'commandPort' | 'listenPort'>
+): RelayContext {
+  const tcp = cfg.transport === 'tcp-to-host'
+  const endpoint = tcp
+    ? `${cfg.host}:${cfg.commandPort}`
+    : cfg.transport === 'loopback-multicast'
+      ? `${EXPORT_MULTICAST_ADDR}:${EXPORT_PORT}`
+      : `:${cfg.listenPort}`
+  return { mode: cfg.sourceMode, endpoint, tcp }
 }
 
 const MODE_LABEL: Record<SourceMode, string> = {
