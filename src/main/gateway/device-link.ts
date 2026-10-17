@@ -1,6 +1,10 @@
-// The device link (#69): the SimGateway serial port and everything that rides on it — calibration
-// (CalLink), HID, the node roster and the node data layer. Up whenever the board is plugged in, in
-// every source mode, relaying or not; down only on unplug or an explicit disconnect.
+// The device link (#69): the SimGateway serial port, the node roster and the node data layer. Up
+// whenever the board is plugged in, in every source mode, relaying or not; down only on unplug or an
+// explicit disconnect.
+//
+// What else rides on the port — calibration (hid/calibration HidCalibrationService) and HID
+// (hid HidService) — is told about the link's moments through `ride()` (R2.2a), and event-log rows
+// go to the EventJournal through `report`.
 //
 // The relay (app/session.ts) attaches to it rather than owning it: export goes out through write(),
 // and device traffic comes back through onBytes() / onLine(). That split is the point. Bundled
@@ -8,34 +12,8 @@
 // relayed, and stopping the relay tore the port down with it.
 import type { LogEventInput } from '@shared/events'
 import { isLinkUp, type DeviceStatus, type SerialFrame } from '@shared/gateway'
-import type {
-  CachedAxis,
-  CachedBoard,
-  CalCacheEntry,
-  CalCommitAxis,
-  CalHello,
-  CalRawSample,
-  CalResult,
-  CalSnapshot
-} from '@shared/hid/calibration'
 import type { PushChannel, PushChannels } from '@shared/app'
 import {
-  boardFor,
-  CAL_AXIS_NONE,
-  CalLink,
-  CalNackError,
-  CalTimeoutError,
-  dropAxis,
-  loadCalCache,
-  nackReasonName,
-  regressedAxes,
-  saveCalCache,
-  storeAxes,
-  type CacheFileIO
-} from '../hid/calibration'
-import {
-  findSimGatewayPort,
-  listSerialPorts,
   PortNotFoundError,
   SerialBridge,
   SIMGATEWAY_PID,
@@ -44,7 +22,6 @@ import {
 } from './serial-bridge'
 import { GatewayWatch } from './gateway-health'
 import { LineAssembler, parseCommand } from './link-framing'
-import { HidReader } from '../hid'
 import {
   BRIDGE_NODE_ID,
   NODE_END_MSG,
@@ -63,27 +40,68 @@ import {
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 /**
- * What DeviceLink needs from app (P6: it never asks electron): its two files under <userData>,
- * as ports (node-mapping.json for NodeHub, calibration-cache.json for the cache), and the debug
- * log. Handed on to NodeHub, CalLink and SerialBridge.
+ * The calibration frame filter on the incoming byte path (hid/calibration's HidCalibrationService
+ * supplies it). DeviceLink runs it on every chunk before anything else sees the bytes.
+ */
+export interface CalFrameFilter {
+  /** Feed inbound bytes; what is not a calibration frame comes back, for DCS and the line taps. */
+  ingest(chunk: Buffer): Buffer
+  /** A calibration exchange is in flight, and the export stream must not be forwarded. */
+  readonly exportGated: boolean
+}
+
+/** Adds one interval to the link's own timer list: created in start(), cleared at shutdown. */
+export type LinkTimer = (ms: number, fn: () => void) => void
+
+/**
+ * What rides on the link — calibration and HID (R2.2a) — and the link's moments it is told about.
+ *
+ * At each moment DeviceLink calls its riders in the order they were added with `ride()`, at exactly
+ * the point where that rider's code sat inside DeviceLink before the split, so the order of side
+ * effects is unchanged. Session adds calibration first, then HID: where both handle a moment
+ * (start's timers, a port opening), calibration's part came first.
+ */
+export interface LinkRider {
+  /**
+   * start(): the rider's timers, on the link's list between its serial flush and its roster poll.
+   * Same-period timers fire in creation order, so this position is the push order; and they are
+   * cleared with the link's own at shutdown.
+   */
+  timers?(every: LinkTimer): void
+  /** start(): after the link's timers, before the first connect. */
+  start?(): void
+  /** connect(): a new port, before any byte from it can arrive. */
+  attach?(): void
+  /** teardown(): the port is being released. First, before the port stops. */
+  release?(): void
+  /** The port opened: after the link's own resets, its status push and the roster request. */
+  opened?(path: string): void
+  /**
+   * The port closed under us: after the node layer noted it, before reconnecting or disconnecting.
+   * `pass` sends bytes on down the stream, below the frame filter.
+   */
+  closed?(pass: (held: Buffer) => void): void
+  /** The link's 200 ms push tick: first, and while the link is down too. */
+  flush?(): void
+  /** shutdown(): after the port is released. */
+  stop?(): void
+}
+
+/**
+ * What DeviceLink needs from app (P6: it never asks electron): node-mapping.json as a port (for
+ * NodeHub), the debug log (NodeHub, SerialBridge), where event-log rows go (EventJournal), and the
+ * calibration frame filter.
  */
 export interface DeviceLinkDeps {
   mappingFile: MappingFileIO
-  cacheFile: CacheFileIO
   log: Log
+  /** Event-log rows: node changes and the Gateway's health (EventJournal.report). */
+  report: (events: LogEventInput[]) => void
+  frames: CalFrameFilter
 }
 
 /** Node status, node model and the HID snapshot. Same cadence the relay used for them. */
 const LINK_FLUSH_MS = 200
-/**
- * Shortest gap between HID pushes to the renderer.
- *
- * A press used to wait for the 200 ms telemetry tick, which is visible lag on a button and
- * enough to lose a quick tap entirely. Reports now drive the push, capped here at roughly one
- * frame so a fast axis sweep — the device can emit a few hundred a second — cannot flood IPC.
- */
-const HID_PUSH_MS = 16
-const HID_RATE_MS = 1000
 const NODES_REFRESH_MS = 5000
 const SERIAL_FLUSH_MS = 50
 const MAX_SERIAL_BUF = 4000
@@ -114,42 +132,31 @@ export class DeviceLink {
   /** The Gateway's own health (#94): its node-0 row, and whether it still answers. */
   private readonly gateway = new GatewayWatch()
   private serial?: SerialBridge
-  private hid?: HidReader
-  private hidPushedAt = 0
-  private hidPushTimer?: ReturnType<typeof setTimeout>
   private assembler = new LineAssembler()
   private serialMonitor = false
   private serialBuf: SerialFrame[] = []
-  private cal?: CalLink
-  private calRawBuf: CalRawSample[] = []
-  private calSerialNumber?: string
-  /**
-   * Last snapshot the device confirmed, held so a renderer reload can rehydrate.
-   *
-   * Cleared whenever the link goes down, which is what stops it describing a board that is no
-   * longer attached — or, worse, a different one after a reconnect.
-   */
-  private lastCal?: CalSnapshot
   private status: DeviceStatus = { state: 'disconnected' }
   private autoConnect = true
   private started = false
   private timers: ReturnType<typeof setInterval>[] = []
+  /** Calibration, then HID: see LinkRider. */
+  private readonly riders: LinkRider[] = []
 
   private readonly bytesCbs = new Set<(bytes: Buffer) => void>()
   private readonly lineCbs = new Set<(line: DeviceLine) => void>()
   private readonly statusCbs = new Set<(status: DeviceStatus) => void>()
   private readonly errorCbs = new Set<(tag: string, message: string) => void>()
-  private readonly eventCbs = new Set<(events: LogEventInput[]) => void>()
 
   constructor(
     private readonly emit: Emit,
     private readonly deps: DeviceLinkDeps
   ) {
-    this.nodes = new NodeHub(emit, this.roster, (events) => this.report(events), deps)
+    this.nodes = new NodeHub(emit, this.roster, (events) => this.deps.report(events), deps)
   }
 
-  private report(events: LogEventInput[]): void {
-    if (events.length) for (const cb of this.eventCbs) cb(events)
+  /** Add a rider. Riders are called in the order added; see LinkRider. */
+  ride(rider: LinkRider): void {
+    this.riders.push(rider)
   }
 
   // ── events ─────────────────────────────────────────────────────────────────
@@ -177,11 +184,6 @@ export class DeviceLink {
     return subscribe(this.errorCbs, cb)
   }
 
-  /** Node changes for the event log (#64): online / offline, flags raised and cleared, new nodes. */
-  onNodeEvents(cb: (events: LogEventInput[]) => void): Unsubscribe {
-    return subscribe(this.eventCbs, cb)
-  }
-
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
   /** App launch: start the link's timers and, unless the user opted out, the link itself. */
@@ -189,31 +191,18 @@ export class DeviceLink {
     if (this.started) return
     this.started = true
     this.autoConnect = autoConnect
-    this.timers = [
-      setInterval(() => this.flushLink(), LINK_FLUSH_MS),
-      setInterval(() => this.flushSerial(), SERIAL_FLUSH_MS),
-      setInterval(() => this.flushCalRaw(), SERIAL_FLUSH_MS),
-      setInterval(() => this.hid?.sampleRate(), HID_RATE_MS),
-      // Poll the node roster so silent deaths get reconciled — relaying or not.
-      setInterval(() => this.requestNodes(), NODES_REFRESH_MS)
-    ]
-    this.startHid()
+    this.timers = []
+    const every: LinkTimer = (ms, fn) => {
+      this.timers.push(setInterval(fn, ms))
+    }
+    every(LINK_FLUSH_MS, () => this.flushLink())
+    every(SERIAL_FLUSH_MS, () => this.flushSerial())
+    for (const r of this.riders) r.timers?.(every) // calibration: cal:raw; HID: the rate window
+    // Poll the node roster so silent deaths get reconciled — relaying or not.
+    every(NODES_REFRESH_MS, () => this.requestNodes())
+    for (const r of this.riders) r.start?.() // HID: the reader
     if (autoConnect) this.connect()
     else this.setStatus({ state: 'disconnected' })
-  }
-
-  /**
-   * HID is read, never claimed: DCS reads the same interface as a joystick, so it runs for as long
-   * as the app does — independent of the serial port, and still up while the port is released.
-   * It reconnects on its own, so its errors are worth recording rather than swallowing — they are
-   * how we learn whether an unplug surfaces here at all, or only as the serial port dropping.
-   */
-  private startHid(): void {
-    const h = new HidReader()
-    this.hid = h
-    h.onError((err) => this.deps.log('hid.error', { message: err.message }))
-    h.onReport(() => this.pushHid())
-    h.start()
   }
 
   /** App quit. */
@@ -222,10 +211,7 @@ export class DeviceLink {
     for (const t of this.timers) clearInterval(t)
     this.timers = []
     this.teardown()
-    if (this.hidPushTimer) clearTimeout(this.hidPushTimer)
-    this.hidPushTimer = undefined
-    this.hid?.stop()
-    this.hid = undefined
+    for (const r of this.riders) r.stop?.() // HID: the pending push, the reader
     this.started = false
   }
 
@@ -250,14 +236,7 @@ export class DeviceLink {
     // this link. What auto-connect governs is reopening after a drop, handled in onClose.
     const s = new SerialBridge(true, this.deps.log)
     this.serial = s
-    // The calibration channel shares this port. It runs whenever the port is open, not only
-    // during a session: HELLO and GET_CAL are answered outside one, so there is no point at
-    // which it is safe to stop watching for frames.
-    this.cal = new CalLink(
-      (data) => s.write(data),
-      (sample) => this.calRawBuf.push({ t: Date.now(), ...sample }),
-      this.deps.log
-    )
+    for (const r of this.riders) r.attach?.() // calibration: a CalLink for this port
     s.onData((chunk) => this.onSerialData(chunk))
     s.onMonitor((dir, chunk) => this.onSerialTraffic(dir, chunk))
     s.onOpen((path) => this.onOpen(path))
@@ -288,13 +267,7 @@ export class DeviceLink {
 
   /** Release the serial port and what rides on it. */
   private teardown(): void {
-    // Bytes the de-mux was holding are DCS traffic, but with the link going away deliberately
-    // there is no stream left for them to belong to.
-    this.cal?.close()
-    this.cal = undefined
-    this.calRawBuf = []
-    this.lastCal = undefined
-    this.calSerialNumber = undefined
+    for (const r of this.riders) r.release?.() // calibration: its CalLink and what it held
     this.serial?.stop()
     this.serial = undefined
     this.gateway.reset()
@@ -318,22 +291,14 @@ export class DeviceLink {
     })
     this.gateway.takeChanged() // just sent
     this.requestNodes() // seed the roster as soon as the device is up
-    void this.readCalibrationState() // badges, with no dialog open
-    // Same physical device, so the port reopening is proof it re-enumerated and any HID handle
-    // we hold is stale. This is the reliable trigger: a disconnect does not surface as a
-    // node-hid error event on every platform, and serial recovery is proven.
-    this.hid?.reopen()
+    // Calibration reads what the board holds (badges, with no dialog open), then HID reopens.
+    for (const r of this.riders) r.opened?.(path)
   }
 
   private onClose(): void {
     this.nodes.linkClosed() // the boards on the bus were last seen now (#93)
-    // Fail anything in flight and release held bytes: a reconnect must not resume
-    // mid-candidate, and an awaiting caller would otherwise hang on a reply that cannot come.
-    // The released bytes are a candidate that never completed — not a frame, therefore DCS
-    // traffic — so they go on down the relay rather than being dropped here.
-    const held = this.cal?.close()
-    if (held?.length) this.fromDevice(held)
-    this.lastCal = undefined // the board it described may not be the one that comes back
+    // Calibration fails what is in flight and hands back held bytes, which go on down the relay.
+    for (const r of this.riders) r.closed?.((held) => this.fromDevice(held))
     if (!this.autoConnect) {
       // Opted out of the client taking the port on its own: a drop leaves it down.
       this.disconnect()
@@ -349,17 +314,6 @@ export class DeviceLink {
     this.serial?.write(data)
   }
 
-  /**
-   * A calibration exchange is in flight, and the export stream must not be forwarded.
-   *
-   * The protocol's one rule is that the client stops relaying the export stream before ANY
-   * exchange, a 10 ms HELLO as much as a whole session: it frees the link and removes any chance
-   * of the gateway reading export binary as a calibration frame.
-   */
-  get exportGated(): boolean {
-    return !!this.cal?.exportGated
-  }
-
   /** Ask PanelBridge for the full node roster (inject the request export to the serial). */
   requestNodes(): void {
     if (!this.serial || !isLinkUp(this.status.state)) return
@@ -372,10 +326,6 @@ export class DeviceLink {
     return this.status
   }
 
-  calSnapshot(): CalSnapshot | undefined {
-    return this.lastCal
-  }
-
   // ── input ──────────────────────────────────────────────────────────────────
 
   private onSerialData(chunk: Buffer): void {
@@ -384,7 +334,7 @@ export class DeviceLink {
     // arrives at up to ~250 frames/s — that binary has no business reaching DCS. Second, the
     // gateway injects frames at arbitrary byte boundaries, so one can land mid-line; removing its
     // bytes is exactly what rejoins the interrupted line for the assembler below.
-    this.fromDevice(this.cal ? this.cal.ingest(chunk) : chunk)
+    this.fromDevice(this.deps.frames.ingest(chunk))
   }
 
   /**
@@ -434,10 +384,11 @@ export class DeviceLink {
    * That row stays out of the cockpit model (node-model); this is where it is shown instead (#94).
    */
   private gatewayLine(identifier: string, arg: string, raw: string, t: number): void {
-    this.report(this.gateway.answered(raw, t))
+    this.deps.report(this.gateway.answered(raw, t))
     if (identifier !== NODE_MSG) return
     const n = parseNodeStatus(arg.trim())
-    if (n?.nodeId === BRIDGE_NODE_ID) this.report(this.gateway.report(withFaultInfo(n), raw, t))
+    if (n?.nodeId === BRIDGE_NODE_ID)
+      this.deps.report(this.gateway.report(withFaultInfo(n), raw, t))
   }
 
   // ── renderer pushes ────────────────────────────────────────────────────────
@@ -469,231 +420,15 @@ export class DeviceLink {
    * computed during an unplug would only repeat what the link state already says.
    */
   private flushLink(): void {
-    // Still emitted while nothing is arriving: a silent device is the normal resting state, and
-    // ageMs and the rate have to keep moving for the UI to say so.
-    if (this.hid) this.emit('hid:report', this.hid.snapshot())
+    for (const r of this.riders) r.flush?.() // HID: its snapshot, link up or not
     if (!isLinkUp(this.status.state)) return
     this.nodes.flush(this.roster.takeDirty())
-    this.report(this.gateway.tick(Date.now(), this.exportGated))
+    this.deps.report(this.gateway.tick(Date.now(), this.deps.frames.exportGated))
     if (this.gateway.takeChanged()) {
       // Health rides on `device:status`, but it is not a change of link state: no onStatus.
       this.status = { ...this.status, gateway: this.gateway.status() }
       this.emit('device:status', this.status)
     }
-  }
-
-  /**
-   * Push HID state, at most once per `HID_PUSH_MS`.
-   *
-   * Leading edge so a press shows immediately, trailing edge so the state that follows it is
-   * never the one left unsent — which is what stops a press-and-release inside one window from
-   * disappearing. Both halves are needed: leading alone loses the release, trailing alone adds
-   * the delay back.
-   */
-  private pushHid(): void {
-    if (!this.hid) return
-    const now = Date.now()
-    const since = now - this.hidPushedAt
-    if (since >= HID_PUSH_MS) {
-      this.hidPushedAt = now
-      this.emit('hid:report', this.hid.snapshot())
-      return
-    }
-    if (this.hidPushTimer) return
-    this.hidPushTimer = setTimeout(() => {
-      this.hidPushTimer = undefined
-      if (!this.hid) return
-      this.hidPushedAt = Date.now()
-      this.emit('hid:report', this.hid.snapshot())
-    }, HID_PUSH_MS - since)
-  }
-
-  // ── axis calibration (#46) ─────────────────────────────────────────────────
-
-  /**
-   * Read-only: ask the gateway what it is and what calibration it holds, once per port open.
-   *
-   * Writes nothing. It exists so the HID tab can show per-axis calibrated/uncalibrated badges
-   * and an uncalibrated count **without anyone opening the dialog** — which is precisely why
-   * the firmware answers HELLO and GET_CAL outside a session. Everything that changes stored
-   * calibration is scoped to an open dialog.
-   *
-   * Also captures the board's USB serial, the key part of the restore cache in #46.
-   *
-   * Failure is not an error state: a gateway on older firmware simply never answers, and the
-   * relay is unaffected either way.
-   */
-  private async readCalibrationState(): Promise<void> {
-    this.calSerialNumber = await this.gatewaySerialNumber()
-    const hello = await this.calHello()
-    if (!hello.ok) {
-      this.deps.log('cal.absent', `no calibration channel: ${hello.message}`)
-      return
-    }
-    const { proto, blobVersion, fw } = hello.value
-    this.deps.log('cal.hello', {
-      proto,
-      blobVersion,
-      fw: `${fw.major}.${fw.minor}.${fw.patch}`,
-      serial: this.calSerialNumber ?? null
-    })
-    const read = await this.calRead()
-    if (!read.ok) {
-      this.deps.log('cal.absent', `read failed: ${read.message}`)
-      return
-    }
-    // Masks, not endpoints: this is the line a bug report needs — which axes the sketch
-    // declares, and which of them the device considers calibrated.
-    this.deps.log('cal.data', {
-      present: read.value.presentMask.toString(2).padStart(8, '0'),
-      calibrated: read.value.calibratedMask.toString(2).padStart(8, '0')
-    })
-  }
-
-  /**
-   * USB serial of the attached gateway, for keying the restore cache in #46.
-   *
-   * From SerialPort.list(), not node-hid: node-hid is an optional dependency that may be absent
-   * entirely, and HidReader opens by VID/PID without exposing a serial. Confirmed on hardware —
-   * the board reports 50031327805E871C. Absent or empty means no restore may be offered, since
-   * guessing which board a cached calibration belongs to is the failure the key exists to stop.
-   */
-  private async gatewaySerialNumber(): Promise<string | undefined> {
-    try {
-      const path = await findSimGatewayPort()
-      if (!path) return undefined
-      const ports = await listSerialPorts()
-      const hit = ports.find((p) => p.path === path)
-      return hit?.serialNumber || undefined
-    } catch {
-      return undefined
-    }
-  }
-
-  /** Convert a CalLink rejection into the discriminated result the renderer can branch on. */
-  private async calRun<T>(fn: (link: CalLink) => Promise<T>): Promise<CalResult<T>> {
-    if (!this.cal) {
-      return { ok: false, kind: 'offline', message: 'Gateway is not connected' }
-    }
-    try {
-      return { ok: true, value: await fn(this.cal) }
-    } catch (err) {
-      if (err instanceof CalTimeoutError) {
-        return { ok: false, kind: 'timeout', message: err.message }
-      }
-      if (err instanceof CalNackError) {
-        const name = nackReasonName(err.reason)
-        return {
-          ok: false,
-          kind: 'nack',
-          reason: err.reason,
-          reasonName: name,
-          detail: err.detail,
-          message: err.message
-        }
-      }
-      return { ok: false, kind: 'error', message: (err as Error).message }
-    }
-  }
-
-  calHello(): Promise<CalResult<CalHello>> {
-    return this.calRun((l) => l.hello())
-  }
-
-  /** Read stored calibration and push it to the renderer, so badges follow the device. */
-  async calRead(): Promise<CalResult<CalSnapshot>> {
-    const r = await this.calRun((l) => l.getCal())
-    if (r.ok) {
-      const snap: CalSnapshot = { ...r.value, serialNumber: this.calSerialNumber }
-      this.lastCal = snap
-      this.emit('cal:data', snap)
-      return { ok: true, value: snap }
-    }
-    return r
-  }
-
-  /**
-   * What the cache holds for the attached board, and which of its axes the device has lost.
-   *
-   * Regression is computed here rather than in the renderer because the serial lives here — the
-   * renderer never sees a board identity it could accidentally key on.
-   */
-  calCacheRead(): CalResult<{ board?: CachedBoard; regressed: number[] }> {
-    const cache = loadCalCache(this.deps.cacheFile)
-    return {
-      ok: true,
-      value: {
-        board: boardFor(cache, this.calSerialNumber),
-        regressed: regressedAxes(cache, this.lastCal)
-      }
-    }
-  }
-
-  /** Record axes the device confirmed storing. A board with no serial is not cached at all. */
-  calCacheStore(axes: CalCacheEntry[]): CalResult<null> {
-    const serial = this.calSerialNumber
-    if (!serial || axes.length === 0) return { ok: true, value: null }
-    const entries: Record<number, CachedAxis> = {}
-    for (const a of axes) {
-      entries[a.idx] = { min: a.min, centre: a.centre, max: a.max, selfCentring: a.selfCentring }
-    }
-    saveCalCache(
-      storeAxes(loadCalCache(this.deps.cacheFile), serial, entries, new Date().toISOString()),
-      this.deps.cacheFile
-    )
-    return { ok: true, value: null }
-  }
-
-  /** Forget a deliberately deleted axis, or the whole board on the reset-all index. */
-  calCacheDrop(idx: number): CalResult<null> {
-    const serial = this.calSerialNumber
-    if (!serial) return { ok: true, value: null }
-    saveCalCache(
-      dropAxis(loadCalCache(this.deps.cacheFile), serial, idx === CAL_AXIS_NONE ? undefined : idx),
-      this.deps.cacheFile
-    )
-    return { ok: true, value: null }
-  }
-
-  calSessionOpen(axisIdx: number): Promise<CalResult<{ timeoutMs: number; axisIdx: number }>> {
-    return this.calRun((l) => l.openSession(axisIdx))
-  }
-
-  calStreamSelect(axisIdx: number): Promise<CalResult<null>> {
-    return this.calRun(async (l) => {
-      await l.streamSelect(axisIdx)
-      return null
-    })
-  }
-
-  /**
-   * Write one axis. Resolving means the device acknowledged receipt, not that it stored the
-   * values — the caller re-reads with calRead() to learn what is actually on the device.
-   */
-  calCommit(axis: CalCommitAxis): Promise<CalResult<null>> {
-    return this.calRun(async (l) => {
-      await l.commit(axis)
-      return null
-    })
-  }
-
-  calReset(idx: number): Promise<CalResult<null>> {
-    return this.calRun(async (l) => {
-      await l.reset(idx)
-      return null
-    })
-  }
-
-  calSessionClose(): Promise<CalResult<null>> {
-    return this.calRun(async (l) => {
-      await l.closeSession()
-      return null
-    })
-  }
-
-  private flushCalRaw(): void {
-    if (this.calRawBuf.length === 0) return
-    this.emit('cal:raw', this.calRawBuf.splice(0, this.calRawBuf.length))
   }
 
   private setStatus(status: DeviceStatus): void {

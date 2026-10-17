@@ -163,20 +163,22 @@ function registerIpc(): void {
   // Axis calibration (#46). Every one returns a discriminated CalResult rather than throwing:
   // an ipcRenderer.invoke rejection flattens to a plain Error, which would lose the
   // timeout-vs-nack distinction the UI's failure messaging depends on.
-  ipcMain.handle(CTRL.calHello, () => session.link.calHello())
-  ipcMain.handle(CTRL.calRead, () => session.link.calRead())
-  ipcMain.handle(CTRL.calSessionOpen, (_e, axisIdx: number) => session.link.calSessionOpen(axisIdx))
+  ipcMain.handle(CTRL.calHello, () => session.calibration.calHello())
+  ipcMain.handle(CTRL.calRead, () => session.calibration.calRead())
+  ipcMain.handle(CTRL.calSessionOpen, (_e, axisIdx: number) =>
+    session.calibration.calSessionOpen(axisIdx)
+  )
   ipcMain.handle(CTRL.calStreamSelect, (_e, axisIdx: number) =>
-    session.link.calStreamSelect(axisIdx)
+    session.calibration.calStreamSelect(axisIdx)
   )
-  ipcMain.handle(CTRL.calCommit, (_e, axis: CalCommitAxis) => session.link.calCommit(axis))
-  ipcMain.handle(CTRL.calReset, (_e, idx: number) => session.link.calReset(idx))
-  ipcMain.handle(CTRL.calCacheRead, () => session.link.calCacheRead())
+  ipcMain.handle(CTRL.calCommit, (_e, axis: CalCommitAxis) => session.calibration.calCommit(axis))
+  ipcMain.handle(CTRL.calReset, (_e, idx: number) => session.calibration.calReset(idx))
+  ipcMain.handle(CTRL.calCacheRead, () => session.calibration.calCacheRead())
   ipcMain.handle(CTRL.calCacheStore, (_e, axes: CalCacheEntry[]) =>
-    session.link.calCacheStore(axes)
+    session.calibration.calCacheStore(axes)
   )
-  ipcMain.handle(CTRL.calCacheDrop, (_e, idx: number) => session.link.calCacheDrop(idx))
-  ipcMain.handle(CTRL.calSessionClose, () => session.link.calSessionClose())
+  ipcMain.handle(CTRL.calCacheDrop, (_e, idx: number) => session.calibration.calCacheDrop(idx))
+  ipcMain.handle(CTRL.calSessionClose, () => session.calibration.calSessionClose())
 
   ipcMain.handle(CTRL.logExport, async (_e, text: string) => {
     const res = await dialog.showSaveDialog({
