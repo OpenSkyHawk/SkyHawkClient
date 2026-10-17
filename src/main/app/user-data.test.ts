@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { join, resolve } from 'node:path'
-import { userDataOverride, USER_DATA_ENV, type UserDataInputs } from './user-data'
+import { storePaths, userDataOverride, USER_DATA_ENV, type UserDataInputs } from './user-data'
 
 const repo = resolve('/work/SkyHawkClient')
 const base: UserDataInputs = { isPackaged: false, appPath: repo, env: {}, cwd: repo }
@@ -36,5 +36,23 @@ describe('userDataOverride', () => {
       join(repo, '.userdata')
     )
     expect(userDataOverride({ ...base, isPackaged: true, env: { [USER_DATA_ENV]: '' } })).toBeNull()
+  })
+})
+
+// The file names the stores used when each asked electron for <userData> itself (R1.4a, P6).
+describe('storePaths', () => {
+  it('names the same three files under <userData> as before', () => {
+    const dir = resolve('/u')
+    const paths = storePaths(() => dir)
+    expect(paths.configFile()).toBe(join(dir, 'config.json'))
+    expect(paths.calibrationCacheFile()).toBe(join(dir, 'calibration-cache.json'))
+    expect(paths.nodeMappingFile()).toBe(join(dir, 'node-mapping.json'))
+  })
+
+  it('resolves <userData> at each use, as app.getPath did', () => {
+    let dir = resolve('/first')
+    const paths = storePaths(() => dir)
+    dir = resolve('/second')
+    expect(paths.nodeMappingFile()).toBe(join(dir, 'node-mapping.json'))
   })
 })

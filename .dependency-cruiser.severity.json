@@ -1,7 +1,7 @@
 {
   "process": "error",
-  "crossProcess": "warn",
-  "electron": "warn",
+  "crossProcess": "error",
+  "electron": "error",
   "rendererShared": "warn",
   "contracts": "error",
   "cycles": "error",

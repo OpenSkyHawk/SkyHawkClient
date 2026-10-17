@@ -5,11 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LogEventInput } from '@shared/events/ipc'
 import type { NodeMappingFile } from '@shared/nodes/ipc'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from '@shared/nodes'
-import { statusRow } from '../test-fixtures/nodes'
+import { statusRow } from '../../test-fixtures/nodes'
 
 const disk: { file: NodeMappingFile; saves: number } = { file: { version: 3, nodes: {} }, saves: 0 }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } })) // debug log path
-vi.mock('./node-mapping', () => ({
+vi.mock('./mapping-store', () => ({
   MappingSaveError: class MappingSaveError extends Error {},
   loadNodeMapping: () => ({ file: disk.file }),
   saveNodeMapping: (f: NodeMappingFile) => {

@@ -2,7 +2,7 @@
 // (CalLink), HID, the node roster and the node data layer. Up whenever the board is plugged in, in
 // every source mode, relaying or not; down only on unplug or an explicit disconnect.
 //
-// The relay (session.ts) attaches to it rather than owning it: export goes out through write(),
+// The relay (app/session.ts) attaches to it rather than owning it: export goes out through write(),
 // and device traffic comes back through onBytes() / onLine(). That split is the point. Bundled
 // together, there was no node status, PDU telemetry, HID or calibration unless DCS was being
 // relayed, and stopping the relay tore the port down with it.
@@ -34,21 +34,38 @@ import type {
 import type { PushChannel, PushChannels } from '@shared/app/ipc'
 import { CAL_AXIS_NONE, nackReasonName } from '@shared/calibration'
 import { boardFor, dropAxis, regressedAxes, storeAxes } from '@shared/cal-cache'
-import { CalLink, CalNackError, CalTimeoutError } from './callink'
+import {
+  CalLink,
+  CalNackError,
+  CalTimeoutError,
+  loadCalCache,
+  saveCalCache
+} from '../hid/calibration'
 import {
   findSimGatewayPort,
   listSerialPorts,
   PortNotFoundError,
   SerialBridge,
   SIMGATEWAY_PID,
-  SIMGATEWAY_VID
-} from './serial'
-import { debugLog } from './debug'
-import { HidReader } from './hid'
-import { loadCalCache, saveCalCache } from './cal-cache'
-import { NodeHub, withFaultInfo } from './node-hub'
+  SIMGATEWAY_VID,
+  type Log
+} from './serial-bridge'
+import { HidReader } from '../hid'
+import { NodeHub, withFaultInfo } from '../nodes'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
+
+/**
+ * What DeviceLink needs from app (P6: it never asks electron): where its two files live under
+ * <userData>, and the debug log. Handed on to NodeHub, CalLink and SerialBridge.
+ */
+export interface DeviceLinkDeps {
+  paths: {
+    nodeMappingFile(): string
+    calibrationCacheFile(): string
+  }
+  log: Log
+}
 
 /** Node status, node model and the HID snapshot. Same cadence the relay used for them. */
 const LINK_FLUSH_MS = 200
@@ -118,8 +135,11 @@ export class DeviceLink {
   private readonly errorCbs = new Set<(tag: string, message: string) => void>()
   private readonly eventCbs = new Set<(events: LogEventInput[]) => void>()
 
-  constructor(private readonly emit: Emit) {
-    this.nodes = new NodeHub(emit, this.roster, (events) => this.report(events))
+  constructor(
+    private readonly emit: Emit,
+    private readonly deps: DeviceLinkDeps
+  ) {
+    this.nodes = new NodeHub(emit, this.roster, (events) => this.report(events), deps)
   }
 
   private report(events: LogEventInput[]): void {
@@ -185,7 +205,7 @@ export class DeviceLink {
   private startHid(): void {
     const h = new HidReader()
     this.hid = h
-    h.onError((err) => debugLog('hid.error', { message: err.message }))
+    h.onError((err) => this.deps.log('hid.error', { message: err.message }))
     h.onReport(() => this.pushHid())
     h.start()
   }
@@ -222,14 +242,15 @@ export class DeviceLink {
     this.teardown()
     // Always retries: "not found" keeps looking whatever the setting, because someone asked for
     // this link. What auto-connect governs is reopening after a drop, handled in onClose.
-    const s = new SerialBridge(true)
+    const s = new SerialBridge(true, this.deps.log)
     this.serial = s
     // The calibration channel shares this port. It runs whenever the port is open, not only
     // during a session: HELLO and GET_CAL are answered outside one, so there is no point at
     // which it is safe to stop watching for frames.
     this.cal = new CalLink(
       (data) => s.write(data),
-      (sample) => this.calRawBuf.push({ t: Date.now(), ...sample })
+      (sample) => this.calRawBuf.push({ t: Date.now(), ...sample }),
+      this.deps.log
     )
     s.onData((chunk) => this.onSerialData(chunk))
     s.onMonitor((dir, chunk) => this.onSerialTraffic(dir, chunk))
@@ -388,7 +409,7 @@ export class DeviceLink {
       let kind: DeviceLine['kind'] = 'command'
       // Node-status messages are tapped to the roster, not logged as panel commands.
       if (identifier === NODE_MSG || identifier === NODE_END_MSG) {
-        debugLog('node', `${identifier} ${arg}`.trim())
+        this.deps.log('node', `${identifier} ${arg}`.trim())
         this.roster.applyMessage(identifier, arg, t)
         this.nodes.statusLine(identifier, line.trim(), t)
         this.gatewayLine(identifier, arg, line.trim(), t)
@@ -500,11 +521,11 @@ export class DeviceLink {
     this.calSerialNumber = await this.gatewaySerialNumber()
     const hello = await this.calHello()
     if (!hello.ok) {
-      debugLog('cal.absent', `no calibration channel: ${hello.message}`)
+      this.deps.log('cal.absent', `no calibration channel: ${hello.message}`)
       return
     }
     const { proto, blobVersion, fw } = hello.value
-    debugLog('cal.hello', {
+    this.deps.log('cal.hello', {
       proto,
       blobVersion,
       fw: `${fw.major}.${fw.minor}.${fw.patch}`,
@@ -512,12 +533,12 @@ export class DeviceLink {
     })
     const read = await this.calRead()
     if (!read.ok) {
-      debugLog('cal.absent', `read failed: ${read.message}`)
+      this.deps.log('cal.absent', `read failed: ${read.message}`)
       return
     }
     // Masks, not endpoints: this is the line a bug report needs — which axes the sketch
     // declares, and which of them the device considers calibrated.
-    debugLog('cal.data', {
+    this.deps.log('cal.data', {
       present: read.value.presentMask.toString(2).padStart(8, '0'),
       calibrated: read.value.calibratedMask.toString(2).padStart(8, '0')
     })
@@ -592,7 +613,7 @@ export class DeviceLink {
    * renderer never sees a board identity it could accidentally key on.
    */
   calCacheRead(): CalResult<{ board?: CachedBoard; regressed: number[] }> {
-    const cache = loadCalCache()
+    const cache = loadCalCache(this.deps.paths)
     return {
       ok: true,
       value: {
@@ -610,7 +631,10 @@ export class DeviceLink {
     for (const a of axes) {
       entries[a.idx] = { min: a.min, centre: a.centre, max: a.max, selfCentring: a.selfCentring }
     }
-    saveCalCache(storeAxes(loadCalCache(), serial, entries, new Date().toISOString()))
+    saveCalCache(
+      storeAxes(loadCalCache(this.deps.paths), serial, entries, new Date().toISOString()),
+      this.deps.paths
+    )
     return { ok: true, value: null }
   }
 
@@ -618,7 +642,10 @@ export class DeviceLink {
   calCacheDrop(idx: number): CalResult<null> {
     const serial = this.calSerialNumber
     if (!serial) return { ok: true, value: null }
-    saveCalCache(dropAxis(loadCalCache(), serial, idx === CAL_AXIS_NONE ? undefined : idx))
+    saveCalCache(
+      dropAxis(loadCalCache(this.deps.paths), serial, idx === CAL_AXIS_NONE ? undefined : idx),
+      this.deps.paths
+    )
     return { ok: true, value: null }
   }
 

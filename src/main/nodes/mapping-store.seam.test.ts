@@ -4,11 +4,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { NodeMappingFile } from '@shared/nodes/ipc'
+import { storePaths } from '../app/user-data'
 
 const userData = vi.hoisted(() => ({ dir: '' }))
-vi.mock('electron', () => ({ app: { getPath: () => userData.dir } }))
+// <userData> is handed in the way app hands it in (the store no longer asks electron, P6).
+const paths = storePaths(() => userData.dir)
 
-const { loadNodeMapping, saveNodeMapping } = await import('./node-mapping')
+const store = await import('./mapping-store')
+const loadNodeMapping = () => store.loadNodeMapping(paths)
+const saveNodeMapping = (f: NodeMappingFile) => store.saveNodeMapping(f, paths)
 
 const path = () => join(userData.dir, 'node-mapping.json')
 const write = (raw: unknown) => writeFileSync(path(), JSON.stringify(raw))

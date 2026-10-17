@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Decoder, extractValue } from './decode'
+import { Decoder, extractValue } from './sim-telemetry-decoder'
 
 describe('extractValue', () => {
   it('masks and shifts', () => {

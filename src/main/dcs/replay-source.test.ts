@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ReplaySource } from './replay'
+import { ReplaySource } from './replay-source'
 import type { CaptureFile } from '@shared/capture'
 
 const file: CaptureFile = {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HidReader } from './hid'
+import { HidReader } from './hid-reader'
 
 /** The private surface this test drives; the class deliberately exposes none of it. */
 type Innards = {

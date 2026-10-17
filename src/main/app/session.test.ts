@@ -4,7 +4,7 @@ import type { LogRow } from '@shared/dcs/ipc'
 import { eventText } from '@shared/format'
 import type { LogEvent } from '@shared/events/ipc'
 import type { NodeModel } from '@shared/nodes/ipc'
-import { statusLine } from '../test-fixtures/nodes'
+import { statusLine } from '../../test-fixtures/nodes'
 
 // Session pulls in electron (debug log path), the serial port, the DCS transport and node-hid.
 // Only the seams matter here, so each is replaced with something a test can drive directly.
@@ -75,7 +75,7 @@ class FakeTransport {
   }
 }
 
-vi.mock('./serial', () => ({
+vi.mock('../gateway/serial-bridge', () => ({
   SerialBridge: FakeSerial,
   PortNotFoundError: class extends Error {},
   SIMGATEWAY_VID: 0x2e8a,
@@ -83,9 +83,9 @@ vi.mock('./serial', () => ({
   findSimGatewayPort: () => Promise.resolve('/dev/fake'),
   listSerialPorts: () => Promise.resolve([{ path: '/dev/fake', serialNumber: 'TESTSERIAL' }])
 }))
-vi.mock('./net', () => ({ createTransport: () => new FakeTransport() }))
+vi.mock('../dcs/transports', () => ({ createTransport: () => new FakeTransport() }))
 // Keep the node mapping off the real disk.
-vi.mock('./node-mapping', () => ({
+vi.mock('../nodes/mapping-store', () => ({
   // Center_Armament and Right_Navigation are in this cockpit (#93: added).
   loadNodeMapping: () => ({
     file: { version: 3, nodes: { 1: { added: true }, 2: { added: true } } }
@@ -93,7 +93,7 @@ vi.mock('./node-mapping', () => ({
   saveNodeMapping: () => {},
   MappingSaveError: class extends Error {}
 }))
-vi.mock('./hid', () => ({
+vi.mock('../hid/hid-reader', () => ({
   HidReader: class {
     static last: InstanceType<typeof this> | undefined
     buttons: boolean[] = []
@@ -127,7 +127,7 @@ vi.mock('./hid', () => ({
 }))
 
 const { Session, deviceToDcs, exportToDevice, relayConfigChanged } = await import('./session')
-const { PortNotFoundError } = await import('./serial')
+const { PortNotFoundError } = await import('../gateway/serial-bridge')
 const { nodeRosterRequest } = await import('@shared/nodes')
 const { DEFAULT_CONFIG } = await import('@shared/config/ipc')
 
@@ -268,7 +268,7 @@ describe('HID reporting latency', () => {
     session.open()
     session.start()
 
-    const { HidReader } = (await import('./hid')) as unknown as {
+    const { HidReader } = (await import('../hid/hid-reader')) as unknown as {
       HidReader: { last?: { fire(b: boolean[]): void } }
     }
     const hid = HidReader.last!
@@ -299,7 +299,7 @@ describe('HID recovery after an unplug', () => {
     // interfaces are the same physical device and a disconnect does not reliably surface as an
     // error event on every platform. Serial recovery is proven; being told is not.
     const { session, serial } = bridgeSession()
-    const { HidReader } = (await import('./hid')) as unknown as {
+    const { HidReader } = (await import('../hid/hid-reader')) as unknown as {
       HidReader: { last?: { reopened: number } }
     }
     const hid = HidReader.last!
@@ -326,8 +326,8 @@ function launched(config: Parameters<InstanceType<typeof Session>['setConfig']>[
 }
 
 const HID = async () =>
-  ((await import('./hid')) as unknown as { HidReader: { last?: { stopped: boolean } } }).HidReader
-    .last!
+  ((await import('../hid/hid-reader')) as unknown as { HidReader: { last?: { stopped: boolean } } })
+    .HidReader.last!
 
 describe('device link is independent of the relay (#69)', () => {
   beforeEach(() => {

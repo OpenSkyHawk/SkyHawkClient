@@ -20,3 +20,18 @@ export function userDataOverride({ isPackaged, appPath, env, cwd }: UserDataInpu
   if (!isPackaged) return join(appPath, '.userdata')
   return null
 }
+
+/**
+ * The files main keeps under <userData>, handed to the topics that own them (they never ask
+ * electron, P6). Each path is resolved at use, exactly as `join(app.getPath('userData'), name)`
+ * was, so the override above still applies. Satisfies MappingPaths, CachePaths and SettingsPaths.
+ */
+export function storePaths(userData: () => string) {
+  return {
+    configFile: (): string => join(userData(), 'config.json'),
+    calibrationCacheFile: (): string => join(userData(), 'calibration-cache.json'),
+    nodeMappingFile: (): string => join(userData(), 'node-mapping.json')
+  }
+}
+
+export type StorePaths = ReturnType<typeof storePaths>

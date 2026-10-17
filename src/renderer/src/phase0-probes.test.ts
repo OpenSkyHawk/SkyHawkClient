@@ -2,7 +2,7 @@
 // each test asserts TODAY's behaviour for a conflict or fix-track row that the renderer helpers
 // decide, so the structure rewrite can show it changed nothing. A fix ticket that changes one of
 // these behaviours on purpose updates its probe. The main/shared half is
-// src/main/phase0-probes.test.ts.
+// src/main/nodes/phase0-probes.test.ts.
 import { describe, expect, it } from 'vitest'
 import type { NodeMappingFile } from '@shared/nodes/ipc'
 import { NODE_MSG, NodeRoster } from '@shared/nodes'

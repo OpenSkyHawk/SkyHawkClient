@@ -18,11 +18,11 @@ import { diffImport, parseConfigFile } from '@shared/config-file'
 import { CONFIG_FORMAT } from '@shared/config/ipc'
 import { buildNodeModel } from '@shared/node-rules'
 import { GatewayWatch, GATEWAY_NO_ANSWER_MS } from '@shared/gateway'
-import { DEFAULT_APP_SETTINGS } from '../test-fixtures/config'
+import { DEFAULT_APP_SETTINGS } from '../../test-fixtures/config'
 
 const disk: { file: NodeMappingFile } = { file: { version: 3, nodes: {} } }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
-vi.mock('./node-mapping', () => {
+vi.mock('./mapping-store', () => {
   class MappingSaveError extends Error {}
   return {
     MappingSaveError,

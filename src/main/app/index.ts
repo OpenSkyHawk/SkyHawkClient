@@ -9,13 +9,12 @@ import type { HidAvailability } from '@shared/hid/ipc'
 import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes/ipc'
 import { eventsToTsv } from '@shared/events'
 import { HID_CONTROLS, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
+import { ConfigTransfer, loadConfig, saveConfig } from '../config'
+import { listSerialPorts } from '../gateway'
+import { loadCalCache, saveCalCache } from '../hid/calibration'
 import { Session } from './session'
-import { loadConfig, saveConfig } from './settings'
-import { loadCalCache, saveCalCache } from './cal-cache'
-import { ConfigTransfer } from './config-transfer'
-import { debugLog, debugLogPath, setDebugEnabled } from './debug'
-import { listSerialPorts } from './serial'
-import { userDataOverride } from './user-data'
+import { debugLog, debugLogPath, setDebugEnabled } from './debug-log'
+import { storePaths, userDataOverride } from './user-data'
 
 // Before anything touches userData: dev worktrees get their own folder (#81).
 const userDataDir = userDataOverride({
@@ -28,6 +27,9 @@ if (userDataDir) {
   mkdirSync(userDataDir, { recursive: true }) // setPath throws on a missing folder
   app.setPath('userData', userDataDir)
 }
+
+/** The <userData> files, handed to the topics that own them (P6: only app asks electron). */
+const paths = storePaths(() => app.getPath('userData'))
 
 /** Report indices the firmware catalogues, derived from HIDControls.h. */
 function hidAvailability(): HidAvailability {
@@ -64,13 +66,13 @@ function emit<C extends PushChannel>(channel: C, payload: PushChannels[C]): void
   mainWindow?.webContents.send(channel, payload)
 }
 
-const session = new Session(emit)
+const session = new Session(emit, paths)
 
 /** Apply and persist a settings change: the one path for config:set and a config import. */
 function applyConfig(patch: Partial<AppConfig>): AppConfig {
   const config = session.setConfig(patch)
   setDebugEnabled(config.debugMode)
-  saveConfig(config)
+  saveConfig(config, paths)
   return config
 }
 
@@ -78,8 +80,8 @@ const transfer = new ConfigTransfer({
   getConfig: () => session.getConfig(),
   setConfig: (config) => applyConfig(config),
   nodes: session.link.nodes,
-  loadCalCache,
-  saveCalCache,
+  loadCalCache: () => loadCalCache(paths),
+  saveCalCache: (cache) => saveCalCache(cache, paths),
   backupDir: () => join(app.getPath('userData'), 'backups'),
   clientVersion: () => app.getVersion()
 })
@@ -276,7 +278,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  const cfg = session.setConfig(loadConfig()) // seed from persisted settings
+  const cfg = session.setConfig(loadConfig(paths)) // seed from persisted settings
   setDebugEnabled(cfg.debugMode)
   registerIpc()
   createWindow()

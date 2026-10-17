@@ -4,7 +4,7 @@
 // capture); recording can tap any live mode.
 //
 // The device link is not started or stopped here. It is up whenever the board is plugged in
-// (device-link.ts); a source mode only chooses where the stream comes from and whether it
+// (gateway/device-link.ts); a source mode only chooses where the stream comes from and whether it
 // reaches the device.
 import { DcsBiosProtocol } from '@shared/dcsbios'
 import {
@@ -24,12 +24,19 @@ import {
 import { DEFAULT_CONFIG, type AppConfig } from '@shared/config/ipc'
 import { isLinkUp, type DeviceState, type DeviceStatus } from '@shared/gateway/ipc'
 import type { PushChannel, PushChannels, RelayStatus } from '@shared/app/ipc'
-import { createTransport, type Transport } from './net'
-import { debugLog } from './debug'
-import { DeviceLink } from './device-link'
-import { Recorder, ReplaySource, type ReplayInfo } from './replay'
-import { Decoder } from './decode'
-import { Stats } from './stats'
+import { app } from 'electron'
+import {
+  createTransport,
+  Decoder,
+  Recorder,
+  ReplaySource,
+  Stats,
+  type ReplayInfo,
+  type Transport
+} from '../dcs'
+import { DeviceLink } from '../gateway'
+import { debugLog } from './debug-log'
+import { storePaths, type StorePaths } from './user-data'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
@@ -104,9 +111,16 @@ export class Session {
   private logTimer?: ReturnType<typeof setInterval>
   private timers: ReturnType<typeof setInterval>[] = []
 
-  constructor(private readonly emit: Emit) {
+  /**
+   * `paths`: the <userData> files, from app/index.ts. The default resolves the same paths the
+   * same way, for callers that build a Session on its own.
+   */
+  constructor(
+    private readonly emit: Emit,
+    paths: StorePaths = storePaths(() => app.getPath('userData'))
+  ) {
     this.parser = new DcsBiosProtocol((addr, val) => this.onWrite(addr, val))
-    this.link = new DeviceLink(emit)
+    this.link = new DeviceLink(emit, { paths, log: debugLog })
     this.link.onBytes((bytes) => this.fromDevice(bytes))
     this.link.onLine((l) => {
       if (l.kind !== 'command') return

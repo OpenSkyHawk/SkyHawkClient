@@ -1,5 +1,5 @@
 // Node data layer in main: taps `_NODE_TELEM`, owns the node mapping, and pushes the combined
-// node picture. Kept out of session.ts so the session only feeds it lines and ticks.
+// node picture. Kept out of app/session.ts so the session only feeds it lines and ticks.
 import type {
   AdoptSpec,
   MappedNode,
@@ -47,11 +47,27 @@ import {
   loadNodeMapping,
   MappingSaveError,
   saveNodeMapping,
-  type LoadedMapping
-} from './node-mapping'
-import { debugLog } from './debug'
+  type LoadedMapping,
+  type MappingPaths
+} from './mapping-store'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
+
+/** Port: the debug log, handed in by app (debug.log lives in app). */
+export type Log = (tag: string, data?: unknown) => void
+
+/** What NodeHub needs from app, through DeviceLink: where node-mapping.json lives, and the log. */
+export interface NodeHubDeps {
+  paths?: MappingPaths
+  log?: Log
+}
+
+/** Until a path is handed in: fails loudly on first use rather than guess one. */
+const NO_PATHS: MappingPaths = {
+  nodeMappingFile: () => {
+    throw new Error('NodeHub: no node-mapping.json path was handed in')
+  }
+}
 
 /** Shortest gap between `nodes:telemetry` pushes. ~3 PDUs send ~3 frames/s between them. */
 const NODE_TELEM_PUSH_MS = 1000
@@ -101,16 +117,22 @@ export class NodeHub {
   })
   private mappedFor?: NodeMappingFile
   private mappedCache = new Map<number, MappedNode>()
+  private readonly paths: MappingPaths
+  private readonly log: Log
 
   constructor(
     private readonly emit: Emit,
     private readonly roster: NodeRoster,
-    private readonly onEvents: (events: LogEventInput[]) => void = () => {}
-  ) {}
+    private readonly onEvents: (events: LogEventInput[]) => void = () => {},
+    deps: NodeHubDeps = {}
+  ) {
+    this.paths = deps.paths ?? NO_PATHS
+    this.log = deps.log ?? (() => {})
+  }
 
   /** Read lazily: the userData path is only safe to touch once the app is up. */
   private store(): LoadedMapping {
-    return (this.loaded ??= loadNodeMapping())
+    return (this.loaded ??= loadNodeMapping(this.paths))
   }
 
   private mapping(): NodeMappingFile {
@@ -336,7 +358,7 @@ export class NodeHub {
       this.save(next)
     } catch (err) {
       if (!(err instanceof MappingSaveError)) throw err
-      debugLog('nodes.mapping', err.message)
+      this.log('nodes.mapping', err.message)
       this.commit(next)
     }
   }
@@ -346,7 +368,7 @@ export class NodeHub {
     if (next === this.mapping()) return
     const { readOnly } = this.store()
     if (readOnly) throw new MappingSaveError(`Not saved: ${readOnly}`)
-    saveNodeMapping(next)
+    saveNodeMapping(next, this.paths)
     this.commit(next)
   }
 

@@ -27,7 +27,9 @@ import {
   type RawSample
 } from '@shared/calibration'
 import { CAL_PROTO } from '@shared/firmware'
-import { debugLog } from './debug'
+
+/** Port: the debug log, handed in by app (debug.log lives in app). */
+export type Log = (tag: string, data?: unknown) => void
 
 /** Past the device's worst-case sector erase (~28 ms measured) by a wide margin. */
 const REPLY_TIMEOUT_MS = 2000
@@ -91,7 +93,8 @@ export class CalLink {
 
   constructor(
     private readonly write: (data: Buffer) => void,
-    private readonly onRaw: (sample: RawSample) => void
+    private readonly onRaw: (sample: RawSample) => void,
+    private readonly log: Log = () => {}
   ) {}
 
   /**
@@ -132,7 +135,7 @@ export class CalLink {
     }
     const p = this.pending.get(f.seq)
     if (!p) {
-      debugLog('cal.unmatched', { type: f.type, seq: f.seq })
+      this.log('cal.unmatched', { type: f.type, seq: f.seq })
       return
     }
     clearTimeout(p.timer)
@@ -299,7 +302,7 @@ export class CalLink {
       this.expiry = undefined
       this.session = false
       this.streamAxis = CAL_AXIS_NONE
-      debugLog('cal.session', 'close unacknowledged; assuming device-side expiry, gate reopened')
+      this.log('cal.session', 'close unacknowledged; assuming device-side expiry, gate reopened')
     }, this.deviceTimeoutMs)
   }
 
@@ -308,7 +311,7 @@ export class CalLink {
     this.keepalive = setInterval(() => {
       // Any accepted frame refreshes the device's timer, so this only matters across stretches
       // where the user is reading rather than acting. A failure here is not worth surfacing.
-      this.request(CAL_TYPE.KEEPALIVE).catch((e: Error) => debugLog('cal.keepalive', e.message))
+      this.request(CAL_TYPE.KEEPALIVE).catch((e: Error) => this.log('cal.keepalive', e.message))
     }, KEEPALIVE_MS)
   }
 

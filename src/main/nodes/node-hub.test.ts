@@ -12,7 +12,7 @@ const disk: {
   saves: 0
 }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } })) // debug log path
-vi.mock('./node-mapping', () => {
+vi.mock('./mapping-store', () => {
   class MappingSaveError extends Error {}
   return {
     MappingSaveError,

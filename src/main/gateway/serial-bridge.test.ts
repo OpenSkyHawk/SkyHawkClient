@@ -66,9 +66,9 @@ class FakePort {
 }
 
 vi.mock('serialport', () => ({ SerialPort: FakePort }))
-vi.mock('./debug', () => ({ debugLog: () => {} }))
+vi.mock('../app/debug-log', () => ({ debugLog: () => {} }))
 
-const { SerialBridge } = await import('./serial')
+const { SerialBridge } = await import('./serial-bridge')
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
 

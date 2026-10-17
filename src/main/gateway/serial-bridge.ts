@@ -3,7 +3,9 @@
 // interface is a separate device the OS claims; it is handled in M5, not here.
 import { SerialPort } from 'serialport'
 import { USB_IDENTITY } from '@shared/firmware'
-import { debugLog } from './debug'
+
+/** Port: the debug log, handed in by app (debug.log lives in app). */
+export type Log = (tag: string, data?: unknown) => void
 
 export const SIMGATEWAY_VID = USB_IDENTITY.vid
 export const SIMGATEWAY_PID = USB_IDENTITY.pid
@@ -79,7 +81,10 @@ export class SerialBridge implements SerialLink {
   private openCb: (portPath: string) => void = () => {}
   private closeCb: () => void = () => {}
 
-  constructor(autoReconnect: boolean) {
+  constructor(
+    autoReconnect: boolean,
+    private readonly log: Log = () => {}
+  ) {
     this.autoReconnect = autoReconnect
   }
 
@@ -169,7 +174,7 @@ export class SerialBridge implements SerialLink {
     try {
       const path = await findSimGatewayPort()
       if (!path) {
-        if (!this.notFoundLogged) debugLog('serial.notFound', { vid: VID_HEX, pid: PID_HEX })
+        if (!this.notFoundLogged) this.log('serial.notFound', { vid: VID_HEX, pid: PID_HEX })
         this.notFoundLogged = true
         this.errorCb(new PortNotFoundError())
         this.retry()
@@ -177,7 +182,7 @@ export class SerialBridge implements SerialLink {
       }
       this.path = path
       this.notFoundLogged = false
-      debugLog('serial.open', { path })
+      this.log('serial.open', { path })
       // Awaited, not merely called: `close()` only *begins* the release, and on Windows the OS
       // holds the COM handle until it completes — so opening straight after is the process
       // blocking its own reopen. Measured against real hardware: 24 of 30 reopens failed with
@@ -190,11 +195,11 @@ export class SerialBridge implements SerialLink {
         this.dataCb(d)
       })
       port.on('error', (e: Error) => {
-        debugLog('serial.error', e.message)
+        this.log('serial.error', e.message)
         this.errorCb(e)
       })
       port.on('close', () => {
-        debugLog('serial.close', { path })
+        this.log('serial.close', { path })
         this.closeCb()
         this.retry()
       })
@@ -202,7 +207,7 @@ export class SerialBridge implements SerialLink {
       await new Promise<void>((resolve) => {
         port.open((err) => {
           if (err) {
-            debugLog('serial.openError', err.message)
+            this.log('serial.openError', err.message)
             this.errorCb(err)
             this.retry()
           } else {

@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { CTRL } from '@shared/app/ipc'
 import { eventText } from '@shared/format'
 import type { NodeMappingFile } from '@shared/nodes/ipc'
-import { statusLine } from '../test-fixtures/nodes'
-import { makeServices, type Services } from './test-harness/services'
+import { statusLine } from '../../test-fixtures/nodes'
+import { makeServices, type Services } from '../test-harness/services'
 
 const iso = (ms: number) => new Date(ms).toISOString()
 const lastSeen = (app: Services, id: number) =>

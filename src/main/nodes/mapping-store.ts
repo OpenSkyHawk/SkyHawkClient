@@ -1,11 +1,10 @@
 // Persist the node mapping to <userData>/node-mapping.json (shape and rules: shared/node-mapping.ts).
+// Where that file lives is handed in by app (MappingPaths): this module never asks electron.
 //
 // Unlike config.json, a lost write here is user work gone (names, adopted boards, hidden boards), so
 // failures are reported rather than swallowed, writes are atomic, and a file this build cannot
 // safely overwrite — unreadable, or from a newer client — is loaded read-only.
-import { app } from 'electron'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from '@shared/node-mapping'
 import type { NodeMappingFile } from '@shared/nodes/ipc'
 import { errorText, stamp } from '@shared/format'
@@ -19,14 +18,15 @@ export interface LoadedMapping {
   readOnly?: string
 }
 
-function mappingPath(): string {
-  return join(app.getPath('userData'), 'node-mapping.json')
+/** Port: where node-mapping.json lives. app provides it; resolved at each use, as before. */
+export interface MappingPaths {
+  nodeMappingFile(): string
 }
 
 const empty = (): NodeMappingFile => ({ ...EMPTY_MAPPING, nodes: {} })
 
-export function loadNodeMapping(): LoadedMapping {
-  const p = mappingPath()
+export function loadNodeMapping(paths: MappingPaths): LoadedMapping {
+  const p = paths.nodeMappingFile()
   let text: string
   try {
     if (!existsSync(p)) return { file: empty() }
@@ -64,8 +64,8 @@ export function loadNodeMapping(): LoadedMapping {
  * Write via a temp file and rename, so a crash mid-write leaves the old file intact rather than
  * half a JSON document. Throws MappingSaveError if the file did not reach the disk.
  */
-export function saveNodeMapping(file: NodeMappingFile): void {
-  const p = mappingPath()
+export function saveNodeMapping(file: NodeMappingFile, paths: MappingPaths): void {
+  const p = paths.nodeMappingFile()
   const tmp = `${p}.tmp`
   try {
     writeFileSync(tmp, JSON.stringify(file, null, 2))
