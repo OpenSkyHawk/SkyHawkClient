@@ -66,7 +66,11 @@ const IPC_ORDER = [
   'node-mapping:unhide',
   // A form's settings change and the relay's on/off (R3.3), after every channel here before them.
   'config:edit',
-  'relay:toggle'
+  'relay:toggle',
+  // The automatic backups (#136), after every channel that was here before them.
+  'config:backups-get',
+  'config:backup-restore',
+  'config:backups-reveal'
 ] as const satisfies readonly CtrlChannel[]
 
 /** IPC_ORDER's type when it lists every channel; otherwise the channels it leaves out. */

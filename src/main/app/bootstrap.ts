@@ -3,7 +3,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { ConfigTransfer, jsonFile } from '../config'
+import { BackupFolder, ConfigTransfer, jsonFile } from '../config'
 import { loadCalCache, saveCalCache } from '../hid/calibration'
 import { AppServices } from './app-services'
 import { dialogs } from './dialogs'
@@ -48,7 +48,7 @@ export function start(): void {
       calibration: cacheFile,
       config: jsonFile(() => paths.configFile())
     },
-    backupDir: () => join(app.getPath('userData'), 'backups'),
+    backups: new BackupFolder({ dir: () => join(app.getPath('userData'), 'backups'), emit }),
     clientVersion: () => app.getVersion()
   })
 

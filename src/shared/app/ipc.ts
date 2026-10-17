@@ -8,6 +8,7 @@ import {
   CONFIG_CTRL,
   CONFIG_PUSH,
   type AppConfig,
+  type BackupList,
   type ConfigEdit,
   type ConfigPushChannels,
   type ConfigView,
@@ -86,7 +87,8 @@ export interface DebugDumpResult {
 // device:status, nodes:*, serial:traffic. On link down they stop and the renderer keeps
 // the last state, dimmed while device:status says the link is down. hid:report is neither: the joystick is read for as long
 // as the app runs, serial port open or not; nor is cal:workflow, which follows the link's state
-// and the dialog's actions, nor relay:facts and config:changed, which follow what they are about.
+// and the dialog's actions, nor relay:facts, config:changed and config:backups, which follow what
+// they are about.
 // **Relay-scoped** pushes flow only while
 // relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries
 // both (panel commands are logged while stopped too), and so does events:batch.
@@ -221,6 +223,15 @@ export interface SkyhawkApi {
     sections: SectionId[],
     backup: boolean
   ): Promise<ConfigImportApplyResult>
+  /** The automatic backups, newest first (main pushes `config:backups` when they change). */
+  getConfigBackups(): Promise<BackupList>
+  /**
+   * Read one automatic backup (its name in the list) and preview it as an import: the same review
+   * and apply, the answer's `preview.backup` saying it is a restore.
+   */
+  openConfigBackup(file: string): Promise<ConfigImportOpen>
+  /** Open the backups folder in the file manager (Finder, Explorer, …). */
+  revealConfigBackups(): Promise<void>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
   /**

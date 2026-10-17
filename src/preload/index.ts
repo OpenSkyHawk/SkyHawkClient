@@ -13,6 +13,7 @@ import {
 } from '@shared/app'
 import type {
   AppConfig,
+  BackupList,
   ConfigExportResult,
   ConfigImportApplyResult,
   ConfigImportOpen,
@@ -62,6 +63,10 @@ const api: SkyhawkApi = {
       sections,
       backup
     ) as Promise<ConfigImportApplyResult>,
+  getConfigBackups: () => ipcRenderer.invoke(CTRL.configBackupsGet) as Promise<BackupList>,
+  openConfigBackup: (file) =>
+    ipcRenderer.invoke(CTRL.configBackupRestore, file) as Promise<ConfigImportOpen>,
+  revealConfigBackups: () => ipcRenderer.invoke(CTRL.configBackupsReveal) as Promise<void>,
   startRelay: () => ipcRenderer.invoke(CTRL.relayStart) as Promise<RelayResult>,
   stopRelay: () => ipcRenderer.invoke(CTRL.relayStop) as Promise<RelayResult>,
   toggleRelay: (relaying: boolean) =>

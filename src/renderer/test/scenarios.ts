@@ -203,6 +203,27 @@ export function importPreview(
   )
 }
 
+/**
+ * The preview main answers `openConfigBackup` with for the automatic backup `file` (its text, saved
+ * at `savedAt`) against `current`: the import review, as a restore (ConfigTransfer.previewBackup).
+ */
+export function restorePreview(
+  text: string,
+  file: string,
+  savedAt: string,
+  current: ConfigSnapshot = setup()
+): ImportPreview {
+  const parsed = parseConfigFile(text)
+  if (!parsed.ok) throw new Error(`restorePreview: main would refuse this file: ${parsed.error}`)
+  return buildImportPreview(
+    parsed.config,
+    { defaults: new Map(), current, online: [] },
+    'restore-token-1',
+    file,
+    { savedAt }
+  )
+}
+
 // ── node status rows, as main enriches them (`nodes:model` entry `status`) ─────────────────
 
 /**

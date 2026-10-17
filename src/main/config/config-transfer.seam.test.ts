@@ -11,6 +11,7 @@ import { CONFIG_FORMAT, DEFAULT_CONFIG, type AppConfig } from '@shared/config'
 import { registryDefaults } from '../nodes/registry'
 import type { NodeMappingFile } from '@shared/nodes'
 import type { CalCache } from '@shared/hid/calibration'
+import { BackupFolder } from './backup-folder'
 import { ConfigTransfer } from './config-transfer'
 
 const axis = (min: number, centre: number, max: number) => ({
@@ -50,7 +51,7 @@ function transfer() {
       return undefined
     },
     files: { mapping: noCopy, calibration: noCopy, config: noCopy },
-    backupDir: () => join(dir, 'backups'),
+    backups: new BackupFolder({ dir: () => join(dir, 'backups') }),
     clientVersion: () => '0.2.0',
     now: () => new Date('2026-10-16T10:00:00Z')
   })

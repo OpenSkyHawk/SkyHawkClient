@@ -4,11 +4,17 @@
 //
 // Calibration is written to the client's copy only (calibration-cache.json). The device is never
 // touched here: if it has lost calibration, the HID tab's Review & restore offer picks up the copy.
+//
+// Automatic backups (#136): an import or a restore with the box ticked first saves the current
+// setup to the backups folder (BackupFolder), recording what it was saved before. A restore is an
+// import of one of those backups: the same review, the same apply.
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { writeFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import type {
   AppConfig,
+  BackupBefore,
+  BackupList,
   ConfigExportResult,
   ConfigImportApplyResult,
   ConfigImportOpen,
@@ -27,9 +33,10 @@ import {
   type ParsedConfig
 } from './config-file'
 import type { CalCache } from '@shared/hid/calibration'
-import { errorText, fileErrorText, stamp } from '@shared/format'
+import { fileErrorText } from '@shared/format'
 import { mergeCalibration } from '../hid/calibration'
 import { importMapping } from '../nodes'
+import type { BackupFolder } from './backup-folder'
 import type { SettingsReplace } from './settings-service'
 import type { JsonFile, JsonSnapshot, JsonWriteError } from './json-store'
 
@@ -64,15 +71,18 @@ export interface ConfigTransferDeps {
    * back exactly by a rollback (the JSON store's snapshot / restore).
    */
   files: { mapping: FileCopy; calibration: FileCopy; config: FileCopy }
-  /** Directory backups go to (<userData>/backups). */
-  backupDir(): string
+  /** The automatic backups, in <userData>/backups. */
+  backups: BackupFolder
   clientVersion(): string
   now?(): Date
 }
 
 export class ConfigTransfer {
-  /** The file last previewed, until it is applied or another is opened. */
-  private pending?: { token: string; config: ParsedConfig }
+  /**
+   * The file last previewed, until it is applied or another is opened, and what a backup taken
+   * before applying it is saved before: the import of that file, or the restore of that backup.
+   */
+  private pending?: { token: string; config: ParsedConfig; before: BackupBefore }
 
   constructor(private readonly deps: ConfigTransferDeps) {}
 
@@ -90,12 +100,13 @@ export class ConfigTransfer {
     }
   }
 
-  /** The export file's text. */
-  exportText(): string {
+  /** The export file's text; a backup's also records what it is saved before. */
+  exportText(backupBefore?: BackupBefore): string {
     const file = buildConfigFile(
       this.snapshot(),
       this.now().toISOString(),
-      this.deps.clientVersion()
+      this.deps.clientVersion(),
+      backupBefore
     )
     return JSON.stringify(file, null, 2)
   }
@@ -123,6 +134,46 @@ export class ConfigTransfer {
 
   /** Validate a file's text and preview it against the current setup. */
   preview(text: string, path: string): ConfigImportOpen {
+    const fileName = basename(path)
+    return this.review(text, fileName, { kind: 'import', fileName })
+  }
+
+  /** The automatic backups, newest first (`config:backups-get`). */
+  backupList(): BackupList {
+    return this.deps.backups.list()
+  }
+
+  /** The backups folder, created if need be, for Show in Finder (`config:backups-reveal`). */
+  backupFolder(): string {
+    return this.deps.backups.ensure()
+  }
+
+  /**
+   * Read one automatic backup and preview it as an import (`config:backup-restore`): the same
+   * review, saying it is a restore of the backup saved then. A backup taken before applying it is
+   * saved before restoring this one.
+   */
+  previewBackup(file: unknown): ConfigImportOpen {
+    const read = this.deps.backups.read(file)
+    if (!read.ok) {
+      this.pending = undefined
+      return { status: 'error', error: read.error }
+    }
+    const { savedAt } = read
+    return this.review(read.text, read.file, { kind: 'restore', savedAt }, { savedAt })
+  }
+
+  /**
+   * Validate a file's text, hold it until applied, and review it against the current setup.
+   * `before`: what a backup taken before applying it is saved before. `restoreOf`: the file is
+   * the automatic backup saved then.
+   */
+  private review(
+    text: string,
+    fileName: string,
+    before: BackupBefore,
+    restoreOf?: { savedAt: string }
+  ): ConfigImportOpen {
     const parsed = parseConfigFile(text)
     if (!parsed.ok) {
       this.pending = undefined
@@ -130,19 +181,22 @@ export class ConfigTransfer {
     }
     const { config } = parsed
     const token = randomUUID()
-    this.pending = { token, config }
+    this.pending = { token, config, before }
     const against = {
       defaults: this.deps.nodes.registryDefaults(),
       current: this.snapshot(),
       online: this.deps.nodes.onlineIds()
     }
-    return { status: 'ready', preview: buildImportPreview(config, against, token, basename(path)) }
+    return {
+      status: 'ready',
+      preview: buildImportPreview(config, against, token, fileName, restoreOf)
+    }
   }
 
   /**
    * Apply the picked sections as one transaction (C2/M10). Every picked target is staged first —
-   * its new content worked out, nothing written. The backup, when asked for, is written next and
-   * its failure stops everything. Then the targets are committed in turn: the node mapping first
+   * its new content worked out, nothing written. The backup, when asked for, is written next (and
+   * the oldest beyond the newest five deleted) and its failure stops everything. Then the targets are committed in turn: the node mapping first
    * (the one store that can refuse a save: read-only, or written by a newer client), then the
    * calibration copy, then the settings (config.json; live only once it is on disk). If one fails,
    * the targets already written are put back as they were before the import, and the answer says
@@ -176,12 +230,12 @@ export class ConfigTransfer {
     let backupPath: string | undefined
     if (backup) {
       try {
-        const dir = this.deps.backupDir()
-        mkdirSync(dir, { recursive: true })
-        backupPath = join(dir, `skyhawk-config-${stamp(this.now())}.json`)
-        writeFileSync(backupPath, this.exportText())
+        backupPath = this.deps.backups.save(this.exportText(pending.before), this.now())
       } catch (err) {
-        return { ok: false, error: `Backup failed, nothing was changed: ${errorText(err)}` }
+        return {
+          ok: false,
+          error: `Nothing was changed — the backup could not be saved (${fileErrorText(err)}).`
+        }
       }
     }
 

@@ -26,9 +26,9 @@ describe('import texts', () => {
     expect(importRowKey({ k: 'Axis 2', axis: 2, board: 'A7' }, labels, false)).toBe('Throttle')
     expect(importRowKey({ k: 'Axis 2', axis: 2, board: 'A7' }, labels, true)).toBe('Throttle · A7')
     expect(importRowKey({ k: 'Axis 9', axis: 9 }, labels, false)).toBe('Axis 9')
-    expect(importDoneText(1)).toBe('Applied 1 section')
-    expect(importDoneText(3, '/u/backups/skyhawk-config-x.json')).toBe(
-      'Applied 3 sections · backup saved as skyhawk-config-x.json'
+    expect(importDoneText(1, false)).toBe('Applied 1 section')
+    expect(importDoneText(3, true)).toBe(
+      'Applied 3 sections · backup saved, listed under Automatic backups'
     )
   })
 })

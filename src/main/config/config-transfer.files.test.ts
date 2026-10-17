@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CONFIG_FORMAT, DEFAULT_CONFIG, type AppConfig } from '@shared/config'
 import type { NodeMappingFile } from '@shared/nodes'
 import type { CalCache } from '@shared/hid/calibration'
+import { BackupFolder } from './backup-folder'
 import { jsonFile } from './json-store'
 import { SettingsService } from './settings-service'
 
@@ -98,7 +99,7 @@ function launch() {
       calibration: cacheFile,
       config: jsonFile(() => f.config)
     },
-    backupDir: () => dirs.backups,
+    backups: new BackupFolder({ dir: () => dirs.backups }),
     clientVersion: () => '0.2.0',
     now: () => new Date('2026-10-16T10:00:00Z')
   })

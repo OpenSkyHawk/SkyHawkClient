@@ -1,11 +1,26 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG, type AppConfig, type ImportPreview } from '@shared/config'
+import {
+  DEFAULT_CONFIG,
+  type AppConfig,
+  type BackupList,
+  type ConfigFile,
+  type ImportPreview
+} from '@shared/config'
 import { registryDefaults } from '../nodes/registry'
 import type { NodeMappingFile } from '@shared/nodes'
 import type { CalCache } from '@shared/hid/calibration'
+import { BackupFolder } from './backup-folder'
 import { ConfigTransfer, type ConfigTransferDeps } from './config-transfer'
 
 const defaults = registryDefaults({
@@ -101,7 +116,7 @@ function transfer(over: Partial<ConfigTransferDeps> = {}) {
       calibration: fileCopy('calibration', 'cache'),
       config: fileCopy('config', 'config')
     },
-    backupDir: () => join(dir, 'backups'),
+    backups: new BackupFolder({ dir: () => join(dir, 'backups') }),
     clientVersion: () => '0.2.0',
     now: () => new Date('2026-10-16T10:00:00Z'),
     ...over
@@ -371,13 +386,150 @@ describe('ConfigTransfer: one import transaction (C2/M10)', () => {
   })
 
   it('a backup that fails stops the import before anything is written', () => {
-    const t = transfer({ backupDir: () => join(dir, 'file') })
+    const t = transfer({ backups: new BackupFolder({ dir: () => join(dir, 'file') }) })
     writeFileSync(join(dir, 'file'), 'not a folder')
     const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
     expect(t.apply(p.token, ALL, true)).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/^Backup failed, nothing was changed: /)
+      error: expect.stringMatching(/^Nothing was changed — the backup could not be saved \(.+\)\.$/)
     })
     expect(state.calls).toEqual([])
+  })
+})
+
+describe('ConfigTransfer: automatic backups and restore (#136)', () => {
+  const BACKUP = 'skyhawk-config-2026-10-16T10-00-00-000Z.json'
+  let pushes: BackupList[]
+  let clock: Date
+  /** ConfigTransfer over a backups folder that records its pushes, on a clock the test moves. */
+  const withBackups = () =>
+    transfer({
+      backups: new BackupFolder({
+        dir: () => join(dir, 'backups'),
+        emit: (_c, list) => void pushes.push(list),
+        platform: 'darwin'
+      }),
+      now: () => clock
+    })
+  const backupFile = (name: string) =>
+    JSON.parse(readFileSync(join(dir, 'backups', name), 'utf8')) as ConfigFile
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'skyhawk-transfer-'))
+    state = {
+      config: DEFAULT_CONFIG,
+      mapping: { version: 3, nodes: {} },
+      cache: { version: 1, boards: {} },
+      fail: {},
+      writes: { mapping: 0, calibration: 0, config: 0 },
+      calls: []
+    }
+    pushes = []
+    clock = new Date('2026-10-16T10:00:00Z')
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('a backup records the file it was taken before, and the list says so', () => {
+    const t = withBackups()
+    const p = ready(t.preview(otherSetupFile(), '/Users/me/cockpit-left-only.json'))
+    expect(t.apply(p.token, ['app'], true)).toMatchObject({ ok: true })
+    expect(backupFile(BACKUP).backup).toEqual({
+      before: { kind: 'import', fileName: 'cockpit-left-only.json' }
+    })
+    const listed = {
+      file: BACKUP,
+      savedAt: '2026-10-16T10:00:00.000Z',
+      before: { kind: 'import', fileName: 'cockpit-left-only.json' },
+      sections: ['App settings', 'Node mapping', 'Power supply', 'Axis calibration']
+    }
+    expect(pushes).toEqual([{ backups: [listed], keep: 5, fileManager: 'finder' }])
+    expect(t.backupList().backups).toEqual([listed])
+  })
+
+  it('no backup asked for: nothing written, nothing pushed', () => {
+    const t = withBackups()
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    expect(t.apply(p.token, ['app'], false)).toMatchObject({ ok: true })
+    expect(existsSync(join(dir, 'backups'))).toBe(false)
+    expect(pushes).toEqual([])
+  })
+
+  it('Restore… previews the backup as an import, titled from the backup', () => {
+    const t = withBackups()
+    const p = ready(t.preview(otherSetupFile(), '/x/cockpit.json'))
+    t.apply(p.token, ['app', 'powerSupply'], true) // the backup holds the setup before this
+
+    const r = ready(t.previewBackup(BACKUP))
+    expect(r).toMatchObject({
+      fileName: BACKUP,
+      backup: {
+        savedAt: '2026-10-16T10:00:00.000Z',
+        before: { kind: 'import', fileName: 'cockpit.json' }
+      },
+      identical: false
+    })
+    // What restoring it would change: the import, undone.
+    expect(r.sections.find((s) => s.id === 'app')!.rows).toEqual([
+      { k: 'DCS host', from: '10.0.0.2', to: '127.0.0.1' }
+    ])
+    expect(ready(t.preview(otherSetupFile(), '/x/a.json'))).not.toHaveProperty('backup')
+  })
+
+  it('an old backup without the record still previews, with nothing said about it', () => {
+    const t = withBackups()
+    mkdirSync(join(dir, 'backups'))
+    writeFileSync(join(dir, 'backups', BACKUP), otherSetupFile())
+    expect(t.backupList().backups[0]).not.toHaveProperty('before')
+    expect(ready(t.previewBackup(BACKUP)).backup).toEqual({ savedAt: '2026-10-16T10:00:00.000Z' })
+  })
+
+  it('a restore with the box ticked saves the current setup first, as before restoring it', () => {
+    const t = withBackups()
+    t.apply(ready(t.preview(otherSetupFile(), '/x/cockpit.json')).token, ['app'], true)
+    expect(state.config.host).toBe('10.0.0.2')
+
+    clock = new Date('2026-10-17T09:49:00Z')
+    const r = t.apply(ready(t.previewBackup(BACKUP)).token, ['app'], true)
+    expect(r).toMatchObject({ ok: true, applied: ['app'] })
+    expect(state.config.host).toBe('127.0.0.1') // restored
+    const second = 'skyhawk-config-2026-10-17T09-49-00-000Z.json'
+    expect(r.ok && r.backupPath).toBe(join(dir, 'backups', second))
+    // The new backup holds the setup the restore replaced, and says what it was saved before.
+    expect(backupFile(second).sections.app!.host).toBe('10.0.0.2')
+    expect(backupFile(second).backup).toEqual({
+      before: { kind: 'restore', savedAt: '2026-10-16T10:00:00.000Z' }
+    })
+    expect(pushes.at(-1)!.backups.map((b) => [b.file, b.before])).toEqual([
+      [second, { kind: 'restore', savedAt: '2026-10-16T10:00:00.000Z' }],
+      [BACKUP, { kind: 'import', fileName: 'cockpit.json' }]
+    ])
+  })
+
+  it('a restore with the box unticked writes no backup', () => {
+    const t = withBackups()
+    t.apply(ready(t.preview(otherSetupFile(), '/x/cockpit.json')).token, ['app'], true)
+    clock = new Date('2026-10-17T09:49:00Z')
+    expect(t.apply(ready(t.previewBackup(BACKUP)).token, ['app'], false)).toMatchObject({
+      ok: true
+    })
+    expect(readdirSync(join(dir, 'backups'))).toEqual([BACKUP])
+  })
+
+  it('a backup that is not one of ours, or is gone, is refused and leaves nothing to apply', () => {
+    const t = withBackups()
+    expect(t.previewBackup('../config.json')).toEqual({
+      status: 'error',
+      error: 'Invalid backup request'
+    })
+    expect(t.previewBackup(BACKUP)).toEqual({
+      status: 'error',
+      error: 'This backup is no longer in the backups folder.'
+    })
+  })
+
+  it('the backups folder is created for Show in Finder', () => {
+    const t = withBackups()
+    expect(t.backupFolder()).toBe(join(dir, 'backups'))
+    expect(existsSync(join(dir, 'backups'))).toBe(true)
   })
 })

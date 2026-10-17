@@ -56,7 +56,14 @@
 // `SkyhawkApi`, so an IPC change breaks the mock at typecheck, not at run time.
 import { act } from '@testing-library/react'
 import { vi, type Mock } from 'vitest'
-import { DEFAULT_CONFIG, type AppConfig, type ConfigChanged, type ConfigEdit } from '@shared/config'
+import {
+  BACKUP_LIST_DEFAULT,
+  DEFAULT_CONFIG,
+  type AppConfig,
+  type BackupList,
+  type ConfigChanged,
+  type ConfigEdit
+} from '@shared/config'
 import type {
   AircraftStatus,
   RecordState,
@@ -118,6 +125,8 @@ export interface Scenario {
   telemetry?: NodeTelemSnapshot[]
   /** Saved settings, over the defaults (`getConfig`; main has no config push). */
   config?: Partial<AppConfig>
+  /** The automatic backups (`config:backups`; `getConfigBackups` answers it too). */
+  backups?: BackupList
   /** The session's event log rows, oldest first (`events:batch`). */
   events?: LogEvent[]
   /** Calibration the device confirmed (GET_CAL's answer, handed to the workflow; not pushed). */
@@ -208,6 +217,7 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel | null } = {
   gauges: 'telemetry:tick',
   stats: 'stats:tick',
   model: 'nodes:model',
+  backups: 'config:backups',
   telemetry: null,
   events: 'events:batch',
   cal: null,
@@ -255,6 +265,7 @@ export function installSkyhawkMock(): SkyhawkMock {
 
     // ── pulls: answered from the scenario ──
     getConfig: vi.fn(() => resolve({ config: config(), psu: resolvePsu(config().psu) })),
+    getConfigBackups: vi.fn(() => resolve(state.backups ?? BACKUP_LIST_DEFAULT)),
     getStatus: vi.fn(() => {
       host.rendererLoaded() // main's relay:status handler: a renderer (re)loaded
       // …and the Cockpit snapshot starts over from what main holds. Main's pushes go out as one
@@ -294,6 +305,14 @@ export function installSkyhawkMock(): SkyhawkMock {
     editConfig: vi.fn((edit: ConfigEdit) => editSettings(edit)),
     exportConfig: vi.fn(() => resolve({ outcome: 'canceled' as const })),
     openConfigImport: vi.fn(() => resolve({ status: 'canceled' as const })),
+    // A test answers it with the backup's review (scenarios.ts restorePreview).
+    openConfigBackup: vi.fn((_file: string) =>
+      resolve({
+        status: 'error' as const,
+        error: 'This backup is no longer in the backups folder.'
+      })
+    ),
+    revealConfigBackups: vi.fn(() => resolve(undefined)),
     // An applied import: main's settings are what it answered, and its forms start over from them.
     applyConfigImport: after(
       vi.fn<SkyhawkApi['applyConfigImport']>(() => resolve({ ok: false as const, error: 'mock' })),
