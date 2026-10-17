@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { clientErrorEvent, EventLog, EVENTS_TSV_HEADER, eventsToTsv } from './event-log'
+import { EventJournal } from './event-journal'
 import { relayEvents } from '../dcs/relay-events'
 import { deviceEvent } from '../gateway/link-events'
 import { NodeEventTracker, type NodeLookup } from '../nodes/node-events'
@@ -257,6 +258,39 @@ describe('client events', () => {
     expect(eventText(clientErrorEvent('DCS', 'connect ECONNREFUSED', 0))).toBe(
       'link error · connect ECONNREFUSED'
     )
+  })
+
+  it('a warn row (recovered, nothing lost) is the same row apart from its severity', () => {
+    expect(clientErrorEvent('config.json', 'loaded the backup', 5, 'warn')).toEqual({
+      ...clientErrorEvent('config.json', 'loaded the backup', 5),
+      severity: 'warn'
+    })
+  })
+
+  it('EventJournal: warn and error rows share one dedupe per tag', () => {
+    const logged: string[] = []
+    const j = new EventJournal(
+      () => {},
+      (tag) => logged.push(tag)
+    )
+    j.warn('config.json', 'a')
+    j.warn('config.json', 'a') // a repeat: no row
+    j.error('config.json', 'a') // the same message at error: still a repeat
+    j.error('config.json', 'b')
+    j.forget('config.json')
+    j.warn('config.json', 'b') // forgotten: news again
+    expect(j.snapshot().map((e) => `${e.severity}:${e.detail}`)).toEqual([
+      'warn:a',
+      'error:b',
+      'warn:b'
+    ])
+    expect(logged).toEqual([
+      'warn.config.json',
+      'warn.config.json',
+      'error.config.json',
+      'error.config.json',
+      'warn.config.json'
+    ])
   })
 
   it('device: one row per reported state; scanning and resting no-device are skipped', () => {

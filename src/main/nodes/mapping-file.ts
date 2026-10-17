@@ -1,11 +1,12 @@
 // The node-mapping.json format on disk (shape and rules: mapping-rules.ts): what a read means and
 // how a failed write is reported. The file itself is reached through MappingFileIO, which app wires
-// to the JSON store under node-mapping.json's policy (atomic write, failures reported, a damaged
-// file moved aside).
+// to the JSON store (fsync before rename, `.bak` kept, a bad file falls back to its backup and is
+// moved aside) — the same mechanics as every other file under <userData>.
 //
-// Unlike config.json, a lost write here is user work gone (names, adopted boards, hidden boards), so
-// failures are reported rather than swallowed, writes are atomic, and a file this build cannot
-// safely overwrite — unreadable, or from a newer client — is loaded read-only.
+// What differs here is what a problem means. A lost write is user work gone (names, adopted
+// boards, hidden boards), so a failed write is reported to the user (MappingSaveError), and a file
+// this build cannot safely overwrite — unreadable, stuck in place, or from a newer client — is
+// loaded read-only. A newer client's file is valid, not damaged: it is never replaced by `.bak`.
 import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from './mapping-rules'
 import type { NodeMappingFile } from '@shared/nodes'
 import { errorText } from '@shared/format'
@@ -17,56 +18,110 @@ export interface LoadedMapping {
   file: NodeMappingFile
   /** Set when saving must not overwrite what is on disk; the reason is shown on a refused save. */
   readOnly?: string
+  /**
+   * Read-only because the file could not be loaded (not because a newer client wrote it): the next
+   * access tries the load again (M11).
+   */
+  retry?: true
+  /**
+   * What went wrong loading the file, and what was done about it: an event row. `warn` when the
+   * backup loaded and nothing was lost; `error` when the cockpit is empty or stuck read-only.
+   */
+  notice?: MappingNotice
 }
+
+export interface MappingNotice {
+  severity: 'warn' | 'error'
+  text: string
+}
+
+type Damage = { kind: 'unreadable'; error: unknown } | { kind: 'damaged' }
+type Aside = { kind: 'moved'; to: string } | { kind: 'stuck'; error: unknown } | { kind: 'left' }
 
 /**
  * Port: node-mapping.json. `read` resolves the path (a throw there propagates) and reports what it
- * found, a damaged file already moved aside or stuck in place. `write` returns `{ error }` when the
- * file did not reach the disk (a path that cannot be resolved throws instead).
+ * found: the file, its backup loaded in its place, or neither, with a `note` saying what went
+ * wrong and where the bad file is now. `write` returns `{ error }` when the file did not reach
+ * the disk (a path that cannot be resolved throws instead).
  */
 export interface MappingFileIO {
   read():
     | { kind: 'missing' }
     | { kind: 'read'; data: unknown }
-    | { kind: 'unreadable'; error: unknown }
-    | { kind: 'movedAside'; to: string }
-    | { kind: 'stuck'; error: unknown }
+    | { kind: 'fallback'; data: unknown; damage: Damage; aside: Aside; note: string }
+    | { kind: 'failed'; damage: Damage; aside: Aside; note: string }
   write(file: NodeMappingFile): { error: unknown } | undefined
 }
 
 const empty = (): NodeMappingFile => ({ ...EMPTY_MAPPING, nodes: {} })
 
-export function loadNodeMapping(io: MappingFileIO): LoadedMapping {
-  const r = io.read()
-  switch (r.kind) {
-    case 'missing':
-      return { file: empty() }
-    case 'unreadable':
-      return {
-        file: empty(),
-        readOnly: `node-mapping.json could not be read: ${errorText(r.error)}`
-      }
-    // Moved aside, so the next save cannot destroy whatever the damaged file still holds.
-    case 'movedAside':
-      return { file: empty() }
-    case 'stuck':
-      return {
-        file: empty(),
-        readOnly: `node-mapping.json is damaged and could not be moved aside: ${errorText(r.error)}`
-      }
-  }
+const UNREADABLE = (error: unknown) => `node-mapping.json could not be read: ${errorText(error)}`
+const STUCK = (error: unknown) =>
+  `node-mapping.json is damaged and could not be moved aside: ${errorText(error)}`
+const NOT_SAVED = ' Cockpit changes are not saved until it can be loaded.'
 
-  const file = sanitizeNodeMapping(r.data)
-  const version = (r.data as { version?: unknown } | null)?.version
+/** A file that parsed: as written, or read-only when a newer client wrote it. */
+function fromData(data: unknown): LoadedMapping {
+  const file = sanitizeNodeMapping(data)
+  const version = (data as { version?: unknown } | null)?.version
   if (typeof version === 'number' && version > NODE_MAPPING_VERSION) {
     return { file, readOnly: 'node-mapping.json was written by a newer client' }
   }
   return { file }
 }
 
+/** Why a bad file still on disk keeps the mapping read-only: the next save would overwrite it. */
+function stuckReason(damage: Damage, aside: Aside): string | undefined {
+  if (aside.kind === 'left')
+    return damage.kind === 'unreadable' ? UNREADABLE(damage.error) : undefined
+  if (aside.kind === 'stuck') {
+    return damage.kind === 'unreadable' ? UNREADABLE(damage.error) : STUCK(aside.error)
+  }
+  return undefined
+}
+
+export function loadNodeMapping(io: MappingFileIO): LoadedMapping {
+  const r = io.read()
+  switch (r.kind) {
+    case 'missing':
+      return { file: empty() }
+    case 'read':
+      return fromData(r.data)
+    case 'fallback': {
+      // The backup is loaded. If the bad file could not be moved aside, a save would overwrite it.
+      const readOnly = stuckReason(r.damage, r.aside)
+      if (readOnly) {
+        return {
+          file: sanitizeNodeMapping(r.data),
+          readOnly,
+          retry: true,
+          notice: { severity: 'error', text: r.note + NOT_SAVED }
+        }
+      }
+      return { ...fromData(r.data), notice: { severity: 'warn', text: r.note } }
+    }
+    case 'failed': {
+      const readOnly = stuckReason(r.damage, r.aside)
+      if (readOnly) {
+        return {
+          file: empty(),
+          readOnly,
+          retry: true,
+          notice: { severity: 'error', text: r.note + NOT_SAVED }
+        }
+      }
+      // Moved aside, so the next save cannot destroy whatever the damaged file still holds.
+      return {
+        file: empty(),
+        notice: { severity: 'error', text: `${r.note} Starting with an empty cockpit.` }
+      }
+    }
+  }
+}
+
 /**
- * Write the file (atomically, by its policy: a crash mid-write leaves the old file intact rather
- * than half a JSON document). Throws MappingSaveError if the file did not reach the disk.
+ * Write the file (durably, by the JSON store's rules: a crash mid-write leaves the old file intact
+ * rather than half a JSON document). Throws MappingSaveError if the file did not reach the disk.
  */
 export function saveNodeMapping(file: NodeMappingFile, io: MappingFileIO): void {
   const failed = io.write(file)

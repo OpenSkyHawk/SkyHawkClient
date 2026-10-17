@@ -10,6 +10,7 @@
 import type {
   CachedAxis,
   CachedBoard,
+  CalCache,
   CalCacheEntry,
   CalCommitAxis,
   CalHello,
@@ -22,7 +23,7 @@ import type { Emit } from '@shared/app'
 import type { DeviceState } from '@shared/gateway'
 import type { CalFrameFilter, LinkRider, LinkTimer } from '../../gateway'
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
-import { loadCalCache, saveCalCache, type CacheFileIO } from './cache-store'
+import { loadCalCache, saveCalCache, type CacheFileEvents, type CacheFileIO } from './cache-store'
 import { boardFor, dropAxis, regressedAxes, storeAxes } from './cache-rules'
 import { CAL_AXIS_NONE, nackReasonName } from './codec'
 import { CalibrationWorkflowHost } from './workflow-host'
@@ -39,6 +40,8 @@ export interface HidCalibrationDeps {
   /** USB serial of the attached gateway, the key of the restore cache (#46). */
   serialNumber: () => Promise<string | undefined>
   cacheFile: CacheFileIO
+  /** Where the cache file's problems are reported (the event log); none, for a quiet owner. */
+  cacheEvents?: CacheFileEvents
   log: Log
 }
 
@@ -242,6 +245,14 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
     return r
   }
 
+  private loadCache(): CalCache {
+    return loadCalCache(this.deps.cacheFile, this.deps.cacheEvents)
+  }
+
+  private saveCache(cache: CalCache): void {
+    saveCalCache(cache, this.deps.cacheFile, this.deps.cacheEvents)
+  }
+
   /**
    * What the cache holds for the attached board, and which of its axes the device has lost.
    *
@@ -249,7 +260,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
    * renderer never sees a board identity it could accidentally key on.
    */
   calCacheRead(): CalResult<{ board?: CachedBoard; regressed: number[] }> {
-    const cache = loadCalCache(this.deps.cacheFile)
+    const cache = this.loadCache()
     return {
       ok: true,
       value: {
@@ -267,10 +278,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
     for (const a of axes) {
       entries[a.idx] = { min: a.min, centre: a.centre, max: a.max, selfCentring: a.selfCentring }
     }
-    saveCalCache(
-      storeAxes(loadCalCache(this.deps.cacheFile), serial, entries, new Date().toISOString()),
-      this.deps.cacheFile
-    )
+    this.saveCache(storeAxes(this.loadCache(), serial, entries, new Date().toISOString()))
     return { ok: true, value: null }
   }
 
@@ -278,10 +286,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
   calCacheDrop(idx: number): CalResult<null> {
     const serial = this.calSerialNumber
     if (!serial) return { ok: true, value: null }
-    saveCalCache(
-      dropAxis(loadCalCache(this.deps.cacheFile), serial, idx === CAL_AXIS_NONE ? undefined : idx),
-      this.deps.cacheFile
-    )
+    this.saveCache(dropAxis(this.loadCache(), serial, idx === CAL_AXIS_NONE ? undefined : idx))
     return { ok: true, value: null }
   }
 

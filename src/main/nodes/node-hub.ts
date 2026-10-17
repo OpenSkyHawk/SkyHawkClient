@@ -61,7 +61,12 @@ import {
 } from './node-status-wire'
 import { NODE_TELEM_MSG, NodeTelemStore, parseNodeTelem } from './node-telem'
 import { registryDefaults } from './registry'
-import { MappingSaveError, MappingStore, type MappingFileIO } from './mapping-store'
+import {
+  MappingSaveError,
+  MappingStore,
+  type MappingFileEvents,
+  type MappingFileIO
+} from './mapping-store'
 import { CockpitSnapshotHost } from './cockpit-host'
 import { addAllInTurn, unhideInTurn } from './mapping-sequence'
 
@@ -90,9 +95,13 @@ const NO_LINK: NodeHubLink = {
   pushGatewayHealth: () => {}
 }
 
-/** What NodeHub needs from app: the node-mapping.json port, the log, and the Gateway link. */
+/**
+ * What NodeHub needs from app: the node-mapping.json port and where its load problems are
+ * reported, the log, and the Gateway link.
+ */
 export interface NodeHubDeps {
   mappingFile?: MappingFileIO
+  mappingEvents?: MappingFileEvents
   log?: Log
   link?: NodeHubLink
 }
@@ -171,6 +180,7 @@ export class NodeHub implements NodeLineSink {
     this.store = new MappingStore({
       file: deps.mappingFile,
       log: deps.log,
+      events: deps.mappingEvents,
       onCommit: () => {
         this.modelDirty = true
       }

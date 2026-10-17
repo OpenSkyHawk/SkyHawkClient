@@ -41,8 +41,8 @@ export function start(): void {
     setConfig: (config) => services.settings.apply(config, false),
     imported: () => services.settings.imported(),
     nodes: services.nodes,
-    loadCalCache: () => loadCalCache(cacheFile),
-    saveCalCache: (cache) => saveCalCache(cache, cacheFile),
+    loadCalCache: () => loadCalCache(cacheFile, services.journal),
+    saveCalCache: (cache) => saveCalCache(cache, cacheFile, services.journal),
     backupDir: () => join(app.getPath('userData'), 'backups'),
     clientVersion: () => app.getVersion()
   })
