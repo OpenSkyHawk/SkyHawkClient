@@ -7,10 +7,10 @@ export function ConnectionSection() {
   const dcs = useDcsStore()
   const setConfigField = useConfigStore((x) => x.setConfigField)
   const toggleCapture = useDcsStore((x) => x.toggleCapture)
-  // The recording and whether this row may start one (X12: whenever), as main decides (R3.3), and
-  // whether the row shows (always; R3.4a).
+  // The recording and whether this row may start one (X12: only while relaying, as the Connection
+  // tab's card), as main decides (R3.3), and whether the row shows (always; R3.4a).
   const recording = dcs.relayFacts.recording
-  const canRecord = relaySide(dcs.relayFacts, dcs.relaying).canRecord.settings
+  const canRecord = relaySide(dcs.relayFacts, dcs.relaying).canRecord
   const recordShown = dcs.relayFacts.recordShown.settings
 
   return (

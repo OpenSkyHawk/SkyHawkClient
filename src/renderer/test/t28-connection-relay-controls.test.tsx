@@ -230,6 +230,27 @@ describe('T28 Connection device card and relay controls (B61, B62)', () => {
     expect(waitnote()).toBeNull()
   })
 
+  it('N3: a driven Replay that loses the board says it waits for the Gateway', async () => {
+    const { sky } = await renderScenario(<Connection />, {
+      device: link('reconnecting'),
+      config: { sourceMode: 'replay', replayDriveSerial: true },
+      relay: { running: true, stream: 'connected' }
+    })
+    expect(startBtn()).toHaveTextContent('Stop relay')
+    expect(waitnote()).toBe('Relaying — waiting for the Gateway. Resumes when it connects.')
+    sky.emitScenario({ device: connected() })
+    expect(waitnote()).toBeNull()
+  })
+
+  it('N2: Monitor relaying with no board has no waiting note', async () => {
+    await renderScenario(<Connection />, {
+      device: link('no-device'),
+      relay: { running: true, stream: 'connected' }
+    })
+    expect(startBtn()).toHaveTextContent('Stop relay')
+    expect(waitnote()).toBeNull()
+  })
+
   it('a replay that ran out: "Replay ended"', async () => {
     await renderScenario(<Connection />, {
       device: connected(),

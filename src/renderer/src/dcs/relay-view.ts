@@ -1,22 +1,10 @@
 // The relay's surfaces in words (R3.4b: the relay half of the old device view): the pill's tooltip,
 // the note under Start, why Start is blocked. What each says is main's (relay:facts, relay-rules).
-import type {
-  EndpointLabel,
-  RelayFacts,
-  RelaySurfaces,
-  RelayTip,
-  RelayWaiting,
-  StreamState
-} from '@shared/dcs'
+import type { RelayFacts, RelaySurfaces, RelayTip, RelayWaiting, StreamState } from '@shared/dcs'
 
 /** The relay's surfaces for the on/off as shown — the pending Start or Stop included (R3.3). */
 export function relaySide(f: RelayFacts, relaying: boolean): RelaySurfaces {
   return relaying ? f.running : f.stopped
-}
-
-/** An endpoint as a surface labels it: main's choice, filled in with the host and port typed. */
-export function endpointText(label: EndpointLabel, host: string, port: string): string {
-  return 'text' in label ? label.text : `${host}:${port}${label.hostPort.suffix}`
 }
 
 /**

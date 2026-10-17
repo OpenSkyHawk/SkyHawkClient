@@ -65,8 +65,9 @@ describe('T31 Settings › Connection + Diagnostics (B86, B91)', () => {
   it('Record session asks main, and says it is recording', async () => {
     const { sky, user } = await openSettings()
     expect(desc('Record session')).toBe('Capture the DCS-BIOS stream to a file for replay')
-    // contract B62 has Record disabled unless relaying (the Connection tab's Record card); today
-    // this Settings row offers it while the relay is stopped too.
+    // X12: Record only while relaying, as the Connection tab's Record card (contract B62).
+    expect(screen.getByRole('button', { name: '● Record' })).toBeDisabled()
+    sky.emitScenario({ relay: { running: true, stream: 'connected' } })
     expect(screen.getByRole('button', { name: '● Record' })).toBeEnabled()
     sky.toggleCapture.mockResolvedValueOnce({ recording: true, events: 7 })
     await user.click(screen.getByRole('button', { name: '● Record' }))

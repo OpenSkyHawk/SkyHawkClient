@@ -29,6 +29,8 @@ const deviceView = (state: DeviceState, opts: Omit<Parameters<typeof viewOf>[1],
 /** What the relay's surfaces say: main's judgement (relay-rules, R3.3), worded here. */
 interface Relay {
   mode: SourceMode
+  /** Replay's "Drive Gateway" (N3). */
+  replayDriveSerial: boolean
   relaying: boolean
   stream?: StreamState
   deviceState: DeviceState
@@ -116,6 +118,7 @@ describe('deviceView', () => {
 describe('relayTip', () => {
   const base = {
     mode: 'bridge' as const,
+    replayDriveSerial: false,
     relaying: true,
     stream: 'connected' as const,
     deviceState: 'connected' as const,
@@ -154,6 +157,7 @@ describe('relayTip', () => {
 describe('relayWaiting', () => {
   const run = {
     mode: 'bridge' as const,
+    replayDriveSerial: false,
     relaying: true,
     stream: 'connected' as const,
     deviceState: 'connected' as const
@@ -167,9 +171,12 @@ describe('relayWaiting', () => {
     expect(relayWaiting({ ...run, stream: 'ended' })).toBe(true)
   })
 
-  it('ignores the device outside Bridge', () => {
+  it('ignores the device in Monitor and an undriven Replay; a driven Replay waits for it (N3)', () => {
     expect(relayWaiting({ ...run, mode: 'monitor', deviceState: 'no-device' })).toBe(false)
     expect(relayWaiting({ ...run, mode: 'replay', deviceState: 'disconnected' })).toBe(false)
+    expect(
+      relayWaiting({ ...run, mode: 'replay', replayDriveSerial: true, deviceState: 'disconnected' })
+    ).toBe(true)
   })
 
   it('is never waiting while stopped', () => {
@@ -180,6 +187,7 @@ describe('relayWaiting', () => {
 describe('relayNote', () => {
   const run = {
     mode: 'bridge' as const,
+    replayDriveSerial: false,
     relaying: true,
     stream: 'connected' as const,
     deviceState: 'connected' as const
