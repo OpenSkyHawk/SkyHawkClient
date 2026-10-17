@@ -19,7 +19,7 @@ import { onTestFinished, vi } from 'vitest'
 import { CTRL, type IpcListener, type PushChannel, type PushChannels } from '@shared/app'
 import type { AppConfig, ConfigEdit } from '@shared/config'
 import type { RecordState, ReplayLoad } from '@shared/dcs'
-import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes'
+import type { AdoptRequest, AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes'
 
 // ── the outside world, faked ─────────────────────────────────────────────────
 
@@ -265,6 +265,8 @@ function launch(opts: ServicesOptions) {
     [CTRL.nodeMappingResetPreview]: () => services.nodes.previewReset(),
     [CTRL.nodeRegistry]: () => services.nodes.registry(),
     [CTRL.nodeMappingHide]: (id: number, on: boolean) => services.nodes.hide(id, on),
+    [CTRL.nodeMappingAddAll]: (bulk: AdoptRequest[]) => services.nodes.addAll(bulk),
+    [CTRL.nodeMappingUnhide]: (ids: number[]) => services.nodes.unhide(ids),
     [CTRL.serialMonitor]: (on: boolean) => services.serialMonitor.setSerialMonitor(on),
     [CTRL.eventsGet]: () => services.journal.snapshot(),
     [CTRL.eventsClear]: () => services.journal.clear()

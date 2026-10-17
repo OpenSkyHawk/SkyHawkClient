@@ -159,6 +159,38 @@ describe('T30 Settings › Cockpit › Reset… (B89, B24)', () => {
     expect(screen.getByRole('dialog', { name: 'Reset node mapping' })).toBeInTheDocument()
   })
 
+  it('the review asks main again only when the mapping changes, not on every push (R9)', async () => {
+    const { sky, openReview } = await openCockpit(fileModel())
+    const dlg = await openReview()
+    expect(sky.previewNodeReset).toHaveBeenCalledTimes(1)
+    // Roster polls and PDU pages push the model and the snapshot again; the mapping is the same.
+    sky.emitScenario({ model: fileModel() })
+    sky.emitScenario({
+      model: model(
+        [
+          panel(2, 'Nav', { pduId: 3, differs: true, availability: 'offline' }),
+          pdu(3, 'PDU_Left'),
+          adoptedTrim()
+        ],
+        [],
+        { differingCount: 1 }
+      )
+    })
+    await settle()
+    expect(sky.previewNodeReset).toHaveBeenCalledTimes(1)
+    // The mapping changes underneath (Nav renamed elsewhere): the review asks again.
+    sky.emitScenario({
+      model: model(
+        [panel(2, 'Nav_2', { pduId: 3, differs: true }), pdu(3, 'PDU_Left'), adoptedTrim()],
+        [],
+        { differingCount: 1 }
+      )
+    })
+    await settle()
+    expect(sky.previewNodeReset).toHaveBeenCalledTimes(2)
+    expect(within(dlg).getByRole('button', { name: 'Reset 1 node' })).toBeEnabled()
+  })
+
   it('Cancel closes the review without asking main', async () => {
     const { sky, user, openReview } = await openCockpit(fileModel())
     const dlg = await openReview()

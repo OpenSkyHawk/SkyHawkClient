@@ -317,6 +317,12 @@ export interface NodeModel {
    * 'unknown', since there is no roster to be missing from.
    */
   rosterComplete: boolean
+  /**
+   * Rises with every `nodes:model` push (C5). A `nodes:get` answer carries the rev of the last push
+   * it is at least as new as, so the renderer never lets an older model replace a newer one. Absent
+   * only in a model not from main (a test's fixture).
+   */
+  rev?: number
 }
 
 /** Rail limits as printed on a PSU label. Absent = unknown: the Cockpit shows plain totals. */
@@ -396,11 +402,19 @@ export interface AdoptRequest {
 
 /**
  * Mapping changes run one board at a time ("Add all", "Un-hide all"; R3.2): the NODE_IDs done in
- * order, and — when one was refused — that one and why. The boards after it were not tried.
+ * order, and — when any was refused — the first one and why, and every refusal in `failed`. Add all
+ * stops at its first refusal (the boards after it were not tried); Un-hide all tries every board
+ * (N4).
  */
 export type NodeBatchResult =
   | { ok: true; done: number[] }
-  | { ok: false; done: number[]; nodeId: number; error: string }
+  | {
+      ok: false
+      done: number[]
+      nodeId: number
+      error: string
+      failed: { nodeId: number; error: string }[]
+    }
 
 // ── consoles ────────────────────────────────────────────────────────────────
 

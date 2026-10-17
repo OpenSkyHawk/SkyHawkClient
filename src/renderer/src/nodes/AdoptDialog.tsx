@@ -14,6 +14,9 @@ import { useModalFocus } from '../app/kit'
 import { useNodesStore } from './store'
 import { Dot } from './Dot'
 
+/** A change run under the dialog's one busy flag: its answer, or null if another was running. */
+type RunBusy = <T>(call: () => Promise<T> | undefined) => Promise<{ r: T | undefined } | null>
+
 /**
  * New on the bus (#77): name and place each NODE_ID the registry does not know, or leave it for
  * later. A board that can't be adopted is listed so you can see what it is; it stays in Attention
@@ -24,6 +27,8 @@ export function AdoptDialog(props: {
   /** Main's queue: new NODE_IDs, oldest first seen first. */
   rows: AdoptRow[]
   zones: ZoneChoices
+  /** "New on the bus · N", as the Attention button that opens this shows it (R10: one count). */
+  count: number
   initial?: number
   onClose: () => void
 }) {
@@ -35,6 +40,26 @@ export function AdoptDialog(props: {
   const shown = useRef(new Map<number, AdoptRow>())
   for (const r of live) shown.current.set(r.view.entry.nodeId, r)
   const [done, setDone] = useState<ReadonlySet<number>>(new Set())
+  /** A board added this turn leaves the queue (functional, so one landing mid-Add all is kept). */
+  const markDone = (ids: number[]) => setDone((d) => new Set([...d, ...ids]))
+  // One busy flag for the whole dialog (R6): while an Adopt or Add all runs, nothing else starts.
+  // The ref answers at once, so a double click's second click is refused before React re-renders.
+  const [busy, setBusyState] = useState(false)
+  const busyRef = useRef(false)
+  const setBusy = (on: boolean) => {
+    busyRef.current = on
+    setBusyState(on)
+  }
+  /** One change under the busy flag: its answer, or null when refused (another is running). */
+  const run: RunBusy = async (call) => {
+    if (busyRef.current) return null
+    setBusy(true)
+    try {
+      return { r: await call() }
+    } finally {
+      setBusy(false)
+    }
+  }
   const queue = useMemo(() => keptQueue(live, shown.current, done), [live, done])
   const ids = queue.map((r) => r.view.entry.nodeId)
   // The queue as the dialog showed it, so "next" keeps its place as nodes leave it.
@@ -69,15 +94,18 @@ export function AdoptDialog(props: {
   // Main adopts them one at a time and stops at the first it refuses (R3.2b); the ones it added
   // leave the queue.
   const addAll = async () => {
+    if (busyRef.current) return
     setBulkError('')
-    const r = await useNodesStore.getState().addAllNodes(bulk)
-    setDone(new Set([...done, ...(r ? r.done : bulk.map((b) => b.nodeId))]))
+    const ran = await run(() => useNodesStore.getState().addAllNodes(bulk))
+    if (!ran) return
+    const { r } = ran
+    markDone(r ? r.done : bulk.map((b) => b.nodeId))
     if (r && !r.ok) setBulkError(`NODE_ID ${r.nodeId}: ${r.error}`)
   }
 
   if (!current) return null
   const move = (how: 'done' | 'later') => {
-    if (how === 'done') setDone(new Set([...done, current.view.entry.nodeId]))
+    if (how === 'done') markDone([current.view.entry.nodeId])
     const next = nextSelection(order.current, ids, current.view.entry.nodeId, how)
     if (next === null && how === 'later') return props.onClose()
     setSel(next)
@@ -101,7 +129,7 @@ export function AdoptDialog(props: {
           <div>
             <div className="ad__t">New on the bus</div>
             <div className="ad__s">
-              {queue.length} board{queue.length === 1 ? '' : 's'} this computer hasn’t added yet.
+              {props.count} board{props.count === 1 ? '' : 's'} this computer hasn’t added yet.
               Boards in NODE_IDS.md come pre-filled — check them and add.
             </div>
           </div>
@@ -146,6 +174,8 @@ export function AdoptDialog(props: {
             onForm={(f) => setEdits(new Map(edits).set(current.view.entry.nodeId, f))}
             bulk={bulk.length > 1 ? bulk.length : 0}
             bulkError={bulkError}
+            busy={busy}
+            run={run}
             onAddAll={() => void addAll()}
             onDone={() => move('done')}
             onLater={() => move('later')}
@@ -168,6 +198,9 @@ function AdoptForm(props: {
   form?: FormValues
   onForm: (f: FormValues) => void
   bulkError: string
+  /** The dialog's one busy flag (R6), and how a change runs under it. */
+  busy: boolean
+  run: RunBusy
   onAddAll: () => void
   onDone: () => void
   onLater: () => void
@@ -181,7 +214,7 @@ function AdoptForm(props: {
   const { name, console: con, pduId } = form
   const setName = (v: string) => props.onForm({ ...form, name: v })
   const setPduId = (v: number | null | '') => props.onForm({ ...form, pduId: v })
-  const [busy, setBusy] = useState(false)
+  const { busy } = props
   const [error, setError] = useState('')
   const ev = row.evidence
   // #93: the PDU is explicit, and only ever one in your cockpit (D7): one on another console is
@@ -191,10 +224,11 @@ function AdoptForm(props: {
   const ident = identState(e.availability === 'online', props.dropped)
 
   const run = async (call: () => Promise<NodeMappingResult> | undefined) => {
-    setBusy(true)
+    if (busy) return
     setError('')
-    const r = await call()
-    setBusy(false)
+    const ran = await props.run(call)
+    if (!ran) return // the dialog is busy (R6): this click starts nothing
+    const { r } = ran
     if (!r) return setError('Not connected to the client process.')
     if (r.ok) props.onDone()
     else setError(r.error)

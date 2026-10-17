@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { NodeMappingFile } from '@shared/nodes'
+import type { NodeMappingFile, NodeModel } from '@shared/nodes'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from './node-status-wire'
 import { importMapping } from './mapping-rules'
 
@@ -189,6 +189,21 @@ describe('NodeHub', () => {
     expect(disk.saves).toBe(before)
   })
 
+  it('every model pushed carries a rising rev; nodes:get answers the last push’s (C5)', () => {
+    const { h, pushes } = hub()
+    const revs = () =>
+      pushes.filter(([c]) => c === 'nodes:model').map(([, m]) => (m as NodeModel).rev)
+    h.setMapping(1, { name: 'Armament' })
+    h.setMapping(1, { name: 'Armament_2' })
+    const [a, b] = revs()
+    expect(b).toBe(a! + 1)
+    expect(h.snapshot().model.rev).toBe(b)
+    // A refused change pushes nothing and answers the same rev.
+    h.setMapping(1, { name: ' ' })
+    expect(revs()).toHaveLength(2)
+    expect(h.snapshot().model.rev).toBe(b)
+  })
+
   it('adopting a new node takes it out of "new"; a nameless adopt is refused and changes nothing', () => {
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '2901000000000000008000000000', 0) // node 41: kind not reported yet
@@ -269,7 +284,8 @@ describe('NodeHub', () => {
       ok: false,
       done: [41],
       nodeId: 43,
-      error: 'Its board type is not known yet'
+      error: 'Its board type is not known yet',
+      failed: [{ nodeId: 43, error: 'Its board type is not known yet' }]
     })
     expect(Object.keys(disk.file.nodes).map(Number)).toEqual([1, 2, 3, 4, 5, 41])
     // One adopt's pushes, as one node-mapping:adopt invoke made them; 42 was not tried.
@@ -280,6 +296,7 @@ describe('NodeHub', () => {
     expect(pushes.map(([c]) => c)).toEqual(['cockpit:snapshot', 'nodes:model'])
   })
 
+  // N4 (#133): a refusal no longer stops it — every board is tried, each refusal listed.
   it('Un-hide all (R3.2b) un-hides each board in turn, each pushed as it lands', async () => {
     disk.file = {
       version: 4,
@@ -297,11 +314,14 @@ describe('NodeHub', () => {
     disk.file = { version: 4, nodes: { 1: { added: true, hidden: true } } }
     disk.readOnly = 'node-mapping.json was written by a newer client'
     const ro = hub().h
+    const notSaved = 'Not saved: node-mapping.json was written by a newer client'
+    // #1 can't be saved; #2 is tried after it (already shown, so nothing to save).
     expect(await ro.unhide([1, 2])).toEqual({
       ok: false,
-      done: [],
+      done: [2],
       nodeId: 1,
-      error: 'Not saved: node-mapping.json was written by a newer client'
+      error: notSaved,
+      failed: [{ nodeId: 1, error: notSaved }]
     })
   })
 

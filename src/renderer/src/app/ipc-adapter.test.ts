@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CALIBRATION_IDLE, type CalibrationState, type CalSnapshot } from '@shared/hid/calibration'
-import type { NodeModel, NodeSnapshot, NodeTelemSnapshot } from '@shared/nodes'
+import {
+  COCKPIT_IDLE,
+  type NodeModel,
+  type NodeSnapshot,
+  type NodeTelemSnapshot
+} from '@shared/nodes'
 import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import type { LogEvent } from '@shared/events'
 import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
@@ -51,6 +56,8 @@ const EMPTY_MODEL: NodeModel = {
   rosterComplete: false
 }
 let nodesSnap: NodeSnapshot = { model: EMPTY_MODEL, telemetry: [] }
+/** When set, `nodes:get` answers only once the test releases it (a reply racing a push). */
+let nodesAnswer: Promise<NodeSnapshot> | undefined
 
 let startResult: { ok: boolean; error?: string } = { ok: true }
 let eventsSnap: LogEvent[] = []
@@ -79,7 +86,7 @@ function fakeApi() {
         })
       })
     },
-    getNodes: () => Promise.resolve(nodesSnap),
+    getNodes: () => nodesAnswer ?? Promise.resolve(nodesSnap),
     getEvents: () => Promise.resolve(eventsSnap),
     clearEvents: () => {
       eventsCleared++
@@ -351,6 +358,7 @@ describe('node state (#63)', () => {
   beforeEach(() => {
     status = { running: false, relay: { running: false }, device: { state: 'connected' } }
     nodesSnap = { model: EMPTY_MODEL, telemetry: [] }
+    nodesAnswer = undefined
   })
 
   it('rehydrates the model on a renderer reload', async () => {
@@ -371,6 +379,35 @@ describe('node state (#63)', () => {
     expect(s.getState().linkDownAt, 'only the up → down transition sets it').toBe(at)
     push('device:status', { state: 'connected' })
     expect(s.getState().linkDownAt).toBeUndefined()
+  })
+
+  it('an older model never wins: a pull answered behind a newer push is dropped (C5)', async () => {
+    let answer!: (snap: NodeSnapshot) => void
+    nodesAnswer = new Promise((r) => (answer = r))
+    const s = await freshStore()
+    const newer = { ...pduModel, rev: 5 }
+    push('nodes:model', newer)
+    answer({ model: { ...EMPTY_MODEL, rev: 4 }, telemetry: [] })
+    await nodesAnswer
+    await Promise.resolve()
+    expect(s.getState().nodeModel).toBe(newer)
+    // A pull as new as the last push (or newer) is taken, and so is every newer push.
+    const pushed = { ...EMPTY_MODEL, rev: 6 }
+    push('nodes:model', pushed)
+    expect(s.getState().nodeModel).toBe(pushed)
+    push('nodes:model', { ...pduModel, rev: 5 })
+    expect(s.getState().nodeModel).toBe(pushed)
+  })
+
+  it('an older Cockpit snapshot never wins (C5)', async () => {
+    const s = await freshStore()
+    const newer = { ...COCKPIT_IDLE, rev: 8, live: true }
+    push('cockpit:snapshot', newer)
+    push('cockpit:snapshot', { ...COCKPIT_IDLE, rev: 7 })
+    expect(s.getState().cockpit).toBe(newer)
+    const next = { ...COCKPIT_IDLE, rev: 9 }
+    push('cockpit:snapshot', next)
+    expect(s.getState().cockpit).toBe(next)
   })
 })
 
