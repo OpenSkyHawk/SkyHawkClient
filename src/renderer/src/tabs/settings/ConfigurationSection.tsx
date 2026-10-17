@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { ImportPreview } from '@shared/config'
-import { configState, useStore } from '../../store'
 import { ImportDialog } from './ImportDialog'
 import { Row, SectionHead } from './Row'
 import { importDoneText } from './settings-view'
@@ -8,7 +7,6 @@ import { importDoneText } from './settings-view'
 type Note = { text: string; err?: boolean }
 
 export function ConfigurationSection() {
-  const set = useStore((s) => s.set)
   const [exported, setExported] = useState<Note>()
   const [imported, setImported] = useState<Note>()
   const [preview, setPreview] = useState<ImportPreview>()
@@ -71,7 +69,7 @@ export function ConfigurationSection() {
           preview={preview}
           onClose={() => setPreview(undefined)}
           onApplied={(r) => {
-            set(configState(r.config))
+            // The settings come back on `config:changed` (R3.3).
             setImported({ text: importDoneText(r.applied.length, r.backupPath) })
             setPreview(undefined)
           }}

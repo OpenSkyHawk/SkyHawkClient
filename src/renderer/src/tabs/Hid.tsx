@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
 import { HID_REPORT_LAYOUT } from '@shared/firmware'
-import { isLinkUp } from '@shared/gateway'
 import type { CalBadge } from '@shared/hid/calibration'
 import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
-import { freshness } from '../freshness'
+import { freshnessView } from '../freshness'
 import { CalibrationDialog } from '../CalibrationDialog'
 
 /**
@@ -99,7 +98,7 @@ export function Hid() {
   const s = useStore()
   // The joystick is read alongside DCS and never needs the serial link; calibration does (#74).
   // So the live view below ignores the link, and only calibration is gated on it.
-  const linkUp = isLinkUp(s.deviceState)
+  const linkUp = s.linkUp
   // The calibration workflow lives as long as this tab is mounted (main builds and disposes it).
   const { attach } = s.calibrate
   useEffect(() => {
@@ -108,24 +107,15 @@ export function Hid() {
   }, [attach])
   const cal = s.calibration.tab
   const lit = new Set(s.buttons)
-  const availAxes = new Set(s.availAxes)
   const availHats = new Set(s.availHats)
   const availButtons = new Set(s.availButtons)
-  const fresh = freshness(s.deviceState, s.hidAgeMs)
+  const fresh = freshnessView(s.boardPresent, s.hidBand)
 
-  // Two different notions of "this axis exists", answering different questions:
-  //   availAxes   — what HIDControls.h catalogues, i.e. what the report layout can carry
-  //   presentMask — what THIS gateway's sketch actually declares
-  //
-  // An axis is live only if both are true. A catalogued slot the device never declared reads a
-  // constant 0, and rendering that as a value implies a reading that does not exist — so it gets
-  // the same dimmed em-dash treatment as an uncatalogued slot. Until the device tells us
-  // (no gateway, or firmware predating the protocol) we fall back to the catalogue alone.
+  // Which axis slots are live — catalogued and declared by this Gateway — is main's (hid:report,
+  // R3.3: main/hid/hid-facts.ts), as is how many it declares.
   const snap = cal.snapshot
-  const present = snap ? snap.axes.filter((a) => a.present) : []
   const uncalibrated = cal.uncalibrated
-  const axisLive = (i: number) =>
-    availAxes.has(i) && (snap ? (snap.axes[i]?.present ?? false) : true)
+  const axisLive = (i: number) => s.axisLive[i] ?? false
 
   // Calibration is a property of the attached device, so badges follow presentMask alone.
   const calState = (i: number): CalState => cal.badges[i]
@@ -165,7 +155,7 @@ export function Hid() {
           <span className="section-h">Axes</span>
           <span className="meta">
             {snap
-              ? `${present.length} of ${HID_REPORT_LAYOUT.axes.count} slots · device-reported`
+              ? `${s.hidPresent} of ${HID_REPORT_LAYOUT.axes.count} slots · device-reported`
               : `int16 · ±${-HID_REPORT_LAYOUT.axes.min}`}
           </span>
           {snap && (

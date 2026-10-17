@@ -1,6 +1,12 @@
 import type { DeviceState } from '@shared/gateway'
-import type { StreamState } from '@shared/dcs'
-import type { SourceMode } from './store'
+import type {
+  EndpointLabel,
+  RelayFacts,
+  RelaySurfaces,
+  RelayTip,
+  RelayWaiting,
+  StreamState
+} from '@shared/dcs'
 
 /**
  * How each device-link state reads in the UI (#69): the title-bar indicator, the device card and
@@ -34,14 +40,13 @@ export interface DeviceView {
   noteSettingsLink?: boolean
 }
 
-/** A failure to open that means another program holds the port. */
-function isBusy(detail?: string): boolean {
-  return !!detail && /busy|denied|in use|access/i.test(detail)
-}
-
+/**
+ * `busy`: main's verdict that another program holds the port (`device:status`, R3.3); it only
+ * changes how an `error` reads.
+ */
 export function deviceView(
   state: DeviceState,
-  opts: { port?: string; detail?: string; autoConnect: boolean }
+  opts: { port?: string; detail?: string; busy?: boolean; autoConnect: boolean }
 ): DeviceView {
   const port = opts.port ?? 'the Gateway port'
   const disconnect = { label: 'Disconnect', action: 'disconnect' } as const
@@ -114,7 +119,7 @@ export function deviceView(
         noteSettingsLink: !opts.autoConnect
       }
     case 'error': {
-      const busy = isBusy(opts.detail)
+      const busy = !!opts.busy
       return {
         cls: 'devind--err',
         label: 'Error',
@@ -134,101 +139,84 @@ export function deviceView(
   }
 }
 
-interface RelayOpts {
-  mode: SourceMode
-  relaying: boolean
+/** The relay's surfaces for the on/off as shown — the pending Start or Stop included (R3.3). */
+export function relaySide(f: RelayFacts, relaying: boolean): RelaySurfaces {
+  return relaying ? f.running : f.stopped
+}
+
+/** An endpoint as a surface labels it: main's choice, filled in with the host and port typed. */
+export function endpointText(label: EndpointLabel, host: string, port: string): string {
+  return 'text' in label ? label.text : `${host}:${port}${label.hostPort.suffix}`
+}
+
+/**
+ * Tooltip on the relay pill: where the DCS-BIOS stream stands, for the branch main picked
+ * (relay-rules relayTip). A relay keeps running through a drop, so while it is waiting the
+ * tooltip says what for, rather than looking broken.
+ */
+export function relayTip(opts: {
+  tip: RelayTip
   stream?: StreamState
-  deviceState: DeviceState
-}
-
-/** Running, but Bridge has no device to deliver to. */
-const waitingForDevice = (o: RelayOpts): boolean =>
-  o.relaying && o.mode === 'bridge' && o.deviceState !== 'connected'
-
-/** Running, but the DCS-BIOS stream is not up. Replay has no DCS to wait for. */
-const waitingForDcs = (o: RelayOpts): boolean =>
-  o.relaying && o.mode !== 'replay' && o.stream !== 'connected'
-
-/**
- * Tooltip on the relay pill: where the DCS-BIOS stream stands. A relay keeps running through a
- * drop, so while it is waiting the tooltip says what for, rather than looking broken.
- */
-export function relayTip(
-  opts: RelayOpts & { deviceLabel: string; endpoint: string; replayFile?: string }
-): string {
-  if (opts.mode === 'replay') {
-    if (!opts.relaying) return 'Replay stopped — click to play'
-    if (opts.stream === 'ended') return 'Replay · ended — click to stop'
-    const file = opts.replayFile?.split(/[/\\]/).pop()
-    return `Replay · playing${file ? ` ${file}` : ''} — click to stop`
+  deviceLabel: string
+  endpoint: string
+  replayFile?: string
+}): string {
+  switch (opts.tip) {
+    case 'replay-stopped':
+      return 'Replay stopped — click to play'
+    case 'replay-ended':
+      return 'Replay · ended — click to stop'
+    case 'replay-playing': {
+      const file = opts.replayFile?.split(/[/\\]/).pop()
+      return `Replay · playing${file ? ` ${file}` : ''} — click to stop`
+    }
+    case 'stopped':
+      return 'DCS-BIOS stream stopped — click to start'
+    case 'waiting-device':
+      return `Relaying — waiting for the Gateway (device link ${opts.deviceLabel.toLowerCase()}). Resumes when it connects — click to stop`
+    case 'waiting-dcs':
+      return `Relaying — waiting for DCS-BIOS (${opts.stream ?? 'connecting'}) · ${opts.endpoint} — click to stop`
+    case 'delivering':
+      return `DCS-BIOS stream · connected · ${opts.endpoint} — click to stop`
   }
-  if (!opts.relaying) return 'DCS-BIOS stream stopped — click to start'
-  if (waitingForDevice(opts)) {
-    return `Relaying — waiting for the Gateway (device link ${opts.deviceLabel.toLowerCase()}). Resumes when it connects — click to stop`
-  }
-  if (waitingForDcs(opts)) {
-    return `Relaying — waiting for DCS-BIOS (${opts.stream ?? 'connecting'}) · ${opts.endpoint} — click to stop`
-  }
-  return `DCS-BIOS stream · connected · ${opts.endpoint} — click to stop`
 }
 
 /**
- * The line under the Connection tab's Start / Stop button: what a running relay is waiting for.
+ * The line under the Connection tab's Start / Stop button: what a running relay is waiting for,
+ * as main judged it (relay-rules relayNote).
  */
-export function relayNote(opts: RelayOpts): { text: string; info: boolean } | undefined {
-  if (waitingForDevice(opts)) {
+export function relayNote(
+  waiting: RelayWaiting,
+  stream?: StreamState
+): { text: string; info: boolean } | undefined {
+  if (waiting === 'device') {
     return { text: 'Relaying — waiting for the Gateway. Resumes when it connects.', info: false }
   }
-  if (waitingForDcs(opts)) {
+  if (waiting === 'dcs') {
     return {
-      text: `Relaying — waiting for DCS-BIOS (${opts.stream ?? 'connecting'}).`,
+      text: `Relaying — waiting for DCS-BIOS (${stream ?? 'connecting'}).`,
       info: false
     }
   }
-  if (opts.relaying && opts.mode === 'replay' && opts.stream === 'ended') {
+  if (waiting === 'replay-ended') {
     return { text: 'Replay ended — Stop, or load another capture.', info: false }
   }
   return undefined
 }
 
 /**
- * Start is refused while a mode that delivers to the board has no board to deliver to: Bridge, and
- * Replay driving the SimGateway. Monitor and an undriven Replay never touch it. Mirrors main's
- * check in Session.start(), which is the one that actually enforces it.
+ * Why Start is unavailable, for the pill tooltip and the note under the Start button: by the
+ * mode main says needs the board (relay-rules startBlocked).
  */
-export function startBlocked(opts: {
-  mode: SourceMode
-  replayDriveSerial: boolean
-  deviceState: DeviceState
-}): boolean {
-  const needsBoard = opts.mode === 'bridge' || (opts.mode === 'replay' && opts.replayDriveSerial)
-  return needsBoard && opts.deviceState !== 'connected'
-}
-
-/**
- * A running relay that is not delivering end to end — shown degraded rather than green. It keeps
- * running and resumes on its own; this only stops the pill claiming data is flowing when it is not.
- * Bridge also needs the device; Monitor and Replay never use it.
- */
-export function relayWaiting(opts: RelayOpts): boolean {
-  if (!opts.relaying) return false
-  return (
-    waitingForDevice(opts) ||
-    waitingForDcs(opts) ||
-    (opts.mode === 'replay' && opts.stream === 'ended')
-  )
-}
-
-/** Why Start is unavailable, for the pill tooltip and the note under the Start button. */
-export function startBlockedReason(mode: SourceMode): string {
-  return mode === 'replay'
+export function startBlockedReason(reason: 'bridge' | 'replay'): string {
+  return reason === 'replay'
     ? 'Connect the Gateway to play the capture to it, or turn Drive Gateway off.'
     : 'Connect the Gateway to start the relay.'
 }
 
 /** Body of the callout a blocked Relay pill answers a click with. */
-export function startBlockedCallout(mode: SourceMode): string {
-  return mode === 'replay'
+export function startBlockedCallout(reason: 'bridge' | 'replay'): string {
+  return reason === 'replay'
     ? "The Gateway isn't connected, and Drive Gateway plays the capture to it. Connect first, or turn Drive off."
     : "The Gateway isn't connected, and the relay delivers to it. Connect first."
 }

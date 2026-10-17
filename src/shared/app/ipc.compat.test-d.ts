@@ -18,14 +18,30 @@
 // were added — the Adopt dialog's "Add all" and Settings' "Un-hide all" loops, now run in main.
 // `CockpitSnapshot` gained its Overview, Connection and Settings sections (a type change only).
 //
+// R3.3 (link, relay, HID and settings rules pushed from main): `device:status` and the rehydrate
+// bundle's `device` became `DeviceStatusPush` — the status plus what main concludes from it
+// (linkUp, boardPresent, busy, linkDownAt, serialMonitor; additive fields). `hid:report` became
+// `HidReport` — the report plus its band, present axis count and live axis slots (additive). The
+// push `config:changed` → `ConfigChanged` was added (the settings after each change, and what the
+// power supply resolves to), `config:get` answers `ConfigView` (the settings with the resolved
+// power supply) instead of `AppConfig`, and the intent `config:edit` (editConfig) was added: a
+// form's change, as typed, built into the save in main. The push `relay:facts` → `RelayFacts` was
+// added (what the relay's surfaces show, decided in main) and the rehydrate bundle carries it
+// (`relayFacts`); the intent `relay:toggle` (toggleRelay) was added: the pill's and the Start
+// button's Stop-or-save-then-Start, run in main. `TelemetryReadout` gained `tone` (a type change
+// only: the channel's name and payload type are the same).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
 import type {
   AppConfig,
+  ConfigChanged,
+  ConfigEdit,
   ConfigExportResult,
   ConfigImportApplyResult,
   ConfigImportOpen,
+  ConfigView,
   SectionId,
   SettingsStore
 } from '../config/ipc'
@@ -35,6 +51,7 @@ import type {
   CaptureState,
   ExportResult,
   LogRow,
+  RelayFacts,
   RelayResult,
   RelayState,
   ReplayLoad,
@@ -42,8 +59,8 @@ import type {
   TelemetryReadout
 } from '../dcs/ipc'
 import type { CTRL, DebugDumpResult, IPC, PushChannels, RelayStatus, SkyhawkApi } from './ipc'
-import type { DeviceStatus, SerialFrame } from '../gateway/ipc'
-import type { HidAvailability, HidSnapshot } from '../hid/ipc'
+import type { DeviceStatusPush, SerialFrame } from '../gateway/ipc'
+import type { HidAvailability, HidReport } from '../hid/ipc'
 import type {
   AdoptRequest,
   AdoptSpec,
@@ -68,18 +85,19 @@ type Expect<T extends true> = T
 interface OldRelayStatus {
   running: boolean
   relay: RelayState
-  device: DeviceStatus
+  relayFacts: RelayFacts
+  device: DeviceStatusPush
   cal?: CalibrationState
 }
 
 interface OldPushChannels {
-  'device:status': DeviceStatus
+  'device:status': DeviceStatusPush
   'relay:state': RelayState
   'aircraft:changed': AircraftStatus
   'stats:tick': StatsSnapshot
   'log:batch': LogRow[]
   'events:batch': LogEvent[]
-  'hid:report': HidSnapshot
+  'hid:report': HidReport
   'telemetry:tick': TelemetryReadout[]
   'nodes:telemetry': NodeTelemSnapshot[]
   'nodes:model': NodeModel
@@ -87,6 +105,8 @@ interface OldPushChannels {
   'cal:data': CalSnapshot
   'cal:workflow': CalibrationState
   'cockpit:snapshot': CockpitSnapshot
+  'config:changed': ConfigChanged
+  'relay:facts': RelayFacts
 }
 
 type OldPushChannel = keyof OldPushChannels
@@ -106,6 +126,8 @@ interface OldIPC {
   readonly calData: 'cal:data'
   readonly calWorkflow: 'cal:workflow'
   readonly cockpitSnapshot: 'cockpit:snapshot'
+  readonly configChanged: 'config:changed'
+  readonly relayFacts: 'relay:facts'
 }
 
 interface OldCTRL {
@@ -152,12 +174,15 @@ interface OldCTRL {
   readonly calAttach: 'cal:attach'
   readonly nodeMappingAddAll: 'node-mapping:add-all'
   readonly nodeMappingUnhide: 'node-mapping:unhide'
+  readonly configEdit: 'config:edit'
+  readonly relayToggle: 'relay:toggle'
 }
 
 interface OldSkyhawkApi {
   on<C extends OldPushChannel>(channel: C, cb: (data: OldPushChannels[C]) => void): () => void
-  getConfig(): Promise<AppConfig>
+  getConfig(): Promise<ConfigView>
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
+  editConfig(edit: ConfigEdit): Promise<AppConfig>
   exportConfig(): Promise<ConfigExportResult>
   openConfigImport(): Promise<ConfigImportOpen>
   applyConfigImport(
@@ -167,6 +192,7 @@ interface OldSkyhawkApi {
   ): Promise<ConfigImportApplyResult>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
+  toggleRelay(relaying: boolean): Promise<RelayResult>
   getStatus(): Promise<OldRelayStatus>
   connectDevice(): Promise<void>
   disconnectDevice(): Promise<void>

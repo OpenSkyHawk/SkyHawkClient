@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizePsu } from './psu-limits'
-import { effectivePsuLimits, parsePsuLimit, PSU_PRESETS } from '@shared/nodes/legacy-rules'
+import { effectivePsuLimits, PSU_PRESETS, psuName, resolvePsu, sanitizePsu } from './psu-limits'
+import { parsePsuLimit } from '@shared/nodes/legacy-rules'
 import { DEFAULT_PSU } from '@shared/nodes'
+import { PSU_VIEW_DEFAULT } from '@shared/config'
 
 describe('sanitizePsu', () => {
   it('falls back to the default for junk', () => {
@@ -23,6 +24,25 @@ describe('effectivePsuLimits', () => {
     )
     expect(effectivePsuLimits({ mode: 'custom', preset: 'nx650', custom })).toEqual(custom)
     expect(PSU_PRESETS.nx650.limits).toEqual({ a12: 54, a5: 20, w: 650 })
+  })
+})
+
+describe('psuName', () => {
+  it('names a preset by its model and a custom supply plainly', () => {
+    expect(psuName({ mode: 'preset', preset: 'nx650', custom: {} })).toBe('NX650')
+    expect(psuName({ mode: 'custom', preset: 'nx650', custom: { w: 500 } })).toBe('PSU')
+  })
+})
+
+describe('resolvePsu (R3.3: what config:changed carries)', () => {
+  it('the preset, the limits the Cockpit uses and the PSU box name; the default as the renderer starts', () => {
+    expect(resolvePsu(DEFAULT_PSU)).toEqual(PSU_VIEW_DEFAULT)
+    const custom = { mode: 'custom' as const, preset: 'nx650' as const, custom: { w: 500 } }
+    expect(resolvePsu(custom)).toEqual({
+      name: 'PSU',
+      limits: { w: 500 },
+      preset: PSU_PRESETS.nx650
+    })
   })
 })
 

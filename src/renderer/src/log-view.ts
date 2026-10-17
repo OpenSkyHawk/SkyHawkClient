@@ -1,7 +1,6 @@
 // Log tab › Events (#64): what the view shows of the session's events (pure, no React).
-import { isProblem } from '@shared/events/legacy-rules'
 import { eventText } from '@shared/format'
-import { MAX_EVENTS, type EventSource, type LogEvent } from '@shared/events'
+import { MAX_EVENTS, type EventSeverity, type EventSource, type LogEvent } from '@shared/events'
 
 export type LogView = 'stream' | 'events'
 export type EventSourceFilter = 'all' | EventSource
@@ -12,6 +11,26 @@ export interface EventFilter {
   search: string
   /** While paused, the view stays as it was: rows newer than this id are held back. */
   pauseMark?: number
+}
+
+/**
+ * Each severity's glyph in the Events view: presentation of the contract's severity, nothing more
+ * (shared/events/legacy-rules.ts until R3.3).
+ */
+export const SEVERITY_GLYPH: Record<EventSeverity, string> = {
+  error: '✕',
+  warn: '!',
+  new: '+',
+  info: '●'
+}
+
+/**
+ * What "Problems only" keeps: something is wrong — not a new node, a cleared flag or a link up.
+ * A view filter the user switches, over the severity main gives each row: it decides nothing
+ * about the events, only which the view lists (shared/events/legacy-rules.ts until R3.3).
+ */
+export function isProblem(e: Pick<LogEvent, 'severity'>): boolean {
+  return e.severity === 'error' || e.severity === 'warn'
 }
 
 /** `Client · SERIAL` for client rows; a node row is its node's name. */

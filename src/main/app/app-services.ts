@@ -8,7 +8,6 @@
 // The device link is not started or stopped by the relay. It is up whenever the board is plugged
 // in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
-import type { DeviceStatus } from '@shared/gateway'
 import type { Emit, RelayStatus } from '@shared/app'
 import { app } from 'electron'
 import { DcsConnection, DcsRelay, SessionRecorder, Stats, StreamLog } from '../dcs'
@@ -54,7 +53,7 @@ export class AppServices {
    */
   constructor(emit: Emit, paths: StorePaths = storePaths(() => app.getPath('userData'))) {
     const { mappingFile, cacheFile } = storeFiles(paths)
-    this.settings = new SettingsService({ paths, debugMode: (on) => setDebugEnabled(on) })
+    this.settings = new SettingsService({ paths, debugMode: (on) => setDebugEnabled(on), emit })
     this.journal = new EventJournal(emit, debugLog)
     this.calibration = new HidCalibrationService(emit, {
       write: (data) => this.connection.write(data),
@@ -66,7 +65,8 @@ export class AppServices {
     this.connection = new GatewayConnection(emit, {
       log: debugLog,
       frames: this.calibration,
-      health: () => this.nodes.gatewayHealth()
+      health: () => this.nodes.gatewayHealth(),
+      serialMonitor: () => this.serialMonitor.shown
     })
     this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,
@@ -80,6 +80,7 @@ export class AppServices {
     this.dcs = new DcsConnection()
     this.relay = new DcsRelay(emit, {
       settings: this.settings.store,
+      saveSettings: () => void this.settings.edit({}),
       device: this.connection,
       dcs: this.dcs,
       stats: this.stats,
@@ -117,6 +118,8 @@ export class AppServices {
     //                    switch the debug log and write config.json; the launch seed only
     //                    switches the debug log
     //   stream-log flush the event log's new rows (`events:batch`), then the stream's (`log:batch`)
+    // The page's serial-monitor flag rides on `device:status` (R3.3): setting it pushes the status.
+    this.serialMonitor.onShownChange(() => this.connection.pushStatus())
     this.connection.ride(this.serialMonitor)
     this.connection.ride(this.calibration)
     this.connection.ride(this.hid)
@@ -147,15 +150,22 @@ export class AppServices {
     // The calibration workflow follows the link (pauses on a drop, drops the device's report),
     // after the link's own reactions and after `device:status` has gone out (R3.1).
     this.connection.onStatus((s) => this.calibration.linkStatus(s.state))
+    // The HID tab's live axes follow what calibration reports the device declares (R3.3), after
+    // `cal:workflow` has gone out, as the tab re-rendered on it.
+    this.calibration.onWorkflow((st) => this.hid.calibrationChanged(st.tab.snapshot))
     // The Cockpit snapshot follows the link too (strays and Attention only while it is up), after
     // `device:status` has gone out, as the Cockpit re-rendered on it (R3.2).
     this.connection.onStatus(() => this.nodes.linkStatus())
+    // So do the relay's facts (blocked, waiting for the Gateway, the Link tile), R3.3.
+    this.connection.onStatus(() => this.relay.inputsChanged())
     // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
     this.settings.store.subscribe((config, prev) => {
       if (prev.autoConnect !== config.autoConnect) {
         this.connection.setAutoConnect(config.autoConnect)
       }
       this.relay.reconfigure(prev, config)
+      // The relay's facts follow the settings (the mode, Drive Gateway, the transport), R3.3.
+      this.relay.inputsChanged()
     })
   }
 
@@ -173,10 +183,29 @@ export class AppServices {
     this.nodes.dispose()
   }
 
+  /**
+   * A renderer (re)loaded (`relay:status`, its first pull): what the page held for itself starts
+   * over, as its store did (N1) — the link's "last known" time and the serial monitor's flag.
+   */
+  rendererLoaded(): void {
+    this.connection.rendererLoaded()
+    this.serialMonitor.rendererLoaded()
+    // …and it has the HID report and its live axes now, as it had its catalogue from a pull.
+    this.hid.rendererLoaded()
+    // …and the recording and the capture it shows.
+    this.relay.rendererLoaded()
+  }
+
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
   status(): RelayStatus {
-    const device: DeviceStatus = this.connection.deviceStatus()
+    const device = this.connection.statusPush()
     const { running, relay } = this.relay.status()
-    return { running, relay, device, cal: this.calibration.workflow.state() }
+    return {
+      running,
+      relay,
+      relayFacts: this.relay.facts(),
+      device,
+      cal: this.calibration.workflow.state()
+    }
   }
 }

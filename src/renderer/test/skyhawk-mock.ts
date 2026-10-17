@@ -50,11 +50,14 @@
 // `SkyhawkApi`, so an IPC change breaks the mock at typecheck, not at run time.
 import { act } from '@testing-library/react'
 import { vi, type Mock } from 'vitest'
-import { DEFAULT_CONFIG, type AppConfig } from '@shared/config'
+import { DEFAULT_CONFIG, type AppConfig, type ConfigChanged, type ConfigEdit } from '@shared/config'
 import type {
   AircraftStatus,
+  CaptureState,
   LogRow,
+  RelayFacts,
   RelayState,
+  ReplayLoad,
   StatsSnapshot,
   TelemetryReadout
 } from '@shared/dcs'
@@ -66,8 +69,10 @@ import type {
   CalResult,
   CalSnapshot
 } from '@shared/hid/calibration'
-import type { DeviceStatus, SerialFrame } from '@shared/gateway'
-import type { HidAvailability, HidSnapshot } from '@shared/hid'
+import type { DeviceStatus, DeviceStatusPush, SerialFrame } from '@shared/gateway'
+import type { HidAvailability, HidReport, HidSnapshot } from '@shared/hid'
+import { HID_REPORT_LAYOUT } from '@shared/firmware'
+import { hidFacts } from '../../main/hid/hid-facts'
 import {
   boardFor,
   dropAxis,
@@ -78,6 +83,10 @@ import {
 import type { CalibrationCommands } from '../../main/hid/calibration/calibration-workflow'
 import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
+import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { captureView, relayFacts, replayView } from '../../main/dcs/relay-rules'
+import { editedConfig } from '../../main/config/settings-form'
+import { resolvePsu } from '../../main/nodes/psu-limits'
 import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app'
@@ -170,6 +179,9 @@ const EMPTY_REGISTRY: NodeRegistryInfo = {
   nodes: []
 }
 
+/** What the renderer is told the firmware catalogues when a scenario says nothing. */
+const NO_CATALOGUE: HidAvailability = { axes: [], hats: [], buttons: [] }
+
 /** Today's push for each scenario part, in the order emitScenario sends them. */
 const PUSHES: { [K in keyof Scenario]?: PushChannel } = {
   device: 'device:status',
@@ -189,6 +201,23 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel } = {
 /** Main's answer to any calibration exchange while the port is closed (HidCalibrationService). */
 const OFFLINE = { ok: false, kind: 'offline', message: 'Gateway is not connected' } as const
 
+/**
+ * `spy`, and what main does once its answer is in (`then`): a spy a test can still drive
+ * (`mockResolvedValueOnce`), whose answer main acts on as well — the push that follows it.
+ */
+function after<F extends (...a: never[]) => Promise<unknown>>(
+  spy: Mock<F>,
+  then: (r: Awaited<ReturnType<F>>) => void
+): Mock<F> {
+  return new Proxy(spy, {
+    apply(target, self, args) {
+      const p = Reflect.apply(target, self, args) as Promise<Awaited<ReturnType<F>>>
+      void p.then((r: Awaited<ReturnType<F>>) => then(r))
+      return p
+    }
+  })
+}
+
 /** Install a fresh mock as `window.skyhawk` (the setup file does this before every test). */
 export function installSkyhawkMock(): SkyhawkMock {
   const listeners = new Map<PushChannel, Set<(d: never) => void>>()
@@ -207,7 +236,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     }),
 
     // ── pulls: answered from the scenario ──
-    getConfig: vi.fn(() => resolve({ ...DEFAULT_CONFIG, ...state.config })),
+    getConfig: vi.fn(() => resolve({ config: config(), psu: resolvePsu(config().psu) })),
     getStatus: vi.fn(() => {
       host.rendererLoaded() // main's relay:status handler: a renderer (re)loaded
       // …and the Cockpit snapshot starts over from what main holds. Main's push reaches a page that
@@ -215,10 +244,20 @@ export function installSkyhawkMock(): SkyhawkMock {
       void Promise.resolve().then(() =>
         cockpit.rendererLoaded(state.model ?? EMPTY_MODEL, state.telemetry ?? [])
       )
+      // …and HidService hands it the report with its live axes (R3.3), on the same terms.
+      void Promise.resolve().then(() => push('hid:report', hidPush()))
+      // …and what the old page held for itself starts over (GatewayConnection, SerialTrafficMonitor,
+      // DcsRelay).
+      linkDown.pageLoaded(device().state)
+      monitorShown = false
+      recordingShown = { on: false }
+      replayShown = undefined
+      factsKey = JSON.stringify(relayFactsNow())
       return resolve({
         running: state.relay?.running ?? false,
         relay: state.relay ?? { running: false },
-        device: state.device ?? { state: 'no-device' },
+        relayFacts: relayFactsNow(),
+        device: devicePush(),
         cal: host.state()
       })
     }),
@@ -227,26 +266,54 @@ export function installSkyhawkMock(): SkyhawkMock {
     ),
     getEvents: vi.fn(() => resolve(state.events ?? [])),
     getNodeRegistry: vi.fn(() => resolve(state.registry ?? EMPTY_REGISTRY)),
-    getHidAvailability: vi.fn(() =>
-      resolve(state.hidAvailability ?? { axes: [], hats: [], buttons: [] })
-    ),
+    getHidAvailability: vi.fn(() => resolve(state.hidAvailability ?? NO_CATALOGUE)),
 
     // ── intents: harmless defaults ──
     setConfig: vi.fn((p: Partial<AppConfig>) =>
       resolve({ ...DEFAULT_CONFIG, ...state.config, ...p })
     ),
+    // ── a form's settings change: main's SettingsService builds the save (settings-form.ts) and
+    //    applies it — `setConfig`, the spy, stands for that apply — then pushes `config:changed` ──
+    editConfig: vi.fn((edit: ConfigEdit) => editSettings(edit)),
     exportConfig: vi.fn(() => resolve({})),
     openConfigImport: vi.fn(() => resolve({ status: 'canceled' as const })),
-    applyConfigImport: vi.fn(() => resolve({ ok: false as const, error: 'mock' })),
+    // An applied import: main's settings are what it answered, and its forms start over from them.
+    applyConfigImport: after(
+      vi.fn<SkyhawkApi['applyConfigImport']>(() => resolve({ ok: false as const, error: 'mock' })),
+      (r: Awaited<ReturnType<SkyhawkApi['applyConfigImport']>>) => {
+        if (!r.ok) return
+        state = { ...state, config: r.config }
+        pushFacts() // the relay's facts follow the settings (AppServices' settings subscriber)
+        push('config:changed', configChanged('import'))
+      }
+    ),
     startRelay: vi.fn(() => resolve({ ok: true })),
     stopRelay: vi.fn(() => resolve({ ok: true })),
+    // ── the relay's on/off: main's DcsRelay.toggle — Stop, or save the settings then Start — over
+    //    the spies above, so a test still sees (and can refuse) the Start ──
+    toggleRelay: vi.fn((relaying: boolean) =>
+      relaying ? fns.stopRelay() : editSettings({}).then(() => fns.startRelay())
+    ),
     connectDevice: vi.fn(() => resolve(undefined)),
     disconnectDevice: vi.fn(() => resolve(undefined)),
     exportLog: vi.fn(() => resolve({})),
     clearEvents: vi.fn(() => resolve(undefined)),
     exportEvents: vi.fn(() => resolve({})),
-    toggleCapture: vi.fn(() => resolve({ recording: false })),
-    openReplay: vi.fn(() => resolve({ loaded: false })),
+    // The Record controls and the Capture card follow main's answer (DcsRelay, `relay:facts`).
+    toggleCapture: after(
+      vi.fn<SkyhawkApi['toggleCapture']>(() => resolve({ recording: false })),
+      (r: CaptureState) => {
+        recordingShown = captureView(r)
+        pushFacts()
+      }
+    ),
+    openReplay: after(
+      vi.fn<SkyhawkApi['openReplay']>(() => resolve({ loaded: false })),
+      (r: ReplayLoad) => {
+        replayShown = replayView(r, replayShown)
+        pushFacts()
+      }
+    ),
     refreshNodes: vi.fn(() => resolve(undefined)),
     setNodeMapping: vi.fn(() => resolve(mapped())),
     adoptNode: vi.fn(() => resolve(mapped())),
@@ -258,7 +325,12 @@ export function installSkyhawkMock(): SkyhawkMock {
     // ── node-mapping sequences: main's loop, over the per-board intents above ──
     addAllNodes: vi.fn((bulk) => addAllInTurn(bulk, (id, spec) => fns.adoptNode(id, spec))),
     unhideNodes: vi.fn((ids) => unhideInTurn(ids, (id, on) => fns.hideNode(id, on))),
-    setSerialMonitor: vi.fn(() => resolve(undefined)),
+    // Main's SerialTrafficMonitor: the page's flag comes back on `device:status`.
+    setSerialMonitor: vi.fn((on: boolean) => {
+      monitorShown = on
+      act(() => push('device:status', statusPush()))
+      return resolve(undefined)
+    }),
     dumpSerialPorts: vi.fn(() => resolve({ path: '/tmp/serial-ports.txt', count: 0 })),
     revealDebugLog: vi.fn(() => resolve(undefined)),
     // ── calibration intents: main's workflow answers them (the host below) ──
@@ -338,6 +410,67 @@ export function installSkyhawkMock(): SkyhawkMock {
     )
   }
 
+  // ── the device link, as main's GatewayConnection pushes it (link-state.ts) ──
+  const device = (): DeviceStatus => state.device ?? { state: 'no-device' }
+  /** The Cockpit's "last known" time and the serial monitor's flag: the page's, kept in main. */
+  const linkDown = new LinkDownClock()
+  let monitorShown = false
+  /** The status with what main concludes from it, as the last push carried it. */
+  const devicePush = (): DeviceStatusPush => ({
+    ...device(),
+    ...linkFacts(device(), { linkDownAt: linkDown.value, serialMonitor: monitorShown })
+  })
+  /** One `device:status` push, judged as GatewayConnection judges each. */
+  const statusPush = (): DeviceStatusPush => {
+    linkDown.pushed(device().state)
+    return devicePush()
+  }
+
+  // ── the settings, as main's SettingsService holds and pushes them ──
+  const config = (): AppConfig => ({ ...DEFAULT_CONFIG, ...state.config })
+  /**
+   * A form's change: SettingsService builds the save (settings-form.ts) and applies it —
+   * `setConfig`, the spy, stands for that apply — the relay's facts follow, then `config:changed`.
+   */
+  const editSettings = (edit: ConfigEdit): Promise<AppConfig> => {
+    const built = editedConfig(config(), edit)
+    const saved = fns.setConfig(built)
+    state = { ...state, config: { ...config(), ...built } }
+    act(() => {
+      pushFacts()
+      push('config:changed', configChanged('edit'))
+    })
+    return saved
+  }
+
+  // ── the relay's facts, as main's DcsRelay pushes them (relay-rules.ts) ──
+  /** The recording and the capture as the page set them; a reloaded page starts over (N1). */
+  let recordingShown: RelayFacts['recording'] = { on: false }
+  let replayShown: RelayFacts['replay']
+  let factsKey: string | undefined
+  const relayFactsNow = (): RelayFacts =>
+    relayFacts({
+      config: config(),
+      stream: state.relay?.stream,
+      deviceState: device().state,
+      linkUp: isLinkUp(device().state),
+      recording: recordingShown,
+      replay: replayShown
+    })
+  /** `relay:facts`, when they changed. */
+  const pushFacts = (): void => {
+    const f = relayFactsNow()
+    const key = JSON.stringify(f)
+    if (key === factsKey) return
+    factsKey = key
+    push('relay:facts', f)
+  }
+  const configChanged = (source: ConfigChanged['source']): ConfigChanged => ({
+    config: config(),
+    psu: resolvePsu(config().psu),
+    source
+  })
+
   /** A mapping intent main accepted: it answers with the model (and would push it). */
   const mapped = () => ({ ok: true as const, model: state.model ?? EMPTY_MODEL })
 
@@ -391,8 +524,31 @@ export function installSkyhawkMock(): SkyhawkMock {
     return f && ({ ok: false as const, ...f } satisfies CalResult<never>)
   }
 
+  // ── the HID report, as main's HidService pushes it (hid-facts.ts) ──
+  /** Before any report: what the renderer starts from (the reader has nothing yet). */
+  const NO_REPORT: HidSnapshot = {
+    axes: Array(HID_REPORT_LAYOUT.axes.count).fill(0),
+    buttons: Array(HID_REPORT_LAYOUT.buttons.count).fill(false),
+    hats: Array(HID_REPORT_LAYOUT.hats.count).fill(0),
+    ageMs: 0,
+    rateHz: 0
+  }
+  /** What the device declares, as calibration last pushed it (`cal:workflow`). */
+  let hidCal: CalSnapshot | undefined
+  const hidPush = (): HidReport => {
+    const h = state.hid ?? NO_REPORT
+    return { ...h, ...hidFacts(h.ageMs, hidCal, (state.hidAvailability ?? NO_CATALOGUE).axes) }
+  }
+
   /** Main's calibration workflow (HidCalibrationService hosts the same), over the spies above. */
-  const host = new CalibrationWorkflowHost(calSpies, (st) => push('cal:workflow', st))
+  const host = new CalibrationWorkflowHost(calSpies, (st) => {
+    push('cal:workflow', st)
+    // HidService follows what the device declares, after the push (AppServices).
+    if (st.tab.snapshot !== hidCal) {
+      hidCal = st.tab.snapshot
+      push('hid:report', hidPush())
+    }
+  })
 
   /** Main's Cockpit snapshot (NodeHub hosts the same), over the scenario as main holds it. */
   const cockpit = new CockpitSnapshotHost((snap) => push('cockpit:snapshot', snap), {
@@ -416,12 +572,15 @@ export function installSkyhawkMock(): SkyhawkMock {
         for (const [key, ch] of Object.entries(PUSHES) as [keyof Scenario, PushChannel][]) {
           const data = s[key]
           if (data === undefined) continue
-          push(ch, data as never)
+          // `device:status` and `hid:report` carry what main concludes from them (R3.3).
+          push(ch, (key === 'device' ? statusPush() : key === 'hid' ? hidPush() : data) as never)
           // What main does next, inside the same step: the workflow follows the link's state
           // (onStatus, after `device:status`) and takes the report (calRead, after `cal:data`);
           // the Cockpit snapshot follows the link and each node push (NodeHub).
           if (key === 'device') host.linkStatus(s.device!.state)
           if (key === 'device') cockpit.linkChanged()
+          // The relay's facts follow its state and the link (DcsRelay, R3.3).
+          if (key === 'device' || key === 'relay') pushFacts()
           if (key === 'model') cockpit.modelPushed(s.model!)
           if (key === 'telemetry') cockpit.telemetryPushed(s.telemetry!)
           if (key === 'cal') host.reported(s.cal!)

@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { onTestFinished, vi } from 'vitest'
 import { CTRL, type PushChannel, type PushChannels } from '@shared/app'
-import type { AppConfig } from '@shared/config'
+import type { AppConfig, ConfigEdit } from '@shared/config'
 import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes'
 
 // ── the outside world, faked ─────────────────────────────────────────────────
@@ -211,11 +211,19 @@ function launch(opts: ServicesOptions) {
 
   // app/ipc.ts registerIpc() and the topics' ipc.ts: the renderer's requests main answers.
   const intents = {
-    [CTRL.configGet]: () => services.settings.get(),
+    [CTRL.configGet]: () => services.settings.view(),
     [CTRL.configSet]: (patch: Partial<AppConfig>) => services.settings.apply(patch),
+    [CTRL.configEdit]: (edit: ConfigEdit) => services.settings.edit(edit),
     [CTRL.relayStart]: () => services.relay.start(),
     [CTRL.relayStop]: () => services.relay.stop(),
-    [CTRL.relayStatus]: () => services.status(),
+    [CTRL.relayToggle]: (relaying: boolean) => services.relay.toggle(relaying),
+    // A renderer's first pull on (re)load: what the old page held goes with it (app/ipc.ts).
+    [CTRL.relayStatus]: () => {
+      services.calibration.workflow.rendererLoaded()
+      services.nodes.rendererLoaded()
+      services.rendererLoaded()
+      return services.status()
+    },
     [CTRL.deviceConnect]: () => services.connection.connect(),
     [CTRL.deviceDisconnect]: () => services.connection.disconnect(),
     [CTRL.nodesRefresh]: () => services.nodes.requestNodes(),

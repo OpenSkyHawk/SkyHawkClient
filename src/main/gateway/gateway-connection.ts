@@ -10,8 +10,9 @@
 // (device-line-tap.ts) subscribe to it. Export goes in through write(). That split is the point.
 // Bundled together, there was no node status, PDU telemetry, HID or calibration unless DCS was
 // being relayed, and stopping the relay tore the port down with it.
-import { isLinkUp, type DeviceStatus, type GatewayStatus } from '@shared/gateway'
+import type { DeviceStatus, DeviceStatusPush, GatewayStatus } from '@shared/gateway'
 import type { Emit } from '@shared/app'
+import { isLinkUp, LinkDownClock, linkFacts } from './link-state'
 import {
   findSimGatewayPort,
   listSerialPorts,
@@ -83,13 +84,15 @@ export interface LinkRider {
 
 /**
  * What GatewayConnection needs from app (P6: it never asks electron): the debug log
- * (SerialBridge), the calibration frame filter, and the Gateway's health as the node layer follows
- * it (NodeHub drives GatewayWatch, UD-C), which the connected status carries.
+ * (SerialBridge), the calibration frame filter, the Gateway's health as the node layer follows
+ * it (NodeHub drives GatewayWatch, UD-C), which the connected status carries, and whether the
+ * page's serial monitor is on (SerialTrafficMonitor), which every status push carries (R3.3).
  */
 export interface GatewayConnectionDeps {
   log: Log
   frames: CalFrameFilter
   health: () => GatewayStatus | undefined
+  serialMonitor?: () => boolean
 }
 
 /** The link's push tick: node status, node model and the HID snapshot. */
@@ -105,6 +108,8 @@ function subscribe<T>(set: Set<T>, cb: T): Unsubscribe {
 export class GatewayConnection {
   private serial?: SerialBridge
   private status: DeviceStatus = { state: 'disconnected' }
+  /** The Cockpit's "last known" time, as the page's store kept it (R3.3). */
+  private readonly linkDown = new LinkDownClock()
   private autoConnect = true
   private started = false
   private timers: ReturnType<typeof setInterval>[] = []
@@ -282,6 +287,24 @@ export class GatewayConnection {
     return this.status
   }
 
+  /** The status with what main concludes from it, as the last `device:status` carried it (R3.3). */
+  statusPush(): DeviceStatusPush {
+    return this.withFacts(this.status)
+  }
+
+  /**
+   * A renderer (re)loaded (`relay:status`): the page's own link facts start over, as its store
+   * did — no "last known" time until the link next drops (N1).
+   */
+  rendererLoaded(): void {
+    this.linkDown.pageLoaded(this.status.state)
+  }
+
+  /** Something `device:status` carries changed without the link changing (the serial monitor). */
+  pushStatus(): void {
+    this.emitStatus(this.status)
+  }
+
   /** A port is held — looking for the board, opening or open — from connect() until released. */
   get attached(): boolean {
     return !!this.serial
@@ -358,7 +381,7 @@ export class GatewayConnection {
    */
   pushGatewayHealth(gateway: GatewayStatus | undefined): void {
     this.status = { ...this.status, gateway }
-    this.emit('device:status', this.status)
+    this.emitStatus(this.status)
   }
 
   private setStatus(status: DeviceStatus): void {
@@ -372,8 +395,24 @@ export class GatewayConnection {
       return
     }
     this.status = status
-    this.emit('device:status', status)
+    this.emitStatus(status)
     for (const cb of this.statusCbs) cb(status)
+  }
+
+  /** Every `device:status`: the status, and what it means (link-state.ts), judged per push. */
+  private emitStatus(status: DeviceStatus): void {
+    this.linkDown.pushed(status.state)
+    this.emit('device:status', this.withFacts(status))
+  }
+
+  private withFacts(status: DeviceStatus): DeviceStatusPush {
+    return {
+      ...status,
+      ...linkFacts(status, {
+        linkDownAt: this.linkDown.value,
+        serialMonitor: this.deps.serialMonitor?.() ?? false
+      })
+    }
   }
 
   private raise(tag: string, message: string): void {

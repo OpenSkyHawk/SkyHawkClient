@@ -1,18 +1,35 @@
 import { create } from 'zustand'
-import { isLinkUp, type DeviceState, type GatewayStatus, type SerialFrame } from '@shared/gateway'
+import {
+  DEVICE_IDLE,
+  type DeviceState,
+  type DeviceStatusPush,
+  type GatewayStatus,
+  type SerialFrame
+} from '@shared/gateway'
 import { HID_CONTROLS_BY_ID, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
+import type { HidFreshness } from '@shared/hid'
 import { fmtTime, hex2, hex4 } from '@shared/format'
-import type {
-  AircraftStatus,
-  LogRow as IpcLogRow,
-  StreamState,
-  TelemetryReadout
+import {
+  AIRCRAFT_NONE,
+  RELAY_FACTS_IDLE,
+  TELEMETRY_IDLE,
+  type AircraftStatus,
+  type LogRow as IpcLogRow,
+  type RelayFacts,
+  type StreamState,
+  type TelemetryReadout
 } from '@shared/dcs'
-import type { AppConfig, DcsTransport } from '@shared/config'
+import {
+  DEFAULT_CONFIG,
+  PSU_VIEW_DEFAULT,
+  type AppConfig,
+  type ConfigEdit,
+  type DcsTransport,
+  type PsuView
+} from '@shared/config'
 import { CALIBRATION_IDLE, type CalibrationState } from '@shared/hid/calibration'
 import {
   COCKPIT_IDLE,
-  DEFAULT_PSU,
   type CockpitSnapshot,
   type NodeModel,
   type NodeTelemSnapshot,
@@ -58,15 +75,6 @@ function rawHex(addr: number, value: number | string): string {
   return `${hex2(addr >> 8)} ${hex2(addr)} ${hex2(v)} ${hex2(v >> 8)}`
 }
 
-// Idle gauges (value NaN -> "—") until live telemetry arrives.
-const IDLE_TELEMETRY: TelemetryReadout[] = [
-  { id: 'RPM', label: 'RPM', value: NaN, pct: 0, unit: '% RPM' },
-  { id: 'D_IAS_DEG', label: 'IAS', value: NaN, pct: 0, unit: '% FS' },
-  { id: 'D_FLAPS_IND', label: 'Flap', value: NaN, pct: 0, unit: '% DN' },
-  { id: 'D_ALT_NEEDLE', label: 'Press Alt', value: NaN, pct: 0, unit: '% FS' },
-  { id: 'D_FUEL', label: 'Fuel', value: NaN, pct: 0, unit: '% QTY' }
-]
-
 const MAX_LOG = 1000
 const MAX_SERIAL = 2000
 
@@ -82,9 +90,18 @@ export interface AppState {
   host: string
   port: string
   autoConnect: boolean
+  /**
+   * The on/off as shown: set at once by a click (the pending Start or Stop), then as main pushes
+   * `relay:state`, and taken back when main refuses a Start.
+   */
   relaying: boolean
   /** Where the DCS-BIOS stream stands while relaying; undefined when stopped. */
   relayStream?: StreamState
+  /**
+   * What the relay's surfaces show, as main decides it (`relay:facts`, R3.3): for the relay shown
+   * running and shown stopped, the endpoints, the recording and the loaded capture.
+   */
+  relayFacts: RelayFacts
   logPaused: boolean
   autoscroll: boolean
   rawMode: boolean
@@ -106,6 +123,12 @@ export interface AppState {
   deviceDetail?: string
   /** The Gateway's own health (#94); only while connected. */
   deviceGateway?: GatewayStatus
+  /** The link is up, as main concludes it (`device:status`, R3.3). */
+  linkUp: boolean
+  /** The board is plugged in as far as the link can tell: HID reports can arrive (#74). */
+  boardPresent: boolean
+  /** The port would not open because another program holds it. */
+  deviceBusy: boolean
   /** The title-bar Device popover is open — also opened by Overview's Details and Attention's cog (#94). */
   devicePopOpen: boolean
   aircraft: AircraftStatus
@@ -117,19 +140,20 @@ export interface AppState {
    * (peak W included), Attention, side panels and the Adopt queue. Kept, dimmed, while the link is down.
    */
   cockpit: CockpitSnapshot
-  /** When the device link last went down after being up — "last known" time on the Cockpit. */
+  /**
+   * When the device link last went down after being up — "last known" time on the Cockpit. Main
+   * stamps it (`device:status`, R3.3).
+   */
   linkDownAt?: number
 
-  // record / replay
-  recording: boolean
-  recordEvents?: number
-  replayFile?: string
-  replayInfo?: { events: number; durationMs: number }
+  // replay
   replayDriveSerial: boolean
 
   // Cockpit options (#67)
   attentionBanner: boolean
   psu: PsuSetting
+  /** What the PSU setting comes to — preset, limits, name — as main resolves it (R3.3). */
+  psuView: PsuView
 
   // developer / debug
   debugMode: boolean
@@ -154,7 +178,12 @@ export interface AppState {
   hidRate: number
   /** Since the last report, or since we began listening if none has arrived. */
   hidAgeMs: number
-  availAxes: number[]
+  /** The report's age as main bands it (`hid:report`, R3.3). */
+  hidBand: HidFreshness
+  /** Axis slots this Gateway declares, as main counts them (`hid:report`). */
+  hidPresent: number
+  /** Per axis slot: shown live (catalogued and declared), as main decides it (`hid:report`). */
+  axisLive: boolean[]
   availHats: number[]
   availButtons: number[]
 
@@ -175,6 +204,7 @@ export interface AppState {
   eventsPauseMark?: number
 
   // raw serial monitor
+  /** The Serial tab's monitor, as main reports this page last set it (`device:status`, R3.3). */
   serialMonitor: boolean
   serialLog: SerialRow[]
   private_serialSeq: number
@@ -259,7 +289,7 @@ function calibrationIntents(): CalibrationIntents {
 }
 
 /** The store fields an AppConfig sets — on load, and after a config import replaces it. */
-export function configState(cfg: AppConfig): Partial<AppState> {
+function configState(cfg: AppConfig): ConfigFields {
   const transport = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(
     (k) => TRANSPORT_TO_IPC[k] === cfg.transport
   )
@@ -276,28 +306,60 @@ export function configState(cfg: AppConfig): Partial<AppState> {
   }
 }
 
-function buildConfig(s: AppState): Partial<AppConfig> {
+/** The store fields `device:status` sets — on each push, and from the rehydrate bundle. */
+function linkState(
+  d: DeviceStatusPush
+): Pick<
+  AppState,
+  | 'deviceState'
+  | 'devicePort'
+  | 'deviceDetail'
+  | 'deviceGateway'
+  | 'linkUp'
+  | 'boardPresent'
+  | 'deviceBusy'
+  | 'linkDownAt'
+  | 'serialMonitor'
+> {
   return {
-    sourceMode: s.sourceMode,
-    transport: TRANSPORT_TO_IPC[s.transport],
-    host: s.host,
-    commandPort: Number(s.port) || 7778,
-    autoConnect: s.autoConnect,
-    replayDriveSerial: s.replayDriveSerial,
-    debugMode: s.debugMode,
-    attentionBanner: s.attentionBanner,
-    psu: s.psu
+    deviceState: d.state,
+    devicePort: d.portPath,
+    deviceDetail: d.detail,
+    deviceGateway: d.gateway,
+    linkUp: d.linkUp,
+    boardPresent: d.boardPresent,
+    deviceBusy: d.busy,
+    linkDownAt: d.linkDownAt,
+    serialMonitor: d.serialMonitor
   }
+}
+
+/** The settings fields the forms edit, as the store holds them. */
+type ConfigFields = Pick<
+  AppState,
+  | 'sourceMode'
+  | 'transport'
+  | 'host'
+  | 'port'
+  | 'autoConnect'
+  | 'replayDriveSerial'
+  | 'debugMode'
+  | 'attentionBanner'
+  | 'psu'
+>
+
+/** A form's change as main takes it (`config:edit`): the contract's transport, the port as typed. */
+function configEdit(patch: Partial<ConfigFields>): ConfigEdit {
+  const { transport, ...rest } = patch
+  return { ...rest, ...(transport !== undefined && { transport: TRANSPORT_TO_IPC[transport] }) }
 }
 
 export const useStore = create<AppState>((set, get) => ({
   tab: 'overview',
-  sourceMode: 'monitor',
-  transport: 'tcp',
-  host: '127.0.0.1',
-  port: '7778',
-  autoConnect: true,
+  ...configState(DEFAULT_CONFIG),
+  psuView: PSU_VIEW_DEFAULT,
   relaying: false,
+  relayFacts: RELAY_FACTS_IDLE,
   logPaused: false,
   autoscroll: true,
   rawMode: false,
@@ -307,19 +369,13 @@ export const useStore = create<AppState>((set, get) => ({
   eventSource: 'all',
   problemsOnly: false,
 
-  deviceState: 'no-device',
+  ...linkState(DEVICE_IDLE),
   devicePopOpen: false,
-  aircraft: { name: 'NONE', inferred: false, supported: true },
+  aircraft: AIRCRAFT_NONE,
   nodeTelemetry: [],
   cockpit: COCKPIT_IDLE,
 
-  recording: false,
-  replayDriveSerial: false,
-  attentionBanner: true,
-  psu: DEFAULT_PSU,
-  debugMode: false,
-
-  telemetry: IDLE_TELEMETRY,
+  telemetry: TELEMETRY_IDLE,
   bytesIn: 0,
   bytesOut: 0,
   fps: 0,
@@ -333,11 +389,14 @@ export const useStore = create<AppState>((set, get) => ({
   axes: Array(HID_REPORT_LAYOUT.axes.count).fill(0),
   buttons: [],
   hats: Array(HID_REPORT_LAYOUT.hats.count).fill(0),
-  availAxes: [],
   availHats: [],
   availButtons: [],
   hidRate: 0,
   hidAgeMs: 0,
+  // A report 0 ms old reads live; no slot is live until main says so (as before the catalogue).
+  hidBand: 'live',
+  hidPresent: 0,
+  axisLive: [],
 
   calibration: CALIBRATION_IDLE,
   calibrate: calibrationIntents(),
@@ -346,7 +405,6 @@ export const useStore = create<AppState>((set, get) => ({
   private_logSeq: 1000,
   events: [],
 
-  serialMonitor: false,
   serialLog: [],
   private_serialSeq: 0,
 
@@ -360,27 +418,21 @@ export const useStore = create<AppState>((set, get) => ({
       return { [key]: on } as Partial<AppState>
     }),
 
+  // What is typed stays as typed; main builds and saves the settings (`config:edit`, R3.3).
   setConfigField: (patch) => {
     set(patch as Partial<AppState>)
-    void window.skyhawk?.setConfig(buildConfig(get()))
+    void window.skyhawk?.editConfig(configEdit(patch))
   },
 
+  // Main stops, or saves the settings and starts (`relay:toggle`, R3.3); the click shows at once.
   toggleRelay: () => {
     const s = get()
-    if (s.relaying) {
-      void window.skyhawk?.stopRelay()
-      set({ relaying: false })
-    } else {
-      void window.skyhawk
-        ?.setConfig(buildConfig(s))
-        .then(() => window.skyhawk?.startRelay())
-        // Main refuses a Start it cannot honour (no board for a mode that needs one) and pushes
-        // no relay:state for it, so the optimistic flag has to be taken back here.
-        .then((r) => {
-          if (r && !r.ok) set({ relaying: false, relayStream: undefined })
-        })
-      set({ relaying: true })
-    }
+    void window.skyhawk?.toggleRelay(s.relaying).then((r) => {
+      // Main refuses a Start it cannot honour (no board for a mode that needs one) and pushes
+      // no relay:state for it, so the pending Relaying has to be taken back here.
+      if (!s.relaying && r && !r.ok) set({ relaying: false, relayStream: undefined })
+    })
+    set({ relaying: !s.relaying })
   },
 
   connectDevice: () => {
@@ -391,21 +443,13 @@ export const useStore = create<AppState>((set, get) => ({
     void window.skyhawk?.disconnectDevice()
   },
 
+  // The recording and the capture come back on `relay:facts` (R3.3).
   toggleCapture: () => {
-    void window.skyhawk
-      ?.toggleCapture()
-      .then((r) => set({ recording: r.recording, recordEvents: r.events }))
+    void window.skyhawk?.toggleCapture()
   },
 
   openReplay: () => {
-    void window.skyhawk?.openReplay().then((r) => {
-      if (r.loaded) {
-        set({
-          replayFile: r.path,
-          replayInfo: { events: r.events ?? 0, durationMs: r.durationMs ?? 0 }
-        })
-      }
-    })
+    void window.skyhawk?.openReplay()
   },
 
   dumpSerialPorts: () => {
@@ -422,8 +466,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   clearLog: () => set({ log: [] }),
 
+  // Main pushes the flag back on `device:status` (R3.3).
   setSerialMonitor: (on) => {
-    set({ serialMonitor: on })
     void window.skyhawk?.setSerialMonitor(on)
   },
 
@@ -461,14 +505,12 @@ export const useStore = create<AppState>((set, get) => ({
     if (!api || bridgeSubscribed) return // outside Electron, or already subscribed
     bridgeSubscribed = true
 
-    void api
-      .getHidAvailability()
-      .then((a) => set({ availAxes: a.axes, availHats: a.hats, availButtons: a.buttons }))
+    void api.getHidAvailability().then((a) => set({ availHats: a.hats, availButtons: a.buttons }))
 
     // Node pushes only fire on change, so a reloaded renderer asks for the current picture.
     void api.getNodes().then(({ model, telemetry }) => setNodes(model, telemetry))
 
-    void api.getConfig().then((cfg) => set(configState(cfg)))
+    void api.getConfig().then((v) => set({ ...configState(v.config), psuView: v.psu }))
 
     // Events live in main for the whole app run; a reloaded renderer picks the list back up.
     void api.getEvents().then((rows) => set({ events: restoreEvents(get().events, rows) }))
@@ -479,10 +521,8 @@ export const useStore = create<AppState>((set, get) => ({
       set({
         relaying: st.running,
         relayStream: st.relay.stream,
-        deviceState: st.device.state,
-        devicePort: st.device.portPath,
-        deviceDetail: st.device.detail,
-        deviceGateway: st.device.gateway,
+        relayFacts: st.relayFacts,
+        ...linkState(st.device),
         // The device's report is only pushed when the port opens. A renderer reload builds a
         // fresh store while the main-process session keeps running, so without carrying the
         // calibration here the badges would stay blank until the next reconnect — forever, on a
@@ -502,26 +542,25 @@ export const useStore = create<AppState>((set, get) => ({
           buttons: h.buttons.flatMap((b, i) => (b ? [i] : [])),
           hats: h.hats,
           hidRate: h.rateHz,
-          hidAgeMs: h.ageMs
+          hidAgeMs: h.ageMs,
+          hidBand: h.band,
+          hidPresent: h.present,
+          axisLive: h.axisLive
         })
       ),
-      api.on('device:status', (d) => {
-        const wasUp = isLinkUp(get().deviceState)
-        set({
-          deviceState: d.state,
-          devicePort: d.portPath,
-          deviceDetail: d.detail,
-          deviceGateway: d.gateway
-        })
-        if (wasUp && !isLinkUp(d.state)) set({ linkDownAt: Date.now() })
-        else if (isLinkUp(d.state)) set({ linkDownAt: undefined })
-      }),
+      api.on('device:status', (d) => set(linkState(d))),
       api.on('relay:state', (r) => set({ relaying: r.running, relayStream: r.stream })),
+      api.on('relay:facts', (f) => set({ relayFacts: f })),
       api.on('cal:workflow', (c) => set({ calibration: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:model', (m) => setNodes(m, get().nodeTelemetry)),
       api.on('nodes:telemetry', (t) => setNodes(get().nodeModel, t)),
       api.on('cockpit:snapshot', (c) => set({ cockpit: c })),
+      // An import replaced the settings: the forms start over from them. A form's own change
+      // leaves what is typed alone (the port as typed, N5).
+      api.on('config:changed', (c) =>
+        set({ psuView: c.psu, ...(c.source === 'import' ? configState(c.config) : {}) })
+      ),
       api.on('serial:traffic', (frames) => {
         const s = get()
         let seq = s.private_serialSeq

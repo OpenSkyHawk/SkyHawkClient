@@ -6,7 +6,11 @@
 // spans topics: the `relay:status` rehydrate bundle and the debug intents.
 import {
   CONFIG_CTRL,
+  CONFIG_PUSH,
   type AppConfig,
+  type ConfigEdit,
+  type ConfigPushChannels,
+  type ConfigView,
   type ConfigExportResult,
   type ConfigImportApplyResult,
   type ConfigImportOpen,
@@ -18,6 +22,7 @@ import {
   type DcsPushChannels,
   type ExportResult,
   type CaptureState,
+  type RelayFacts,
   type RelayResult,
   type RelayState,
   type ReplayLoad
@@ -26,7 +31,7 @@ import { EVENTS_CTRL, EVENTS_PUSH, type EventsPushChannels, type LogEvent } from
 import {
   GATEWAY_CTRL,
   GATEWAY_PUSH,
-  type DeviceStatus,
+  type DeviceStatusPush,
   type GatewayPushChannels
 } from '../gateway/ipc'
 import { HID_CTRL, HID_PUSH, type HidAvailability, type HidPushChannels } from '../hid/ipc'
@@ -55,7 +60,10 @@ import {
 export interface RelayStatus {
   running: boolean
   relay: RelayState
-  device: DeviceStatus
+  /** What the relay's surfaces show, as `relay:facts` carries it (R3.3). */
+  relayFacts: RelayFacts
+  /** The link, with what main concludes from it, as `device:status` carries it (R3.3). */
+  device: DeviceStatusPush
   /**
    * The calibration workflow's last `cal:workflow` push: the device's last report (if the link is
    * still up), the badges and the restore offer, and the dialog if it is open.
@@ -76,9 +84,10 @@ export interface DebugDumpResult {
 //
 // Two scopes (#69). **Link-scoped** pushes flow whenever the device link is up, relaying or not:
 // device:status, nodes:*, serial:traffic, cal:data. On link down they stop and the renderer keeps
-// the last state, dimmed via isLinkUp(). hid:report is neither: the joystick is read for as long
+// the last state, dimmed while device:status says the link is down. hid:report is neither: the joystick is read for as long
 // as the app runs, serial port open or not; nor is cal:workflow, which follows the link's state
-// and the dialog's actions. **Relay-scoped** pushes flow only while
+// and the dialog's actions, nor relay:facts and config:changed, which follow what they are about.
+// **Relay-scoped** pushes flow only while
 // relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries
 // both (panel commands are logged while stopped too), and so does events:batch.
 // Each topic declares its own pushes (shared/<topic>/ipc.ts); this is their union.
@@ -89,7 +98,8 @@ export interface PushChannels
     EventsPushChannels,
     HidPushChannels,
     NodesPushChannels,
-    CalibrationPushChannels {}
+    CalibrationPushChannels,
+    ConfigPushChannels {}
 
 export type PushChannel = keyof PushChannels
 
@@ -108,7 +118,8 @@ export const IPC = {
   ...EVENTS_PUSH,
   ...HID_PUSH,
   ...NODES_PUSH,
-  ...CALIBRATION_PUSH
+  ...CALIBRATION_PUSH,
+  ...CONFIG_PUSH
 } as const
 
 /** Intents this contract owns: the rehydrate bundle and the debug-log tools. */
@@ -149,8 +160,14 @@ export interface IpcRegistrar {
 /** The contextBridge surface exposed to the renderer as `window.skyhawk`. */
 export interface SkyhawkApi {
   on<C extends PushChannel>(channel: C, cb: (data: PushChannels[C]) => void): () => void
-  getConfig(): Promise<AppConfig>
+  /** The settings and what they resolve to (the power supply). */
+  getConfig(): Promise<ConfigView>
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
+  /**
+   * A form's change, as typed (R3.3): main builds the save over what it holds and pushes
+   * `config:changed`.
+   */
+  editConfig(edit: ConfigEdit): Promise<AppConfig>
 
   // ── configuration export / import (#67) ──────────────────────────────────
   /** Save dialog, then write every section to one file. */
@@ -165,6 +182,11 @@ export interface SkyhawkApi {
   ): Promise<ConfigImportApplyResult>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
+  /**
+   * The Relay pill and the Start / Stop button (R3.3): Stop if `relaying` (what the renderer
+   * shows), else save the settings and Start — main's answer to Start, refused or not.
+   */
+  toggleRelay(relaying: boolean): Promise<RelayResult>
   getStatus(): Promise<RelayStatus>
   /** Open the device link now, whatever "connect automatically" says. */
   connectDevice(): Promise<void>

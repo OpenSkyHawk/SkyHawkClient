@@ -63,7 +63,10 @@ const IPC_ORDER = [
   'cal:attach',
   // The node-mapping sequences (R3.2b), after every channel that was here before them.
   'node-mapping:add-all',
-  'node-mapping:unhide'
+  'node-mapping:unhide',
+  // A form's settings change and the relay's on/off (R3.3), after every channel here before them.
+  'config:edit',
+  'relay:toggle'
 ] as const satisfies readonly CtrlChannel[]
 
 /** IPC_ORDER's type when it lists every channel; otherwise the channels it leaves out. */
@@ -109,6 +112,8 @@ export function registerIpc(ipcMain: IpcRegistrar, deps: IpcDeps): void {
     services.calibration.workflow.rendererLoaded()
     // …and the Cockpit snapshot starts over from what main holds, as the old page's store did (R3.2).
     services.nodes.rendererLoaded()
+    // …and what the old page's store held for itself goes with it (R3.3, N1).
+    services.rendererLoaded()
     return services.status()
   })
   ipc.handle(APP_CTRL.debugDumpPorts, async () => {

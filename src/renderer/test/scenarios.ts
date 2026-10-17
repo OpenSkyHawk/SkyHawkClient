@@ -6,7 +6,8 @@ import {
   appSettings,
   buildConfigFile,
   diffImport,
-  parseConfigFile
+  parseConfigFile,
+  withSectionNotes
 } from '../../main/config/config-file'
 import { DEFAULT_CONFIG, type ConfigSnapshot, type ImportPreview } from '@shared/config'
 import { gatewayStatus } from '../../main/gateway/gateway-health'
@@ -183,7 +184,8 @@ export const configFileText = (
 
 /**
  * The preview main answers `openConfigImport` with for `text` against `current`, built the way
- * main's ConfigTransfer.preview builds it (parseConfigFile + diffImport); the token is fixed.
+ * main's ConfigTransfer.preview builds it (parseConfigFile + diffImport + the section notes); the
+ * token is fixed.
  */
 export function importPreview(
   text: string,
@@ -194,7 +196,7 @@ export function importPreview(
   const parsed = parseConfigFile(text)
   if (!parsed.ok) throw new Error(`importPreview: main would refuse this file: ${parsed.error}`)
   const { config } = parsed
-  const sections = diffImport(defaults, current, config.sections)
+  const sections = withSectionNotes(diffImport(defaults, current, config.sections))
   return {
     token: 'import-token-1',
     fileName,

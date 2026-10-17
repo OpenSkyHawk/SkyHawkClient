@@ -3,12 +3,38 @@ import { CALIBRATION_IDLE, type CalibrationState, type CalSnapshot } from '@shar
 import type { NodeModel, NodeSnapshot, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import type { LogEvent } from '@shared/events'
+import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
+import type { HidSnapshot } from '@shared/hid'
+import { DEFAULT_CONFIG, PSU_VIEW_DEFAULT } from '@shared/config'
+import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { relayFacts } from '../../main/dcs/relay-rules'
+import { hidFacts } from '../../main/hid/hid-facts'
 
 // The store talks to main through window.skyhawk. Only the calls initBridge() makes need to be
 // real here; the rest exist so subscription setup does not throw.
 type Listener = (data: unknown) => void
 const listeners = new Map<string, Listener[]>()
-let status: RelayStatus = {
+
+/**
+ * What main's pushes and its rehydrate bundle are built from, as the cases give them: since R3.3
+ * main adds what it concludes (the link's facts) on the way out, as the fake below does with
+ * main's own builders.
+ */
+interface Given {
+  'device:status': DeviceStatus
+  'hid:report': HidSnapshot
+}
+type GivenPushes = Omit<PushChannels, keyof Given> & Given
+type GivenStatus = Omit<RelayStatus, 'device' | 'relayFacts'> & { device: DeviceStatus }
+
+/** Main's GatewayConnection: the page's "last known" time, judged per push (link-state.ts). */
+let linkDown = new LinkDownClock()
+const withFacts = (d: DeviceStatus): DeviceStatusPush => ({
+  ...d,
+  ...linkFacts(d, { linkDownAt: linkDown.value, serialMonitor: false })
+})
+
+let status: GivenStatus = {
   running: false,
   relay: { running: false },
   device: { state: 'no-device' }
@@ -34,34 +60,68 @@ function fakeApi() {
       listeners.set(ch, [...(listeners.get(ch) ?? []), cb])
       return () => {}
     },
-    getStatus: () => Promise.resolve(status),
+    getStatus: () => {
+      linkDown.pageLoaded(status.device.state) // a (re)loaded page starts over (N1)
+      return Promise.resolve({
+        ...status,
+        device: withFacts(status.device),
+        // main's DcsRelay, over the default settings and this status
+        relayFacts: relayFacts({
+          config: DEFAULT_CONFIG,
+          stream: status.relay.stream,
+          deviceState: status.device.state,
+          linkUp: isLinkUp(status.device.state),
+          recording: { on: false }
+        })
+      })
+    },
     getNodes: () => Promise.resolve(nodesSnap),
     getEvents: () => Promise.resolve(eventsSnap),
     clearEvents: () => {
       eventsCleared++
       return Promise.resolve()
     },
+    // The settings and what they resolve to (`config:get` since R3.3).
     getConfig: () =>
       Promise.resolve({
-        sourceMode: 'bridge',
-        transport: 'tcp-to-host',
-        host: '127.0.0.1',
-        commandPort: 7778,
-        listenPort: 5010,
-        autoConnect: true,
-        replayDriveSerial: false,
-        debugMode: false
+        config: {
+          sourceMode: 'bridge',
+          transport: 'tcp-to-host',
+          host: '127.0.0.1',
+          commandPort: 7778,
+          listenPort: 5010,
+          autoConnect: true,
+          replayDriveSerial: false,
+          debugMode: false
+        },
+        psu: PSU_VIEW_DEFAULT
       }),
     getHidAvailability: () => Promise.resolve({ axes: [0, 1], hats: [], buttons: [] }),
     setConfig: (patch: unknown) => Promise.resolve(patch),
+    editConfig: (edit: unknown) => Promise.resolve(edit),
+    // main's DcsRelay.toggle over the two intents below
+    toggleRelay: (relaying: boolean) =>
+      relaying
+        ? Promise.resolve({ ok: true })
+        : Promise.resolve({}).then(() => Promise.resolve(startResult)),
     startRelay: () => Promise.resolve(startResult),
     stopRelay: () => Promise.resolve({ ok: true })
   }
 }
 
-/** Deliver a main -> renderer push, as the preload bridge would. */
-function push<C extends PushChannel>(ch: C, data: PushChannels[C]) {
-  for (const cb of listeners.get(ch) ?? []) cb(data)
+/** Deliver a main -> renderer push, as main builds it and the preload bridge delivers it. */
+function push<C extends PushChannel>(ch: C, data: GivenPushes[C]) {
+  let out: unknown = data
+  if (ch === 'device:status') {
+    const d = data as DeviceStatus
+    linkDown.pushed(d.state)
+    out = withFacts(d)
+  }
+  if (ch === 'hid:report') {
+    const h = data as HidSnapshot
+    out = { ...h, ...hidFacts(h.ageMs, undefined, [0, 1]) } // main's HidService, no device report
+  }
+  for (const cb of listeners.get(ch) ?? []) cb(out)
 }
 
 const snapshot = (calibratedMask: number, serial = 'BOARD-A'): CalSnapshot => ({
@@ -94,6 +154,7 @@ const calibration = (snap: CalSnapshot): CalibrationState => ({
  */
 async function freshStore() {
   listeners.clear()
+  linkDown = new LinkDownClock()
   vi.resetModules()
   ;(globalThis as { window?: unknown }).window = { skyhawk: fakeApi() }
   const mod = await import('./store')

@@ -22,10 +22,15 @@ import {
 } from '@shared/config'
 import type { CachedAxis, CalCache } from '@shared/hid/calibration'
 import type { MappedNode, NodeDefaults, NodeMappingFile, PsuSetting } from '@shared/nodes'
-import { PSU_PRESETS } from '@shared/nodes/legacy-rules'
 import { onOff, plural, PSU_LIMITS } from '@shared/format'
 import { sanitizeCache } from '../hid/calibration'
-import { effectiveMapping, importMapping, sanitizeNodeMapping, sanitizePsu } from '../nodes'
+import {
+  effectiveMapping,
+  importMapping,
+  PSU_PRESETS,
+  sanitizeNodeMapping,
+  sanitizePsu
+} from '../nodes'
 
 /** File format this build writes. A higher version came from a newer client. */
 export const CONFIG_FILE_VERSION = 1
@@ -273,6 +278,20 @@ export function diffImport(
     out.push({ id, title: SECTION_TITLES[id], summary, rows })
   }
   return out
+}
+
+/**
+ * What applying the calibration section does, said in the review (ImportDialog.tsx before R3.3):
+ * it adds to the client's copy and never writes to the device.
+ */
+const CAL_NOTE =
+  'Adds these values to the client’s calibration copy — nothing is written to the device here. If the Gateway has lost calibration, the usual Review & restore offer appears on the HID tab; axes the device still holds are never overwritten.'
+
+/** The review's sections with what applying each does, where it says (a changing calibration). */
+export function withSectionNotes(sections: SectionDiff[]): SectionDiff[] {
+  return sections.map((s) =>
+    s.id === 'calibration' && s.rows.length > 0 ? { ...s, note: CAL_NOTE } : s
+  )
 }
 
 // ── apply ────────────────────────────────────────────────────────────────────

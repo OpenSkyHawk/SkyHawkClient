@@ -1,7 +1,6 @@
 import { useStore, type SourceMode, type Transport } from '../store'
 import { USB_IDENTITY } from '@shared/firmware'
-import { isLinkUp } from '@shared/gateway'
-import { deviceView, relayNote, startBlocked, startBlockedReason } from '../device-view'
+import { deviceView, relayNote, relaySide, startBlockedReason } from '../device-view'
 import { Dot } from './cockpit/Dot'
 
 /** `0x2E8A`: a USB id as the device card prints it, four upper-case hex digits. */
@@ -35,7 +34,7 @@ function NodesCard() {
   const openInCockpit = useStore((x) => x.openInCockpit)
   const set = useStore((x) => x.set)
   // Node status rides on the device link, which is up in every source mode (#69).
-  const linkUp = isLinkUp(deviceState)
+  const linkUp = useStore((x) => x.linkUp)
 
   return (
     <div className="card field ncard">
@@ -144,27 +143,22 @@ export function Connection() {
 
   // The device card shows the link (#69), which is automatic and independent of the relay.
   // Before a SimGateway is found, only the match target (VID/PID) is shown — not real device data.
-  const connected = isLinkUp(s.deviceState)
+  const connected = s.linkUp
   const dev = deviceView(s.deviceState, {
     port: s.devicePort,
     detail: s.deviceDetail,
+    busy: s.deviceBusy,
     autoConnect: s.autoConnect
   })
-  const blocked =
-    !s.relaying &&
-    startBlocked({
-      mode: s.sourceMode,
-      replayDriveSerial: s.replayDriveSerial,
-      deviceState: s.deviceState
-    })
+  // The relay controls as main decides them (relay:facts, R3.3), for the on/off as shown.
+  const facts = s.relayFacts
+  const side = relaySide(facts, s.relaying)
+  const blocked = side.startBlocked
   const note = blocked
-    ? { text: startBlockedReason(s.sourceMode), info: true }
-    : relayNote({
-        mode: s.sourceMode,
-        relaying: s.relaying,
-        stream: s.relayStream,
-        deviceState: s.deviceState
-      })
+    ? { text: startBlockedReason(blocked), info: true }
+    : relayNote(side.waiting, facts.stream)
+  const replay = facts.replay
+  const recording = facts.recording
   const deviceRows = [
     { k: 'Identity', v: connected ? USB_IDENTITY.product : '— no device' },
     { k: 'VID / PID', v: connected ? VID_PID : `${VID_PID} · target` },
@@ -265,12 +259,10 @@ export function Connection() {
               Load capture…
             </button>
             <div className="hint">
-              {s.replayFile ? (
+              {replay ? (
                 <>
-                  <span style={{ color: 'var(--text)' }}>{s.replayFile.split(/[/\\]/).pop()}</span>
-                  {s.replayInfo
-                    ? ` · ${s.replayInfo.events} events · ${(s.replayInfo.durationMs / 1000).toFixed(1)}s`
-                    : ''}
+                  <span style={{ color: 'var(--text)' }}>{replay.file.split(/[/\\]/).pop()}</span>
+                  {` · ${replay.events} events · ${(replay.durationMs / 1000).toFixed(1)}s`}
                   {' — press Start to play.'}
                 </>
               ) : (
@@ -349,19 +341,23 @@ export function Connection() {
             <div className="card-h" style={{ marginBottom: 12 }}>
               Record
             </div>
-            <button className="browse" onClick={() => toggleCapture()} disabled={!s.relaying}>
-              {s.recording ? (
+            <button
+              className="browse"
+              onClick={() => toggleCapture()}
+              disabled={!side.canRecord.connection}
+            >
+              {recording.on ? (
                 <>
-                  {REC_DOT}Stop recording · {s.recordEvents ?? 0} events
+                  {REC_DOT}Stop recording · {recording.events ?? 0} events
                 </>
               ) : (
                 'Start recording…'
               )}
             </button>
             <div className="hint">
-              {s.recording
+              {recording.on
                 ? 'Recording live DCS-BIOS stream. Stop to save — replay the file on any machine with no DCS.'
-                : s.relaying
+                : side.canRecord.connection
                   ? 'Capture a live session to replay later with no DCS running.'
                   : 'Start the relay first to enable recording.'}
             </div>
@@ -372,7 +368,7 @@ export function Connection() {
           <button
             className={`bigbtn${s.relaying ? ' bigbtn--stop' : ''}`}
             style={{ width: '100%' }}
-            disabled={blocked}
+            disabled={!!blocked}
             onClick={() => toggleRelay()}
           >
             {s.relaying ? 'Stop relay' : 'Start relay'}

@@ -15,6 +15,7 @@ import type {
   CalHello,
   CalRawSample,
   CalResult,
+  CalibrationState,
   CalSnapshot
 } from '@shared/hid/calibration'
 import type { Emit } from '@shared/app'
@@ -54,6 +55,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
   private lastCal?: CalSnapshot
   /** The calibration dialog's workflow, over this service's own commands. */
   readonly workflow: CalibrationWorkflowHost
+  private readonly workflowCbs = new Set<(state: CalibrationState) => void>()
 
   constructor(
     private readonly emit: Emit,
@@ -71,8 +73,16 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
         calCacheStore: async (axes) => this.calCacheStore(axes),
         calCacheDrop: async (idx) => this.calCacheDrop(idx)
       },
-      (state) => this.emit('cal:workflow', state)
+      (state) => {
+        this.emit('cal:workflow', state)
+        for (const cb of this.workflowCbs) cb(state)
+      }
     )
+  }
+
+  /** Each `cal:workflow` push, after it went out (HidService follows the device's presentMask). */
+  onWorkflow(cb: (state: CalibrationState) => void): void {
+    this.workflowCbs.add(cb)
   }
 
   /** The link's state changed (GatewayConnection's onStatus). */

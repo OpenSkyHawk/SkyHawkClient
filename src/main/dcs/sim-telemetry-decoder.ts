@@ -2,12 +2,48 @@
 // sim-telemetry readouts — using the generated A-4E-C reference.
 import { A4EC_OUTPUTS_BY_ADDRESS } from '@shared/firmware'
 import { A4EC_ADDRESS_RANGE, StringRegion, ACFT_NAME_ADDRESS, ACFT_NAME_MAX } from './bios-protocol'
-import type { AircraftStatus, LogRow, TelemetryReadout } from '@shared/dcs'
+import {
+  AIRCRAFT_NONE,
+  type AircraftStatus,
+  type GaugeTone,
+  type LogRow,
+  type TelemetryReadout
+} from '@shared/dcs'
 
 interface TelemetrySpec {
   id: string
   label: string
   unit: string
+}
+
+/**
+ * A gauge ring's alert level (Overview.tsx gaugeColor before R3.3): fuel goes to its alert under
+ * 25 %; the flap and altitude rings are the secondary ones. Keyed on the readout's id, so the idle
+ * placeholders (X10: `D_ALT_NEEDLE`, not `ALT_FT`) keep the plain ring they had.
+ */
+export function gaugeTone(id: string, pct: number): GaugeTone {
+  if (id === 'D_FUEL') return pct < 0.25 ? 'fuel-low' : 'fuel'
+  return id === 'D_FLAPS_IND' || id === 'ALT_FT' ? 'secondary' : 'primary'
+}
+
+/**
+ * The idle gauges (value NaN -> "—") the renderer shows until live telemetry arrives — the
+ * decoder's idle variant, moved from the renderer's store (X10). Its ids, labels and units
+ * drifted from the live readouts below (TELEMETRY): IAS and Press Alt read `% FS`, and Press Alt
+ * keys on `D_ALT_NEEDLE`. Each surface keeps its own until the X10 fix: the renderer starts from
+ * the contract's TELEMETRY_IDLE, which is this (main/dcs/sim-telemetry-decoder.test.ts).
+ */
+const IDLE_TELEMETRY: TelemetrySpec[] = [
+  { id: 'RPM', label: 'RPM', unit: '% RPM' },
+  { id: 'D_IAS_DEG', label: 'IAS', unit: '% FS' },
+  { id: 'D_FLAPS_IND', label: 'Flap', unit: '% DN' },
+  { id: 'D_ALT_NEEDLE', label: 'Press Alt', unit: '% FS' },
+  { id: 'D_FUEL', label: 'Fuel', unit: '% QTY' }
+]
+
+/** The idle readouts: NaN values ("—"), empty rings, each with its ring's level. */
+export function idleTelemetry(): TelemetryReadout[] {
+  return IDLE_TELEMETRY.map((t) => ({ ...t, value: NaN, pct: 0, tone: gaugeTone(t.id, 0) }))
 }
 
 // Three altimeter drum addresses encode digit positions 0–9.999 as 0–65535.
@@ -122,7 +158,7 @@ export class Decoder {
     if (this.sawA4ecAddress) {
       return { name: 'A-4E-C', inferred: true, supported: true }
     }
-    return { name: 'NONE', inferred: false, supported: true }
+    return { ...AIRCRAFT_NONE }
   }
 
   telemetrySnapshot(): TelemetryReadout[] {
@@ -131,7 +167,14 @@ export class Decoder {
         const raw = this.telemetry.get('D_IAS_DEG') ?? NaN
         const kt = Number.isNaN(raw) ? NaN : iasRawToKnots(raw)
         const pct = Number.isNaN(kt) ? 0 : Math.max(0, Math.min(1, kt / IAS_MAX_KT))
-        return { id: 'D_IAS_DEG', label: t.label, value: kt, pct, unit: t.unit }
+        return {
+          id: 'D_IAS_DEG',
+          label: t.label,
+          value: kt,
+          pct,
+          unit: t.unit,
+          tone: gaugeTone('D_IAS_DEG', pct)
+        }
       }
       if (t.id === 'ALT_FT') {
         const d10k = this.altDrums.get('D_ALT_10K')
@@ -144,13 +187,20 @@ export class Decoder {
               Math.floor((d100s / 65535) * 10) * 100
             : NaN
         const pct = Number.isNaN(alt) ? 0 : Math.max(0, Math.min(1, alt / ALT_FT_MAX))
-        return { id: 'ALT_FT', label: t.label, value: alt, pct, unit: t.unit }
+        return {
+          id: 'ALT_FT',
+          label: t.label,
+          value: alt,
+          pct,
+          unit: t.unit,
+          tone: gaugeTone('ALT_FT', pct)
+        }
       }
       const raw = this.telemetry.get(t.id) ?? NaN
       const max = this.telemetryMax.get(t.id) ?? 0xffff
       const pct = Number.isNaN(raw) ? 0 : Math.max(0, Math.min(1, raw / max))
       const value = Number.isNaN(raw) ? NaN : Math.round(pct * 100)
-      return { id: t.id, label: t.label, value, pct, unit: t.unit }
+      return { id: t.id, label: t.label, value, pct, unit: t.unit, tone: gaugeTone(t.id, pct) }
     })
   }
 }

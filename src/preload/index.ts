@@ -12,7 +12,8 @@ import type {
   AppConfig,
   ConfigExportResult,
   ConfigImportApplyResult,
-  ConfigImportOpen
+  ConfigImportOpen,
+  ConfigView
 } from '@shared/config'
 import type { CaptureState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs'
 import type { HidAvailability } from '@shared/hid'
@@ -33,8 +34,9 @@ const api: SkyhawkApi = {
       ipcRenderer.removeListener(channel, listener)
     }
   },
-  getConfig: () => ipcRenderer.invoke(CTRL.configGet) as Promise<AppConfig>,
+  getConfig: () => ipcRenderer.invoke(CTRL.configGet) as Promise<ConfigView>,
   setConfig: (patch) => ipcRenderer.invoke(CTRL.configSet, patch) as Promise<AppConfig>,
+  editConfig: (edit) => ipcRenderer.invoke(CTRL.configEdit, edit) as Promise<AppConfig>,
   exportConfig: () => ipcRenderer.invoke(CTRL.configExport) as Promise<ConfigExportResult>,
   openConfigImport: () => ipcRenderer.invoke(CTRL.configImportOpen) as Promise<ConfigImportOpen>,
   applyConfigImport: (token, sections, backup) =>
@@ -46,6 +48,8 @@ const api: SkyhawkApi = {
     ) as Promise<ConfigImportApplyResult>,
   startRelay: () => ipcRenderer.invoke(CTRL.relayStart) as Promise<RelayResult>,
   stopRelay: () => ipcRenderer.invoke(CTRL.relayStop) as Promise<RelayResult>,
+  toggleRelay: (relaying: boolean) =>
+    ipcRenderer.invoke(CTRL.relayToggle, relaying) as Promise<RelayResult>,
   getStatus: () => ipcRenderer.invoke(CTRL.relayStatus) as Promise<RelayStatus>,
   connectDevice: () => ipcRenderer.invoke(CTRL.deviceConnect) as Promise<void>,
   disconnectDevice: () => ipcRenderer.invoke(CTRL.deviceDisconnect) as Promise<void>,

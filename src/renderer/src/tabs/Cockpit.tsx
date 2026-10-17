@@ -1,11 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CockpitAttention, CockpitBand, NodeView, PsuLimits } from '@shared/nodes'
-import { effectivePsuLimits } from '@shared/nodes/legacy-rules'
 import { fmtPct, hhmm, voltsValue } from '@shared/format'
 import { useStore } from '../store'
 import { STATE_SYMBOL, tileMatches } from '../node-view'
 import { STAGE_W, planLayout, type PlanGroup, type PlanLayout } from '../plan-layout'
-import { headroom, psuName, type Headroom } from '../band-view'
+import { headroom, type Headroom } from '../band-view'
 import { BoardEvents } from './cockpit/BoardEvents'
 import { Dot } from './cockpit/Dot'
 import { AdoptDialog } from './cockpit/AdoptDialog'
@@ -18,8 +17,8 @@ export function Cockpit() {
   const snap = useStore((s) => s.cockpit)
   const live = snap.live
   const linkDownAt = useStore((s) => s.linkDownAt)
-  const psu = useStore((s) => s.psu)
-  const limits = useMemo(() => effectivePsuLimits(psu), [psu])
+  // The PSU setting as main resolves it (`config:changed`, R3.3).
+  const { limits, name: psuName } = useStore((s) => s.psuView)
 
   const [query, setQuery] = useState('')
   const [issuesOnly, setIssuesOnly] = useState(false)
@@ -119,7 +118,7 @@ export function Cockpit() {
             layout={layout}
             live={live}
             psuW={live ? snap.band.band.watts : null}
-            psuName={psuName(psu)}
+            psuName={psuName}
             psuRating={limits.w}
             lit={(v) => tileMatches(v, query, issuesOnly)}
             focusPdu={focusPdu}

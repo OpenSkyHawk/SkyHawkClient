@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { clientErrorEvent, EventLog, EVENTS_TSV_HEADER, eventsToTsv } from './event-log'
-import { isProblem } from '@shared/events/legacy-rules'
 import { relayEvents } from '../dcs/relay-events'
 import { deviceEvent } from '../gateway/link-events'
 import { NodeEventTracker, type NodeLookup } from '../nodes/node-events'
@@ -370,14 +369,6 @@ describe('EventLog', () => {
     log.add([e('a')])
     log.clear()
     expect(log.take()).toEqual([])
-  })
-})
-
-describe('isProblem', () => {
-  it('keeps errors and warnings only', () => {
-    expect(
-      ['error', 'warn', 'new', 'info'].map((s) => isProblem({ severity: s as never }))
-    ).toEqual([true, true, false, false])
   })
 })
 

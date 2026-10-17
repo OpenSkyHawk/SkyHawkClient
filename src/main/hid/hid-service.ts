@@ -3,8 +3,12 @@
 // port comes back. It rides on the Gateway connection (gateway LinkRider) for those moments; its
 // I/O is the HID reader.
 import type { Emit } from '@shared/app'
+import type { HidReport } from '@shared/hid'
+import type { CalSnapshot } from '@shared/hid/calibration'
 import type { LinkRider, LinkTimer } from '../gateway'
+import { hidFacts } from './hid-facts'
 import { HidReader } from './hid-reader'
+import { hidAvailability } from './hid-report'
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
@@ -23,6 +27,10 @@ export class HidService implements LinkRider {
   private hid?: HidReader
   private hidPushedAt = 0
   private hidPushTimer?: ReturnType<typeof setTimeout>
+  /** What the device declares, as the HID tab last had it from calibration (`cal:workflow`). */
+  private calSnapshot?: CalSnapshot
+  /** What HIDControls.h catalogues: the report indices the tab can show (fixed per build). */
+  private readonly catalogued = hidAvailability().axes
 
   constructor(
     private readonly emit: Emit,
@@ -62,7 +70,31 @@ export class HidService implements LinkRider {
    * resting state, and ageMs and the rate have to keep moving for the UI to say so.
    */
   flush(): void {
-    if (this.hid) this.emit('hid:report', this.hid.snapshot())
+    if (this.hid) this.emit('hid:report', this.report(this.hid))
+  }
+
+  /**
+   * Calibration pushed what the device declares (`cal:workflow`, AppServices): the live axes
+   * follow it now rather than at the next report, as the tab re-rendered on that push (R3.3).
+   */
+  calibrationChanged(snapshot: CalSnapshot | undefined): void {
+    if (snapshot === this.calSnapshot) return
+    this.calSnapshot = snapshot
+    this.flush()
+  }
+
+  /**
+   * A renderer (re)loaded (`relay:status`): it gets the report and its live axes now, as it had
+   * its catalogue from its first pull, rather than at the next tick (R3.3).
+   */
+  rendererLoaded(): void {
+    this.flush()
+  }
+
+  /** The reader's snapshot and what it means for the HID tab (hid-facts.ts). */
+  private report(hid: HidReader): HidReport {
+    const snap = hid.snapshot()
+    return { ...snap, ...hidFacts(snap.ageMs, this.calSnapshot, this.catalogued) }
   }
 
   /** App quit. */
@@ -87,7 +119,7 @@ export class HidService implements LinkRider {
     const since = now - this.hidPushedAt
     if (since >= HID_PUSH_MS) {
       this.hidPushedAt = now
-      this.emit('hid:report', this.hid.snapshot())
+      this.emit('hid:report', this.report(this.hid))
       return
     }
     if (this.hidPushTimer) return
@@ -95,7 +127,7 @@ export class HidService implements LinkRider {
       this.hidPushTimer = undefined
       if (!this.hid) return
       this.hidPushedAt = Date.now()
-      this.emit('hid:report', this.hid.snapshot())
+      this.emit('hid:report', this.report(this.hid))
     }, HID_PUSH_MS - since)
   }
 }
