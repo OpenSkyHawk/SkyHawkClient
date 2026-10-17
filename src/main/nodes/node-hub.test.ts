@@ -752,3 +752,66 @@ describe('one rule for the footer and main (M1/C3, S7)', () => {
     })
   }
 })
+
+describe('on the bus (X2 / S10) and a lost line inside a reply (#132)', () => {
+  const NOW = 50_000
+  const line = (id: number, present = true, kind = 1) =>
+    `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
+      .toString(16)
+      .padStart(2, '0')}`
+
+  /** A hub fed as the Gateway's line tap feeds it, with its debug log and event rows recorded. */
+  function tapped() {
+    const roster = new NodeRoster()
+    const logged: string[] = []
+    const events: string[] = []
+    const h = new NodeHub(
+      () => {},
+      roster,
+      (e) => events.push(...e.map((x) => `${x.nodeId ?? '-'} ${x.event}`)),
+      { log: (tag, data) => logged.push(`${tag} ${String(data)}`) }
+    )
+    const tap = (identifier: string, arg: string, t: number) =>
+      h.nodeLine(identifier, arg, `${identifier} ${arg}`, t)
+    /** One roster reply, node 0 first, END with PanelBridge's count; `lost` lines never arrive. */
+    const reply = (ids: number[], t: number, lost: number[] = []) => {
+      h.requestNodes()
+      for (const id of [0, ...ids])
+        if (!lost.includes(id)) tap(NODE_MSG, line(id, true, id ? 1 : 3), t)
+      tap(NODE_END_MSG, String(ids.length + 1), t)
+      h.flush(roster.takeDirty(), t)
+    }
+    const node = (id: number, t: number) => h.snapshot(t).model.nodes.find((n) => n.nodeId === id)
+    return { h, roster, logged, events, reply, node, tap }
+  }
+
+  it('a PDU in your cockpit sending fresh pages is online, and Hide and Forget agree', () => {
+    disk.file = added()
+    const { h, reply, node } = tapped()
+    reply([1], 0) // a whole roster without PDU_Right (#4)
+    expect(node(4, 0)?.availability).toBe('offline')
+    h.telemetry('040100E02E182EBC02', NOW) // its fresh 12 V page
+    expect(node(4, NOW)).toMatchObject({ availability: 'online', readings: 'live' })
+    expect(h.forget(4, NOW).ok).toBe(false)
+    expect(h.hide(4, true, NOW).ok).toBe(false)
+  })
+
+  it('a reply short of its count marks nobody offline, logs one debug line and no event row', () => {
+    disk.file = added()
+    const { reply, node, logged, events } = tapped()
+    reply([1, 2], 0)
+    const before = events.length
+    reply([1, 2], 5000, [2]) // board 2's line is lost
+    expect(node(2, 5000)?.availability).toBe('online')
+    expect(logged.filter((l) => /incomplete/.test(l))).toEqual([
+      'node roster reply incomplete: 2 of 3 rows; absences not reconciled'
+    ])
+    expect(events.slice(before)).toEqual([])
+    reply([1, 2], 10_000) // the next whole reply: still there
+    expect(node(2, 10_000)?.availability).toBe('online')
+    reply([1], 15_000) // board 2 really left: a whole reply says so, and the log has its row
+    expect(node(2, 15_000)?.availability).toBe('offline')
+    expect(events.slice(before)).toEqual(['2 offline'])
+    expect(logged.filter((l) => /incomplete/.test(l))).toHaveLength(1)
+  })
+})

@@ -296,6 +296,14 @@ export class NodeHub implements NodeLineSink {
     if (identifier === NODE_MSG || identifier === NODE_END_MSG) {
       this.log('node', `${identifier} ${arg}`.trim())
       this.roster.applyMessage(identifier, arg, t)
+      const short = this.roster.takeIncompleteReply()
+      if (short) {
+        // A line of the reply was lost: its absences were not reconciled (#132). Debug only.
+        this.log(
+          'node',
+          `roster reply incomplete: ${short.received} of ${short.expected} rows; absences not reconciled`
+        )
+      }
       if (!this.legacyNodesWarned && this.roster.legacyBridge()) {
         // Every v2 row is dropped as malformed (and its END ignored, M3): say why the Cockpit is
         // empty, once.
@@ -465,10 +473,9 @@ export class NodeHub implements NodeLineSink {
    */
   private offlineSignals(nodeId: number, now: number): OfflineSignals {
     const st = this.roster.snapshot().find((n) => n.nodeId === nodeId)
-    return {
-      availability: nodeAvailability(st, this.roster.rosterCompleteAt() !== undefined),
-      pduTelemetry: pduTelemetryLive(this.telem.snapshot(now), nodeId)
-    }
+    const pduTelemetry = pduTelemetryLive(this.telem.snapshot(now), nodeId)
+    const complete = this.roster.rosterCompleteAt() !== undefined
+    return { availability: nodeAvailability(st, complete, pduTelemetry).availability, pduTelemetry }
   }
 
   private refusal(gate: OfflineGate, what: 'hidden' | 'forgotten'): NodeMappingResult | undefined {

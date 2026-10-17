@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { buildNodeModel, isReportableNew, type NodeModelInput } from './node-model'
+import {
+  buildNodeModel,
+  isReportableNew,
+  nodeAvailability,
+  onBusNow,
+  type NodeModelInput
+} from './node-model'
+import { cockpitMembers } from './cockpit-snapshot/members'
+import { adoptRows } from './cockpit-snapshot/adopt'
+import { nodeViews } from './cockpit-snapshot/views'
 import { PDU_GROUP_POLL_CATCH_MS, PDU_GROUP_WINDOW_MS } from './power-zone'
 import { EMPTY_MAPPING } from './mapping-rules'
 import { registryDefaults } from './registry'
@@ -169,6 +178,93 @@ describe('availability', () => {
         pduId: 4 // X7: its zone, PDU_Right, in your cockpit
       }
     ])
+  })
+})
+
+describe('the one availability rule: roster, telemetry, none (X2 / S10, #132)', () => {
+  it('online by the roster, else by fresh PDU pages, else offline by the roster, else unknown', () => {
+    expect(nodeAvailability(st(4), false, false)).toEqual({
+      availability: 'online',
+      evidence: 'roster'
+    })
+    // Fresh pages count as online whatever the roster says: no row, absent, or no roster yet.
+    for (const [row, complete] of [
+      [undefined, false],
+      [undefined, true],
+      [st(4, false), true]
+    ] as const) {
+      expect(nodeAvailability(row, complete, true)).toEqual({
+        availability: 'online',
+        evidence: 'telemetry'
+      })
+    }
+    expect(nodeAvailability(st(4, false), false, false)).toEqual({
+      availability: 'offline',
+      evidence: 'roster'
+    })
+    expect(nodeAvailability(undefined, true, false)).toEqual({
+      availability: 'offline',
+      evidence: 'roster'
+    })
+    expect(nodeAvailability(undefined, false, false)).toEqual({
+      availability: 'unknown',
+      evidence: 'none'
+    })
+  })
+
+  it('a PDU in your cockpit sending fresh pages is online, roster or not; stale pages are not', () => {
+    // A complete roster left PDU_Left (#3) out, or listed it absent: its fresh pages say it is on.
+    expect(entry(input({ telemetry: [telem(3)], rosterCompleteAt: 0 }), 3)).toMatchObject({
+      availability: 'online',
+      readings: 'live'
+    })
+    expect(entry(input({ roster: [st(3, false)], telemetry: [telem(3)] }), 3)).toMatchObject({
+      availability: 'online',
+      readings: 'live'
+    })
+    expect(entry(input({ telemetry: [telem(3)] }), 3)?.availability).toBe('online') // no roster yet
+    const stale = [telem(3, { stale: true })]
+    expect(entry(input({ telemetry: stale, rosterCompleteAt: 0 }), 3)?.availability).toBe('offline')
+    expect(entry(input({ telemetry: stale }), 3)?.availability).toBe('unknown')
+  })
+
+  it('no "new but offline, can’t adopt" board: a registry PDU seen by its pages alone is adoptable', () => {
+    for (const roster of [[], [st(3, false)]]) {
+      const m = buildNodeModel(fresh({ roster, telemetry: [telem(3)], rosterCompleteAt: 0 }))
+      const e = m.nodes.find((n) => n.nodeId === 3)!
+      expect(e).toMatchObject({ source: 'new', availability: 'online', identified: 'pdu' })
+      expect(isReportableNew(e, true)).toBe(true)
+      const [row] = adoptRows(nodeViews(m, [telem(3)]), cockpitMembers(m))
+      expect(row).toMatchObject({ kind: 'pdu', badge: 'PDU' })
+      expect(row?.evidence.reporting).toMatch(/^telemetry: 12 V/)
+    }
+  })
+
+  it('every new board in the model is on the bus: none is offline', () => {
+    const m = buildNodeModel(
+      fresh({
+        roster: [{ ...st(1), nodeKind: 1 }, st(2, false), st(50), st(51, false)],
+        telemetry: [telem(3), telem(4, { stale: true })],
+        rosterCompleteAt: 0
+      })
+    )
+    const newOnes = m.nodes.filter((n) => n.source === 'new')
+    expect(newOnes.map((n) => [n.nodeId, n.availability])).toEqual([
+      [1, 'online'],
+      [3, 'online'],
+      [50, 'online']
+    ])
+  })
+
+  it('onBusNow: online, and only while the link is up', () => {
+    expect(onBusNow({ availability: 'online' }, true)).toBe(true)
+    expect(onBusNow({ availability: 'online' }, false)).toBe(false)
+    expect(onBusNow({ availability: 'offline' }, true)).toBe(false)
+    expect(onBusNow({ availability: 'unknown' }, true)).toBe(false)
+    const e = buildNodeModel(fresh({ roster: [{ ...st(1), nodeKind: 1 }], rosterCompleteAt: 0 }))
+      .nodes[0]!
+    expect(isReportableNew(e, true)).toBe(true)
+    expect(isReportableNew(e, false)).toBe(false)
   })
 })
 
@@ -419,14 +515,14 @@ describe('your cockpit (#93)', () => {
       // D7: its NODE_IDS.md PDU (PDU_Center) is not in your cockpit, so the pre-fill has none.
       registry: { name: 'Center_Armament', console: 'Center', pduId: null }
     })
-    expect(isReportableNew(m.nodes[0]!)).toBe(true)
+    expect(isReportableNew(m.nodes[0]!, true)).toBe(true)
     expect(m.outages).toEqual([])
   })
 
   it('a registry board is identified only by what it reports, never by its NODE_ID (#93 re-review)', () => {
     const m = buildNodeModel(fresh({ roster: [st(1)], rosterCompleteAt: 0 })) // kind 0: not yet
     expect(m.nodes[0]?.identified).toBeUndefined()
-    expect(isReportableNew(m.nodes[0]!)).toBe(false) // not news until it says what it is
+    expect(isReportableNew(m.nodes[0]!, true)).toBe(false) // not news until it says what it is
     expect(m.nodes[0]?.registry?.name).toBe('Center_Armament') // the pre-fill is still there
     // Its own report wins over NODE_IDS.md: a registry panel ID reporting PDU is a PDU.
     const pdu = buildNodeModel(fresh({ roster: [{ ...st(2), nodeKind: 2 }], rosterCompleteAt: 0 }))
@@ -508,7 +604,7 @@ describe('board kind (#344)', () => {
     const n41 = m.nodes.find((n) => n.nodeId === 41)!
     expect(n41.identified).toBeUndefined()
     expect(n41.kind).toBe('panel') // the drawing default
-    expect(isReportableNew(n41)).toBe(false)
+    expect(isReportableNew(n41, true)).toBe(false)
   })
 
   it('isReportableNew: new, on the bus, and identified as a PDU or a panel group', () => {
@@ -518,6 +614,6 @@ describe('board kind (#344)', () => {
         rosterCompleteAt: 0
       })
     )
-    expect(m.nodes.filter(isReportableNew).map((n) => n.nodeId)).toEqual([41, 42])
+    expect(m.nodes.filter((n) => isReportableNew(n, true)).map((n) => n.nodeId)).toEqual([41, 42])
   })
 })

@@ -10,11 +10,13 @@
 // boards a PDU feeds is one rule too (power-zone.ts fedBy, X7): Feeds and Forget count hidden
 // boards, an outage only the ones that could have dropped with it.
 //
+// What is on the bus now is one rule for every section (node-model.ts onBusNow, X2): fresh PDU
+// pages count as online, and while the link is down "New on the bus", the strays, the Overview's
+// notice, Connected nodes and About's On the bus all say nothing.
+//
 // Where the Cockpit and another surface answer differently today, this builder keeps the Cockpit's
-// own answer as its own function (X2–X8 option a, co-located, not unified — the fix track does
+// own answer as its own function (X3–X8 option a, co-located, not unified — the fix track does
 // that):
-//   X2 on the bus unplugged strays and Attention items only while the link is up
-//                           (attention.ts cockpitAttention, here)
 //   X3 strays               counted in the Cockpit's band, online and warning (band.ts
 //                           cockpitBand); the "New on the bus" count is isReportableNew
 //                           (attention.ts newCount); strays wait IDENTIFY_WAIT_MS (strayNew)
@@ -29,9 +31,6 @@
 //
 // The Overview, Connection and Settings read their own sections (R3.2b), each with its own answer
 // where it differs from the Cockpit's — the same option a, co-located:
-//   X2 on the bus unplugged the Overview's banner and notice only while the link is up; Connected
-//                           nodes and the registry's CAN rows read the last model whatever the link
-//                           (summaries.ts, registry-rows.ts registryOnBus)
 //   X3 strays               the Overview and Connection count none (summaries.ts: healthBand and
 //                           attentionItems with no strays); the notice is isReportableNew
 //                           (newDevices)
@@ -85,10 +84,11 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
   const zones = boardZones(i.model?.nodes ?? [], members.get)
   // New boards that can't be adopted are active on the bus, so they are warnings (#93) — once an
   // unidentified one has had IDENTIFY_WAIT_MS to report its kind, so a normal board never flashes.
-  const stray = strayNew(views, i.now)
-  const strays: StrayItem[] = live
-    ? stray.strays.map((v) => ({ nodeId: v.entry.nodeId, flag: strayFlag(v.entry) }))
-    : []
+  const stray = strayNew(views, i.now, live)
+  const strays: StrayItem[] = stray.strays.map((v) => ({
+    nodeId: v.entry.nodeId,
+    flag: strayFlag(v.entry)
+  }))
   const snapshot: CockpitSnapshot = {
     rev: i.rev,
     live,
@@ -102,7 +102,7 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     zones: zoneChoices(views, members),
     adopt: adoptRows(views, members),
     overview: overviewSummary(views, outages, live),
-    nodesCard: nodesSummary(views, outages, zones),
+    nodesCard: nodesSummary(views, outages, zones, live),
     settings: settingsNodes(i.model, i.registry, live)
   }
   return stray.nextAt === undefined ? { snapshot } : { snapshot, nextAt: stray.nextAt }

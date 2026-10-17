@@ -63,7 +63,7 @@ describe('fix-track probes (today)', () => {
     })
     const views = nodeViews(model, [])
     const cockpit = cockpitViews(model, [])
-    const { strays } = strayNew(cockpit, 6000)
+    const { strays } = strayNew(cockpit, 6000, true)
     expect(strays).toHaveLength(1)
     const cockpitBand = cockpitHealthBand(cockpit, strays.length)
     expect(cockpitBand.warn).toBe(1)
@@ -77,7 +77,7 @@ describe('fix-track probes (today)', () => {
     expect(newDevices(views, true)).toBeNull()
     // Connection
     expect(
-      nodesSummary(views, [], boardZones(model.nodes, cockpitMembers(model).get))
+      nodesSummary(views, [], boardZones(model.nodes, cockpitMembers(model).get), true)
     ).toMatchObject({
       known: 0,
       warn: 0,
@@ -97,7 +97,7 @@ describe('fix-track probes (today)', () => {
       defaults,
       file: EMPTY_MAPPING
     })
-    expect(strayNew(cockpitViews(model, []), 60_001).strays).toHaveLength(1)
+    expect(strayNew(cockpitViews(model, []), 60_001, true).strays).toHaveLength(1)
   })
 
   it('C6: a registry board waiting to be added is labelled "NOT IN REGISTRY" / "Not in registry"', () => {

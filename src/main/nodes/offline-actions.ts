@@ -4,11 +4,12 @@
 //
 // Both only tidy the display, and a board that is active on the bus — its controls reach DCS, it
 // draws power, it affects bus health — always shows. So both wait until the board is offline by the
-// one availability rule (node-model.ts nodeAvailability). Fresh PDU pages prove a PDU is live
-// whatever the roster says, and "unknown" (no complete roster since the link opened, the seconds
-// after every reconnect) is not offline.
+// one availability rule (node-model.ts nodeAvailability), which counts fresh PDU pages as online
+// whatever the roster says (X2); `pduTelemetry` is that same evidence, read again here so a caller
+// that has the roster's answer alone still refuses. "unknown" (no complete roster since the link
+// opened, the seconds after every reconnect) is not offline.
 import type { NodeAvailability, NodeTelemSnapshot } from '@shared/nodes'
-import { hasFreshPduPage } from './node-telem'
+import { pduPagesLive } from './node-telem'
 
 export interface OfflineSignals {
   /** The board's availability (node-model.ts nodeAvailability). */
@@ -31,7 +32,7 @@ export const NO_ROSTER_NOTE =
 
 /** Fresh PDU pages from this NODE_ID in the telemetry snapshot: it is live. */
 export function pduTelemetryLive(telemetry: readonly NodeTelemSnapshot[], nodeId: number): boolean {
-  return telemetry.some((t) => t.nodeId === nodeId && t.isPdu && hasFreshPduPage(t))
+  return telemetry.some((t) => t.nodeId === nodeId && pduPagesLive(t))
 }
 
 function offlineOnly(s: OfflineSignals): OfflineGate {

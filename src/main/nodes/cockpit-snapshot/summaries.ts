@@ -6,25 +6,25 @@
 // Each keeps its own answer where it differs from the Cockpit's (co-located, not unified):
 //   X3 strays   neither counts a new board that can't be adopted: the band is healthBand(views)
 //               with no strays, the items attentionItems(views, outages) with none
-//   X2 link     the banner and the notice only while the link is up (the tile says "no live node
-//               status"); Connected nodes reads the last model whatever the link (its tab shows
-//               the link's hint instead while it is down)
+// What is on the bus is one rule (node-model.ts onBusNow, X2): while the link is down the tile says
+// "no live node status", and the banner, the notice and Connected nodes say nothing.
 // A Connected nodes row names its board's resolved power zone (D7, the same one the Cockpit reads):
 // `PDU_Right`, `PDU_Right (hidden)`, else "no power zone".
 import { hhmmss, lastSeenLabel, plural } from '@shared/format'
-import type {
-  AttentionItem,
-  AttentionSummary,
-  CockpitTile,
-  HealthBand,
-  NewDevices,
-  NodeModelEntry,
-  NodesSummary,
-  NodeView,
-  OverviewSummary,
-  PduOutage,
-  PowerZone,
-  SummaryRow
+import {
+  COCKPIT_IDLE,
+  type AttentionItem,
+  type AttentionSummary,
+  type CockpitTile,
+  type HealthBand,
+  type NewDevices,
+  type NodeModelEntry,
+  type NodesSummary,
+  type NodeView,
+  type OverviewSummary,
+  type PduOutage,
+  type PowerZone,
+  type SummaryRow
 } from '@shared/nodes'
 import { isAdoptableKind } from '../node-kind'
 import { isReportableNew } from '../node-model'
@@ -107,11 +107,11 @@ export function reportedKind(e: NodeModelEntry): 'pdu' | 'panel' | null {
 /**
  * NODE_IDs waiting to be adopted that are on the bus now and have said what they are, by kind.
  * A node is not news until it has identified itself (no "unknown" count), and one that left the
- * bus is not "on the bus". null = nothing to show, including while the link is down.
+ * bus — or any, while the link is down — is not "on the bus" (isReportableNew). null = nothing to
+ * show.
  */
 export function newDevices(views: NodeView[], live: boolean): NewDevices | null {
-  if (!live) return null
-  const fresh = views.filter((v) => isReportableNew(v.entry))
+  const fresh = views.filter((v) => isReportableNew(v.entry, live))
   const kinds = fresh.map((v) => reportedKind(v.entry))
   const panels = kinds.filter((k) => k === 'panel').length
   const pdus = kinds.filter((k) => k === 'pdu').length
@@ -138,11 +138,17 @@ export function overviewSummary(
 
 // ── Connection › Connected nodes ────────────────────────────────────────────
 
+/**
+ * Connected nodes: the counts and the rows that need attention. Quiet while the link is down — it
+ * says nothing about the bus then (X2), and its tab shows the link's hint instead.
+ */
 export function nodesSummary(
   views: NodeView[],
   outages: PduOutage[],
-  zones: ReadonlyMap<number, PowerZone>
+  zones: ReadonlyMap<number, PowerZone>,
+  live: boolean
 ): NodesSummary {
+  if (!live) return COCKPIT_IDLE.nodesCard
   const band = healthBand(views)
   const known = views.filter((v) => v.entry.source !== 'new')
   const byId = new Map(views.map((v) => [v.entry.nodeId, v.entry]))

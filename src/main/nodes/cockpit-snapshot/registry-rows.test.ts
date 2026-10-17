@@ -98,8 +98,9 @@ describe('settingsNodes', () => {
       s.registry.rows.map((r) => [r.nodeId, r.name, r.console, r.onBus.text, r.unloaded.text])
     ).toEqual([
       [0, 'Gateway', '—', 'no device', 'no device'],
-      [1, 'Center_Armament', 'Center', 'yes', '—'],
-      [2, 'Right_Navigation', 'Right', 'offline', '—'],
+      // The link is down: no CAN row is on the bus or offline by the last model (X2, #132).
+      [1, 'Center_Armament', 'Center', '—', '—'],
+      [2, 'Right_Navigation', 'Right', '—', '—'],
       [3, 'PDU_Left', 'Left', '—', '—'],
       [4, 'PDU_Right', 'Right', '—', '—'],
       [5, 'PDU_Center', 'Center', '—', '—']

@@ -98,6 +98,15 @@ export function hasFreshPduPage(t: NodeTelemSnapshot): boolean {
   return [t.rail12V, t.rail5V, t.status].some((p) => p !== undefined && !p.stale)
 }
 
+/**
+ * A PDU sending pages now: it has sent PDU pages and one is fresh. The availability rule's
+ * telemetry evidence (node-model.ts nodeAvailability), and what Hide and Forget read
+ * (offline-actions.ts pduTelemetryLive).
+ */
+export function pduPagesLive(t: NodeTelemSnapshot): boolean {
+  return t.isPdu && hasFreshPduPage(t)
+}
+
 /** iAvgMa for display: residual negative offset reads as 0. */
 export function displayCurrentMa(ma: number): number {
   return Math.max(0, ma)

@@ -97,13 +97,18 @@ export function adoptEvidence(v: NodeView): Evidence {
   const registry = e.registry
     ? `NODE_IDS.md: ${e.registry.name}, ${consoleLabel(e.registry.console)}`
     : 'not in NODE_IDS.md'
-  if (e.availability !== 'online' || !st) {
+  if (e.availability !== 'online') {
     return { detected, reporting: 'not reporting right now', registry }
   }
   const { rail12V, rail5V } = v.readings
   if (e.kind === 'pdu' && (rail12V || rail5V)) {
     const rails = [rail('12 V', rail12V), rail('5 V', rail5V)].filter(Boolean).join(', ')
     return { detected, reporting: `telemetry: ${rails}`, registry }
+  }
+  if (!st) {
+    // Online by its PDU pages alone (S10): its board-status page is what it sends.
+    const reporting = e.kind === 'pdu' ? 'telemetry: board status' : 'not reporting right now'
+    return { detected, reporting, registry }
   }
   const faults = [
     st.boff && 'bus-off',

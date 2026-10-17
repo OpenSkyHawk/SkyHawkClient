@@ -117,6 +117,18 @@ export function canRequestRoster(attached: boolean, state: DeviceState): boolean
  */
 export const ROSTER_REPLY_MS = 1000
 
+/** A roster reply that ended short of its count: the rows it said, and the ones that arrived. */
+export interface IncompleteReply {
+  expected: number
+  received: number
+}
+
+/** The row count `_NODE_STATUS_END <count>` carries (decimal), or undefined when it has none. */
+export function endRowCount(arg: string): number | undefined {
+  const a = arg.trim()
+  return /^\d+$/.test(a) ? Number(a) : undefined
+}
+
 /**
  * Tracks every node seen since reset. Bare messages are live deltas; a request/boot
  * burst ends with `_NODE_STATUS_END`, after which nodes absent from the burst are
@@ -128,6 +140,13 @@ export const ROSTER_REPLY_MS = 1000
  * `_NODE_STATUS_END`, in the order asked. So from a node-0 row to the next END a reply is
  * arriving: a request then keeps the rows already in, and the END reconciles all of them. Only a
  * request with no reply arriving isolates the next burst from prior deltas.
+ *
+ * A reply missing a line never reconciles (#132). `_NODE_STATUS_END <count>` carries how many rows
+ * PanelBridge sent in it, its own node-0 row included (PanelBridge.cpp emitAllNodes). When that is
+ * not how many different NODE_IDs the reply brought, a line was lost on the way: the boards it
+ * left out keep their state, the roster does not count as complete, and the next whole reply
+ * decides — one lost line never reads as a board going offline. An END with no count completes as
+ * before (nothing to check it against).
  */
 export class NodeRoster {
   private nodes = new Map<number, NodeStatus>()
@@ -144,6 +163,8 @@ export class NodeRoster {
   private legacy = false
   private completeAt?: number
   private dirty = false
+  /** The last reply that ended short of its count, until taken (takeIncompleteReply). */
+  private incomplete?: IncompleteReply
 
   reset(): void {
     this.nodes.clear()
@@ -153,6 +174,7 @@ export class NodeRoster {
     this.replying = false
     this.legacy = false
     this.completeAt = undefined
+    this.incomplete = undefined
     this.dirty = true
   }
 
@@ -184,8 +206,13 @@ export class NodeRoster {
         if (isLegacyNodeStatus(arg.trim())) this.legacy = true
         return
       }
+      if (ns.nodeId === BRIDGE_NODE_ID) {
+        // A reply starts with node 0: from here its rows are the reply — not the deltas before it,
+        // nor what an earlier reply that never ended brought — so its count can be checked.
+        this.burst = []
+        this.replying = true
+      }
       this.burst.push(ns)
-      if (ns.nodeId === BRIDGE_NODE_ID) this.replying = true // a reply starts with node 0
       const wasPresent = this.nodes.get(ns.nodeId)?.present ?? true
       this.nodes.set(ns.nodeId, ns) // keep absent nodes too; present flag carries state
       const seen = this.seen.get(ns.nodeId) ?? { firstSeenAt: now }
@@ -201,8 +228,15 @@ export class NodeRoster {
     } else if (name === NODE_END_MSG) {
       // A v2 bridge's END completes nothing: its rows never reached the roster (M3).
       if (this.legacy) return
-      // Nodes not in this burst went silent → mark offline, but keep them visible.
       const inBurst = new Set(this.burst.map((n) => n.nodeId))
+      const expected = endRowCount(arg)
+      if (expected !== undefined && expected !== inBurst.size) {
+        // A line of this reply was lost: reconcile nothing from it; the next whole reply decides.
+        this.incomplete = { expected, received: inBurst.size }
+        this.endReply()
+        return
+      }
+      // Nodes not in this burst went silent → mark offline, but keep them visible.
       for (const [id, node] of this.nodes) {
         if (!inBurst.has(id) && node.present) {
           this.nodes.set(id, { ...node, present: false })
@@ -210,12 +244,27 @@ export class NodeRoster {
           this.seen.set(id, { ...seen, offlineAt: now, offlineVia: 'roster' })
         }
       }
-      this.burst = []
-      this.burstAt = undefined
-      this.replying = false
+      this.endReply()
       this.completeAt ??= now
       this.dirty = true
     }
+  }
+
+  /** A reply ended (whole or not): the next request starts a fresh one. */
+  private endReply(): void {
+    this.burst = []
+    this.burstAt = undefined
+    this.replying = false
+  }
+
+  /**
+   * The last reply that ended short of its `_NODE_STATUS_END` count since the last call, if any:
+   * how many rows it said and how many arrived. NodeHub logs it (a debug line, not an event).
+   */
+  takeIncompleteReply(): IncompleteReply | undefined {
+    const r = this.incomplete
+    this.incomplete = undefined
+    return r
   }
 
   snapshot(): NodeStatus[] {

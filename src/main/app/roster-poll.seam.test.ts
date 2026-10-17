@@ -52,6 +52,11 @@ interface BridgeModel {
    * late reply is brought forward to this. Unset: no limit.
    */
   answerWithinMs?: number
+  /**
+   * One line of the n-th reply lost on the way (#132): the index into its lines (0 = the node-0
+   * row, the last = `_NODE_STATUS_END`), or undefined to send it whole.
+   */
+  dropLine?: (n: number, lines: number) => number | undefined
 }
 
 /**
@@ -64,6 +69,7 @@ function bridge(app: Services, boards: number[], model: BridgeModel = {}) {
   const PDU = 0x02
   const kind = (id: number) => (id >= 3 && id <= 5 ? PDU : PANEL) // NODE_IDS.md: 3–5 are PDUs
   let asked = 0
+  let dropped = 0
   let lastLineAt = 0
   /** The first request since the last line sent: what the app's not-responding clock counts from. */
   let waitingSince: number | undefined
@@ -78,6 +84,10 @@ function bridge(app: Services, boards: number[], model: BridgeModel = {}) {
     get asked() {
       return asked
     },
+    /** Reply lines lost on the way so far (dropLine). */
+    get dropped() {
+      return dropped
+    },
     /** Read what the app wrote, and send every reply line that is due. */
     step(): void {
       const now = app.clock.now()
@@ -91,7 +101,12 @@ function bridge(app: Services, boards: number[], model: BridgeModel = {}) {
           at = Math.min(at, waitingSince + model.answerWithinMs)
         }
         at = Math.max(at, lastLineAt) // one serial line: replies arrive in the order asked
-        for (const text of burst) {
+        const drop = model.dropLine?.(asked, burst.length)
+        for (const [i, text] of burst.entries()) {
+          if (i === drop) {
+            dropped++
+            continue
+          }
           lines.push({ at, text })
           lastLineAt = at
           at += model.gap?.() ?? 0
@@ -185,7 +200,10 @@ describe('soak: 30 simulated minutes of lost and late replies (M2, G1, the #290 
         return r < 0.6 ? 2 + rnd() * 48 : r < 0.85 ? 800 + rnd() * 800 : 2500 + rnd() * 2000
       },
       gap: () => (rnd() < 0.85 ? rnd() * 40 : 100 + rnd() * 200),
-      answerWithinMs: 4500
+      answerWithinMs: 4500,
+      // #132: one in five replies loses a single line on the way — a board's row, the node-0 row
+      // or the END — so its END count no longer matches what arrived.
+      dropLine: (_n, lines) => (rnd() < 0.2 ? Math.floor(rnd() * lines) : undefined)
     })
     app.serial.open()
     // Until the first answer arms the re-ask, only the 5 s poll asks: two lost in a row, then a
@@ -208,6 +226,7 @@ describe('soak: 30 simulated minutes of lost and late replies (M2, G1, the #290 
     expect(offline, 'a false offline').toBeUndefined()
     expect(flashed, 'a "not responding" flash').toBe(false)
     expect(b.asked, 'the poll and its re-asks kept asking').toBeGreaterThan(360)
+    expect(b.dropped, 'single lines were lost inside replies').toBeGreaterThan(50)
     expect(seen(), 'no extra saves').toEqual(onlineAt)
     const events = app.invoke(CTRL.eventsGet)
     expect(
