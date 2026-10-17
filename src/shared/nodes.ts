@@ -2,7 +2,19 @@
 // Wire contract: NodeStatus.h NODE_STATUS_* (generated into shared/firmware; reference.test
 // asserts the decoder's protoVersion matches).
 import { encodeExportFrame } from './dcsbios'
-import { MAX_NODE_ID, NODE_HEALTH_FLAGS, NODE_KINDS, NODE_STATUS } from './firmware'
+import {
+  DIE_TEMP_UNAVAILABLE,
+  GATEWAY_NODE_ID,
+  HB_ESR_REC_SHIFT,
+  HB_ESR_TEC_SHIFT,
+  HEARTBEAT_FLAGS,
+  MAX_NODE_ID,
+  NODE_HEALTH_FLAGS,
+  NODE_KINDS,
+  NODE_STATUS,
+  NODE_STATUS_FIELD,
+  NODE_STATUS_ROW_BYTES
+} from './firmware'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_NODE_PROTO = 3
@@ -20,14 +32,18 @@ export const HFLAG_DEGRADED = NODE_HEALTH_FLAGS.DEGRADED
 export const NODE_KIND = NODE_KINDS
 
 /**
- * The bridge's own NODE_ID: PanelBridge is the CAN master at address 0, and since v3 every roster
- * reply starts with its row. That row is this client's own link, never a cockpit node. (An address,
- * not a board type: a node's type is only ever what it reports.)
+ * The bridge's own NODE_ID (GATEWAY_NODE_ID in the firmware reference): PanelBridge is the CAN
+ * master at address 0, and since v3 every roster reply starts with its row. That row is this
+ * client's own link, never a cockpit node. (An address, not a board type: a node's type is only
+ * ever what it reports.)
  */
-export const BRIDGE_NODE_ID = 0
+export const BRIDGE_NODE_ID = GATEWAY_NODE_ID
 
-// proto v3: 28 hex — v2 plus the node's reported board kind (#344).
-const HEX_LEN = 28 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4) dieTempC(2) hFlags(2) faultMask(2) faultId(2) nodeKind(2)
+// proto v3: NODE_STATUS_ROW_BYTES (14) as hex, 28 chars — v2 plus the node's reported board kind
+// (#344). Field offsets: NODE_STATUS_FIELD; each byte is two hex chars.
+const HEX_LEN = NODE_STATUS_ROW_BYTES * 2
+// The legacy v2 row (26 hex), detected client-side only to say "this bridge is too old". The
+// firmware no longer describes it, so it has nothing to sync from: it stays a client constant.
 const V2_HEX_LEN = 26
 
 export interface NodeStatus {
@@ -40,7 +56,7 @@ export interface NodeStatus {
   tec: number // transmit error counter (esr low byte)
   rec: number // receive error counter (esr high byte)
   // HEALTH_n telemetry (proto v2). Uncalibrated internal MCU sensor — die temp, not ambient.
-  dieTempC: number | null // whole °C; null = not yet seen (sentinel 0x80)
+  dieTempC: number | null // whole °C; null = not yet seen (DIE_TEMP_UNAVAILABLE, 0x80 on the wire)
   overheat: boolean // hFlags bit0 (opt-in firmware trip; usually false)
   degraded: boolean // hFlags bit1 — a registered FaultSource reports non-NONE (rendered by #40, parsed here)
   faultId: number // fault code, 0 = none; label via NODE_FAULT_CODES (node-status.generated.ts), render #40
@@ -61,28 +77,31 @@ export function nodeFaultTag(n: NodeStatus): string {
 
 /** Decode the 28-hex v3 `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
 export function parseNodeStatus(hex: string): NodeStatus | null {
-  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]{28}$/.test(hex)) return null
-  const f = (i: number, n: number) => parseInt(hex.slice(i, i + n), 16)
-  const nodeId = f(0, 2)
+  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]+$/.test(hex)) return null
+  const F = NODE_STATUS_FIELD
+  // A field at byte offset `at`, `bytes` wide: hex index 2 × at, most-significant byte first.
+  const f = (at: number, bytes: number) => parseInt(hex.slice(at * 2, (at + bytes) * 2), 16)
+  const nodeId = f(F.ID, 1)
   if (nodeId > MAX_NODE_ID) return null
-  const flags = f(4, 2)
-  const esr = f(14, 4)
-  const traw = f(18, 2) // int8 two's-complement; 0x80 = not-yet-seen sentinel
-  const hf = f(20, 2) // byte 22 (faultMask) reserved/unused; skipped
+  const flags = f(F.HB_FLAGS, 1)
+  const esr = f(F.ESR, 2)
+  const traw = f(F.DIE_TEMP_C, 1) // int8 two's-complement
+  const temp = traw < 128 ? traw : traw - 256
+  const hf = f(F.HEALTH_FLAGS, 1) // FAULT_MASK (the next byte) is reserved/unused; skipped
   return {
     nodeId,
-    present: f(2, 2) === 1,
-    boff: (flags & 0x01) !== 0,
-    epvf: (flags & 0x02) !== 0,
-    uptimeSec: f(6, 4),
-    rxCount: f(10, 4),
-    tec: esr & 0xff,
-    rec: (esr >> 8) & 0xff,
-    dieTempC: traw === 0x80 ? null : traw < 128 ? traw : traw - 256,
+    present: f(F.PRESENT, 1) === 1,
+    boff: (flags & HEARTBEAT_FLAGS.BOFF) !== 0,
+    epvf: (flags & HEARTBEAT_FLAGS.EPVF) !== 0,
+    uptimeSec: f(F.UPTIME, 2),
+    rxCount: f(F.RX_COUNT, 2),
+    tec: (esr >> HB_ESR_TEC_SHIFT) & 0xff,
+    rec: (esr >> HB_ESR_REC_SHIFT) & 0xff,
+    dieTempC: temp === DIE_TEMP_UNAVAILABLE ? null : temp, // the int8 sentinel, -128 (0x80)
     overheat: (hf & HFLAG_OVERHEAT) !== 0,
     degraded: (hf & HFLAG_DEGRADED) !== 0,
-    faultId: f(24, 2),
-    nodeKind: f(26, 2)
+    faultId: f(F.FAULT_ID, 1),
+    nodeKind: f(F.NODE_KIND, 1)
   }
 }
 

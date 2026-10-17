@@ -13,9 +13,20 @@
 // where the firmware applied the offset; nothing here re-derives it.
 
 import {
+  CAL_ACK_FIELD,
+  CAL_COMMIT_FIELD,
+  CAL_DATA_FIELD,
+  CAL_DATA_REC_FIELD,
+  CAL_HELLO_ACK_FIELD,
+  CAL_NACK_FIELD,
   CAL_NACK_REASONS,
   CAL_PAYLOAD_LEN,
   CAL_PROTO,
+  CAL_RAW_FIELD,
+  CAL_RESET_FIELD,
+  CAL_SESSION_ACK_FIELD,
+  CAL_SESSION_OPEN_FIELD,
+  CAL_STREAM_SELECT_FIELD,
   CAL_TYPES,
   type CalNackName
 } from './firmware'
@@ -295,6 +306,9 @@ export class CalDemux {
 }
 
 // ── decoders ─────────────────────────────────────────────────────────────────
+//
+// Payload offsets are the generated CAL_*_FIELD tables (AxisCal.h). Multi-byte fields are
+// little-endian.
 
 const u16 = (p: Uint8Array, off: number) => p[off]! | (p[off + 1]! << 8)
 
@@ -307,11 +321,12 @@ export interface HelloAck {
 }
 
 export function decodeHelloAck(p: Uint8Array): HelloAck {
+  const F = CAL_HELLO_ACK_FIELD
   return {
-    proto: p[0]!,
-    blobVersion: p[1]!,
-    axisSlots: p[2]!,
-    fw: { major: p[3]!, minor: p[4]!, patch: p[5]! }
+    proto: p[F.PROTO]!,
+    blobVersion: p[F.BLOB_VERSION]!,
+    axisSlots: p[F.AXIS_SLOTS]!,
+    fw: { major: p[F.FW_MAJOR]!, minor: p[F.FW_MINOR]!, patch: p[F.FW_PATCH]! }
   }
 }
 
@@ -339,18 +354,19 @@ export interface CalData {
 }
 
 export function decodeCalData(p: Uint8Array): CalData {
-  const presentMask = p[0]!
-  const calibratedMask = p[1]!
+  const presentMask = p[CAL_DATA_FIELD.PRESENT_MASK]!
+  const calibratedMask = p[CAL_DATA_FIELD.CALIBRATED_MASK]!
+  const R = CAL_DATA_REC_FIELD
   const axes: CalAxis[] = []
   for (let i = 0; i < AXIS_CAL_SLOTS; i++) {
-    const o = 2 + i * 10
+    const o = CAL_DATA_FIELD.RECORDS + i * CAL_PROTO.dataRecBytes
     axes.push({
       idx: i,
-      controlId: u16(p, o),
-      min: u16(p, o + 2),
-      centre: u16(p, o + 4),
-      max: u16(p, o + 6),
-      deadzone: u16(p, o + 8),
+      controlId: u16(p, o + R.CONTROL_ID),
+      min: u16(p, o + R.MIN),
+      centre: u16(p, o + R.CENTRE),
+      max: u16(p, o + R.MAX),
+      deadzone: u16(p, o + R.DEADZONE),
       present: (presentMask & (1 << i)) !== 0,
       calibrated: (calibratedMask & (1 << i)) !== 0
     })
@@ -365,12 +381,16 @@ export interface SessionAck {
 }
 
 export function decodeSessionAck(p: Uint8Array): SessionAck {
-  return { timeoutMs: u16(p, 0) | (u16(p, 2) << 16), axisIdx: p[4]! }
+  const F = CAL_SESSION_ACK_FIELD
+  return {
+    timeoutMs: u16(p, F.TIMEOUT_MS) | (u16(p, F.TIMEOUT_MS + 2) << 16), // u32 as two u16 halves
+    axisIdx: p[F.AXIS_IDX]!
+  }
 }
 
 /** The type being acknowledged. */
 export function decodeAck(p: Uint8Array): { type: number } {
-  return { type: p[0]! }
+  return { type: p[CAL_ACK_FIELD.TYPE]! }
 }
 
 export interface Nack {
@@ -381,7 +401,8 @@ export interface Nack {
 }
 
 export function decodeNack(p: Uint8Array): Nack {
-  return { type: p[0]!, reason: p[1]!, detail: p[2]! }
+  const F = CAL_NACK_FIELD
+  return { type: p[F.TYPE]!, reason: p[F.REASON]!, detail: p[F.DETAIL]! }
 }
 
 export interface RawSample {
@@ -397,13 +418,21 @@ export interface RawSample {
 }
 
 export function decodeRaw(p: Uint8Array): RawSample {
-  return { idx: p[0]!, raw: u16(p, 1), cal: u16(p, 3) }
+  const F = CAL_RAW_FIELD
+  return { idx: p[F.IDX]!, raw: u16(p, F.RAW), cal: u16(p, F.CAL) }
 }
 
 // ── encoders ─────────────────────────────────────────────────────────────────
 
-const one = (type: number, seq: number, byte: number) =>
-  buildFrame(type, seq, Uint8Array.from([byte]))
+/**
+ * A one-field, one-byte payload: `byte` at offset `at`. Sized `at + 1`, so a firmware layout that
+ * moved the field off byte 0 fails buildFrame's length check instead of sending a zero.
+ */
+const one = (type: number, seq: number, at: number, byte: number) => {
+  const p = new Uint8Array(at + 1)
+  p[at] = byte
+  return buildFrame(type, seq, p)
+}
 
 export const encodeHello = (seq: number) => buildFrame(CAL_TYPE.HELLO, seq)
 export const encodeGetCal = (seq: number) => buildFrame(CAL_TYPE.GET_CAL, seq)
@@ -412,14 +441,15 @@ export const encodeKeepalive = (seq: number) => buildFrame(CAL_TYPE.KEEPALIVE, s
 
 /** Opens a session and starts RAW for `axisIdx` (CAL_AXIS_NONE for none). */
 export const encodeSessionOpen = (seq: number, axisIdx: number) =>
-  one(CAL_TYPE.SESSION_OPEN, seq, axisIdx)
+  one(CAL_TYPE.SESSION_OPEN, seq, CAL_SESSION_OPEN_FIELD.AXIS_IDX, axisIdx)
 
 /** Changes which axis streams mid-session. Requires an open session. */
 export const encodeStreamSelect = (seq: number, axisIdx: number) =>
-  one(CAL_TYPE.STREAM_SELECT, seq, axisIdx)
+  one(CAL_TYPE.STREAM_SELECT, seq, CAL_STREAM_SELECT_FIELD.AXIS_IDX, axisIdx)
 
 /** Deletes stored calibration for one axis, or all with CAL_AXIS_NONE. Persists immediately. */
-export const encodeReset = (seq: number, idx: number) => one(CAL_TYPE.RESET, seq, idx)
+export const encodeReset = (seq: number, idx: number) =>
+  one(CAL_TYPE.RESET, seq, CAL_RESET_FIELD.IDX, idx)
 
 /**
  * Writes one axis and persists it. Exactly one axis per COMMIT, never a batch — a batch could
@@ -432,15 +462,16 @@ export function encodeCommit(
   seq: number,
   axis: { idx: number; min: number; centre: number; max: number }
 ): Uint8Array {
-  const p = new Uint8Array(9)
-  p[0] = axis.idx
+  const F = CAL_COMMIT_FIELD
+  const p = new Uint8Array(CAL_PAYLOAD_LEN[CAL_TYPE.COMMIT]!)
+  p[F.IDX] = axis.idx
   const put = (off: number, v: number) => {
     p[off] = v & 0xff
     p[off + 1] = (v >> 8) & 0xff
   }
-  put(1, axis.min)
-  put(3, axis.centre)
-  put(5, axis.max)
-  put(7, 0)
+  put(F.MIN, axis.min)
+  put(F.CENTRE, axis.centre)
+  put(F.MAX, axis.max)
+  put(F.DEADZONE, 0)
   return buildFrame(CAL_TYPE.COMMIT, seq, p)
 }
