@@ -74,6 +74,9 @@ describe('T28 Connection device card and relay controls (B61, B62)', () => {
     expect(
       screen.getByText(`${PORT} is open in another app (socat?). Close it, then Retry.`)
     ).toBeInTheDocument()
+    // contract B61 says the "busy" note carries a Settings link; today only the released-with-
+    // auto-connect-off note does (above), and the busy note has none.
+    expect(screen.queryByRole('button', { name: 'Settings › Connection' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(sky.connectDevice).toHaveBeenCalledTimes(1)
   })
