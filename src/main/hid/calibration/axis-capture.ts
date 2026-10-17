@@ -1,6 +1,4 @@
-// Renderer still calls these; they move to main in R3.x and this file disappears.
-//
-// Main imports them from here too, so there is one copy. (Was shared/axis-capture.ts.)
+// (Was shared/hid/calibration/legacy-rules.ts until the calibration workflow moved to main, R3.1.)
 //
 // Axis travel capture (pure, no Node/Electron deps, fully testable).
 //
@@ -24,9 +22,13 @@
 // The SEQ counter cannot substitute for that. A gap is only visible on the next arriving frame,
 // and in the case that matters no next frame arrives.
 
-import type { CaptureConfig, CapturedSweep, CaptureResult, CaptureState } from './ipc'
+import type {
+  CaptureConfig,
+  CapturedSweep,
+  CaptureResult,
+  CaptureState
+} from '@shared/hid/calibration'
 
-/** @deprecated Renderer still calls this; it moves to main in R3.1. */
 export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   bandCounts: 300,
   endpointHoldMs: 1500,
@@ -40,8 +42,6 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
 /**
  * Unsigned 0–65535, as the wire and device storage use — and as the dialog displays. The client
  * applies no offset anywhere, so there is nothing to convert on the way in or out.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export interface CaptureSample {
   /** Stamped on arrival in main, not at render time — batching would otherwise skew dwell. */
@@ -49,7 +49,6 @@ export interface CaptureSample {
   raw: number
 }
 
-/** @deprecated Renderer still calls this; it moves to main in R3.1. */
 export function beginCapture(
   now: number,
   /** Defaults to true for every axis; see CaptureState.selfCentring. */
@@ -84,8 +83,6 @@ function holdTarget(s: CaptureState): number {
 
 /**
  * Progress of the current hold, 0..1 — for a progress indicator, not a decision.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function holdProgress(s: CaptureState): number {
   if (s.phase !== 'capturing' || s.ref === null) return 0
@@ -98,8 +95,6 @@ export function holdProgress(s: CaptureState): number {
  * Floors at zero rather than going negative: once the time is up the hold is waiting on
  * corroboration or on the movement gate, and a countdown running below zero would suggest the
  * clock is what is holding things up.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function holdRemainingMs(s: CaptureState): number {
   if (s.phase !== 'capturing' || s.ref === null) return holdTarget(s)
@@ -113,8 +108,6 @@ export function holdRemainingMs(s: CaptureState): number {
  * it because `awaitingMovement` cannot answer that question: that flag is only raised once a
  * full hold has elapsed with too little travel, so for the first second of every step it reads
  * false whether or not the user has touched the axis.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function hasTravelled(s: CaptureState): boolean {
   return s.movedBy >= s.config.minTravelCounts
@@ -161,8 +154,6 @@ function judgeSweep(s: CaptureState, sweep: CapturedSweep): string | null {
  * Centre is the mean of the release samples. A settled axis emits almost nothing, so no single
  * hold can beat the ±160-count uncertainty floor; averaging independent releases is the only
  * thing that improves on it.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function reconcile(s: CaptureState): CaptureResult {
   const min = Math.min(...s.accepted.map((a) => a.min))
@@ -185,8 +176,6 @@ export function reconcile(s: CaptureState): CaptureResult {
 
 /**
  * The default centre: half way between the endpoints.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function midpoint(min: number, max: number): number {
   return Math.round((min + max) / 2)
@@ -271,8 +260,6 @@ function commitStep(s: CaptureState, value: number): CaptureState {
  *
  * Essential rather than a convenience: a held axis emits nothing, so if dwell were only
  * evaluated on arrival, a perfectly steady hold would never complete. The UI ticks this.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function tick(s: CaptureState, now: number): CaptureState {
   if (s.phase !== 'capturing') return { ...s, now }
@@ -330,8 +317,6 @@ function restCluster(s: CaptureState): number {
 
 /**
  * Feed one RAW sample.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function push(s: CaptureState, sample: CaptureSample): CaptureState {
   if (s.phase !== 'capturing') return { ...s, now: sample.t }
@@ -375,8 +360,6 @@ export function push(s: CaptureState, sample: CaptureSample): CaptureState {
 
 /**
  * Acknowledge a rejected sweep and redo it. Accepted sweeps are kept.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function retrySweep(s: CaptureState, now: number): CaptureState {
   if (s.phase !== 'rejected') return s
@@ -390,8 +373,6 @@ export function retrySweep(s: CaptureState, now: number): CaptureState {
  * For a sweep that was interrupted rather than rejected — the serial link closing mid-capture.
  * Its samples stop at the close and the gap is not visible in the data, so the half-finished
  * sweep cannot be trusted to continue: a hold that spans the outage would be timed across it.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function restartSweep(s: CaptureState, now: number): CaptureState {
   return {
@@ -416,8 +397,6 @@ export function restartSweep(s: CaptureState, now: number): CaptureState {
 
 /**
  * Sweeps still needed. Rejected attempts do not count toward it.
- *
- * @deprecated Renderer still calls this; it moves to main in R3.1.
  */
 export function sweepsRemaining(s: CaptureState): number {
   return Math.max(0, s.config.sweepsRequired - s.accepted.length)

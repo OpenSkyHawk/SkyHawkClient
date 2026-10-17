@@ -1,8 +1,9 @@
 // Orchestration for the calibration dialog: session lifecycle, sample routing, and the write
 // sequence. Everything the dialog needs to *decide* lives here; the dialog renders and calls in.
+// (Was the renderer's CalibrationController until R3.1; HidCalibrationService hosts it now.)
 //
-// Depends on an injected API rather than window.skyhawk directly, so the whole flow is testable
-// without Electron or a device.
+// Depends on injected commands and timers rather than the service and the clock directly, so the
+// whole flow is testable without Electron or a device.
 import {
   beginCapture,
   midpoint,
@@ -10,7 +11,7 @@ import {
   restartSweep,
   retrySweep,
   tick
-} from '@shared/hid/calibration/legacy-rules'
+} from './axis-capture'
 import type {
   CachedBoard,
   CalCacheEntry,
@@ -19,12 +20,15 @@ import type {
   CalRawSample,
   CalResult,
   CalSnapshot,
-  CaptureResult,
-  CaptureState
+  CaptureState,
+  WorkflowState
 } from '@shared/hid/calibration'
 
-/** Only the calls this controller makes — narrower than SkyhawkApi, and trivial to fake. */
-export interface CalibrationApi {
+/**
+ * The calibration exchanges the workflow sequences: HidCalibrationService's own cal* commands,
+ * called directly. Narrower than the service, and trivial to fake.
+ */
+export interface CalibrationCommands {
   calRead(): Promise<CalResult<CalSnapshot>>
   calSessionOpen(axisIdx: number): Promise<CalResult<{ timeoutMs: number; axisIdx: number }>>
   calStreamSelect(axisIdx: number): Promise<CalResult<null>>
@@ -36,125 +40,23 @@ export interface CalibrationApi {
   calCacheDrop(idx: number): Promise<CalResult<null>>
 }
 
-/** Endpoints a user has captured or edited but not yet written. */
-export interface DraftAxis extends CaptureResult {
-  /** Whether this axis returns to rest. Defaults true; the user can override per axis. */
-  selfCentring: boolean
-  /**
-   * The rest position as measured, kept even while a midpoint is in use.
-   *
-   * `centre` is the value that will be written, so switching to "no rest position" replaces it.
-   * Without somewhere to keep the measurement, that switch is destructive and switching back
-   * does not undo it: the user gets a midpoint that looks exactly as plausible as the rest
-   * position they spent three sweeps capturing. Undefined when the capture never measured one.
-   */
-  capturedCentre?: number
+/** setTimeout / setInterval and their clears: the wall clock unless a test drives its own. */
+export interface WorkflowTimers {
+  setTimeout(fn: () => void, ms: number): unknown
+  clearTimeout(id: unknown): void
+  setInterval(fn: () => void, ms: number): unknown
+  clearInterval(id: unknown): void
 }
 
-export type WritePhase =
-  /** Sending COMMIT for one axis. */
-  | 'writing'
-  /**
-   * Re-reading after the ACK.
-   *
-   * A separate phase because an acknowledgement only means "received". The read-back is what
-   * proves "stored", and the badges are driven from it rather than from what was sent.
-   */
-  | 'verifying'
-  /**
-   * Every axis stored, held on screen so the user can see it.
-   *
-   * The work is finished here — this phase exists only because the whole save takes a few
-   * hundred milliseconds, and a result that vanishes as fast as it appeared is indistinguishable
-   * from nothing having happened.
-   */
-  | 'done'
-
-export interface WriteProgress {
-  phase: WritePhase
-  /** Axes queued for this save, in order. */
-  queue: number[]
-  /** Index within `queue` currently being written. */
-  at: number
-  /** Axes the device has confirmed storing, this save. */
-  stored: number[]
+/** The global timers, looked up at each call so a test's fake timers apply. */
+export const SYSTEM_TIMERS: WorkflowTimers = {
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+  setInterval: (fn, ms) => setInterval(fn, ms),
+  clearInterval: (id) => clearInterval(id as ReturnType<typeof setInterval>)
 }
 
-export interface CalibrationState {
-  open: boolean
-  /** Axis the dialog is showing, and the one the device is streaming. */
-  axis: number
-  /** Latest snapshot the device confirmed. Badges and values come from here, never from drafts. */
-  device?: CalSnapshot
-  /** Per-axis edits not yet written. Survives switching axes. */
-  drafts: Record<number, DraftAxis>
-  /**
-   * Whether each axis returns to rest, chosen by the user.
-   *
-   * Held separately from the drafts because the choice has to be made *before* capturing — it
-   * decides whether the flow has a third point at all. Keying it to a draft would mean the first
-   * capture on every axis ran the centre step regardless, and the setting only became reachable
-   * once it was too late to matter. Defaults to true; see DraftAxis.selfCentring.
-   */
-  restPosition: Record<number, boolean>
-  /**
-   * Axis a STREAM_SELECT is in flight for, if any.
-   *
-   * `axis` does not move until the device acknowledges. Switching optimistically would leave us
-   * filtering for an axis the gateway is not streaming — every sample dropped on `idx`, so the
-   * readout and capture look dead — and retrying the same axis would early-return as a no-op.
-   */
-  switchingTo?: number
-  /**
-   * Whether a sample for the current axis has actually arrived since it was selected.
-   *
-   * The ACK proves the device accepted the selection; this proves data is flowing. Kept separate
-   * and non-blocking because the node emits only on change: a steady axis may send nothing at
-   * all, so gating the UI on it would read as a hang.
-   */
-  streaming: boolean
-  /** Live capture for the axis on screen, absent when not capturing. */
-  capture?: CaptureState
-  /** Most recent sample for the streamed axis, for the live readout. */
-  live?: { raw: number; cal: number }
-  write?: WriteProgress
-  /** Why the last operation failed. Cleared when the user acts again. */
-  failure?: CalFailure & { axis?: number }
-  /** Axes that did store before a failure stopped the queue — worth naming in the UI. */
-  storedBeforeFailure?: number[]
-  /**
-   * A confirmation to hold on screen for a few seconds.
-   *
-   * Every one of these operations finishes in well under a second — a COMMIT plus a read-back is
-   * two round trips against a 2 s timeout, and the erase is ~28 ms. Clearing the state the
-   * instant the work is done means the only evidence anything happened is a flicker, which reads
-   * as "nothing happened" rather than "done". Success needs to stay put long enough to be read.
-   */
-  notice?: { kind: 'written' | 'erased'; axes: number[] }
-  /**
-   * Axes the cache holds that the device has lost, and the copy itself.
-   *
-   * Present does not mean acted on. This is an *offer* — restoring automatically onto a board
-   * whose calibration went missing would be right most of the time and catastrophic the rest,
-   * because the one case that produces a missing calibration and a populated cache is also the
-   * case where the board might have been swapped. Wrong endpoints fail open and stay invisible.
-   */
-  restorable?: { board: CachedBoard; axes: number[] }
-  /** Whether the restore offer is expanded for review. Never restores without this. */
-  restoreOpen: boolean
-  /**
-   * The serial link is closed, so nothing can reach the device (#74).
-   *
-   * Calibration rides on the serial port while the joystick does not, so the dialog can outlive
-   * the link. Paused is not cancelled: drafts, accepted sweeps and the last snapshot are kept,
-   * and the session is reopened when the same board comes back. Set from the moment the link
-   * drops until that reopen is acknowledged — not merely until the link is up again.
-   */
-  paused: boolean
-  busy: boolean
-}
-
-const emptyState = (): CalibrationState => ({
+const emptyState = (): WorkflowState => ({
   open: false,
   axis: 0,
   drafts: {},
@@ -171,12 +73,12 @@ const emptyState = (): CalibrationState => ({
  */
 const boardOf = (s?: CalSnapshot) => s?.serialNumber ?? null
 
-export class CalibrationController {
+export class CalibrationWorkflow {
   private state = emptyState()
-  private listeners = new Set<(s: CalibrationState) => void>()
-  private ticker?: ReturnType<typeof setInterval>
-  private holdTimer?: ReturnType<typeof setTimeout>
-  private noticeTimer?: ReturnType<typeof setTimeout>
+  private listeners = new Set<(s: WorkflowState) => void>()
+  private ticker?: unknown
+  private holdTimer?: unknown
+  private noticeTimer?: unknown
   /** The serial link as last reported, kept outside `state` so it survives open() resetting it. */
   private linkUp = true
   private resuming = false
@@ -189,10 +91,10 @@ export class CalibrationController {
    * The failure a session open reported, kept by identity so a later successful reopen can take
    * it down. Any other failure — a write, a delete — replaces the object and so is left showing.
    */
-  private sessionFailure?: CalibrationState['failure']
+  private sessionFailure?: WorkflowState['failure']
 
   constructor(
-    private readonly api: CalibrationApi,
+    private readonly api: CalibrationCommands,
     /** Injected so tests can drive time; defaults to the wall clock. */
     private readonly now: () => number = () => Date.now(),
     /**
@@ -206,7 +108,9 @@ export class CalibrationController {
      * Tests pass 0. The delay is deliberately not part of what they assert, and paying it on
      * every save would make the suite slow for nothing.
      */
-    private readonly phaseMinMs: number = 700
+    private readonly phaseMinMs: number = 700,
+    /** Injected so tests (and the component tests' mock) can drive time. */
+    private readonly timers: WorkflowTimers = SYSTEM_TIMERS
   ) {}
 
   /** Run something, then wait out whatever is left of the minimum display time. */
@@ -214,20 +118,20 @@ export class CalibrationController {
     const started = this.now()
     const result = await fn()
     const left = this.phaseMinMs - (this.now() - started)
-    if (left > 0) await new Promise((r) => setTimeout(r, left))
+    if (left > 0) await new Promise<void>((r) => this.timers.setTimeout(r, left))
     return result
   }
 
-  subscribe(fn: (s: CalibrationState) => void): () => void {
+  subscribe(fn: (s: WorkflowState) => void): () => void {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
   }
 
-  snapshot(): CalibrationState {
+  snapshot(): WorkflowState {
     return this.state
   }
 
-  private set(patch: Partial<CalibrationState>): void {
+  private set(patch: Partial<WorkflowState>): void {
     this.state = { ...this.state, ...patch }
     for (const fn of this.listeners) fn(this.state)
   }
@@ -272,7 +176,7 @@ export class CalibrationController {
     // rest position it does not have.
     const cache = await this.api.calCacheRead()
     const restPosition = { ...this.state.restPosition }
-    let restorable: CalibrationState['restorable']
+    let restorable: WorkflowState['restorable']
     if (cache.ok && cache.value.board) {
       for (const [key, a] of Object.entries(cache.value.board.axes)) {
         restPosition[Number(key)] = a.selfCentring
@@ -426,7 +330,7 @@ export class CalibrationController {
    */
   private startTicking(): void {
     this.stopTicking()
-    this.ticker = setInterval(() => {
+    this.ticker = this.timers.setInterval(() => {
       const c = this.state.capture
       if (!c || c.phase !== 'capturing' || this.state.paused) return
       const next = tick(c, this.now())
@@ -435,7 +339,7 @@ export class CalibrationController {
   }
 
   private stopTicking(): void {
-    if (this.ticker) clearInterval(this.ticker)
+    if (this.ticker) this.timers.clearInterval(this.ticker)
     this.ticker = undefined
   }
 
@@ -450,7 +354,7 @@ export class CalibrationController {
    * capture the user just finished. That was intermittent by construction — the same axis
    * completes down either path depending on when the last sample lands.
    */
-  private advanceCapture(capture: CaptureState | undefined, extra: Partial<CalibrationState> = {}) {
+  private advanceCapture(capture: CaptureState | undefined, extra: Partial<WorkflowState> = {}) {
     if (capture?.phase === 'complete' && capture.result) {
       this.set({
         ...extra,
@@ -606,11 +510,11 @@ export class CalibrationController {
    */
   private hold(then: () => void): void {
     this.clearHold()
-    this.holdTimer = setTimeout(then, 3000)
+    this.holdTimer = this.timers.setTimeout(then, 3000)
   }
 
   private clearHold(): void {
-    if (this.holdTimer) clearTimeout(this.holdTimer)
+    if (this.holdTimer) this.timers.clearTimeout(this.holdTimer)
     this.holdTimer = undefined
   }
 
@@ -620,10 +524,10 @@ export class CalibrationController {
    * Carries which axes rather than a sentence: the wording is the dialog's business, and the
    * controller has no reason to reach into the renderer's label table.
    */
-  private flash(notice: NonNullable<CalibrationState['notice']>): void {
-    if (this.noticeTimer) clearTimeout(this.noticeTimer)
+  private flash(notice: NonNullable<WorkflowState['notice']>): void {
+    if (this.noticeTimer) this.timers.clearTimeout(this.noticeTimer)
     this.set({ notice })
-    this.noticeTimer = setTimeout(() => this.set({ notice: undefined }), 6000)
+    this.noticeTimer = this.timers.setTimeout(() => this.set({ notice: undefined }), 6000)
   }
 
   /** Does the device now hold exactly what this draft asked for? */
@@ -797,7 +701,7 @@ export class CalibrationController {
   dispose(): void {
     this.stopTicking()
     this.clearHold()
-    if (this.noticeTimer) clearTimeout(this.noticeTimer)
+    if (this.noticeTimer) this.timers.clearTimeout(this.noticeTimer)
     this.noticeTimer = undefined
     this.listeners.clear()
   }

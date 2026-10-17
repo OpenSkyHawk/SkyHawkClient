@@ -309,28 +309,292 @@ export interface CaptureState {
   result?: CaptureResult
 }
 
+// ── the calibration workflow (R3.1) ──────────────────────────────────────────
+//
+// The workflow runs in main (HidCalibrationService, calibration-workflow.ts). These are the shapes
+// it pushes on `cal:workflow`: its own state, verbatim, and every value the HID tab and the dialog
+// show that used to be decided in the renderer. The renderer only words and draws them.
+
+/** Endpoints a user has captured or edited but not yet written. */
+export interface DraftAxis extends CaptureResult {
+  /** Whether this axis returns to rest. Defaults true; the user can override per axis. */
+  selfCentring: boolean
+  /**
+   * The rest position as measured, kept even while a midpoint is in use.
+   *
+   * `centre` is the value that will be written, so switching to "no rest position" replaces it.
+   * Without somewhere to keep the measurement, that switch is destructive and switching back
+   * does not undo it: the user gets a midpoint that looks exactly as plausible as the rest
+   * position they spent three sweeps capturing. Undefined when the capture never measured one.
+   */
+  capturedCentre?: number
+}
+
+export type WritePhase =
+  /** Sending COMMIT for one axis. */
+  | 'writing'
+  /**
+   * Re-reading after the ACK.
+   *
+   * A separate phase because an acknowledgement only means "received". The read-back is what
+   * proves "stored", and the badges are driven from it rather than from what was sent.
+   */
+  | 'verifying'
+  /**
+   * Every axis stored, held on screen so the user can see it.
+   *
+   * The work is finished here — this phase exists only because the whole save takes a few
+   * hundred milliseconds, and a result that vanishes as fast as it appeared is indistinguishable
+   * from nothing having happened.
+   */
+  | 'done'
+
+export interface WriteProgress {
+  phase: WritePhase
+  /** Axes queued for this save, in order. */
+  queue: number[]
+  /** Index within `queue` currently being written. */
+  at: number
+  /** Axes the device has confirmed storing, this save. */
+  stored: number[]
+}
+
+/** The workflow's own state (the renderer's CalibrationController state before R3.1). */
+export interface WorkflowState {
+  open: boolean
+  /** Axis the dialog is showing, and the one the device is streaming. */
+  axis: number
+  /** Latest snapshot the device confirmed. Badges and values come from here, never from drafts. */
+  device?: CalSnapshot
+  /** Per-axis edits not yet written. Survives switching axes. */
+  drafts: Record<number, DraftAxis>
+  /**
+   * Whether each axis returns to rest, chosen by the user.
+   *
+   * Held separately from the drafts because the choice has to be made *before* capturing — it
+   * decides whether the flow has a third point at all. Keying it to a draft would mean the first
+   * capture on every axis ran the centre step regardless, and the setting only became reachable
+   * once it was too late to matter. Defaults to true; see DraftAxis.selfCentring.
+   */
+  restPosition: Record<number, boolean>
+  /**
+   * Axis a STREAM_SELECT is in flight for, if any.
+   *
+   * `axis` does not move until the device acknowledges. Switching optimistically would leave us
+   * filtering for an axis the gateway is not streaming — every sample dropped on `idx`, so the
+   * readout and capture look dead — and retrying the same axis would early-return as a no-op.
+   */
+  switchingTo?: number
+  /**
+   * Whether a sample for the current axis has actually arrived since it was selected.
+   *
+   * The ACK proves the device accepted the selection; this proves data is flowing. Kept separate
+   * and non-blocking because the node emits only on change: a steady axis may send nothing at
+   * all, so gating the UI on it would read as a hang.
+   */
+  streaming: boolean
+  /** Live capture for the axis on screen, absent when not capturing. */
+  capture?: CaptureState
+  /** Most recent sample for the streamed axis, for the live readout. */
+  live?: { raw: number; cal: number }
+  write?: WriteProgress
+  /** Why the last operation failed. Cleared when the user acts again. */
+  failure?: CalFailure & { axis?: number }
+  /** Axes that did store before a failure stopped the queue — worth naming in the UI. */
+  storedBeforeFailure?: number[]
+  /**
+   * A confirmation to hold on screen for a few seconds.
+   *
+   * Every one of these operations finishes in well under a second — a COMMIT plus a read-back is
+   * two round trips against a 2 s timeout, and the erase is ~28 ms. Clearing the state the
+   * instant the work is done means the only evidence anything happened is a flicker, which reads
+   * as "nothing happened" rather than "done". Success needs to stay put long enough to be read.
+   */
+  notice?: { kind: 'written' | 'erased'; axes: number[] }
+  /**
+   * Axes the cache holds that the device has lost, and the copy itself.
+   *
+   * Present does not mean acted on. This is an *offer* — restoring automatically onto a board
+   * whose calibration went missing would be right most of the time and catastrophic the rest,
+   * because the one case that produces a missing calibration and a populated cache is also the
+   * case where the board might have been swapped. Wrong endpoints fail open and stay invisible.
+   */
+  restorable?: { board: CachedBoard; axes: number[] }
+  /** Whether the restore offer is expanded for review. Never restores without this. */
+  restoreOpen: boolean
+  /**
+   * The serial link is closed, so nothing can reach the device (#74).
+   *
+   * Calibration rides on the serial port while the joystick does not, so the dialog can outlive
+   * the link. Paused is not cancelled: drafts, accepted sweeps and the last snapshot are kept,
+   * and the session is reopened when the same board comes back. Set from the moment the link
+   * drops until that reopen is acknowledged — not merely until the link is up again.
+   */
+  paused: boolean
+  busy: boolean
+}
+
+/** One axis row of a GET_CAL snapshot. */
+export type CalAxis = CalSnapshot['axes'][number]
+
+/** Per-axis stored-calibration state on the HID tab; an axis with neither has no badge. */
+export type CalBadge = 'cal' | 'raw'
+
+/** How much of the full range a captured travel spans. Descriptive, never an error. */
+export interface TravelQuality {
+  counts: number
+  pct: number
+  at: number
+  label: 'Good' | 'Workable' | 'Low'
+  tone: 'ok' | '' | 'warn'
+}
+
+/**
+ * What the live prompt means during a capture; the dialog words it.
+ *
+ * `holding` is the split between the two states of each step (keep moving / stop moving). `side`
+ * is the derived direction of the stop being asked for, null while there is no evidence either
+ * way (and always null on the centre step).
+ */
+export interface CapturePrompt {
+  step: CaptureStep
+  holding: boolean
+  side: 'upper' | 'lower' | null
+  awaitingMovement: boolean
+}
+
+/** The dialog's sweep counter line. */
+export type SweepCount =
+  | { kind: 'capturing'; sweep: number; of: number }
+  | { kind: 'captured'; of: number }
+  | { kind: 'per-axis'; of: number }
+
+/** The calibration dialog, decided: every gate and derived value it shows (§4.6). */
+export interface CalibrationDialogState {
+  /** The workflow's state, for the values the dialog displays. */
+  workflow: WorkflowState
+  /** Axes the device declares, for the rail. */
+  present: CalAxis[]
+  /** The axis on screen's unwritten edit. */
+  draft?: DraftAxis
+  /** What the device holds for the axis on screen. */
+  stored?: CalAxis
+  /** A write in progress; the held 'done' confirmation is not one. */
+  writing: boolean
+  /** An axis the device would refuse, and why. */
+  invalid: { axis: number; reason: string } | null
+  /** The footer names the refused axis (not while writing). */
+  showInvalid: boolean
+  /** Endpoints on show: the draft, else what the device stores. */
+  shown?: CaptureResult
+  travel: TravelQuality | null
+  /** The axis on screen returns to rest. */
+  selfCentring: boolean
+  /** The live prompt, or null when none is shown (not capturing, or paused). */
+  prompt: CapturePrompt | null
+  /** Axes with edits, in index order: what Write would send. */
+  dirty: number[]
+  /** The step strip: shown once there is a capture or a draft. */
+  strip: boolean
+  /** Which of the two steps is current: 0 full travel, 1 review & write. */
+  stepIndex: 0 | 1
+  /** Sweeps left while the travel step is current. */
+  sweepsRemaining?: number
+  /** The "Hold at each stop" marker on the bar. */
+  holdAtStops: boolean
+  /** The dwell bar while a prompt is shown. */
+  hold?: { remainingMs: number; progress: number }
+  sweeps: SweepCount
+  /** Accepted sweeps, each flagged when it falls short of the widest. */
+  convergence: { min: number; max: number; short: boolean }[]
+  /** The restore offer: expanded for review, folded to a re-offer line, or not shown. */
+  restore: 'panel' | 'reoffer' | null
+  /** The written/erased confirmation is shown. */
+  notice: boolean
+  /** Primary capture button: Redo after a rejected sweep, else Start / Re-capture. */
+  capture: { action: 'redo' | 'start'; disabled: boolean; recapture: boolean }
+  /** Disabled controls. */
+  disabled: {
+    /** ✕ and Cancel. */
+    close: boolean
+    /** The rail's axis buttons. */
+    axisSwitch: boolean
+    /** The rest-position toggle. */
+    rest: boolean
+    write: boolean
+  }
+  /** Delete calibration: shown, and whether it is greyed out. */
+  remove: { shown: boolean; disabled: boolean }
+}
+
+/** The HID tab's calibration parts (§4.6). */
+export interface CalibrationTabState {
+  /**
+   * What the attached device last reported, while the link is up.
+   *
+   * `undefined` means "not known" — no device, or a gateway whose firmware predates the
+   * calibration protocol and never answers. That is deliberately distinct from "uncalibrated":
+   * showing every axis as uncalibrated because we failed to ask would be a lie.
+   */
+  snapshot?: CalSnapshot
+  /** Per axis index; absent = not declared (or not known), so no badge. */
+  badges: Partial<Record<number, CalBadge>>
+  /** Declared axes with no calibration on the device. */
+  uncalibrated: number
+  /** Axes the device lost that the cache holds a confirmed copy of. */
+  offer?: { confirmedAt: string; axes: number[] }
+  /** The restore banner is shown. */
+  showOffer: boolean
+  /** Review & restore opens on this axis. */
+  offerAxis?: number
+  /** The Calibrate button: shown, enabled, and the axis it opens on. */
+  calibrate: { shown: boolean; enabled: boolean; axis?: number }
+}
+
+/** `cal:workflow`: the HID tab's calibration parts and, while it is shown, the dialog. */
+export interface CalibrationState {
+  tab: CalibrationTabState
+  dialog?: CalibrationDialogState
+}
+
+/**
+ * The state at launch, before main has pushed anything: no device report, the link down, no
+ * dialog. The renderer starts from it; main's own first state is pinned equal to it.
+ */
+export const CALIBRATION_IDLE: CalibrationState = {
+  tab: {
+    badges: {},
+    uncalibrated: 0,
+    showOffer: false,
+    calibrate: { shown: true, enabled: false }
+  }
+}
+
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */
 export interface CalibrationPushChannels {
   'cal:data': CalSnapshot
-  'cal:raw': CalRawSample[]
+  'cal:workflow': CalibrationState
 }
 
 /** Push channel names (main -> renderer). */
 export const CALIBRATION_PUSH = {
   calData: 'cal:data',
-  calRaw: 'cal:raw'
+  calWorkflow: 'cal:workflow'
 } as const
 
-/** Intent channel names (renderer -> main, invoke/response). */
+/**
+ * Intent channel names (renderer -> main, invoke/response): the workflow's user actions. The
+ * protocol exchanges they drive (HELLO, GET_CAL, SESSION_OPEN, …) and the cache are main-internal.
+ */
 export const CALIBRATION_CTRL = {
-  calHello: 'cal:hello',
-  calRead: 'cal:read',
-  calSessionOpen: 'cal:session-open',
-  calStreamSelect: 'cal:stream-select',
-  calCommit: 'cal:commit',
-  calReset: 'cal:reset',
-  calSessionClose: 'cal:session-close',
-  calCacheRead: 'cal:cache-read',
-  calCacheStore: 'cal:cache-store',
-  calCacheDrop: 'cal:cache-drop'
+  calOpen: 'cal:open',
+  calClose: 'cal:close',
+  calSelectAxis: 'cal:select-axis',
+  calStartCapture: 'cal:start-capture',
+  calRetry: 'cal:retry',
+  calSetSelfCentring: 'cal:set-self-centring',
+  calSave: 'cal:save',
+  calRestore: 'cal:restore',
+  calDeleteAxis: 'cal:delete-axis',
+  calSetRestoreOpen: 'cal:set-restore-open'
 } as const

@@ -1,7 +1,8 @@
 // Axis calibration (#46) over the SimGateway's serial port, as the app runs it (moved out of
 // DeviceLink, R2.2a): a CalLink per port, the read-on-open that drives the HID tab's badges, the
-// cal* commands as discriminated CalResults, the restore cache, `cal:raw` batching, the
-// last-confirmed snapshot and the export gate.
+// cal* commands as discriminated CalResults, the restore cache, RAW batching, the last-confirmed
+// snapshot and the export gate. It hosts the calibration workflow (R3.1): the cal* commands are
+// the workflow's, RAW batches feed it, and it pushes `cal:workflow`.
 //
 // It rides on the Gateway connection (gateway LinkRider) for the port's moments, and is the link's
 // calibration frame filter (CalFrameFilter): GatewayConnection runs it on every incoming chunk, and
@@ -17,13 +18,15 @@ import type {
   CalSnapshot
 } from '@shared/hid/calibration'
 import type { Emit } from '@shared/app'
+import type { DeviceState } from '@shared/gateway'
 import type { CalFrameFilter, LinkRider, LinkTimer } from '../../gateway'
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
 import { loadCalCache, saveCalCache, type CacheFileIO } from './cache-store'
 import { boardFor, dropAxis, regressedAxes, storeAxes } from './cache-rules'
 import { CAL_AXIS_NONE, nackReasonName } from './codec'
+import { CalibrationWorkflowHost } from './workflow-host'
 
-/** `cal:raw` batches: the serial monitor's cadence, as before the split. */
+/** RAW batches (`cal:raw` before R3.1): the serial monitor's cadence, as before the split. */
 const CAL_RAW_FLUSH_MS = 50
 
 /**
@@ -49,15 +52,37 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
    * longer attached — or, worse, a different one after a reconnect.
    */
   private lastCal?: CalSnapshot
+  /** The calibration dialog's workflow, over this service's own commands. */
+  readonly workflow: CalibrationWorkflowHost
 
   constructor(
     private readonly emit: Emit,
     private readonly deps: HidCalibrationDeps
-  ) {}
+  ) {
+    this.workflow = new CalibrationWorkflowHost(
+      {
+        calRead: () => this.calRead(),
+        calSessionOpen: (axisIdx) => this.calSessionOpen(axisIdx),
+        calStreamSelect: (axisIdx) => this.calStreamSelect(axisIdx),
+        calCommit: (axis) => this.calCommit(axis),
+        calReset: (idx) => this.calReset(idx),
+        calSessionClose: () => this.calSessionClose(),
+        calCacheRead: async () => this.calCacheRead(),
+        calCacheStore: async (axes) => this.calCacheStore(axes),
+        calCacheDrop: async (idx) => this.calCacheDrop(idx)
+      },
+      (state) => this.emit('cal:workflow', state)
+    )
+  }
+
+  /** The link's state changed (GatewayConnection's onStatus). */
+  linkStatus(state: DeviceState): void {
+    this.workflow.linkStatus(state)
+  }
 
   // ── the link's moments (LinkRider) ─────────────────────────────────────────
 
-  /** `cal:raw` batching, on the link's timer list. */
+  /** RAW batching, on the link's timer list. */
   timers(every: LinkTimer): void {
     every(CAL_RAW_FLUSH_MS, () => this.flushCalRaw())
   }
@@ -165,7 +190,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
     })
   }
 
-  /** Convert a CalLink rejection into the discriminated result the renderer can branch on. */
+  /** Convert a CalLink rejection into the discriminated result the workflow can branch on. */
   private async calRun<T>(fn: (link: CalLink) => Promise<T>): Promise<CalResult<T>> {
     if (!this.cal) {
       return { ok: false, kind: 'offline', message: 'Gateway is not connected' }
@@ -202,6 +227,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
       const snap: CalSnapshot = { ...r.value, serialNumber: this.calSerialNumber }
       this.lastCal = snap
       this.emit('cal:data', snap)
+      this.workflow.reported(snap)
       return { ok: true, value: snap }
     }
     return r
@@ -288,6 +314,6 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
 
   private flushCalRaw(): void {
     if (this.calRawBuf.length === 0) return
-    this.emit('cal:raw', this.calRawBuf.splice(0, this.calRawBuf.length))
+    this.workflow.ingest(this.calRawBuf.splice(0, this.calRawBuf.length))
   }
 }

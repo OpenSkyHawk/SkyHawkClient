@@ -89,7 +89,7 @@ export class AppServices {
     })
     // The wiring order is load-bearing (R2.2b): it is the order DeviceLink ran these in before the
     // split. At each of the connection's moments its riders run in the order added:
-    //   start's timers   link tick (200, its own) → serial flush (50) → cal:raw (50) →
+    //   start's timers   link tick (200, its own) → serial flush (50) → calibration RAW (50) →
     //                    HID rate (1000) → roster poll (5000); then the HID reader
     //   port opens       `opening`: node resets, then the line assembler → connected status →
     //                    `connected`: roster request → `opened`: calibration read, HID reopen
@@ -144,6 +144,9 @@ export class AppServices {
       if (s.state !== 'error') this.journal.forget('SERIAL')
       this.journal.linkState(s.state, (last) => deviceEvent(last, s, Date.now()))
     })
+    // The calibration workflow follows the link (pauses on a drop, drops the device's report),
+    // after the link's own reactions and after `device:status` has gone out (R3.1).
+    this.connection.onStatus((s) => this.calibration.linkStatus(s.state))
     // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
     this.settings.store.subscribe((config, prev) => {
       if (prev.autoConnect !== config.autoConnect) {
@@ -170,6 +173,6 @@ export class AppServices {
   status(): RelayStatus {
     const device: DeviceStatus = this.connection.deviceStatus()
     const { running, relay } = this.relay.status()
-    return { running, relay, device, cal: this.calibration.calSnapshot() }
+    return { running, relay, device, cal: this.calibration.workflow.state() }
   }
 }

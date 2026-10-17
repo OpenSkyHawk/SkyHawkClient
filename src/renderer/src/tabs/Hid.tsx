@@ -1,17 +1,18 @@
 import { HID_REPORT_LAYOUT } from '@shared/firmware'
 import { isLinkUp } from '@shared/gateway'
+import type { CalBadge } from '@shared/hid/calibration'
 import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
 import { freshness } from '../freshness'
-import { CalibrationDialog, useCalibration } from '../CalibrationDialog'
+import { CalibrationDialog } from '../CalibrationDialog'
 
 /**
- * Per-axis stored-calibration state.
+ * Per-axis stored-calibration state, as main reports it.
  *
  * `undefined` is a third state, not a synonym for uncalibrated: it means we have not been able
  * to ask the device — no gateway attached, or firmware predating the calibration protocol.
  * Rendering "RAW" in that case would assert something we do not know.
  */
-type CalState = 'cal' | 'raw' | undefined
+type CalState = CalBadge | undefined
 
 /**
  * The column is always reserved, so values stay aligned whether or not an axis has a badge.
@@ -98,7 +99,7 @@ export function Hid() {
   // The joystick is read alongside DCS and never needs the serial link; calibration does (#74).
   // So the live view below ignores the link, and only calibration is gated on it.
   const linkUp = isLinkUp(s.deviceState)
-  const calib = useCalibration(s.cal, linkUp)
+  const cal = s.calibration.tab
   const lit = new Set(s.buttons)
   const availAxes = new Set(s.availAxes)
   const availHats = new Set(s.availHats)
@@ -113,24 +114,21 @@ export function Hid() {
   // constant 0, and rendering that as a value implies a reading that does not exist — so it gets
   // the same dimmed em-dash treatment as an uncatalogued slot. Until the device tells us
   // (no gateway, or firmware predating the protocol) we fall back to the catalogue alone.
-  const present = s.cal ? s.cal.axes.filter((a) => a.present) : []
-  const uncalibrated = present.filter((a) => !a.calibrated).length
+  const snap = cal.snapshot
+  const present = snap ? snap.axes.filter((a) => a.present) : []
+  const uncalibrated = cal.uncalibrated
   const axisLive = (i: number) =>
-    availAxes.has(i) && (s.cal ? (s.cal.axes[i]?.present ?? false) : true)
+    availAxes.has(i) && (snap ? (snap.axes[i]?.present ?? false) : true)
 
   // Calibration is a property of the attached device, so badges follow presentMask alone.
-  const calState = (i: number): CalState => {
-    const a = s.cal?.axes[i]
-    if (!a?.present) return undefined
-    return a.calibrated ? 'cal' : 'raw'
-  }
+  const calState = (i: number): CalState => cal.badges[i]
 
   return (
     <div className="hid">
-      {calib.open && calib.controller && (
-        <CalibrationDialog controller={calib.controller} onClose={() => void calib.close()} />
+      {s.calibration.dialog && (
+        <CalibrationDialog d={s.calibration.dialog} calibrate={s.calibrate} />
       )}
-      {calib.offer && linkUp && present.length > 0 && (
+      {cal.showOffer && cal.offer && (
         <div className="calrestore">
           <svg
             width="18"
@@ -143,16 +141,14 @@ export function Hid() {
             <path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5" />
           </svg>
           <span className="calrestore__txt">
-            {calib.offer.axes.length === 1
-              ? `${AXIS_LABELS[calib.offer.axes[0]!]} has no calibration on the device`
-              : `${calib.offer.axes.length} axes have no calibration on the device`}
+            {cal.offer.axes.length === 1
+              ? `${AXIS_LABELS[cal.offer.axes[0]!]} has no calibration on the device`
+              : `${cal.offer.axes.length} axes have no calibration on the device`}
             , but this client holds a copy the device confirmed
-            {calib.offer.confirmedAt
-              ? ` on ${new Date(calib.offer.confirmedAt).toLocaleString()}`
-              : ''}
+            {cal.offer.confirmedAt ? ` on ${new Date(cal.offer.confirmedAt).toLocaleString()}` : ''}
             .
           </span>
-          <button className="calbtn" onClick={() => void calib.start(calib.offer!.axes[0]!, true)}>
+          <button className="calbtn" onClick={() => s.calibrate.open(cal.offerAxis!, true)}>
             Review &amp; restore…
           </button>
         </div>
@@ -161,29 +157,27 @@ export function Hid() {
         <div className="panel-h">
           <span className="section-h">Axes</span>
           <span className="meta">
-            {s.cal
+            {snap
               ? `${present.length} of ${HID_REPORT_LAYOUT.axes.count} slots · device-reported`
               : `int16 · ±${-HID_REPORT_LAYOUT.axes.min}`}
           </span>
-          {s.cal && (
+          {snap && (
             <span className={`meta ${uncalibrated ? 'meta--warn' : 'meta--ok'}`}>
               {uncalibrated
                 ? `${uncalibrated} ${uncalibrated === 1 ? 'axis' : 'axes'} uncalibrated`
                 : 'all axes calibrated'}
             </span>
           )}
-          {(present.length > 0 || !linkUp) && calib.controller && (
+          {cal.calibrate.shown && (
             <button
               className="calbtn"
-              disabled={!linkUp}
+              disabled={!cal.calibrate.enabled}
               title={
-                linkUp
+                cal.calibrate.enabled
                   ? 'Calibrate an axis'
                   : 'Calibration needs the serial link — Connect on the Connection tab'
               }
-              onClick={() =>
-                void calib.start(present.find((a) => !a.calibrated)?.idx ?? present[0]!.idx)
-              }
+              onClick={() => s.calibrate.open(cal.calibrate.axis!)}
             >
               <svg
                 width="13"
@@ -216,7 +210,7 @@ export function Hid() {
             raw={v}
             avail={axisLive(i)}
             cal={calState(i)}
-            onCalibrate={calState(i) ? () => void calib.start(i) : undefined}
+            onCalibrate={calState(i) ? () => s.calibrate.open(i) : undefined}
           />
         ))}
       </div>

@@ -36,7 +36,11 @@ export function start(): void {
     setConfig: (config) => services.settings.apply(config),
     nodes: services.nodes,
     loadCalCache: () => loadCalCache(cacheFile),
-    saveCalCache: (cache) => saveCalCache(cache, cacheFile),
+    saveCalCache: (cache) => {
+      saveCalCache(cache, cacheFile)
+      // An imported copy may be one the device has lost: the HID tab's restore offer re-reads it.
+      services.calibration.workflow.cacheChanged()
+    },
     backupDir: () => join(app.getPath('userData'), 'backups'),
     clientVersion: () => app.getVersion()
   })

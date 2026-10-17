@@ -1,6 +1,8 @@
-// hid/calibration's intents: axis calibration (#46). app/ipc.ts registers them.
+// hid/calibration's intents: the calibration dialog's actions (#46). app/ipc.ts registers them.
+// The protocol exchanges they drive are main-internal (HidCalibrationService); main answers each
+// action by pushing `cal:workflow`.
 import type { IpcRegistrar } from '@shared/app'
-import { CALIBRATION_CTRL, type CalCacheEntry, type CalCommitAxis } from '@shared/hid/calibration'
+import { CALIBRATION_CTRL } from '@shared/hid/calibration'
 import type { HidCalibrationService } from './hid-calibration-service'
 
 export interface CalibrationIpcDeps {
@@ -8,24 +10,21 @@ export interface CalibrationIpcDeps {
 }
 
 export function registerCalibrationIpc(ipc: IpcRegistrar, deps: CalibrationIpcDeps): void {
-  const { calibration } = deps
-  // Axis calibration (#46). Every one returns a discriminated CalResult rather than throwing:
-  // an ipcRenderer.invoke rejection flattens to a plain Error, which would lose the
-  // timeout-vs-nack distinction the UI's failure messaging depends on.
-  ipc.handle(CALIBRATION_CTRL.calHello, () => calibration.calHello())
-  ipc.handle(CALIBRATION_CTRL.calRead, () => calibration.calRead())
-  ipc.handle(CALIBRATION_CTRL.calSessionOpen, (_e, axisIdx: number) =>
-    calibration.calSessionOpen(axisIdx)
+  const { workflow } = deps.calibration
+  ipc.handle(CALIBRATION_CTRL.calOpen, (_e, axis: number, review?: boolean) =>
+    workflow.open(axis, review)
   )
-  ipc.handle(CALIBRATION_CTRL.calStreamSelect, (_e, axisIdx: number) =>
-    calibration.calStreamSelect(axisIdx)
+  ipc.handle(CALIBRATION_CTRL.calClose, () => workflow.close())
+  ipc.handle(CALIBRATION_CTRL.calSelectAxis, (_e, axis: number) => workflow.selectAxis(axis))
+  ipc.handle(CALIBRATION_CTRL.calStartCapture, () => workflow.startCapture())
+  ipc.handle(CALIBRATION_CTRL.calRetry, () => workflow.retry())
+  ipc.handle(CALIBRATION_CTRL.calSetSelfCentring, (_e, selfCentring: boolean) =>
+    workflow.setSelfCentring(selfCentring)
   )
-  ipc.handle(CALIBRATION_CTRL.calCommit, (_e, axis: CalCommitAxis) => calibration.calCommit(axis))
-  ipc.handle(CALIBRATION_CTRL.calReset, (_e, idx: number) => calibration.calReset(idx))
-  ipc.handle(CALIBRATION_CTRL.calCacheRead, () => calibration.calCacheRead())
-  ipc.handle(CALIBRATION_CTRL.calCacheStore, (_e, axes: CalCacheEntry[]) =>
-    calibration.calCacheStore(axes)
+  ipc.handle(CALIBRATION_CTRL.calSave, () => workflow.save())
+  ipc.handle(CALIBRATION_CTRL.calRestore, () => workflow.restore())
+  ipc.handle(CALIBRATION_CTRL.calDeleteAxis, (_e, idx: number) => workflow.deleteAxis(idx))
+  ipc.handle(CALIBRATION_CTRL.calSetRestoreOpen, (_e, open: boolean) =>
+    workflow.setRestoreOpen(open)
   )
-  ipc.handle(CALIBRATION_CTRL.calCacheDrop, (_e, idx: number) => calibration.calCacheDrop(idx))
-  ipc.handle(CALIBRATION_CTRL.calSessionClose, () => calibration.calSessionClose())
 }
