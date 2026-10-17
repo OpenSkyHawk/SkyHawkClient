@@ -63,6 +63,7 @@ const input = (over: Partial<NodeModelInput>): NodeModelInput => ({
   seen: new Map(),
   telemetry: [],
   defaults,
+  now: 0,
   ...over,
   file: everSeen(over.file ?? EMPTY_MAPPING)
 })
@@ -72,6 +73,7 @@ const fresh = (over: Partial<NodeModelInput>): NodeModelInput => ({
   seen: new Map(),
   telemetry: [],
   defaults,
+  now: 0,
   file: EMPTY_MAPPING,
   ...over
 })
@@ -212,17 +214,31 @@ describe('the one availability rule: roster, telemetry, none (X2 / S10, #132)', 
     })
   })
 
-  it('a PDU in your cockpit sending fresh pages is online, roster or not; stale pages are not', () => {
+  it('a PDU in your cockpit sending fresh pages is online, unless the roster said absent after them', () => {
     // A complete roster left PDU_Left (#3) out, or listed it absent: its fresh pages say it is on.
     expect(entry(input({ telemetry: [telem(3)], rosterCompleteAt: 0 }), 3)).toMatchObject({
       availability: 'online',
       readings: 'live'
     })
-    expect(entry(input({ roster: [st(3, false)], telemetry: [telem(3)] }), 3)).toMatchObject({
-      availability: 'online',
-      readings: 'live'
-    })
+    // Listed absent before its newest page arrived (pages are 0 ms old at `now` 0): on by them.
+    const before = new Map<number, NodeSeen>([[3, { firstSeenAt: -9000, offlineAt: -5000 }]])
+    expect(
+      entry(input({ roster: [st(3, false)], seen: before, telemetry: [telem(3)] }), 3)
+    ).toMatchObject({ availability: 'online', readings: 'live' })
     expect(entry(input({ telemetry: [telem(3)] }), 3)?.availability).toBe('online') // no roster yet
+    // Listed absent after its newest page (3 s old at `now` 5000): offline at once, on the
+    // roster's timing — not when the page goes stale.
+    const after = new Map<number, NodeSeen>([[3, { firstSeenAt: 0, offlineAt: 4000 }]])
+    const old = [telem(3, { rail12V: { ...telem(3).rail12V!, ageMs: 3000 } })]
+    expect(
+      entry(input({ roster: [st(3, false)], seen: after, telemetry: old, now: 5000 }), 3)
+    ).toMatchObject({ availability: 'offline', offlineAt: 4000 })
+    // A newer page after that absent reading: back on.
+    const newer = [telem(3, { rail12V: { ...telem(3).rail12V!, ageMs: 500 } })]
+    expect(
+      entry(input({ roster: [st(3, false)], seen: after, telemetry: newer, now: 5000 }), 3)
+        ?.availability
+    ).toBe('online')
     const stale = [telem(3, { stale: true })]
     expect(entry(input({ telemetry: stale, rosterCompleteAt: 0 }), 3)?.availability).toBe('offline')
     expect(entry(input({ telemetry: stale }), 3)?.availability).toBe('unknown')

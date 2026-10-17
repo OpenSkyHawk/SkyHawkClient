@@ -225,7 +225,14 @@ describe('fix-track probes (today)', () => {
       { name: 'Right_Navigation', console: 'Right', pduId: null, kind: 'pdu' },
       () => 'pdu'
     )
-    const m = buildNodeModel({ roster: [], seen: new Map(), telemetry: [], defaults, file: f })
+    const m = buildNodeModel({
+      roster: [],
+      seen: new Map(),
+      telemetry: [],
+      defaults,
+      file: f,
+      now: 0
+    })
     expect(m.nodes.find((x) => x.nodeId === 2)?.kind).toBe('pdu')
   })
 })

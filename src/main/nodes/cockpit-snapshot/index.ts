@@ -97,7 +97,7 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     plan: planZones(views, outages, zones),
     band: cockpitBand(views, strays.length, i.peakW),
     attention: cockpitAttention(i.model, views, outages, strays, live, i.device.gateway),
-    panels: boardPanels(views, outages, i.telemetry, members, zones),
+    panels: boardPanels(views, outages, members, zones),
     opens: boardOpens(views, members),
     zones: zoneChoices(views, members),
     adopt: adoptRows(views, members),

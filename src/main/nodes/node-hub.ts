@@ -47,14 +47,13 @@ import {
   NODE_REGISTRY_SOURCE,
   type NodeFaultName
 } from '@shared/firmware'
-import { buildNodeModel, nodeAvailability } from './node-model'
+import { availabilityOf, buildNodeModel } from './node-model'
 import { NodeEventTracker } from './node-events'
 import { boardIdentity, identityOf, isAdoptableKind } from './node-kind'
 import {
   canForget,
   canHide,
   offlineRefusal,
-  pduTelemetryLive,
   type OfflineGate,
   type OfflineSignals
 } from './offline-actions'
@@ -472,10 +471,14 @@ export class NodeHub implements NodeLineSink {
    * availability by the model's one rule, and whether fresh PDU pages say it is live.
    */
   private offlineSignals(nodeId: number, now: number): OfflineSignals {
-    const st = this.roster.snapshot().find((n) => n.nodeId === nodeId)
-    const pduTelemetry = pduTelemetryLive(this.telem.snapshot(now), nodeId)
-    const complete = this.roster.rosterCompleteAt() !== undefined
-    return { availability: nodeAvailability(st, complete, pduTelemetry).availability, pduTelemetry }
+    const { availability } = availabilityOf({
+      status: this.roster.snapshot().find((n) => n.nodeId === nodeId),
+      seen: this.roster.seenInfo().get(nodeId),
+      rosterComplete: this.roster.rosterCompleteAt() !== undefined,
+      telemetry: this.telem.snapshot(now).find((t) => t.nodeId === nodeId),
+      now
+    })
+    return { availability }
   }
 
   private refusal(gate: OfflineGate, what: 'hidden' | 'forgotten'): NodeMappingResult | undefined {
@@ -563,7 +566,8 @@ export class NodeHub implements NodeLineSink {
       rosterCompleteAt: this.roster.rosterCompleteAt(),
       telemetry: this.telem.snapshot(now),
       defaults: this.defaults,
-      file: this.mapping()
+      file: this.mapping(),
+      now
     })
   }
 

@@ -3,7 +3,9 @@ import { PDU_RAIL_FLAGS as RAIL_FLAG, PDU_STATUS_FLAGS as PDU_FLAG } from '@shar
 import {
   displayCurrentMa,
   hasFreshPduPage,
+  newestPduPageAt,
   NodeTelemStore,
+  pduPagesLive,
   parseNodeTelem,
   TELEM_PAGE,
   TELEM_STALE_MS
@@ -222,5 +224,37 @@ describe('hasFreshPduPage', () => {
     const other = new NodeTelemStore()
     other.apply(unknown, 0)
     expect(hasFreshPduPage(other.snapshot(0)[0]!)).toBe(false)
+  })
+})
+
+describe('pduPagesLive: the newest evidence wins (X2, #132)', () => {
+  const page = (id: number) => parse(telem(id, [0x02, 0, 0, 0, 0, 0, 0, 0]))
+  const store = (...at: number[]) => {
+    const s = new NodeTelemStore()
+    for (const t of at) s.apply(page(4), t)
+    return s
+  }
+
+  it('the newest fresh page’s arrival time, counted back from the snapshot', () => {
+    const s = store(1000, 4000)
+    expect(newestPduPageAt(s.snapshot(6000)[0]!, 6000)).toBe(4000)
+    expect(
+      newestPduPageAt(s.snapshot(4000 + TELEM_STALE_MS + 1)[0]!, 4000 + TELEM_STALE_MS + 1)
+    ).toBeUndefined() // stale
+    const other = new NodeTelemStore()
+    other.apply(parse('0a7f0102030405060a'), 0) // an unknown page type only: not a PDU
+    expect(newestPduPageAt(other.snapshot(0)[0]!, 0)).toBeUndefined()
+  })
+
+  it('fresh pages count unless the roster said absent after the newest one', () => {
+    const t = store(10_000).snapshot(13_200)[0]!
+    expect(pduPagesLive(t, 13_200)).toBe(true) // no absent reading
+    expect(pduPagesLive(t, 13_200, 9000)).toBe(true) // absent before the page
+    expect(pduPagesLive(t, 13_200, 13_000)).toBe(false) // absent after it: offline at once
+    expect(pduPagesLive(t, 13_200, 10_000)).toBe(false) // a tie goes to the roster
+    const back = store(10_000, 14_000).snapshot(14_200)[0]!
+    expect(pduPagesLive(back, 14_200, 13_000)).toBe(true) // a page after the absent: back on
+    const stale = store(0).snapshot(TELEM_STALE_MS + 1)[0]!
+    expect(pduPagesLive(stale, TELEM_STALE_MS + 1)).toBe(false)
   })
 })

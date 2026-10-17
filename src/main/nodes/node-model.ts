@@ -25,6 +25,8 @@ export interface NodeModelInput {
   telemetry: NodeTelemSnapshot[]
   defaults: Map<number, NodeDefaults>
   file: NodeMappingFile
+  /** When `telemetry` was taken: page ages are counted back from it. */
+  now: number
 }
 
 /** What a board's availability was decided from: its roster row, its PDU pages, or nothing. */
@@ -38,11 +40,12 @@ export interface Availability {
 /**
  * The one availability rule (X2 / S10), with what it was decided from:
  * - online while the roster lists it present (roster);
- * - online while it sends fresh PDU pages (telemetry) — whatever the roster says, as Hide and
- *   Forget have always read them (offline-actions.ts): a PDU sending pages is on the bus;
+ * - online while its PDU pages say so (telemetry): fresh, and newer than the roster's last
+ *   "absent" reading for it (node-telem.ts pduPagesLive — the newest evidence wins);
  * - offline once the roster lists it absent, or a complete roster left it out (roster) — there is
  *   no "waiting";
  * - else unknown (none): no complete roster since the link opened, and it has not reported.
+ * `pduTelemetry` is that page evidence already weighed (availabilityOf).
  */
 export function nodeAvailability(
   st: NodeStatus | undefined,
@@ -53,6 +56,27 @@ export function nodeAvailability(
   if (pduTelemetry) return { availability: 'online', evidence: 'telemetry' }
   if (st || rosterComplete) return { availability: 'offline', evidence: 'roster' }
   return { availability: 'unknown', evidence: 'none' }
+}
+
+/** What the rule reads for one board: its roster row and timing, and its PDU pages. */
+export interface AvailabilitySignals {
+  status?: NodeStatus
+  seen?: NodeSeen
+  rosterComplete: boolean
+  telemetry?: NodeTelemSnapshot
+  /** When `telemetry` was taken. */
+  now: number
+}
+
+/**
+ * A board's availability from its signals: the model's, and the one NodeHub refuses Hide and Forget
+ * by, so the two always agree. Pages count against the roster's last "absent" reading — the time
+ * it learned the board was offline (seen.offlineAt) — only while the roster lists it absent.
+ */
+export function availabilityOf(s: AvailabilitySignals): Availability {
+  const absentAt = s.status && !s.status.present ? s.seen?.offlineAt : undefined
+  const pages = !!s.telemetry && pduPagesLive(s.telemetry, s.now, absentAt)
+  return nodeAvailability(s.status, s.rosterComplete, pages)
 }
 
 /**
@@ -76,6 +100,13 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   const roster = new Map(i.roster.map((n) => [n.nodeId, n]))
   const telem = new Map(i.telemetry.map((t) => [t.nodeId, t]))
   const complete = i.rosterCompleteAt !== undefined
+  const signals = (nodeId: number): AvailabilitySignals => ({
+    status: roster.get(nodeId),
+    seen: i.seen.get(nodeId),
+    rosterComplete: complete,
+    telemetry: telem.get(nodeId),
+    now: i.now
+  })
   const known = [...mapping.values()].filter((m) => m.known).map((m) => m.nodeId)
   // Not in your cockpit, registry or not: shown as new only while it is on the bus. The roster
   // keeps absent rows; one that dropped (or that you just forgot) comes back when it reports.
@@ -84,7 +115,9 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   // by them (nodeAvailability), so it can be adopted (S10). Pages are kept (only marked stale), so
   // one that stopped sending — dropped, or forgotten — is not.
   const sending = [...telem.values()]
-    .filter((t) => mapping.has(t.nodeId) && pduPagesLive(t))
+    .filter(
+      (t) => mapping.has(t.nodeId) && availabilityOf(signals(t.nodeId)).availability === 'online'
+    )
     .map((t) => t.nodeId)
   // The bridge's own row (node 0, v3) is this client's link, not a cockpit node.
   const ids = [...new Set([...known, ...waiting, ...sending])]
@@ -122,7 +155,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
       pduTelemetry: t?.isPdu
     })
     const kind: NodeKind = identified === 'pdu' ? 'pdu' : 'panel'
-    const { availability } = nodeAvailability(st, complete, !!t && pduPagesLive(t))
+    const { availability } = availabilityOf(signals(nodeId))
     const e: NodeModelEntry = {
       nodeId,
       name: mapped?.name ?? `Node ${nodeId}`,

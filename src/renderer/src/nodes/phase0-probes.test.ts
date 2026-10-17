@@ -58,6 +58,7 @@ describe('fix-track probes (today)', () => {
       seen: roster.seenInfo(),
       rosterCompleteAt: 0,
       telemetry: [],
+      now: 0,
       defaults,
       file: EMPTY_MAPPING
     })
@@ -94,6 +95,7 @@ describe('fix-track probes (today)', () => {
       seen: roster.seenInfo(),
       rosterCompleteAt: 0,
       telemetry: [],
+      now: 0,
       defaults,
       file: EMPTY_MAPPING
     })
@@ -108,6 +110,7 @@ describe('fix-track probes (today)', () => {
       seen: roster.seenInfo(),
       rosterCompleteAt: 0,
       telemetry: [],
+      now: 0,
       defaults,
       file: EMPTY_MAPPING
     })
@@ -129,6 +132,7 @@ describe('fix-track probes (today)', () => {
       seen: roster.seenInfo(),
       rosterCompleteAt: 0,
       telemetry: [],
+      now: 0,
       defaults,
       file: f
     })

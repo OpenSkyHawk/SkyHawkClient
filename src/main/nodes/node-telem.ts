@@ -99,12 +99,25 @@ export function hasFreshPduPage(t: NodeTelemSnapshot): boolean {
 }
 
 /**
- * A PDU sending pages now: it has sent PDU pages and one is fresh. The availability rule's
- * telemetry evidence (node-model.ts nodeAvailability), and what Hide and Forget read
- * (offline-actions.ts pduTelemetryLive).
+ * When the newest fresh PDU page (12 V, 5 V or status) arrived, for a snapshot taken at `now`;
+ * undefined when it has none.
  */
-export function pduPagesLive(t: NodeTelemSnapshot): boolean {
-  return t.isPdu && hasFreshPduPage(t)
+export function newestPduPageAt(t: NodeTelemSnapshot, now: number): number | undefined {
+  if (!t.isPdu) return undefined
+  const ages = [t.rail12V, t.rail5V, t.status].flatMap((p) => (p && !p.stale ? [p.ageMs] : []))
+  return ages.length ? now - Math.min(...ages) : undefined
+}
+
+/**
+ * A PDU's pages say it is on the bus: one is fresh, and the newest arrived after the roster's last
+ * "absent" reading for it (`absentAt`, its offline time) — the newest evidence wins. So a PDU that
+ * loses power reads offline as soon as the roster says so, not when its pages go stale, and one
+ * whose pages keep arriving after that is on again. The availability rule's telemetry evidence
+ * (node-model.ts availabilityOf), which Hide and Forget read too.
+ */
+export function pduPagesLive(t: NodeTelemSnapshot, now: number, absentAt?: number): boolean {
+  const at = newestPduPageAt(t, now)
+  return at !== undefined && (absentAt === undefined || at > absentAt)
 }
 
 /** iAvgMa for display: residual negative offset reads as 0. */

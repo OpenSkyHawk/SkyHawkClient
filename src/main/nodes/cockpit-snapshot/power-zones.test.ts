@@ -66,7 +66,8 @@ const model = buildNodeModel({
   rosterCompleteAt: T,
   telemetry: [],
   defaults,
-  file
+  file,
+  now: T
 })
 const { snapshot: snap } = buildCockpitSnapshot({
   model,
