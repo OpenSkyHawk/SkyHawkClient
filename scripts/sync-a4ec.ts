@@ -6,6 +6,12 @@
  *   tools/gen_a4ec/data/A-4E-C.jsonp             -> a4ec-controls.generated.ts
  *   Firmware/Libraries/HIDControls/HIDControls.h -> hid-controls.generated.ts
  *   Firmware/Libraries/SimGateway/SimGateway.cpp -> hid-report-layout.generated.ts (asserted)
+ *                                                -> usb-identity.generated.ts
+ *   Firmware/Libraries/NodeStatus/NodeStatus.h   -> node-status.generated.ts
+ *   Firmware/Libraries/SimGateway/AxisCal.{h,cpp} -> axis-cal.generated.ts
+ *   Firmware/Libraries/PanelBridge/PanelBridge.cpp,
+ *   Firmware/Libraries/PowerMonitor/TelemSchedule.h -> node-bus.generated.ts
+ *   Firmware/NODE_IDS.md                         -> node-names.generated.ts
  *
  * The DCS-BIOS common-metadata address (_ACFT_NAME @ 0x0000) is NOT vendored in
  * the firmware repo, so it lives in the hand-curated src/main/reference/dcsbios-metadata.ts.
@@ -38,7 +44,9 @@ const SRC = {
   simGateway: 'Firmware/Libraries/SimGateway/SimGateway.cpp',
   axisCal: 'Firmware/Libraries/SimGateway/AxisCal.h',
   axisCalCpp: 'Firmware/Libraries/SimGateway/AxisCal.cpp',
-  nodeIds: 'Firmware/NODE_IDS.md'
+  nodeIds: 'Firmware/NODE_IDS.md',
+  panelBridge: 'Firmware/Libraries/PanelBridge/PanelBridge.cpp',
+  telemSchedule: 'Firmware/Libraries/PowerMonitor/TelemSchedule.h'
 }
 
 const REPO_ROOT = join(__dirname, '..')
@@ -190,6 +198,27 @@ const labelize = (name: string): string =>
       return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower
     })
     .join(' ')
+
+/**
+ * `[static] constexpr <type> NAME = <value>;` — the scalar form the firmware uses for constants.
+ *
+ * `<value>` is a literal, or a sum of literals and other constants from the same source
+ * (`CAL_MAX_FRAME = CAL_ENVELOPE_BYTES + CAL_MAX_PAYLOAD`), each resolved the same way. Anything
+ * else (a cast, a product, a call) is not a value this parser can vouch for, so it fails the sync.
+ */
+function constexprNum(src: string, name: string, where: string): number {
+  const m = new RegExp(`constexpr\\s+\\w+\\s+${name}\\s*=\\s*([^;]+);`).exec(src)
+  if (!m) throw new Error(`[sync] constant ${name} not found in ${where}`)
+  return m[1]!.split('+').reduce((sum, raw) => {
+    const term = raw.trim()
+    if (/^(0x[0-9A-Fa-f]+|\d+)$/.test(term)) return sum + Number(term)
+    if (/^[A-Z_][A-Z0-9_]*$/.test(term)) return sum + constexprNum(src, term, where)
+    throw new Error(`[sync] ${name} in ${where}: cannot evaluate '${m[1]!.trim()}'`)
+  }, 0)
+}
+
+/** Enum entry names -> a TS string-literal union, so name-keyed lookups are typo-checked. */
+const nameUnion = (names: string[]): string => names.map(q).join(' | ')
 
 // ── A-4E-C controls ──────────────────────────────────────────────────────────
 
@@ -436,6 +465,24 @@ function genHidReportLayout(cpp: string): string {
   // Axis USB usages, in report order, from the descriptor comments.
   const usages = [...cpp.matchAll(/Usage \((X|Y|Z|Rx|Ry|Rz|Slider|Dial)\)/g)].map((u) => u[1]!)
 
+  // Hat logical range, from the descriptor bytes between the Hat Switch usages and their Input
+  // item: Logical Minimum (0x15 nn) and Logical Maximum (0x25 nn). Every value in range is a
+  // direction, clockwise from N at the minimum; anything above it is the null (centered) state.
+  const hatBlock = /0x09,\s*0x39,[\s\S]*?0x81,/.exec(cpp)?.[0]
+  if (!hatBlock)
+    throw new Error('[sync] hat switch block not found in the SimGateway HID descriptor')
+  const hatLogical = (prefix: '0x15' | '0x25', label: string): number => {
+    const m = new RegExp(`${prefix},\\s*(0x[0-9A-Fa-f]{2})`).exec(hatBlock)
+    if (!m) throw new Error(`[sync] hat ${label} not found in the SimGateway HID descriptor`)
+    return Number(m[1])
+  }
+  const hatMin = hatLogical('0x15', 'Logical Minimum')
+  const hatMax = hatLogical('0x25', 'Logical Maximum')
+  if (hatMin !== 0) {
+    throw new Error(`[sync] hat Logical Minimum is ${hatMin}; the decoder assumes 0 = N`)
+  }
+  const hatDirections = hatMax - hatMin + 1
+
   return (
     banner([`${SRC.simGateway} (HIDReport struct + descriptor)`]) +
     `
@@ -445,7 +492,7 @@ function genHidReportLayout(cpp: string): string {
  *
  * Semantics from the USB HID descriptor (NB: differ from the CAN controlId space):
  *  - axes are SIGNED int16, little-endian, logical range −32768..32767 (no 0x8000 bias).
- *  - hat nibbles encode 0..7 = N/NE/E/SE/S/SW/W/NW; value ≥ 8 (e.g. 0xF) = null/centered.
+ *  - hat nibbles encode ${hatMin}..${hatMax} = N/NE/E/SE/S/SW/W/NW; value ≥ ${hatMax + 1} (e.g. 0xF) = null/centered.
  */
 export const HID_REPORT_LAYOUT = {
   size: ${offset},
@@ -455,8 +502,10 @@ export const HID_REPORT_LAYOUT = {
     bytes: 2,
     count: 4,
     nibbleBits: 4,
-    /** Decoded value ≥ this is the centered/null state. */
-    centeredAtOrAbove: 8,
+    /** Directions a hat reports: the descriptor's logical range, clockwise from N. */
+    directions: ${hatDirections},
+    /** Decoded value ≥ this is the centered/null state: above the logical range. */
+    centeredAtOrAbove: ${hatMax + 1},
     nullNibble: 0xf
   },
   axes: {
@@ -505,6 +554,11 @@ function genNodeStatus(header: string): string {
   const statusFlags = parseEnum(header, 'PduStatusFlag', 'NodeStatus.h')
   const bits = (es: { name: string; value: number }[]) =>
     es.map((e) => `  ${e.name}: ${hex(e.value)}`).join(',\n')
+  // bit -> name + the header's trailing comment, verbatim (keys and firmware notes, not UI text).
+  const flagInfo = (es: { name: string; value: number; comment: string }[]) =>
+    es
+      .map((e) => `  ${hex(e.value)}: { name: ${q(e.name)}, description: ${q(e.comment)} }`)
+      .join(',\n')
 
   const faultAbbr = abbrs(faultCodes.map((e) => e.name))
   const flagEntries = healthFlags.map((e) => `  ${e.name}: ${hex(e.value)}`).join(',\n')
@@ -545,8 +599,11 @@ export const NODE_KINDS = {
 ${bits(nodeKinds)}
 } as const
 
+/** NodeFaultCode entry names: the keys client wording tables look a fault up by. */
+export type NodeFaultName = ${nameUnion(faultCodes.map((e) => e.name))}
+
 export interface NodeFaultInfo {
-  name: string
+  name: NodeFaultName
   abbr: string
   label: string
   description: string
@@ -588,20 +645,33 @@ ${bits(railFlags)}
 export const PDU_STATUS_FLAGS = {
 ${bits(statusFlags)}
 } as const
+
+export type PduRailFlagName = keyof typeof PDU_RAIL_FLAGS
+export type PduStatusFlagName = keyof typeof PDU_STATUS_FLAGS
+
+export interface PduFlagInfo<N extends string> {
+  name: N
+  /** The header's comment on the flag, verbatim. A firmware note, not client wording. */
+  description: string
+}
+
+/**
+ * PDU_RAIL_FLAGS bit -> its name and the PduRailFlag comment (NodeStatus.h). The client words its
+ * own flag meanings; this is the firmware's side, keyed the same way.
+ */
+export const PDU_RAIL_FLAG_INFO: Partial<Record<number, PduFlagInfo<PduRailFlagName>>> = {
+${flagInfo(railFlags)}
+} as const
+
+/** PDU_STATUS_FLAGS bit -> its name and the PduStatusFlag comment (NodeStatus.h). */
+export const PDU_STATUS_FLAG_INFO: Partial<Record<number, PduFlagInfo<PduStatusFlagName>>> = {
+${flagInfo(statusFlags)}
+} as const
 `
   )
 }
 
 // ── axis-calibration wire contract (OpenSkyhawk#251) ─────────────────────────
-
-/** `constexpr <type> NAME = <value>;` — the scalar form AxisCal.h uses for its constants. */
-function constexprNum(header: string, name: string): number {
-  const m = new RegExp(`constexpr\\s+\\w+\\s+${name}\\s*=\\s*(0x[0-9A-Fa-f]+|\\d+)\\s*;`).exec(
-    header
-  )
-  if (!m) throw new Error(`[sync] constant ${name} not found in AxisCal.h`)
-  return Number(m[1])
-}
 
 /**
  * Payload length per message type, from the `calLenValidForType` switch in AxisCal.cpp.
@@ -641,7 +711,7 @@ function parseLenTable(cpp: string, typeNames: string[]): Record<string, number>
   return out
 }
 
-function genAxisCal(header: string, cpp: string): string {
+function genAxisCal(header: string, cpp: string, simGateway: string): string {
   const types = parseEnum(header, 'CalType', 'AxisCal.h')
   const nacks = parseEnum(header, 'CalNackReason', 'AxisCal.h')
   const lens = parseLenTable(
@@ -681,36 +751,48 @@ function genAxisCal(header: string, cpp: string): string {
   return (
     banner([
       `${SRC.axisCal} (calibration wire contract)`,
-      `${SRC.axisCalCpp} (payload length table)`
+      `${SRC.axisCalCpp} (payload length table)`,
+      `${SRC.simGateway} (calibration session timeout)`
     ]) +
     `
 /**
  * SimGateway axis-calibration protocol constants. Wire contract:
  * FirmwarePlan/03-uart-usb-hid-protocol.md § Calibration Protocol (USB CDC).
  *
- * The codec in shared/calibration.ts restates these so \`src/shared\` stays free of a
- * \`src/main\` import; reference.test.ts asserts the two agree, so a firmware bump fails loudly.
+ * The codec in shared/calibration.ts imports these through the shared/firmware barrel rather
+ * than restating them; reference.test.ts pins the values the codec is written for, so a firmware
+ * bump fails loudly.
  */
 export const CAL_PROTO = {
   /** Protocol version. HELLO_ACK carries this; gate on it, not on the firmware version. */
-  version: ${constexprNum(header, 'CAL_PROTO_VERSION')},
+  version: ${constexprNum(header, 'CAL_PROTO_VERSION', 'AxisCal.h')},
   /** Stored-blob layout version, reported by HELLO_ACK as \`blobVersion\`. */
-  blobVersion: ${constexprNum(header, 'CAL_VERSION')},
+  blobVersion: ${constexprNum(header, 'CAL_VERSION', 'AxisCal.h')},
   /** HID report axis slots. Fixed by the descriptor, not by how many a cockpit populates. */
-  axisSlots: ${constexprNum(header, 'AXIS_CAL_SLOTS')},
+  axisSlots: ${constexprNum(header, 'AXIS_CAL_SLOTS', 'AxisCal.h')},
   /** Axis-selection sentinel: "all" for RESET, "none" for SESSION_OPEN / STREAM_SELECT. */
-  axisNone: ${hex(constexprNum(header, 'CAL_AXIS_NONE'))},
+  axisNone: ${hex(constexprNum(header, 'CAL_AXIS_NONE', 'AxisCal.h'))},
   /** magic 4 + type 1 + seq 1 + len 2 + crc 2. */
-  envelopeBytes: ${constexprNum(header, 'CAL_ENVELOPE_BYTES')},
+  envelopeBytes: ${constexprNum(header, 'CAL_ENVELOPE_BYTES', 'AxisCal.h')},
   /** CAL_DATA, the largest legal payload — the bound on how much a receiver may buffer. */
-  maxPayload: ${constexprNum(header, 'CAL_MAX_PAYLOAD')},
+  maxPayload: ${constexprNum(header, 'CAL_MAX_PAYLOAD', 'AxisCal.h')},
+  /** Envelope + the largest payload: the largest complete frame, and so a receiver's carry bound. */
+  maxFrame: ${constexprNum(header, 'CAL_MAX_FRAME', 'AxisCal.h')},
+  /** The gateway closes a calibration session idle this long. SESSION_ACK reports it too. */
+  sessionTimeoutMs: ${constexprNum(simGateway, 'CAL_SESSION_TIMEOUT_MS', 'SimGateway.cpp')},
   /** Frame lead-in "\\xAA S K C". Not collision-proof outbound, which is why the CRC is mandatory. */
   magic: [${magic.map(hex).join(', ')}]
 } as const
 
+/** Message type names, as the protocol doc writes them. */
+export type CalTypeName = ${nameUnion(types.map((t) => short(t.name)))}
+
+/** NACK reason names, as the protocol doc writes them. */
+export type CalNackName = ${nameUnion(nacks.map((n) => short(n.name)))}
+
 export interface CalTypeInfo {
   /** Name as the protocol doc writes it, e.g. \`SESSION_OPEN\`. */
-  name: string
+  name: CalTypeName
   /** The firmware identifier it came from, e.g. \`CAL_T_SESSION_OPEN\`. */
   macro: string
   label: string
@@ -726,7 +808,7 @@ ${typeEntries}
 } as const
 
 export interface CalNackInfo {
-  name: string
+  name: CalNackName
   macro: string
   label: string
 }
@@ -789,6 +871,76 @@ export const NODE_REGISTRY_SOURCE = {
   )
 }
 
+// ── CAN node bus (PanelBridge roster, PDU telemetry schedule) ────────────────
+
+function genNodeBus(panelBridge: string, telemSchedule: string): string {
+  return (
+    banner([`${SRC.panelBridge} (MAX_NODE_ID)`, `${SRC.telemSchedule} (TELEM_PERIOD_MS)`]) +
+    `
+/** Highest CAN NODE_ID PanelBridge tracks. Panel nodes are 1..MAX_NODE_ID. */
+export const MAX_NODE_ID = ${constexprNum(panelBridge, 'MAX_NODE_ID', 'PanelBridge.cpp')}
+
+/**
+ * A PDU sends one TELEM_n frame per period, rotating through its pages, so each page refreshes
+ * every (page count × period). How long the client waits before calling a page stale is its own
+ * policy, not this.
+ */
+export const TELEM_PERIOD_MS = ${constexprNum(telemSchedule, 'TELEM_PERIOD_MS', 'TelemSchedule.h')}
+`
+  )
+}
+
+// ── SimGateway USB identity ──────────────────────────────────────────────────
+
+function genUsbIdentity(cpp: string): string {
+  /** The single match of `re` in SimGateway.cpp; zero or several fails the sync. */
+  const only = (re: RegExp, label: string): RegExpMatchArray => {
+    const all = [...cpp.matchAll(re)]
+    if (all.length !== 1) {
+      throw new Error(`[sync] USB ${label}: expected one in SimGateway.cpp, found ${all.length}`)
+    }
+    return all[0]!
+  }
+  const id = only(
+    /TinyUSBDevice\.setID\(\s*(0x[0-9A-Fa-f]+)\s*,\s*(0x[0-9A-Fa-f]+)\s*\)/g,
+    'setID(vid, pid)'
+  )
+  const str = (re: RegExp, label: string) => only(re, label)[1]!
+  const manufacturer = str(
+    /TinyUSBDevice\.setManufacturerDescriptor\(\s*"([^"]*)"\s*\)/g,
+    'manufacturer descriptor'
+  )
+  const product = str(
+    /TinyUSBDevice\.setProductDescriptor\(\s*"([^"]*)"\s*\)/g,
+    'product descriptor'
+  )
+  const cdcInterface = str(
+    /\bSerial\.setStringDescriptor\(\s*"([^"]*)"\s*\)/g,
+    'CDC interface name'
+  )
+  const baud = Number(only(/\bSerial\.begin\(\s*(\d+)\s*\)/g, 'CDC Serial.begin(baud)')[1])
+
+  return (
+    banner([`${SRC.simGateway} (SimGateway::setup USB identity)`]) +
+    `
+/**
+ * How the SimGateway enumerates over USB, as SimGateway::setup() sets it before TinyUSB starts.
+ * The client finds the Gateway's serial port by vid/pid.
+ */
+export const USB_IDENTITY = {
+  vid: ${hex(Number(id[1]))},
+  pid: ${hex(Number(id[2]))},
+  manufacturer: ${q(manufacturer)},
+  product: ${q(product)},
+  /** The CDC interface name (iInterface), so the serial port is identifiable by name. */
+  cdcInterface: ${q(cdcInterface)},
+  /** Nominal CDC baud. USB CDC ignores it, but opening a serial port needs a value. */
+  baud: ${baud}
+} as const
+`
+  )
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 async function writeGenerated(file: string, code: string): Promise<void> {
@@ -806,7 +958,9 @@ async function main(): Promise<void> {
     await writeGenerated('hid-report-layout.generated.ts', genHidReportLayout(s.simGateway))
     await writeGenerated('node-status.generated.ts', genNodeStatus(s.nodeStatus))
     await writeGenerated('node-names.generated.ts', genNodeNames(s.nodeIds, s.commitDate))
-    await writeGenerated('axis-cal.generated.ts', genAxisCal(s.axisCal, s.axisCalCpp))
+    await writeGenerated('axis-cal.generated.ts', genAxisCal(s.axisCal, s.axisCalCpp, s.simGateway))
+    await writeGenerated('node-bus.generated.ts', genNodeBus(s.panelBridge, s.telemSchedule))
+    await writeGenerated('usb-identity.generated.ts', genUsbIdentity(s.simGateway))
   } finally {
     s.cleanup()
   }

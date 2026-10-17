@@ -1,10 +1,15 @@
 import { useMemo } from 'react'
 import { useStore, type SourceMode, type Transport } from '../store'
+import { USB_IDENTITY } from '@shared/firmware'
 import { isLinkUp } from '@shared/ipc'
 import { nodeViews } from '../cockpit'
 import { nodesSummary } from '../connection-summary'
 import { deviceView, relayNote, startBlocked, startBlockedReason } from '../device-view'
 import { Dot } from './cockpit/Dot'
+
+/** `0x2E8A`: a USB id as the device card prints it, four upper-case hex digits. */
+const usbId = (n: number) => '0x' + n.toString(16).toUpperCase().padStart(4, '0')
+const VID_PID = `${usbId(USB_IDENTITY.vid)} / ${usbId(USB_IDENTITY.pid)}`
 
 const REC_DOT = (
   <span
@@ -168,8 +173,8 @@ export function Connection() {
         deviceState: s.deviceState
       })
   const deviceRows = [
-    { k: 'Identity', v: connected ? 'A-4E Skyhawk' : '— no device' },
-    { k: 'VID / PID', v: connected ? '0x2E8A / 0x4134' : '0x2E8A / 0x4134 · target' },
+    { k: 'Identity', v: connected ? USB_IDENTITY.product : '— no device' },
+    { k: 'VID / PID', v: connected ? VID_PID : `${VID_PID} · target` },
     { k: 'Serial port', v: dev.portRow },
     { k: 'Interfaces', v: connected ? 'CDC serial + HID' : '—' }
   ]
@@ -194,7 +199,7 @@ export function Connection() {
               </svg>
             </div>
             <div style={{ flex: 1 }}>
-              <div className="dev__name">A-4E Skyhawk · Gateway</div>
+              <div className="dev__name">{`${USB_IDENTITY.product} · Gateway`}</div>
               <div className="dev__meta">composite USB · CDC + HID</div>
             </div>
             <span className={`devind ${dev.cls}`} title={dev.tip}>

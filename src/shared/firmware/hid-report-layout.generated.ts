@@ -18,7 +18,9 @@ export const HID_REPORT_LAYOUT = {
     bytes: 2,
     count: 4,
     nibbleBits: 4,
-    /** Decoded value ≥ this is the centered/null state. */
+    /** Directions a hat reports: the descriptor's logical range, clockwise from N. */
+    directions: 8,
+    /** Decoded value ≥ this is the centered/null state: above the logical range. */
     centeredAtOrAbove: 8,
     nullNibble: 0xf
   },

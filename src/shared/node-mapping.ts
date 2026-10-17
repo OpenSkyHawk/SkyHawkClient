@@ -7,6 +7,7 @@
 // added, only what differs, and when it was last seen. Adopted nodes — NODE_IDs the registry does
 // not know, named by the user — are stored in full, since there is nothing to default from (#93).
 
+import { MAX_NODE_ID } from './firmware'
 import { isAdoptableKind, type NodeIdentity } from './node-kind'
 
 export type NodeKind = 'pdu' | 'panel'
@@ -84,7 +85,7 @@ export const EMPTY_MAPPING: NodeMappingFile = { version: 3, nodes: {} }
 const MAX_TEXT = 64
 
 const isNodeId = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 63
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= MAX_NODE_ID
 
 const text = (v: unknown): string | undefined => {
   if (typeof v !== 'string') return undefined

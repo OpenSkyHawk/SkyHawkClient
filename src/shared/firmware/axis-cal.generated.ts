@@ -2,13 +2,15 @@
 // Source: https://github.com/OpenSkyhawk/OpenSkyhawk.git @ d29433ab149fcff1695e3d5eb07e2fab4211a603
 //   Firmware/Libraries/SimGateway/AxisCal.h (calibration wire contract)
 //   Firmware/Libraries/SimGateway/AxisCal.cpp (payload length table)
+//   Firmware/Libraries/SimGateway/SimGateway.cpp (calibration session timeout)
 
 /**
  * SimGateway axis-calibration protocol constants. Wire contract:
  * FirmwarePlan/03-uart-usb-hid-protocol.md § Calibration Protocol (USB CDC).
  *
- * The codec in shared/calibration.ts restates these so `src/shared` stays free of a
- * `src/main` import; reference.test.ts asserts the two agree, so a firmware bump fails loudly.
+ * The codec in shared/calibration.ts imports these through the shared/firmware barrel rather
+ * than restating them; reference.test.ts pins the values the codec is written for, so a firmware
+ * bump fails loudly.
  */
 export const CAL_PROTO = {
   /** Protocol version. HELLO_ACK carries this; gate on it, not on the firmware version. */
@@ -23,13 +25,45 @@ export const CAL_PROTO = {
   envelopeBytes: 10,
   /** CAL_DATA, the largest legal payload — the bound on how much a receiver may buffer. */
   maxPayload: 82,
+  /** Envelope + the largest payload: the largest complete frame, and so a receiver's carry bound. */
+  maxFrame: 92,
+  /** The gateway closes a calibration session idle this long. SESSION_ACK reports it too. */
+  sessionTimeoutMs: 30000,
   /** Frame lead-in "\xAA S K C". Not collision-proof outbound, which is why the CRC is mandatory. */
   magic: [0xaa, 0x53, 0x4b, 0x43]
 } as const
 
+/** Message type names, as the protocol doc writes them. */
+export type CalTypeName =
+  | 'HELLO'
+  | 'GET_CAL'
+  | 'SESSION_OPEN'
+  | 'SESSION_CLOSE'
+  | 'COMMIT'
+  | 'RESET'
+  | 'KEEPALIVE'
+  | 'STREAM_SELECT'
+  | 'HELLO_ACK'
+  | 'CAL_DATA'
+  | 'SESSION_ACK'
+  | 'ACK'
+  | 'NACK'
+  | 'RAW'
+
+/** NACK reason names, as the protocol doc writes them. */
+export type CalNackName =
+  | 'BAD_CRC'
+  | 'BAD_LENGTH'
+  | 'BAD_TYPE'
+  | 'BAD_INDEX'
+  | 'BAD_ORDER'
+  | 'NO_SESSION'
+  | 'NO_STORAGE'
+  | 'BAD_DEADZONE'
+
 export interface CalTypeInfo {
   /** Name as the protocol doc writes it, e.g. `SESSION_OPEN`. */
-  name: string
+  name: CalTypeName
   /** The firmware identifier it came from, e.g. `CAL_T_SESSION_OPEN`. */
   macro: string
   label: string
@@ -106,7 +140,7 @@ export const CAL_TYPES: Partial<Record<number, CalTypeInfo>> = {
 } as const
 
 export interface CalNackInfo {
-  name: string
+  name: CalNackName
   macro: string
   label: string
 }

@@ -31,8 +31,21 @@ export const NODE_KINDS = {
   BRIDGE: 0x3
 } as const
 
+/** NodeFaultCode entry names: the keys client wording tables look a fault up by. */
+export type NodeFaultName =
+  | 'NONE'
+  | 'I2C_PERIPHERAL'
+  | 'OVER_VOLTAGE'
+  | 'UNDER_VOLTAGE'
+  | 'SHORT_CIRCUIT'
+  | 'HOST_LINK_LOST'
+  | 'FUSE_OPEN'
+  | 'OVER_TEMPERATURE'
+  | 'SENSOR_FAULT'
+  | 'DUPLICATE_NODE_ID'
+
 export interface NodeFaultInfo {
-  name: string
+  name: NodeFaultName
   abbr: string
   label: string
   description: string
@@ -137,4 +150,40 @@ export const PDU_STATUS_FLAGS = {
   TEMP_WARN: 0x4,
   TEMP_CRIT: 0x8,
   NTC_FAULT: 0x10
+} as const
+
+export type PduRailFlagName = keyof typeof PDU_RAIL_FLAGS
+export type PduStatusFlagName = keyof typeof PDU_STATUS_FLAGS
+
+export interface PduFlagInfo<N extends string> {
+  name: N
+  /** The header's comment on the flag, verbatim. A firmware note, not client wording. */
+  description: string
+}
+
+/**
+ * PDU_RAIL_FLAGS bit -> its name and the PduRailFlag comment (NodeStatus.h). The client words its
+ * own flag meanings; this is the firmware's side, keyed the same way.
+ */
+export const PDU_RAIL_FLAG_INFO: Partial<Record<number, PduFlagInfo<PduRailFlagName>>> = {
+  0x1: { name: 'UNDER_V', description: 'rail below its under-voltage threshold' },
+  0x2: { name: 'OVER_V', description: 'rail above its over-voltage threshold' },
+  0x4: { name: 'OVER_CURRENT', description: 'sustained current above the over-current threshold' },
+  0x8: { name: 'FUSE_OPEN', description: 'rail read ~0 V while the node is powered — fuse blown' },
+  0x10: {
+    name: 'SENSOR_FAULT',
+    description: 'voltage or current channel reads implausibly (railed)'
+  }
+} as const
+
+/** PDU_STATUS_FLAGS bit -> its name and the PduStatusFlag comment (NodeStatus.h). */
+export const PDU_STATUS_FLAG_INFO: Partial<Record<number, PduFlagInfo<PduStatusFlagName>>> = {
+  0x1: {
+    name: 'UNCAL_VDDA',
+    description: 'no VDDA calibration stored — readings assume a nominal 3.3 V'
+  },
+  0x2: { name: 'UNCAL_ZERO', description: 'no current zero-offset calibration stored' },
+  0x4: { name: 'TEMP_WARN', description: 'board temperature at the warning threshold' },
+  0x8: { name: 'TEMP_CRIT', description: 'board temperature at the critical threshold' },
+  0x10: { name: 'NTC_FAULT', description: 'NTC channel open or shorted' }
 } as const

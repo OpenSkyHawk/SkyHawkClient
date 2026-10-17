@@ -9,7 +9,7 @@
 // Gateway raised itself; the one client-side rule is "not responding": once it has answered since
 // the port opened, a roster request unanswered for GATEWAY_NO_ANSWER_MS while the port is open.
 import { faultLabel, STATUS_FLAGS, type LogEventInput, type StatusFlag } from './events'
-import { NODE_FAULT_CODES } from './firmware'
+import { NODE_FAULT_CODES, type NodeFaultName } from './firmware'
 import type { NodeStatus } from './nodes'
 
 /** How long a roster request may go unanswered, with the port open, before the Gateway is "not responding". */
@@ -49,7 +49,7 @@ const title = (s: string): string => s[0].toUpperCase() + s.slice(1)
  * Client wording for the faults a Gateway reports about itself, keyed by NODE_FAULT_CODES name.
  * Others show their label alone: the dictionary's descriptions read like firmware notes.
  */
-const FAULT_NOTE: Partial<Record<string, string>> = {
+const FAULT_NOTE: Partial<Record<NodeFaultName, string>> = {
   HOST_LINK_LOST:
     'It reports losing its serial link to this computer. If it keeps happening, check the USB cable.',
   DUPLICATE_NODE_ID:
