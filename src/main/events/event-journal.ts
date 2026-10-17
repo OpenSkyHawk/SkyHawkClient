@@ -1,4 +1,4 @@
-// The event log's owner (#64): hosts the session's EventLog (moved out of Session, R2.3b) and
+// The event log's owner (#64): hosts the app run's EventLog (its own service since R2.3b) and
 // takes the rows the other owners report — node changes and the Gateway's health (NodeHub), the
 // relay's rows (DcsRelay), client errors, and the Gateway link's state rows. The rows themselves
 // are made where they happen (nodes, gateway/link-events.ts, dcs/relay-events.ts); this only

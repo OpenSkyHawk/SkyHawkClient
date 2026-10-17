@@ -1,4 +1,4 @@
-// The side panels' presentation (panel-view.ts; from cockpit-panels.test.ts, R3.2): the report age
+// The side panels' presentation (panel-view.ts, R3.2): the report age
 // clock and the patch Save sends. What a panel says and offers moved to main with its tests.
 import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeStatus } from '@shared/nodes'

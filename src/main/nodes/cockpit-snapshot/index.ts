@@ -59,7 +59,7 @@ import { nodeViews } from './views'
 export interface CockpitSnapshotInput {
   /** The node model as last pushed (`nodes:model`); undefined before the first. */
   model?: NodeModel
-  /** The telemetry as last pushed (`nodes:telemetry`). */
+  /** The PDU pages as NodeHub last took them. */
   telemetry: NodeTelemSnapshot[]
   /** The link and the Gateway's health, as last pushed (`device:status`). */
   device: DeviceStatus

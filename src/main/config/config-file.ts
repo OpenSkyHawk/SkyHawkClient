@@ -27,17 +27,18 @@ import { sanitizeCache } from '../hid/calibration'
 import {
   effectiveMapping,
   importMapping,
+  isPlainObject,
   PSU_PRESETS,
   sanitizeNodeMapping,
   sanitizePsu
 } from '../nodes'
 
 /** File format this build writes. A higher version came from a newer client. */
-export const CONFIG_FILE_VERSION = 1
+const CONFIG_FILE_VERSION = 1
 
 export const SECTION_IDS: SectionId[] = ['app', 'nodeMapping', 'powerSupply', 'calibration']
 
-export const SECTION_TITLES: Record<SectionId, string> = {
+const SECTION_TITLES: Record<SectionId, string> = {
   app: 'App settings',
   nodeMapping: 'Node mapping',
   powerSupply: 'Power supply',
@@ -75,9 +76,6 @@ export interface ParsedConfig {
 
 export type ParseResult = { ok: true; config: ParsedConfig } | { ok: false; error: string }
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v)
-
 const NOT_CONFIG = 'This is not an OpenSkyhawk Client configuration file.'
 
 /**
@@ -91,17 +89,17 @@ export function parseConfigFile(text: string): ParseResult {
   } catch {
     return { ok: false, error: `${NOT_CONFIG} It is not valid JSON.` }
   }
-  if (!isObject(raw) || raw.format !== CONFIG_FORMAT) return { ok: false, error: NOT_CONFIG }
+  if (!isPlainObject(raw) || raw.format !== CONFIG_FORMAT) return { ok: false, error: NOT_CONFIG }
   const version = raw.version
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
     return { ok: false, error: `${NOT_CONFIG} Its version is missing.` }
   }
-  if (!isObject(raw.sections)) return { ok: false, error: `${NOT_CONFIG} It has no sections.` }
+  if (!isPlainObject(raw.sections)) return { ok: false, error: `${NOT_CONFIG} It has no sections.` }
 
   const sections: Partial<ConfigSnapshot> = {}
   const skipped: string[] = []
   for (const [key, value] of Object.entries(raw.sections)) {
-    if (!isObject(value) || !(SECTION_IDS as string[]).includes(key)) {
+    if (!isPlainObject(value) || !(SECTION_IDS as string[]).includes(key)) {
       skipped.push(key)
       continue
     }

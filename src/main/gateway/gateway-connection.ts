@@ -42,7 +42,7 @@ export type LinkTimer = (ms: number, fn: () => void) => void
  * What rides on the link, and the link's moments it is told about.
  *
  * At each moment GatewayConnection calls its riders in the order they were added with `ride()`,
- * at exactly the point where that rider's code sat inside DeviceLink before the split, so the
+ * at exactly the point where that rider's code ran before the split (R2.2), so the
  * order of side effects is unchanged. AppServices adds the serial monitor, calibration, HID, the
  * node layer (NodeHub's rider) and the line tap, in that order: see app/app-services.ts for which
  * rider takes part in which moment.

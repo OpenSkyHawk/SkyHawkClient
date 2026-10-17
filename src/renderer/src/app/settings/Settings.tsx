@@ -6,9 +6,9 @@ import { CockpitSection } from './CockpitSection'
 import { ConnectionSection } from './ConnectionSection'
 import { DiagnosticsSection } from './DiagnosticsSection'
 
-type SectionId = 'connection' | 'cockpit' | 'config' | 'diag' | 'about'
+type SettingsSectionId = 'connection' | 'cockpit' | 'config' | 'diag' | 'about'
 
-const SECTIONS: { id: SectionId; label: string; sub: string }[] = [
+const SECTIONS: { id: SettingsSectionId; label: string; sub: string }[] = [
   { id: 'connection', label: 'Connection', sub: 'DCS link, ports' },
   { id: 'cockpit', label: 'Cockpit', sub: 'PSU, mapping, alerts' },
   { id: 'config', label: 'Configuration', sub: 'export / import' },
@@ -18,7 +18,7 @@ const SECTIONS: { id: SectionId; label: string; sub: string }[] = [
 
 /** Settings: sections on the left (a row below 820 px), the picked one on the right. */
 export function Settings() {
-  const [section, setSection] = useState<SectionId>('connection')
+  const [section, setSection] = useState<SettingsSectionId>('connection')
 
   return (
     <div className="sv">

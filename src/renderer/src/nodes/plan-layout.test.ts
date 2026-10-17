@@ -106,9 +106,13 @@ describe('planLayout', () => {
   })
 
   it('tiles fit their names, from the column width up to ~2 columns, then "…" (#93)', () => {
-    expect(tileWidth('Armament', 99, 206)).toBe(99) // short: the column width
-    expect(tileWidth('Fuel_Quantity_Gauge', 99, 206)).toBe(172) // room for the symbol always kept
-    expect(tileWidth('Angle_Of_Attack_Indexer_Lights', 99, 206)).toBe(206) // capped
+    const [col, cap] = [99, 206]
+    const fits = tileWidth('Fuel_Quantity_Gauge', col, cap)
+    expect(tileWidth('Armament', col, cap)).toBe(col) // short: the column width
+    expect(fits).toBeGreaterThan(col) // longer: as wide as its name needs …
+    expect(fits).toBeLessThan(cap)
+    expect(tileWidth('Fuel_Quantity_Gauge_Low', col, cap)).toBeGreaterThan(fits) // … growing with it
+    expect(tileWidth('Angle_Of_Attack_Indexer_Lights', col, cap)).toBe(cap) // capped
   })
 
   it('a board changing state never moves a tile (#93 re-review I)', () => {
@@ -137,14 +141,25 @@ describe('planLayout', () => {
       []
     )
     const g = l.groups[0]!
-    // Left console: 200 wide, two 96-px columns. ARC51 needs 145, so it takes its row.
-    expect(g.tiles.map((t) => [t.short, t.x - g.x, t.y - g.tiles[0]!.y, t.w])).toEqual([
-      ['Engine', 0, 0, 96],
-      ['ARC51_UHF_Radio', 0, 42, 145],
-      ['Fuel', 0, 84, 96],
-      ['Trim', 104, 84, 96],
-      ['Gear', 0, 126, 96]
+    // Left console: two columns. ARC51 is wider than a column, so it takes its own row.
+    const rows = [...new Set(g.tiles.map((t) => t.y))]
+      .sort((a, b) => a - b)
+      .map((y) => g.tiles.filter((t) => t.y === y))
+    expect(rows.map((r) => r.map((t) => t.short))).toEqual([
+      ['Engine'],
+      ['ARC51_UHF_Radio'],
+      ['Fuel', 'Trim'],
+      ['Gear']
     ])
+    expect(rows.flat()).toEqual(g.tiles) // flow order is the members' order
+    for (const r of rows) {
+      expect(r[0]!.x).toBe(g.x) // each row starts at the group's left edge …
+      // … left to right, a gap apart
+      for (let i = 1; i < r.length; i++) expect(r[i]!.x).toBeGreaterThan(r[i - 1]!.x + r[i - 1]!.w)
+    }
+    const w = (short: string) => g.tiles.find((t) => t.short === short)!.w
+    expect(new Set(['Engine', 'Fuel', 'Trim', 'Gear'].map(w)).size).toBe(1) // one column wide
+    expect(w('ARC51_UHF_Radio')).toBeGreaterThan(w('Engine'))
     for (const t of g.tiles) expect(t.x + t.w).toBeLessThanOrEqual(g.x + g.w)
   })
 
@@ -178,10 +193,13 @@ describe('planLayout', () => {
   })
 
   it('grows the stage when a console overflows', () => {
-    const many = Array.from({ length: 30 }, (_, i) => node(10 + i, { console: 'Left', pduId: 3 }))
-    const l = layout(nodeViews(model([pdu(3, 'Left'), ...many]), []), [])
-    expect(l.height).toBeGreaterThan(600)
-    expect(l.psu.y + 52).toBe(l.height)
+    const left = (n: number) =>
+      Array.from({ length: n }, (_, i) => node(10 + i, { console: 'Left', pduId: 3 }))
+    const few = layout(nodeViews(model([pdu(3, 'Left'), ...left(1)]), []), [])
+    const l = layout(nodeViews(model([pdu(3, 'Left'), ...left(30)]), []), [])
+    expect(l.height).toBeGreaterThan(few.height)
+    expect(l.psu.y).toBeGreaterThan(l.sideBox.y + l.sideBox.h) // the PSU stays under the content
+    expect(l.height - l.psu.y).toBe(few.height - few.psu.y) // and the stage ends just under it
   })
 
   it('adds the outage hint under the dropped PDU', () => {

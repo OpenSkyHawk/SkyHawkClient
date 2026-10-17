@@ -114,8 +114,8 @@ describe('the HID-tab view (cal:attach)', () => {
   })
 })
 
-// The store's calibration lifecycle before R3.1 (renderer store.test.ts): the device's report is
-// held while the link is up and dropped whenever it is not. The rule moved here with the workflow.
+// The store's calibration lifecycle before R3.1 (the renderer's store tests): the device's report
+// is held while the link is up and dropped whenever it is not. The rule moved here with the workflow.
 describe('calibration state lifecycle', () => {
   it('starts with no snapshot, which is not the same as uncalibrated', () => {
     const { snap } = host()
@@ -129,7 +129,7 @@ describe('calibration state lifecycle', () => {
   })
 
   // Clearing only on `no-device` would leave the previous board's badges on screen through a
-  // reconnect -- and permanently, if the next board runs firmware that never sends cal:data.
+  // reconnect -- and permanently, if the next board runs firmware that never answers GET_CAL.
   for (const state of ['reconnecting', 'error', 'no-device', 'scanning', 'disconnected'] as const) {
     it(`drops the snapshot when the device goes ${state}`, () => {
       const { h, snap } = host()

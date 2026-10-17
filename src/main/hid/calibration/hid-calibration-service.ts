@@ -1,5 +1,5 @@
-// Axis calibration (#46) over the SimGateway's serial port, as the app runs it (moved out of
-// DeviceLink, R2.2a): a CalLink per port, the read-on-open that drives the HID tab's badges, the
+// Axis calibration (#46) over the SimGateway's serial port, as the app runs it (its own service
+// since R2.2a): a CalLink per port, the read-on-open that drives the HID tab's badges, the
 // cal* commands as discriminated CalResults, the restore cache, RAW batching, the last-confirmed
 // snapshot and the export gate. It hosts the calibration workflow (R3.1): the cal* commands are
 // the workflow's, RAW batches feed it, and it pushes `cal:workflow`.
@@ -230,13 +230,12 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
     return this.calRun((l) => l.hello())
   }
 
-  /** Read stored calibration and push it to the renderer, so badges follow the device. */
+  /** Read stored calibration and report it to the workflow, so badges follow the device. */
   async calRead(): Promise<CalResult<CalSnapshot>> {
     const r = await this.calRun((l) => l.getCal())
     if (r.ok) {
       const snap: CalSnapshot = { ...r.value, serialNumber: this.calSerialNumber }
       this.lastCal = snap
-      this.emit('cal:data', snap)
       this.workflow.reported(snap)
       return { ok: true, value: snap }
     }

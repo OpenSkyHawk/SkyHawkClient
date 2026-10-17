@@ -1,10 +1,10 @@
-import type { LogRow } from './stream-view'
+import type { StreamLine } from './stream-view'
 
 /**
  * Log › Stream: the DCS-BIOS rows the Log tab picked (filtered, newest first, capped), one line
  * each. `rawMode` shows the address and raw bytes.
  */
-export function StreamView({ rows, rawMode }: { rows: LogRow[]; rawMode: boolean }) {
+export function StreamView({ rows, rawMode }: { rows: StreamLine[]; rawMode: boolean }) {
   return (
     <>
       {rows.map((r) => (

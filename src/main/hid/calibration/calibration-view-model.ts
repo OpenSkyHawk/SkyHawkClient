@@ -1,6 +1,6 @@
 // What the HID tab and the calibration dialog show, decided from the workflow's state (R3.1). Each
-// derivation is the one the renderer made before the workflow moved to main (CalibrationDialog.tsx,
-// tabs/Hid.tsx), kept verbatim; the renderer now only words and draws the result.
+// derivation is the one the renderer made before the workflow moved to main (the dialog and the
+// HID tab), kept verbatim; the renderer now only words and draws the result.
 import { HID_REPORT_LAYOUT } from '@shared/firmware'
 import type {
   CalBadge,
@@ -29,7 +29,7 @@ const TRAVEL_BANDS = [
   { at: 0, label: 'Low', tone: 'warn' }
 ] as const
 
-export function travelQuality(min?: number, max?: number): TravelQuality | null {
+function travelQuality(min?: number, max?: number): TravelQuality | null {
   if (min === undefined || max === undefined) return null
   const counts = max - min
   const band = TRAVEL_BANDS.find((b) => counts / AXIS_SPAN >= b.at)!
@@ -50,7 +50,7 @@ export function travelQuality(min?: number, max?: number): TravelQuality | null 
  * inverted axis and on a short-arc axis that never crosses the midpoint. Before the axis has
  * moved at all in the first step there is no evidence either way, so the copy stays neutral.
  */
-export function prompt(s: WorkflowState, startRaw: number | null): CapturePrompt | null {
+function prompt(s: WorkflowState, startRaw: number | null): CapturePrompt | null {
   const cap = s.capture
   if (!cap || cap.phase !== 'capturing') return null
   const holding = hasTravelled(cap)
@@ -158,7 +158,7 @@ export function dialogState(s: WorkflowState, a: WorkflowAnswers): CalibrationDi
   }
 }
 
-/** The HID tab's calibration parts (tabs/Hid.tsx before R3.1). */
+/** The HID tab's calibration parts (the renderer's before R3.1). */
 export function tabState(
   snapshot: CalSnapshot | undefined,
   linkUp: boolean,

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CAL_TYPE, buildFrame } from '../hid/calibration/codec'
-import type { LogRow } from '@shared/dcs'
+import type { StreamRow } from '@shared/dcs'
 import { eventText } from '@shared/format'
 import type { LogEvent } from '@shared/events'
-import type { NodeModel } from '@shared/nodes'
+import type { CockpitSnapshot, NodeModel } from '@shared/nodes'
 import { statusLine } from '../../test-fixtures/nodes'
 
 // AppServices pulls in electron (debug log path), the serial port, the DCS transport and node-hid.
@@ -221,17 +221,23 @@ describe('node telemetry tap', () => {
       const transport = FakeTransport.last!
       transport.sent.length = 0
 
+      // Each take of the pages redraws the Cockpit: NodeHub sends its snapshot as it takes them.
+      const snaps = () =>
+        pushes.filter(([c]) => c === 'cockpit:snapshot').map(([, p]) => p as CockpitSnapshot)
+      const before = snaps().length
+
       // A real bridge line: OpenSkyhawk node_telem.cpp:13 @ 22b6a87e (node 3, 12 V rail).
       const line = '_NODE_TELEM 030100E02E182EBC02\n'
       serial.dataCb(ascii(line))
       expect(Buffer.concat(transport.sent)).toEqual(ascii(line)) // relay unchanged
       vi.advanceTimersByTime(250)
 
-      const logged = pushes.filter(([c]) => c === 'log:batch').flatMap(([, p]) => p as LogRow[])
+      const logged = pushes.filter(([c]) => c === 'log:batch').flatMap(([, p]) => p as StreamRow[])
       expect(logged.map((r) => r.name)).not.toContain('_NODE_TELEM')
-      const telem = pushes.filter(([c]) => c === 'nodes:telemetry')
-      expect(telem).toHaveLength(1)
-      expect(telem[0]![1]).toEqual([
+      const perTake = snaps().length - before // the snapshots one take of the pages sends
+      expect(perTake).toBeGreaterThan(0)
+      // What `nodes:get` answers: the pages, taken by the node layer.
+      expect(session.nodes.snapshot().telemetry).toEqual([
         expect.objectContaining({ nodeId: 3, isPdu: true, live: true })
       ])
       const model = pushes.filter(([c]) => c === 'nodes:model').at(-1)?.[1] as NodeModel
@@ -240,12 +246,12 @@ describe('node telemetry tap', () => {
         kind: 'pdu'
       })
 
-      // A second frame inside the same second waits for the throttle.
+      // A second frame inside the same second waits for the throttle, then is taken once.
       serial.dataCb(ascii(line))
       vi.advanceTimersByTime(250)
-      expect(pushes.filter(([c]) => c === 'nodes:telemetry')).toHaveLength(1)
+      expect(snaps()).toHaveLength(before + perTake)
       vi.advanceTimersByTime(1000)
-      expect(pushes.filter(([c]) => c === 'nodes:telemetry')).toHaveLength(2)
+      expect(snaps()).toHaveLength(before + 2 * perTake)
       session.shutdown()
     } finally {
       vi.useRealTimers()
@@ -406,9 +412,12 @@ describe('device link is independent of the relay (#69)', () => {
       serial.openCb('/dev/fake')
       session.relay.start()
       session.relay.stop()
+      const before = of('cockpit:snapshot').length
       serial.dataCb(ascii('_NODE_TELEM 030100E02E182EBC02\n'))
       vi.advanceTimersByTime(250)
-      expect(of('nodes:telemetry')).toHaveLength(1)
+      // The pages are taken (`nodes:get`), and the Cockpit snapshot goes out with them.
+      expect(session.nodes.snapshot().telemetry).toEqual([expect.objectContaining({ nodeId: 3 })])
+      expect(of('cockpit:snapshot').length).toBeGreaterThan(before)
       session.shutdown()
     } finally {
       vi.useRealTimers()
@@ -422,12 +431,12 @@ describe('device link is independent of the relay (#69)', () => {
       serial.openCb('/dev/fake')
       vi.advanceTimersByTime(250)
       const models = of('nodes:model').length
-      const telem = of('nodes:telemetry').length
       serial.closeCb()
+      const snapshots = of('cockpit:snapshot').length // the close itself redraws the Cockpit
       serial.dataCb(ascii('_NODE_TELEM 030100E02E182EBC02\n')) // a late chunk
       vi.advanceTimersByTime(2000)
       expect(of('nodes:model'), 'no empty model pushed on close').toHaveLength(models)
-      expect(of('nodes:telemetry')).toHaveLength(telem)
+      expect(of('cockpit:snapshot'), 'the late pages are not taken').toHaveLength(snapshots)
       session.shutdown()
     } finally {
       vi.useRealTimers()
@@ -620,7 +629,7 @@ describe('relay forwarding by source mode (#69)', () => {
       serial.openCb('/dev/fake')
       serial.dataCb(ascii('MASTER_ARM 1\n'))
       vi.advanceTimersByTime(50)
-      const logged = of('log:batch').flat() as LogRow[]
+      const logged = of('log:batch').flat() as StreamRow[]
       expect(logged).toContainEqual(expect.objectContaining({ name: 'MASTER_ARM', value: '1' }))
       expect(FakeTransport.last).toBeUndefined()
       session.shutdown()

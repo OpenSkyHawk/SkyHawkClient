@@ -1,7 +1,7 @@
 // SESSION-seam contract test (Phase 0, row B108): the stream stats the Stream Health and Command
 // Activity panels show, as the renderer sees them — the 1 s `stats:tick` push while a relay runs.
-// Driven through the services harness, so it pins what the app does today and survives the
-// relay's move out of Session.
+// Driven through the services harness, so it pins what the app does and survives a move of the
+// relay's owners.
 import { describe, expect, it } from 'vitest'
 import { CTRL } from '@shared/app'
 import { A4EC_OUTPUTS_BY_ADDRESS } from '@shared/firmware'

@@ -1,4 +1,4 @@
-// The plan's grouping (moved from the renderer's planLayout in cockpit.ts, R3.2): which boards are
+// The plan's grouping (moved from the renderer's planLayout, R3.2): which boards are
 // drawn, the power zone each sits in and on which console, the outage under a PDU, and which feed
 // lines go gold. The renderer lays these groups out (plan-layout.ts); it decides none of them.
 import type {
@@ -27,7 +27,7 @@ function railAlert(r: PduReadings): boolean {
  * A PDU group's header: OFFLINE overrides its flags; a rail value shows only while the PDU is up
  * with readings, gold while the PDU flags that rail.
  */
-export function groupHead(p: NodeView): PlanGroupHead {
+function groupHead(p: NodeView): PlanGroupHead {
   const off = p.health.state === 'off'
   const dash = off || p.noReadings
   const r12 = p.readings.rail12V

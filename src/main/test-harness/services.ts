@@ -10,8 +10,8 @@
 //   - the files main writes under <userData>,
 //   - bytes on the fake serial port and the fake DCS socket,
 //   - a clock it advances.
-// Never the objects inside. The harness wraps `AppServices` (R2.3c; it wrapped `Session` before):
-// only this file changed, and the tests written against it kept passing as they are.
+// Never the objects inside. The harness wraps `AppServices` (R2.3c): when the services moved, only
+// this file changed, and the tests written against it kept passing as they are.
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -158,7 +158,7 @@ export interface ServicesOptions {
 type Push = { [C in PushChannel]: { channel: C; payload: PushChannels[C] } }[PushChannel]
 
 /** The default clock: 2026-10-16 12:00:00 UTC. */
-export const CLOCK_START = Date.UTC(2026, 9, 16, 12, 0, 0)
+const CLOCK_START = Date.UTC(2026, 9, 16, 12, 0, 0)
 
 const live = new Set<Services>()
 

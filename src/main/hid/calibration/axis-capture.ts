@@ -1,4 +1,4 @@
-// (Was shared/hid/calibration/legacy-rules.ts until the calibration workflow moved to main, R3.1.)
+// (In shared until the calibration workflow moved to main, R3.1.)
 //
 // Axis travel capture (pure, no Node/Electron deps, fully testable).
 //

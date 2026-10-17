@@ -1,7 +1,7 @@
 // The Log tab's stream rows: panel commands from the device and the rows the decoder names from
 // the export, batched to the renderer on a 33 ms flush. The same flush pushes the event log's new
-// rows first (its `events:batch`), as it did in Session.
-import type { LogRow } from '@shared/dcs'
+// rows first (its `events:batch`).
+import type { StreamRow } from '@shared/dcs'
 import type { Emit } from '@shared/app'
 import type { DeviceLine } from '../gateway'
 import type { Stats } from './stream-stats'
@@ -12,11 +12,11 @@ export interface StreamLogEvents {
   flush(): void
 }
 
-export const LOG_FLUSH_MS = 33
-export const MAX_BATCH = 250
+const LOG_FLUSH_MS = 33
+const MAX_BATCH = 250
 
 export class StreamLog {
-  private logBuf: LogRow[] = []
+  private logBuf: StreamRow[] = []
   private logTimer?: ReturnType<typeof setInterval>
 
   constructor(
@@ -48,7 +48,7 @@ export class StreamLog {
   }
 
   /** Rows the decoder named from one export write. */
-  rows(rows: LogRow[]): void {
+  rows(rows: StreamRow[]): void {
     for (const r of rows) this.logBuf.push(r)
   }
 

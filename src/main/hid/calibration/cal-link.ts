@@ -2,9 +2,10 @@
 //
 // Owns the request/response half of the protocol in FirmwarePlan/03-uart-usb-hid-protocol.md
 // § Calibration Protocol (USB CDC). The codec itself is in codec.ts; this adds SEQ
-// matching, timeouts, session upkeep, and the export-gate signal Session consumes.
+// matching, timeouts, session upkeep, and the export-gate signal the relay consumes.
 //
-// It does NOT own the serial port. Session does, and hands bytes in via ingest(); this returns
+// It does NOT own the serial port. The Gateway connection does; HidCalibrationService hands bytes
+// in via ingest(), and this returns
 // what should carry on to DCS and the line assembler.
 import {
   CAL_AXIS_NONE,

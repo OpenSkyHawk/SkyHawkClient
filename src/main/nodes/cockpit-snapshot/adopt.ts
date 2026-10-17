@@ -1,4 +1,4 @@
-// The Adopt dialog's facts (moved from the renderer's cockpit-adopt.ts, R3.2; since #93 the
+// The Adopt dialog's facts (moved from the renderer, R3.2; since #93 the
 // onboarding for every board not in your cockpit): the queue and its order, what each new NODE_ID
 // is seen doing, whether it can be adopted, the registry pre-fill and the PDU it would be added
 // under. The form itself (what you type) and the dialog's own memory stay in the renderer.
@@ -155,7 +155,7 @@ export function prefill(e: NodeModelEntry, kind: NodeKind): AdoptForm {
  * None — the PDU choice stays explicit (X4 co-located: D7 today, a hidden PDU is not "in your
  * cockpit" here). undefined = not one Add all takes (a PDU, or not in NODE_IDS.md).
  */
-export function addAllPduId(row: NodeView, views: NodeView[]): number | null | undefined {
+function addAllPduId(row: NodeView, views: NodeView[]): number | null | undefined {
   const inCockpit = (id: number | null) =>
     id !== null &&
     views.some((v) => v.entry.nodeId === id && v.entry.kind === 'pdu' && v.entry.source !== 'new')

@@ -45,7 +45,7 @@ export function saveConfig(config: AppConfig, paths: SettingsPaths): void {
 }
 
 /** A settings store of its own, starting at `initial` (a copy). Not a singleton: each owner builds one. */
-export function createSettingsStore(initial: AppConfig = DEFAULT_CONFIG) {
+function createSettingsStore(initial: AppConfig = DEFAULT_CONFIG) {
   return createStore<AppConfig>()(subscribeWithSelector(() => ({ ...initial })))
 }
 

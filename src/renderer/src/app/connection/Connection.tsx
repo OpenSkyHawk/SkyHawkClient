@@ -1,4 +1,4 @@
-import { useConfigStore, viewTransport, type SourceMode, type Transport } from '../../config'
+import { useConfigStore, viewTransport, type SourceMode, type TransportId } from '../../config'
 import { CaptureCard, RecordCard, RelayStart, useDcsStore } from '../../dcs'
 import { DeviceCard } from '../../gateway'
 import { NodesCard } from '../../nodes'
@@ -12,7 +12,7 @@ const HINTS: Record<SourceMode, string> = {
     'No DCS — feed the parser/UI from a recorded capture; optionally drive the Gateway over the same link.'
 }
 
-const TRANSPORTS: { id: Transport; title: string; detail: string }[] = [
+const TRANSPORTS: { id: TransportId; title: string; detail: string }[] = [
   { id: 'tcp', title: 'TCP to host', detail: '<ip>:7778 · remote' },
   { id: 'loop', title: 'Loopback multicast', detail: '239.255.50.10:5010 · local' },
   { id: 'uni', title: 'Unicast listen', detail: 'BIOSConfig.lua send_address' }

@@ -29,8 +29,8 @@ export interface DeviceStatus {
   detail?: string
   /**
    * The Gateway's own health (#94), only while `connected` and once there is something to say.
-   * Computed once in main (shared/gateway.ts) and only read by the UI. Pushed on `device:status`
-   * when it changes; the link state itself is unchanged by it. `device:status` never carries it
+   * Computed once in main (main/gateway/gateway-health.ts) and only read by the UI. Pushed on
+   * `device:status` when it changes; the link state itself is unchanged by it. `device:status` never carries it
    * while the link is down (main/gateway/gateway-health.ts shownStatus, R3.4a).
    */
   gateway?: GatewayStatus

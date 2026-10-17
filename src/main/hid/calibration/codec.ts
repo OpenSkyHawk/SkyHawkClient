@@ -26,7 +26,6 @@ import {
   CAL_RESET_FIELD,
   CAL_SESSION_ACK_FIELD,
   CAL_SESSION_OPEN_FIELD,
-  CAL_STREAM_SELECT_FIELD,
   CAL_TYPES,
   type CalNackName
 } from '@shared/firmware'
@@ -41,10 +40,7 @@ export const CAL_PROTO_VERSION = CAL_PROTO.version
 export const CAL_MAGIC = Uint8Array.from(CAL_PROTO.magic)
 
 /** magic 4 + type 1 + seq 1 + len 2 + crc 2. */
-export const CAL_ENVELOPE_BYTES = CAL_PROTO.envelopeBytes
-
-/** CAL_DATA, the largest legal payload — and the bound on how much a receiver may buffer. */
-export const CAL_MAX_PAYLOAD = CAL_PROTO.maxPayload
+const CAL_ENVELOPE_BYTES = CAL_PROTO.envelopeBytes
 
 /** HID report axis slots. Fixed by the descriptor, not by how many a cockpit populates. */
 export const AXIS_CAL_SLOTS = CAL_PROTO.axisSlots
@@ -330,7 +326,7 @@ export function decodeHelloAck(p: Uint8Array): HelloAck {
   }
 }
 
-export interface CalAxis {
+interface CalAxis {
   idx: number
   /** CAN controlId, 0x0000 for an absent slot. The client infers self-centring from this. */
   controlId: number
@@ -435,17 +431,10 @@ const one = (type: number, seq: number, at: number, byte: number) => {
 }
 
 export const encodeHello = (seq: number) => buildFrame(CAL_TYPE.HELLO, seq)
-export const encodeGetCal = (seq: number) => buildFrame(CAL_TYPE.GET_CAL, seq)
-export const encodeSessionClose = (seq: number) => buildFrame(CAL_TYPE.SESSION_CLOSE, seq)
-export const encodeKeepalive = (seq: number) => buildFrame(CAL_TYPE.KEEPALIVE, seq)
 
 /** Opens a session and starts RAW for `axisIdx` (CAL_AXIS_NONE for none). */
 export const encodeSessionOpen = (seq: number, axisIdx: number) =>
   one(CAL_TYPE.SESSION_OPEN, seq, CAL_SESSION_OPEN_FIELD.AXIS_IDX, axisIdx)
-
-/** Changes which axis streams mid-session. Requires an open session. */
-export const encodeStreamSelect = (seq: number, axisIdx: number) =>
-  one(CAL_TYPE.STREAM_SELECT, seq, CAL_STREAM_SELECT_FIELD.AXIS_IDX, axisIdx)
 
 /** Deletes stored calibration for one axis, or all with CAL_AXIS_NONE. Persists immediately. */
 export const encodeReset = (seq: number, idx: number) =>

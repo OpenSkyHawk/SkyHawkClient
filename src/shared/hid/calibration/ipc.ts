@@ -572,13 +572,11 @@ export const CALIBRATION_IDLE: CalibrationState = {
 
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */
 export interface CalibrationPushChannels {
-  'cal:data': CalSnapshot
   'cal:workflow': CalibrationState
 }
 
 /** Push channel names (main -> renderer). */
 export const CALIBRATION_PUSH = {
-  calData: 'cal:data',
   calWorkflow: 'cal:workflow'
 } as const
 

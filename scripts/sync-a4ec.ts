@@ -626,7 +626,7 @@ function genNodeStatus(header: string): string {
     `
 /**
  * Reserved DCS-BIOS identifiers for PanelBridge node-status reporting (#86).
- * The decoder in shared/nodes.ts is written for protoVersion; reference.test.ts
+ * The decoder in main/nodes/node-status-wire.ts is written for protoVersion; reference.test.ts
  * asserts this matches SUPPORTED_NODE_PROTO so a firmware bump fails loudly.
  */
 export const NODE_STATUS = {
@@ -708,7 +708,7 @@ ${faultEntries}
 
 /**
  * Reserved DCS-BIOS identifier for PanelBridge node telemetry (#216): one message per TELEM_n
- * frame, forwarded unread. The decoder in shared/node-telem.ts is written for protoVersion;
+ * frame, forwarded unread. The decoder in main/nodes/node-telem.ts is written for protoVersion;
  * reference.test.ts asserts this matches SUPPORTED_TELEM_PROTO.
  */
 export const NODE_TELEM = {
@@ -907,9 +907,9 @@ ${offsetLines(es)}
  * SimGateway axis-calibration protocol constants. Wire contract:
  * FirmwarePlan/03-uart-usb-hid-protocol.md § Calibration Protocol (USB CDC).
  *
- * The codec in shared/calibration.ts imports these through the shared/firmware barrel rather
- * than restating them; reference.test.ts pins the values the codec is written for, so a firmware
- * bump fails loudly.
+ * The codec in main/hid/calibration/codec.ts imports these through the shared/firmware barrel
+ * rather than restating them; reference.test.ts pins the values the codec is written for, so a
+ * firmware bump fails loudly.
  */
 export const CAL_PROTO = {
   /** Protocol version. HELLO_ACK carries this; gate on it, not on the firmware version. */

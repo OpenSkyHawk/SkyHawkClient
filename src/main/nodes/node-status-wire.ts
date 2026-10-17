@@ -24,11 +24,11 @@ export const SUPPORTED_NODE_PROTO = 3
 /** Reserved DCS-BIOS identifiers (NODE_STATUS in the firmware reference). */
 export const NODE_MSG = NODE_STATUS.msgName
 export const NODE_END_MSG = NODE_STATUS.endMsgName
-export const NODE_REQ_ADDR = NODE_STATUS.reqAddress
+const NODE_REQ_ADDR = NODE_STATUS.reqAddress
 
 /** hFlags bit masks (NODE_HEALTH_FLAGS in the firmware reference). */
-export const HFLAG_OVERHEAT = NODE_HEALTH_FLAGS.OVERHEAT
-export const HFLAG_DEGRADED = NODE_HEALTH_FLAGS.DEGRADED
+const HFLAG_OVERHEAT = NODE_HEALTH_FLAGS.OVERHEAT
+const HFLAG_DEGRADED = NODE_HEALTH_FLAGS.DEGRADED
 
 /** HEALTH_n board kind, as _NODE_STATUS v3 forwards it (NODE_KINDS in the firmware reference). */
 export const NODE_KIND = NODE_KINDS

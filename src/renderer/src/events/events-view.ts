@@ -14,7 +14,7 @@ export interface EventFilter {
 
 /**
  * Each severity's glyph in the Events view: presentation of the contract's severity, nothing more
- * (shared/events/legacy-rules.ts until R3.3).
+ * (in shared until R3.3).
  */
 export const SEVERITY_GLYPH: Record<EventSeverity, string> = {
   error: '✕',
@@ -26,7 +26,7 @@ export const SEVERITY_GLYPH: Record<EventSeverity, string> = {
 /**
  * What "Problems only" keeps: something is wrong — not a new node, a cleared flag or a link up.
  * A view filter the user switches, over the severity main gives each row: it decides nothing
- * about the events, only which the view lists (shared/events/legacy-rules.ts until R3.3).
+ * about the events, only which the view lists (in shared until R3.3).
  */
 export function isProblem(e: Pick<LogEvent, 'severity'>): boolean {
   return e.severity === 'error' || e.severity === 'warn'

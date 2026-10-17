@@ -1,4 +1,4 @@
-// The SimGateway's HID joystick, as the app runs it (moved out of DeviceLink, R2.2a): the reader's
+// The SimGateway's HID joystick, as the app runs it (its own service since R2.2a): the reader's
 // lifecycle, the throttled push to the renderer, the rate window, and the reopen when the serial
 // port comes back. It rides on the Gateway connection (gateway LinkRider) for those moments; its
 // I/O is the HID reader.

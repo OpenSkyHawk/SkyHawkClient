@@ -8,9 +8,9 @@
  * SimGateway axis-calibration protocol constants. Wire contract:
  * FirmwarePlan/03-uart-usb-hid-protocol.md § Calibration Protocol (USB CDC).
  *
- * The codec in shared/calibration.ts imports these through the shared/firmware barrel rather
- * than restating them; reference.test.ts pins the values the codec is written for, so a firmware
- * bump fails loudly.
+ * The codec in main/hid/calibration/codec.ts imports these through the shared/firmware barrel
+ * rather than restating them; reference.test.ts pins the values the codec is written for, so a
+ * firmware bump fails loudly.
  */
 export const CAL_PROTO = {
   /** Protocol version. HELLO_ACK carries this; gate on it, not on the firmware version. */

@@ -17,11 +17,6 @@ const BUTTONS_OFFSET = HID_REPORT_LAYOUT.buttons.offset
 const HATS_OFFSET = HID_REPORT_LAYOUT.hats.offset
 const AXES_OFFSET = HID_REPORT_LAYOUT.axes.offset
 
-/** Axes are signed int16 on the wire (Logical Min −32768; no 0x8000 bias). */
-export function decodeAxis(raw: number): number {
-  return (raw << 16) >> 16
-}
-
 /** Button n lives at byte n/8, bit n%8 of the buttons[] block. */
 export function isButtonPressed(buttons: Uint8Array, n: number): boolean {
   if (n < 0 || n >= HID_BUTTON_COUNT) return false

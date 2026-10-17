@@ -181,9 +181,10 @@ function withNode(
 /**
  * These arrive over IPC from the renderer, where types are only a promise. Anything that is not a
  * plain object (null, a string, an array) is refused here as a MappingError, so the caller gets
- * `{ ok: false }` rather than a TypeError surfacing as a rejected invoke.
+ * `{ ok: false }` rather than a TypeError surfacing as a rejected invoke. The config import's file
+ * check uses the same test (config-file.ts).
  */
-const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+export const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /**

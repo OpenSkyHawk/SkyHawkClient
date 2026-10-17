@@ -49,7 +49,7 @@ export interface WorkflowTimers {
 }
 
 /** The global timers, looked up at each call so a test's fake timers apply. */
-export const SYSTEM_TIMERS: WorkflowTimers = {
+const SYSTEM_TIMERS: WorkflowTimers = {
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
   setInterval: (fn, ms) => setInterval(fn, ms),

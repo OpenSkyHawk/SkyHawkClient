@@ -17,7 +17,7 @@ import {
 } from '@shared/nodes'
 import { buildCockpitSnapshot, sessionPeakW } from './cockpit-snapshot'
 
-/** The renderer's stray timer fired this long after `nextAt` (Cockpit.tsx before R3.2). */
+/** The renderer's stray timer fired this long after `nextAt` (the Cockpit tab's, before R3.2). */
 export const STRAY_RECHECK_MS = 50
 
 export interface CockpitTimers {
@@ -77,7 +77,7 @@ export class CockpitSnapshotHost {
     this.publish()
   }
 
-  /** `nodes:telemetry` goes out (NodeHub calls this just before it). */
+  /** NodeHub took the PDU pages (once a second at most, on change). */
   telemetryPushed(telemetry: NodeTelemSnapshot[]): void {
     this.telemetry = telemetry
     this.peakW = sessionPeakW(this.peakW, this.model, telemetry)

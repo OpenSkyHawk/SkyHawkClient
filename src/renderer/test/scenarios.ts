@@ -26,7 +26,7 @@ import type {
   ResetPreview
 } from '@shared/nodes'
 import type { LogEvent } from '@shared/events'
-import type { LogRow, StatsSnapshot, TelemetryReadout } from '@shared/dcs'
+import type { StreamRow, StatsSnapshot, TelemetryReadout } from '@shared/dcs'
 import type { SerialFrame } from '@shared/gateway'
 import type { CalCache, CalHello, CalRawSample, CalSnapshot } from '@shared/hid/calibration'
 import { A4EC_OUTPUTS, CAL_PROTO, TELEM_PAGES } from '@shared/firmware'
@@ -37,7 +37,7 @@ import { NodeHub, withFaultInfo } from '../../main/nodes/node-hub'
 import { modelNode, nodeModel, nodeStatus } from '../../test-fixtures/nodes'
 import type { CalDevice } from './skyhawk-mock'
 
-export { modelNode, nodeModel, nodeStatus }
+export { modelNode, nodeStatus }
 
 // ── device link (`device:status`) ───────────────────────────────────────────
 
@@ -217,7 +217,7 @@ export function importPreview(
 export const reported = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
   withFaultInfo(nodeStatus(nodeId, { nodeKind: NODE_KIND.PANEL_GROUP, ...over }))
 
-// ── PDU telemetry (`nodes:telemetry`), from main's own telemetry store ─────────────────────
+// ── PDU telemetry (the pages NodeHub takes), from main's own telemetry store ──────────────
 
 export interface PduPages {
   rail12V?: Partial<Omit<PduRailPage, 'kind' | 'page'>>
@@ -305,7 +305,7 @@ export const logEvent = (id: number, over: Partial<LogEvent> = {}): LogEvent => 
 // ── the DCS-BIOS stream (`log:batch`) and raw serial (`serial:traffic`) ─────────────────────
 
 /** One stream row: an export from DCS (in) at `address`, at 12:00:00 local unless `over` says. */
-export const streamRow = (address: number, over: Partial<LogRow> = {}): LogRow => ({
+export const streamRow = (address: number, over: Partial<StreamRow> = {}): StreamRow => ({
   t: new Date(2026, 9, 16, 12, 0, 0).getTime(),
   dir: 'in',
   address,
@@ -322,10 +322,10 @@ export const serialFrame = (dir: SerialFrame['dir'], hex: string, t = 0): Serial
 
 // ── axis calibration (#46): the Gateway's calibration channel ─────────────────────────────
 
-export const CAL_SERIAL = 'E6614103E7452D2F'
+const CAL_SERIAL = 'E6614103E7452D2F'
 
 /** HELLO_ACK from today's SimGateway firmware. */
-export const CAL_HELLO: CalHello = {
+const CAL_HELLO: CalHello = {
   proto: CAL_PROTO.version,
   blobVersion: CAL_PROTO.blobVersion,
   axisSlots: CAL_PROTO.axisSlots,

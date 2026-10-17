@@ -45,7 +45,7 @@ export function initBridge(): (() => void) | void {
   void api.getHidAvailability().then((a) => hidFromMain.availability(a))
 
   // Node pushes only fire on change, so a reloaded renderer asks for the current picture.
-  void api.getNodes().then(({ model, telemetry }) => nodesFromMain.nodes(model, telemetry))
+  void api.getNodes().then(({ model }) => nodesFromMain.nodes(model))
 
   void api.getConfig().then((v) => configFromMain.config(v))
 
@@ -68,7 +68,6 @@ export function initBridge(): (() => void) | void {
     api.on('cal:workflow', (c) => calibrationFromMain.workflow(c)),
     api.on('aircraft:changed', (a) => dcsFromMain.aircraft(a)),
     api.on('nodes:model', (m) => nodesFromMain.model(m)),
-    api.on('nodes:telemetry', (t) => nodesFromMain.telemetry(t)),
     api.on('cockpit:snapshot', (c) => nodesFromMain.cockpit(c)),
     api.on('config:changed', (c) => configFromMain.changed(c)),
     api.on('serial:traffic', (frames) => gatewayFromMain.serialTraffic(frames)),

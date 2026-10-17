@@ -6,7 +6,7 @@
 // The device link is not started or stopped here. It is up whenever the board is plugged in
 // (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
-import type { CaptureState, RelayFacts, RelayResult, RelayState, ReplayLoad } from '@shared/dcs'
+import type { RecordState, RelayFacts, RelayResult, RelayState, ReplayLoad } from '@shared/dcs'
 import type { Emit, RelayStatus } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
 import type { DeviceStatus } from '@shared/gateway'
@@ -49,7 +49,7 @@ export interface RelayEventSink {
 }
 
 /** The settings, as the relay reads them: the SettingsStore, read when it needs them. */
-export interface RelaySettings {
+interface RelaySettings {
   getState(): RelayOptions
 }
 
@@ -236,7 +236,7 @@ export class DcsRelay {
   }
 
   /** The capture toggle answered (`capture:toggle`): the Record controls follow its answer. */
-  showCapture(state: CaptureState): void {
+  showCapture(state: RecordState): void {
     this.recordingView = captureView(state)
     this.pushFacts()
   }

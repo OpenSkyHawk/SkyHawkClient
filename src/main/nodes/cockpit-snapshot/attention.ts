@@ -1,6 +1,6 @@
-// Cockpit › Attention (moved from the renderer's cockpit.ts, cockpit-adopt.ts and Cockpit.tsx,
-// R3.2): which boards are items and in what order, the strays (new boards that can't be adopted),
-// the Gateway's own item, the cap and the "New on the bus" count.
+// Cockpit › Attention (moved from the renderer, R3.2): which boards are items and in what order,
+// the strays (new boards that can't be adopted), the Gateway's own item, the cap and the "New on
+// the bus" count.
 import type { GatewayStatus } from '@shared/gateway'
 import type {
   AttentionItem,
@@ -12,6 +12,7 @@ import type {
   StrayItem
 } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
+import { shownHealth } from '../../gateway'
 import { isReportableNew } from '../node-model'
 import { adoptability } from './adopt'
 
@@ -116,15 +117,14 @@ export function strayFlag(e: NodeModelEntry): string {
 
 /**
  * The Gateway's own problem (#94), as its Attention item: none while the link is down (the link
- * state says it all) or while it is healthy; err → off, else warn. The same reading as the
- * renderer's gatewayView, for the Cockpit.
+ * state says it all — gateway-health's shownHealth) or while it is healthy; err → off, else warn.
  */
-export function gatewayAttention(
-  g: GatewayStatus | undefined,
+function gatewayAttention(
+  gateway: GatewayStatus | undefined,
   linkUp: boolean
 ): CockpitAttention['gateway'] {
-  if (!linkUp || !g) return undefined
-  if (g.severity === 'ok') return undefined
+  const g = shownHealth(gateway, linkUp)
+  if (!g || g.severity === 'ok') return undefined
   return { flag: g.label, state: g.severity === 'err' ? 'off' : 'warn' }
 }
 

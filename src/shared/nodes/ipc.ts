@@ -316,7 +316,7 @@ export interface PsuSetting {
 
 export const DEFAULT_PSU: PsuSetting = { mode: 'preset', preset: 'nx650', custom: {} }
 
-// Which values a PSU limit accepts (R3.4a: from shared/nodes/legacy-rules.ts). Part of the
+// Which values a PSU limit accepts (R3.4a). Part of the
 // contract because both sides need the same answer: main sanitizes a saved or imported limit with
 // it (psu-limits.ts), and the renderer marks a limit field invalid on every keystroke, from the text
 // typed since the form mounted, before anything is saved.
@@ -815,8 +815,6 @@ export const COCKPIT_IDLE: CockpitSnapshot = {
 
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */
 export interface NodesPushChannels {
-  /** Latest PDU telemetry per node (#61). At most once a second, and only on change. */
-  'nodes:telemetry': NodeTelemSnapshot[]
   /** Roster + telemetry + node mapping combined: what the Cockpit tab shows (#61, UI in #63). */
   'nodes:model': NodeModel
   /** Everything the Cockpit tab decides, built in main (R3.2). */
@@ -825,7 +823,6 @@ export interface NodesPushChannels {
 
 /** Push channel names (main -> renderer). */
 export const NODES_PUSH = {
-  nodesTelemetry: 'nodes:telemetry',
   nodesModel: 'nodes:model',
   cockpitSnapshot: 'cockpit:snapshot'
 } as const

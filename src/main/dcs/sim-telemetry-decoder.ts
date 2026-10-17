@@ -6,7 +6,7 @@ import {
   AIRCRAFT_NONE,
   type AircraftStatus,
   type GaugeTone,
-  type LogRow,
+  type StreamRow,
   type TelemetryReadout
 } from '@shared/dcs'
 
@@ -17,7 +17,7 @@ interface TelemetrySpec {
 }
 
 /**
- * A gauge ring's alert level (Overview.tsx gaugeColor before R3.3): fuel goes to its alert under
+ * A gauge ring's alert level (the Overview's gaugeColor before R3.3): fuel goes to its alert under
  * 25 %; the flap and altitude rings are the secondary ones. Keyed on the readout's id, so the idle
  * placeholders (X10: `D_ALT_NEEDLE`, not `ALT_FT`) keep the plain ring they had.
  */
@@ -115,7 +115,7 @@ export class Decoder {
   }
 
   /** Apply one write; returns the decoded log rows it produced (may be empty). */
-  handle(address: number, raw: number, t: number): LogRow[] {
+  handle(address: number, raw: number, t: number): StreamRow[] {
     if (this.name.update(address, raw)) {
       const n = this.name.value()
       if (n !== this.lastName) {
@@ -133,7 +133,7 @@ export class Decoder {
     const outputs = A4EC_OUTPUTS_BY_ADDRESS.get(address)
     if (!outputs) return []
 
-    const rows: LogRow[] = []
+    const rows: StreamRow[] = []
     for (const o of outputs) {
       const value = extractValue(raw, o.mask, o.shift)
       rows.push({ t, dir: 'in', address, name: o.id, value })

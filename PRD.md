@@ -122,19 +122,31 @@ Electron, TypeScript, React, Vite (or electron-forge + Vite) for build; `node-se
 
 ## 9. Repo layout (SkyHawkClient)
 
+How the pieces fit together, and where a new feature goes: [ARCHITECTURE.md](./ARCHITECTURE.md).
+
 ```
 SkyHawkClient/
-├── PRD.md                      ← this document (committed first)
-├── .husky/pre-commit           ← lint-staged: eslint + prettier + tsc --noEmit
+├── PRD.md                      ← this document
+├── ARCHITECTURE.md             ← contributor guide to the structure below
+├── .husky/                     ← pre-commit: lint-staged (eslint --fix + prettier); commit-msg: commitlint
 ├── .github/workflows/
-│   ├── ci.yml                  ← PR/push: sync-check, lint, typecheck, vitest (+ win/mac build smoke)
-│   └── release.yml             ← tag v*: build Win + Mac Electron artifacts → GitHub Release
-├── src/main/{bridge,reference,stats}.ts ...
-├── src/renderer/{panels,store}/ ...
+│   ├── ci.yml                  ← PR/push: sync freshness, lint, boundary lint, typecheck, vitest, build
+│   ├── release-pr.yml          ← release-please: opens / updates the release PR
+│   └── release-please.yml      ← on release: build Win + Mac artifacts → GitHub Release
+├── .dependency-cruiser.cjs     ← process + topic boundary rules (`npm run lint:deps`)
+├── .dependency-cruiser.severity.json ← one severity per rule family
+├── src/main/<topic>/           ← main process: app, config, dcs, events, gateway, hid,
+│                                 hid/calibration, nodes; each topic's index.ts is its only door
+├── src/preload/index.ts        ← the typed bridge: `window.skyhawk`, `push:batch` delivery
+├── src/renderer/src/<topic>/   ← renderer: one store per topic, its views; app/ is the shell and
+│                                 the tabs, app/ipc-adapter.ts the only file that talks to main
 ├── src/shared/<topic>/ipc.ts   ← IPC contract per topic; src/shared/app/ipc.ts assembles them
-├── scripts/sync-a4ec.ts        ← firmware sync (also a CI step / prebuild)
-├── package.json  electron.vite.config.ts  tsconfig.json  .eslintrc  .prettierrc
-└── README.md (data-flow + how it relates to the firmware repo)
+├── src/shared/firmware/        ← generated firmware reference (`npm run sync`), never hand-edited
+├── src/shared/format/          ← pure text / unit / time formatting both processes use
+├── src/test-fixtures/          ← shared test builders (nodes, config)
+├── scripts/sync-a4ec.ts        ← firmware sync (also a CI freshness step)
+├── package.json  electron.vite.config.ts  tsconfig*.json  eslint.config.mjs  .prettierrc
+└── README.md
 ```
 
 ## 10. Milestones (Lean MVP)

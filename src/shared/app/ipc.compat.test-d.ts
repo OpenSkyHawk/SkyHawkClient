@@ -45,6 +45,14 @@
 // `PushChannels`, `IPC` and `CTRL` still match the frozen copy; the wire channel and the batch's
 // shape are pinned below. `RelayFacts` gained `mode` and `transport` (a type change only).
 //
+// R3.4d (final cleanup): the push `cal:data` (IPC.calData) was removed — the renderer stopped
+// listening in R3.1, when the calibration workflow moved to main; main still reads GET_CAL and
+// hands the report to the workflow, which pushes `cal:workflow`. The push `nodes:telemetry`
+// (IPC.nodesTelemetry) was removed too: no renderer view read it since the Cockpit snapshot
+// (R3.2); NodeHub still takes the PDU pages into that snapshot, and `nodes:get` still answers them. Two contract types were renamed
+// with their shapes unchanged — `LogRow` → `StreamRow` (`log:batch`) and the DCS `CaptureState` →
+// `RecordState` (`capture:toggle`); the frozen copies below pin both shapes under the old names.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -59,17 +67,17 @@ import type {
   SectionId,
   SettingsStore
 } from '../config/ipc'
-import type { CalibrationState, CalSnapshot } from '../hid/calibration/ipc'
+import type { CalibrationState } from '../hid/calibration/ipc'
 import type {
   AircraftStatus,
-  CaptureState,
   ExportResult,
-  LogRow,
+  RecordState,
   RelayFacts,
   RelayResult,
   RelayState,
   ReplayLoad,
   StatsSnapshot,
+  StreamRow,
   TelemetryReadout
 } from '../dcs/ipc'
 import type {
@@ -94,7 +102,6 @@ import type {
   NodeModel,
   NodeRegistryInfo,
   NodeSnapshot,
-  NodeTelemSnapshot,
   ResetOptions,
   ResetPreview
 } from '../nodes/ipc'
@@ -104,6 +111,23 @@ import type { LogEvent } from '../events/ipc'
 type Equal<X, Y> =
   (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false
 type Expect<T extends true> = T
+
+/** R3.4d: `StreamRow` as it stood when it was still called `LogRow`. */
+interface OldLogRow {
+  t: number
+  dir: 'in' | 'out'
+  address: number
+  name?: string
+  value: number | string
+  raw?: string
+}
+
+/** R3.4d: `RecordState` as it stood when it was still called `CaptureState`. */
+interface OldCaptureState {
+  recording: boolean
+  path?: string
+  events?: number
+}
 
 interface OldRelayStatus {
   running: boolean
@@ -118,14 +142,12 @@ interface OldPushChannels {
   'relay:state': RelayState
   'aircraft:changed': AircraftStatus
   'stats:tick': StatsSnapshot
-  'log:batch': LogRow[]
+  'log:batch': OldLogRow[]
   'events:batch': LogEvent[]
   'hid:report': HidReport
   'telemetry:tick': TelemetryReadout[]
-  'nodes:telemetry': NodeTelemSnapshot[]
   'nodes:model': NodeModel
   'serial:traffic': SerialFrame[]
-  'cal:data': CalSnapshot
   'cal:workflow': CalibrationState
   'cockpit:snapshot': CockpitSnapshot
   'config:changed': ConfigChanged
@@ -143,10 +165,8 @@ interface OldIPC {
   readonly eventsBatch: 'events:batch'
   readonly hidReport: 'hid:report'
   readonly telemetryTick: 'telemetry:tick'
-  readonly nodesTelemetry: 'nodes:telemetry'
   readonly nodesModel: 'nodes:model'
   readonly serialTraffic: 'serial:traffic'
-  readonly calData: 'cal:data'
   readonly calWorkflow: 'cal:workflow'
   readonly cockpitSnapshot: 'cockpit:snapshot'
   readonly configChanged: 'config:changed'
@@ -223,7 +243,7 @@ interface OldSkyhawkApi {
   getEvents(): Promise<LogEvent[]>
   clearEvents(): Promise<void>
   exportEvents(): Promise<ExportResult>
-  toggleCapture(): Promise<CaptureState>
+  toggleCapture(): Promise<OldCaptureState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
   refreshNodes(): Promise<void>
@@ -267,6 +287,12 @@ export type ApiSurfaceUnchanged = [
   Expect<Equal<OldRelayStatus, RelayStatus>>,
   Expect<Equal<'push:batch', typeof PUSH_BATCH>>,
   Expect<Equal<OldPushBatch, PushBatch>>
+]
+
+/** R3.4d: the renames changed names only. */
+export type RenamedShapesUnchanged = [
+  Expect<Equal<OldLogRow, StreamRow>>,
+  Expect<Equal<OldCaptureState, RecordState>>
 ]
 
 /**

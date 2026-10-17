@@ -4,7 +4,7 @@
 
 /**
  * Reserved DCS-BIOS identifiers for PanelBridge node-status reporting (#86).
- * The decoder in shared/nodes.ts is written for protoVersion; reference.test.ts
+ * The decoder in main/nodes/node-status-wire.ts is written for protoVersion; reference.test.ts
  * asserts this matches SUPPORTED_NODE_PROTO so a firmware bump fails loudly.
  */
 export const NODE_STATUS = {
@@ -165,7 +165,7 @@ export const NODE_FAULT_CODES: Partial<Record<number, NodeFaultInfo>> = {
 
 /**
  * Reserved DCS-BIOS identifier for PanelBridge node telemetry (#216): one message per TELEM_n
- * frame, forwarded unread. The decoder in shared/node-telem.ts is written for protoVersion;
+ * frame, forwarded unread. The decoder in main/nodes/node-telem.ts is written for protoVersion;
  * reference.test.ts asserts this matches SUPPORTED_TELEM_PROTO.
  */
 export const NODE_TELEM = {
