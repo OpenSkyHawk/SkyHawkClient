@@ -217,7 +217,7 @@ export function importPreview(
 export const reported = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
   withFaultInfo(nodeStatus(nodeId, { nodeKind: NODE_KIND.PANEL_GROUP, ...over }))
 
-// ── PDU telemetry (`nodes:telemetry`), from main's own telemetry store ─────────────────────
+// ── PDU telemetry (the pages NodeHub takes), from main's own telemetry store ──────────────
 
 export interface PduPages {
   rail12V?: Partial<Omit<PduRailPage, 'kind' | 'page'>>

@@ -77,7 +77,7 @@ export class CockpitSnapshotHost {
     this.publish()
   }
 
-  /** `nodes:telemetry` goes out (NodeHub calls this just before it). */
+  /** NodeHub took the PDU pages (once a second at most, on change). */
   telemetryPushed(telemetry: NodeTelemSnapshot[]): void {
     this.telemetry = telemetry
     this.peakW = sessionPeakW(this.peakW, this.model, telemetry)

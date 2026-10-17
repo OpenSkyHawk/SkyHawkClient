@@ -97,7 +97,7 @@ export interface NodeHubDeps {
   link?: NodeHubLink
 }
 
-/** Shortest gap between `nodes:telemetry` pushes. ~3 PDUs send ~3 frames/s between them. */
+/** Shortest gap between takes of the PDU pages. ~3 PDUs send ~3 frames/s between them. */
 const NODE_TELEM_PUSH_MS = 1000
 /** The roster poll. */
 const NODES_REFRESH_MS = 5000
@@ -343,15 +343,17 @@ export class NodeHub implements NodeLineSink {
     return this.mappedCache
   }
 
-  /** The link's tick. Pushes telemetry at most once per NODE_TELEM_PUSH_MS, the model on change. */
+  /**
+   * The link's tick. Takes the PDU pages at most once per NODE_TELEM_PUSH_MS (the Cockpit snapshot
+   * and the model follow them), and pushes the model on change.
+   */
   flush(rosterChanged: boolean, now = Date.now()): void {
     let changed = rosterChanged || this.modelDirty
     if (now - this.telemPushedAt >= NODE_TELEM_PUSH_MS && this.telem.takeChanged(now)) {
       this.telemPushedAt = now
-      const telemetry = this.telem.snapshot(now)
-      // The Cockpit's snapshot goes out just ahead of the push it mirrors.
-      this.cockpit.telemetryPushed(telemetry)
-      this.emit('nodes:telemetry', telemetry)
+      // The Cockpit's snapshot follows the pages; the renderer reads them only through it (R3.4d:
+      // the `nodes:telemetry` push it no longer listened to is gone).
+      this.cockpit.telemetryPushed(this.telem.snapshot(now))
       changed = true
     }
     if (rosterChanged) this.rosterTransitions(now)

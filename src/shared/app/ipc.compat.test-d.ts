@@ -47,7 +47,9 @@
 //
 // R3.4d (final cleanup): the push `cal:data` (IPC.calData) was removed — the renderer stopped
 // listening in R3.1, when the calibration workflow moved to main; main still reads GET_CAL and
-// hands the report to the workflow, which pushes `cal:workflow`. Two contract types were renamed
+// hands the report to the workflow, which pushes `cal:workflow`. The push `nodes:telemetry`
+// (IPC.nodesTelemetry) was removed too: no renderer view read it since the Cockpit snapshot
+// (R3.2); NodeHub still takes the PDU pages into that snapshot, and `nodes:get` still answers them. Two contract types were renamed
 // with their shapes unchanged — `LogRow` → `StreamRow` (`log:batch`) and the DCS `CaptureState` →
 // `RecordState` (`capture:toggle`); the frozen copies below pin both shapes under the old names.
 //
@@ -100,7 +102,6 @@ import type {
   NodeModel,
   NodeRegistryInfo,
   NodeSnapshot,
-  NodeTelemSnapshot,
   ResetOptions,
   ResetPreview
 } from '../nodes/ipc'
@@ -145,7 +146,6 @@ interface OldPushChannels {
   'events:batch': LogEvent[]
   'hid:report': HidReport
   'telemetry:tick': TelemetryReadout[]
-  'nodes:telemetry': NodeTelemSnapshot[]
   'nodes:model': NodeModel
   'serial:traffic': SerialFrame[]
   'cal:workflow': CalibrationState
@@ -165,7 +165,6 @@ interface OldIPC {
   readonly eventsBatch: 'events:batch'
   readonly hidReport: 'hid:report'
   readonly telemetryTick: 'telemetry:tick'
-  readonly nodesTelemetry: 'nodes:telemetry'
   readonly nodesModel: 'nodes:model'
   readonly serialTraffic: 'serial:traffic'
   readonly calWorkflow: 'cal:workflow'
