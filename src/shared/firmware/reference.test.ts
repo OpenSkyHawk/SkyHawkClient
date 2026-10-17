@@ -47,7 +47,7 @@ import {
   PDU_STATUS_FLAG_INFO,
   type NodeFaultName
 } from '.'
-import { ACFT_NAME } from '../../main/reference/dcsbios-metadata'
+import { ACFT_NAME } from '../../main/dcs/dcsbios-metadata'
 import { SUPPORTED_NODE_PROTO } from '@shared/nodes'
 import { SUPPORTED_TELEM_PROTO } from '@shared/node-telem'
 import * as cal from '@shared/calibration'
@@ -259,7 +259,7 @@ describe('axis-cal.generated', () => {
   it('pins the largest frame and the device session timeout', () => {
     expect(CAL_PROTO.maxFrame).toBe(92)
     expect(CAL_PROTO.maxFrame).toBe(CAL_PROTO.envelopeBytes + CAL_PROTO.maxPayload)
-    // KEEPALIVE_MS (main/callink.ts) is client policy chosen to land well inside this.
+    // KEEPALIVE_MS (main/hid/calibration/cal-link.ts) is client policy chosen to land well inside this.
     expect(CAL_PROTO.sessionTimeoutMs).toBe(30000)
   })
 

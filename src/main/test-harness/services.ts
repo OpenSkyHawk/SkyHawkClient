@@ -1,6 +1,6 @@
 // Services harness for SESSION-seam tests (test-only: production code never imports this).
 //
-// `makeServices()` launches the main process the way index.ts does — settings loaded from
+// `makeServices()` launches the main process the way app/index.ts does — settings loaded from
 // config.json, then the device link opened — with fakes standing in for the hardware and the
 // outside world: the SimGateway serial port, the DCS transport, HID, the clock and <userData>.
 //
@@ -113,7 +113,9 @@ class FakeHid {
 }
 
 // Registered before main is imported (below), so main is built against the fakes. Paths are
-// relative to this file. node-mapping, settings and cal-cache are real: they write <userData>.
+// relative to this file. The mapping, settings and calibration-cache stores are real: they write
+// <userData>, through the same store paths app/index.ts hands them. electron is still faked for
+// app's own use of it (debug.log, the version).
 vi.doMock('electron', () => ({
   app: {
     getPath: () => world.userData,
@@ -121,7 +123,7 @@ vi.doMock('electron', () => ({
     isPackaged: false
   }
 }))
-vi.doMock('../serial', () => ({
+vi.doMock('../gateway/serial-bridge', () => ({
   SerialBridge: FakeSerial,
   PortNotFoundError: class PortNotFoundError extends Error {},
   SIMGATEWAY_VID: 0x2e8a,
@@ -130,13 +132,14 @@ vi.doMock('../serial', () => ({
   listSerialPorts: () =>
     Promise.resolve([{ path: world.portPath, serialNumber: world.serialNumber }])
 }))
-vi.doMock('../net', () => ({ createTransport: () => new FakeTransport() }))
-vi.doMock('../hid', () => ({ HidReader: FakeHid }))
+vi.doMock('../dcs/transports', () => ({ createTransport: () => new FakeTransport() }))
+vi.doMock('../hid/hid-reader', () => ({ HidReader: FakeHid }))
 
-const { Session } = await import('../session')
-const { loadConfig, saveConfig } = await import('../settings')
-const { setDebugEnabled } = await import('../debug')
-const { PortNotFoundError } = await import('../serial')
+const { Session } = await import('../app/session')
+const { storePaths } = await import('../app/user-data')
+const { loadConfig, saveConfig } = await import('../config/settings-service')
+const { setDebugEnabled } = await import('../app/debug-log')
+const { PortNotFoundError } = await import('../gateway/serial-bridge')
 
 // ── the harness ──────────────────────────────────────────────────────────────
 
@@ -200,20 +203,23 @@ function launch(opts: ServicesOptions) {
   FakeSerial.last = undefined
   FakeTransport.last = undefined
 
+  // app/index.ts: the <userData> files, handed to the stores.
+  const paths = storePaths(() => world.userData)
+
   const pushes: Push[] = []
   const session = new Session((channel, payload) => {
     pushes.push({ channel, payload } as Push)
-  })
+  }, paths)
 
-  // index.ts: applyConfig(), the one path for config:set and a config import.
+  // app/index.ts: applyConfig(), the one path for config:set and a config import.
   const applyConfig = (patch: Partial<AppConfig>): AppConfig => {
     const config = session.setConfig(patch)
     setDebugEnabled(config.debugMode)
-    saveConfig(config)
+    saveConfig(config, paths)
     return config
   }
 
-  // index.ts registerIpc(): the renderer's requests main answers, by channel.
+  // app/index.ts registerIpc(): the renderer's requests main answers, by channel.
   const intents = {
     [CTRL.configGet]: () => session.getConfig(),
     [CTRL.configSet]: (patch: Partial<AppConfig>) => applyConfig(patch),
@@ -239,8 +245,8 @@ function launch(opts: ServicesOptions) {
   }
   type Intents = typeof intents
 
-  // index.ts app.whenReady(): seed from persisted settings, then bring the device link up.
-  const cfg = session.setConfig(loadConfig())
+  // app/index.ts app.whenReady(): seed from persisted settings, then bring the device link up.
+  const cfg = session.setConfig(loadConfig(paths))
   setDebugEnabled(cfg.debugMode)
   session.open()
 

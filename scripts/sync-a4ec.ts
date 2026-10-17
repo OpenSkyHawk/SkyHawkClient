@@ -14,7 +14,7 @@
  *   Firmware/NODE_IDS.md                         -> node-names.generated.ts
  *
  * The DCS-BIOS common-metadata address (_ACFT_NAME @ 0x0000) is NOT vendored in
- * the firmware repo, so it lives in the hand-curated src/main/reference/dcsbios-metadata.ts.
+ * the firmware repo, so it lives in the hand-curated src/main/dcs/dcsbios-metadata.ts.
  *
  * Source resolution:
  *   1. --local <path> | OPENSKYHAWK_REPO_LOCAL=<path>  read files from a local checkout (no fetch)
