@@ -20,6 +20,9 @@ const FIRMWARE = '^src/shared/firmware/'
 const FORMAT = '^src/shared/format/'
 const KIT = `^${RENDERER}/app/kit/`
 const CONTRACT = '^src/shared/[a-z-]+(/calibration)?/(index|ipc)\\.ts$'
+// Pure rules the renderer still calls until R3.x moves them to main (arch-phase0-v2 §3.2). Main
+// imports them from here too, so there is one copy.
+const LEGACY = '^src/shared/[a-z-]+(/calibration)?/legacy-rules\\.ts$'
 
 // Topic directions, the same inside main and inside the renderer. `app` may import everything,
 // so it has no rule. Every topic may also import the leaves, the kit and the shared contracts.
@@ -96,7 +99,14 @@ module.exports = {
       severity: SEV.rendererShared,
       comment: 'the renderer imports only shared contracts and the firmware/format leaves',
       from: { path: '^src/renderer/' },
-      to: { path: '^src/shared/', pathNot: [CONTRACT, FIRMWARE, FORMAT] }
+      to: { path: '^src/shared/', pathNot: [CONTRACT, FIRMWARE, FORMAT, LEGACY] }
+    },
+    {
+      name: 'P4-legacy-rules',
+      severity: SEV.legacyRules,
+      comment: 'a renderer call into shared/<topic>/legacy-rules.ts; R3.x moves the rule to main',
+      from: { path: '^src/renderer/' },
+      to: { path: LEGACY }
     },
     {
       name: 'P6-electron-only-in-app',
