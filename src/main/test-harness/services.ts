@@ -137,8 +137,6 @@ vi.doMock('../hid/hid-reader', () => ({ HidReader: FakeHid }))
 
 const { Session } = await import('../app/session')
 const { storePaths } = await import('../app/user-data')
-const { loadConfig, saveConfig } = await import('../config/settings-service')
-const { setDebugEnabled } = await import('../app/debug-log')
 const { PortNotFoundError } = await import('../gateway/serial-bridge')
 
 // ── the harness ──────────────────────────────────────────────────────────────
@@ -211,18 +209,10 @@ function launch(opts: ServicesOptions) {
     pushes.push({ channel, payload } as Push)
   }, paths)
 
-  // app/index.ts: applyConfig(), the one path for config:set and a config import.
-  const applyConfig = (patch: Partial<AppConfig>): AppConfig => {
-    const config = session.setConfig(patch)
-    setDebugEnabled(config.debugMode)
-    saveConfig(config, paths)
-    return config
-  }
-
   // app/index.ts registerIpc(): the renderer's requests main answers, by channel.
   const intents = {
-    [CTRL.configGet]: () => session.getConfig(),
-    [CTRL.configSet]: (patch: Partial<AppConfig>) => applyConfig(patch),
+    [CTRL.configGet]: () => session.settings.get(),
+    [CTRL.configSet]: (patch: Partial<AppConfig>) => session.settings.apply(patch),
     [CTRL.relayStart]: () => session.relay.start(),
     [CTRL.relayStop]: () => session.relay.stop(),
     [CTRL.relayStatus]: () => session.status(),
@@ -239,14 +229,13 @@ function launch(opts: ServicesOptions) {
     [CTRL.nodeRegistry]: () => session.nodes.registry(),
     [CTRL.nodeMappingHide]: (id: number, on: boolean) => session.nodes.hide(id, on),
     [CTRL.serialMonitor]: (on: boolean) => session.serialMonitor.setSerialMonitor(on),
-    [CTRL.eventsGet]: () => session.events.snapshot(),
-    [CTRL.eventsClear]: () => session.events.clear()
+    [CTRL.eventsGet]: () => session.journal.snapshot(),
+    [CTRL.eventsClear]: () => session.journal.clear()
   }
   type Intents = typeof intents
 
   // app/index.ts app.whenReady(): seed from persisted settings, then bring the device link up.
-  const cfg = session.setConfig(loadConfig(paths))
-  setDebugEnabled(cfg.debugMode)
+  session.settings.load()
   session.open()
 
   let quit = false

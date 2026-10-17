@@ -136,7 +136,7 @@ const ascii = (s: string) => Buffer.from(s, 'ascii')
 
 function bridgeSession() {
   const session = new Session(() => {})
-  session.setConfig({ sourceMode: 'bridge' })
+  session.settings.update({ sourceMode: 'bridge' })
   session.open()
   FakeSerial.last!.openCb('/dev/fake') // a Bridge relay starts only with the board connected
   session.relay.start()
@@ -213,7 +213,7 @@ describe('node telemetry tap', () => {
     try {
       const pushes: [string, unknown][] = []
       const session = new Session((c, p) => pushes.push([c, p]))
-      session.setConfig({ sourceMode: 'bridge' })
+      session.settings.update({ sourceMode: 'bridge' })
       session.open()
       const serial = FakeSerial.last!
       serial.openCb('/dev/fake') // node pushes flow only while the link is up
@@ -265,7 +265,7 @@ describe('HID reporting latency', () => {
     const session = new Session((ch, payload) => {
       if (ch === 'hid:report') hidEvents.push([...(payload as { buttons: boolean[] }).buttons])
     })
-    session.setConfig({ sourceMode: 'bridge' })
+    session.settings.update({ sourceMode: 'bridge' })
     session.open()
     session.relay.start()
 
@@ -316,10 +316,10 @@ describe('HID recovery after an unplug', () => {
 type Push = [string, unknown]
 
 /** A session with the link open (app launched), the relay not started, and a recorder of pushes. */
-function launched(config: Parameters<InstanceType<typeof Session>['setConfig']>[0] = {}) {
+function launched(config: Parameters<InstanceType<typeof Session>['settings']['update']>[0] = {}) {
   const pushes: Push[] = []
   const session = new Session((c, p) => pushes.push([c, p]))
-  session.setConfig(config)
+  session.settings.update(config)
   session.open()
   const serial = FakeSerial.last!
   const of = (channel: string) => pushes.filter(([c]) => c === channel).map(([, p]) => p)
@@ -493,7 +493,7 @@ describe('device link is independent of the relay (#69)', () => {
 
     const off = launched()
     off.serial.openCb('/dev/fake')
-    off.session.setConfig({ autoConnect: false }) // an open link is left alone
+    off.session.settings.update({ autoConnect: false }) // an open link is left alone
     expect(off.session.status().device.state).toBe('connected')
     off.serial.closeCb()
     expect(off.session.status().device.state).toBe('disconnected')
@@ -504,7 +504,7 @@ describe('device link is independent of the relay (#69)', () => {
   it('connects again when auto-connect is turned back on', () => {
     const { session } = launched({ autoConnect: false })
     expect(FakeSerial.last).toBeUndefined()
-    session.setConfig({ autoConnect: true })
+    session.settings.update({ autoConnect: true })
     expect(FakeSerial.last).toBeDefined()
     expect(session.status().device.state).toBe('scanning')
     session.shutdown()
@@ -564,7 +564,7 @@ describe('device link is independent of the relay (#69)', () => {
     serial.openCb('/dev/fake')
     session.relay.start()
     serial.closeCb() // the board drops; the relay waits
-    session.setConfig({ host: '10.0.0.2' }) // rebuilds the relay
+    session.settings.update({ host: '10.0.0.2' }) // rebuilds the relay
     expect(session.status().running, 'only Stop ends a relay').toBe(true)
     session.shutdown()
   })
@@ -652,7 +652,7 @@ describe('relay forwarding by source mode (#69)', () => {
     const { session } = launched()
     session.relay.start()
     const first = FakeTransport.last
-    session.setConfig({ autoConnect: false })
+    session.settings.update({ autoConnect: false })
     expect(FakeTransport.last, 'toggling auto-connect must not restart the relay').toBe(first)
     session.shutdown()
   })
@@ -682,7 +682,7 @@ describe('Gateway health (#94)', () => {
   })
 
   const rows = (session: InstanceType<typeof Session>) =>
-    session.events.snapshot().map((e) => `${e.source}:${e.name}: ${eventText(e)}`)
+    session.journal.snapshot().map((e) => `${e.source}:${e.name}: ${eventText(e)}`)
 
   /** The Gateway's own row (node 0, kind 03, 42 °C), with these heartbeat flags. */
   const gatewayLine = (flags = 0): string =>
@@ -786,7 +786,7 @@ describe('event log (#64)', () => {
   })
 
   const rows = (session: InstanceType<typeof Session>) =>
-    session.events.snapshot().map((e) => `${e.source}:${e.name}: ${eventText(e)}`)
+    session.journal.snapshot().map((e) => `${e.source}:${e.name}: ${eventText(e)}`)
 
   it('moves link errors out of the stream log into client events', () => {
     vi.useFakeTimers()
@@ -818,7 +818,7 @@ describe('event log (#64)', () => {
       'node:Right_Navigation: offline · no heartbeat',
       'client:Gateway: reconnecting · link dropped'
     ])
-    const offline = session.events.snapshot()[2]
+    const offline = session.journal.snapshot()[2]
     expect(offline.nodeId).toBe(2)
     expect(offline.raw).toBe(statusLine(2, false).trim())
     session.shutdown()

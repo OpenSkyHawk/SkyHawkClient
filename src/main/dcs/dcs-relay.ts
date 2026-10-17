@@ -41,9 +41,14 @@ export interface RelayEventSink {
   forget(tag: string): void
 }
 
+/** The settings, as the relay reads them: the SettingsStore, read when it needs them. */
+export interface RelaySettings {
+  getState(): RelayOptions
+}
+
 export interface DcsRelayDeps {
-  /** The settings the relay is built from, read when it needs them. */
-  options: () => RelayOptions
+  /** The settings the relay is built from. */
+  settings: RelaySettings
   device: RelayDevice
   dcs: DcsConnection
   stats: Stats
@@ -80,7 +85,7 @@ export class DcsRelay {
   }
 
   private get config(): RelayOptions {
-    return this.deps.options()
+    return this.deps.settings.getState()
   }
 
   /**
