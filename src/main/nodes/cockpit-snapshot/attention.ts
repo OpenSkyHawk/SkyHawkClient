@@ -13,7 +13,7 @@ import type {
 } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
 import { shownHealth } from '../../gateway'
-import { isReportableNew } from '../node-model'
+import { isReportableNew, onBusNow } from '../node-model'
 import { adoptability } from './adopt'
 
 /** "1 node affected" / "3 nodes affected" — a PDU outage, wherever it is shown. */
@@ -72,11 +72,12 @@ export function attentionItems(
 export const ATTENTION_SHOWN = 3
 
 /**
- * "New on the bus · N": new NODE_IDs on the bus that have identified as a PDU or a panel group.
- * One still identifying is not news yet (isReportableNew — the Overview and event log agree).
+ * "New on the bus · N": new NODE_IDs on the bus now that have identified as a PDU or a panel group.
+ * One still identifying is not news yet, and with the link down none is on the bus now
+ * (isReportableNew — the Overview's notice agrees).
  */
-export function newCount(model: NodeModel): number {
-  return model.nodes.filter(isReportableNew).length
+export function newCount(model: NodeModel, live: boolean): number {
+  return model.nodes.filter((e) => isReportableNew(e, live)).length
 }
 
 /**
@@ -86,17 +87,22 @@ export function newCount(model: NodeModel): number {
 export const IDENTIFY_WAIT_MS = 5000
 
 /**
- * New boards on the bus that can't be adopted (#93): a kind that can't be adopted (a second
- * SimGateway, a type this client doesn't know), or still unidentified after IDENTIFY_WAIT_MS. A
- * board on the bus is active, so it can't be hidden — it shows in Attention as a warning instead.
- * `nextAt` = when one still identifying will cross the line.
+ * New boards on the bus now (onBusNow) that can't be adopted (#93): a kind that can't be adopted (a
+ * second SimGateway, a type this client doesn't know), or still unidentified after
+ * IDENTIFY_WAIT_MS. A board on the bus is active, so it can't be hidden — it shows in Attention as
+ * a warning instead. None while the link is down. `nextAt` = when one still identifying will cross
+ * the line.
  */
-export function strayNew(views: NodeView[], now: number): { strays: NodeView[]; nextAt?: number } {
+export function strayNew(
+  views: NodeView[],
+  now: number,
+  live: boolean
+): { strays: NodeView[]; nextAt?: number } {
   const strays: NodeView[] = []
   let nextAt: number | undefined
   for (const v of views) {
     const e = v.entry
-    if (e.source !== 'new' || e.availability !== 'online' || adoptability(e).kind) continue
+    if (e.source !== 'new' || !onBusNow(e, live) || adoptability(e).kind) continue
     const due = (e.firstSeenAt ?? 0) + IDENTIFY_WAIT_MS
     if (e.identified || due <= now) strays.push(v)
     else nextAt = Math.min(nextAt ?? due, due)
@@ -129,9 +135,9 @@ function gatewayAttention(
 }
 
 /**
- * The Attention card. Strays and items only while the link is up (X2 co-located: the Cockpit
- * says nothing about boards on the bus while unplugged); the Gateway's item takes a shown slot
- * first; "New on the bus" counts whatever the last model said.
+ * The Attention card. Items only while the link is up (the strays are on the bus now already,
+ * strayNew); the Gateway's item takes a shown slot first; "New on the bus" counts the boards on
+ * the bus now (newCount), so it too is quiet while unplugged (X2 / R5).
  */
 export function cockpitAttention(
   model: NodeModel | undefined,
@@ -149,7 +155,7 @@ export function cockpitAttention(
     shown: items.slice(0, ATTENTION_SHOWN - (gateway ? 1 : 0)),
     count,
     more: Math.max(0, count - ATTENTION_SHOWN),
-    newCount: model ? newCount(model) : 0
+    newCount: model ? newCount(model, live) : 0
   }
   if (gateway) out.gateway = gateway
   return out

@@ -48,7 +48,12 @@ const summary = (
   telemetry: NodeTelemSnapshot[] = []
 ) => {
   const m = model(nodes, outages)
-  return nodesSummary(nodeViews(m, telemetry), outages, boardZones(m.nodes, cockpitMembers(m).get))
+  return nodesSummary(
+    nodeViews(m, telemetry),
+    outages,
+    boardZones(m.nodes, cockpitMembers(m).get),
+    true
+  )
 }
 
 const T = 1_760_000_000_000

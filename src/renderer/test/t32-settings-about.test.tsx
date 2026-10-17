@@ -83,19 +83,29 @@ describe('T32 Settings › About (B92, X7)', () => {
     ])
   })
 
-  it('unplugged: the Gateway reads "no device", but CAN nodes still read "yes" (R5 today)', async () => {
-    // contract X7/R5: on the bus means now; today the CAN rows keep the last roster while the
-    // link is down (they ignore it), and only the Gateway row follows the link.
+  it('unplugged: the Gateway reads "no device", and no CAN row says it is on the bus (R5, #132)', async () => {
+    // contract X7/R5 (fixed, #132 X2): on the bus means now (`onBusNow(live)`), so with the link
+    // down every CAN row reads "—" — no data — and a hidden one still reads hidden. Back when the
+    // link is.
     const { sky, openRegistry } = await openAbout()
     const dlg = await openRegistry()
     sky.emitScenario({ device: link('no-device') })
-    expect(rows(dlg).slice(0, 2)).toEqual(['#0Gateway—no device', '#1Center_ArmamentCenteryes'])
+    expect(rows(dlg)).toEqual([
+      '#0Gateway—no device',
+      '#1Center_ArmamentCenter—',
+      '#2Right_NavigationRight—',
+      '#3PDU_LeftLeft—',
+      '#4PDU_RightRight—',
+      '#5PDU_CenterCenterhidden'
+    ])
+    sky.emitScenario({ device: connected() })
+    expect(rows(dlg).slice(0, 2)).toEqual(['#0Gateway—serial link', '#1Center_ArmamentCenteryes'])
   })
 
   it('opened while unplugged: the same', async () => {
     const { openRegistry } = await openAbout(bus(), link('disconnected'))
     const dlg = await openRegistry()
-    expect(rows(dlg).slice(0, 2)).toEqual(['#0Gateway—no device', '#1Center_ArmamentCenteryes'])
+    expect(rows(dlg).slice(0, 2)).toEqual(['#0Gateway—no device', '#1Center_ArmamentCenter—'])
   })
 
   it('Close shuts the dialog', async () => {

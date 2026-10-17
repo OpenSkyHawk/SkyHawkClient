@@ -53,7 +53,8 @@ function snapshotOf(f: NodeMappingFile) {
     rosterCompleteAt: T,
     telemetry: [],
     defaults,
-    file: f
+    file: f,
+    now: T
   })
   return buildCockpitSnapshot({
     model,

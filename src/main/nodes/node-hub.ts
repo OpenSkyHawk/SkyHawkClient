@@ -47,14 +47,13 @@ import {
   NODE_REGISTRY_SOURCE,
   type NodeFaultName
 } from '@shared/firmware'
-import { buildNodeModel, nodeAvailability } from './node-model'
+import { availabilityOf, buildNodeModel } from './node-model'
 import { NodeEventTracker } from './node-events'
 import { boardIdentity, identityOf, isAdoptableKind } from './node-kind'
 import {
   canForget,
   canHide,
   offlineRefusal,
-  pduTelemetryLive,
   type OfflineGate,
   type OfflineSignals
 } from './offline-actions'
@@ -296,6 +295,14 @@ export class NodeHub implements NodeLineSink {
     if (identifier === NODE_MSG || identifier === NODE_END_MSG) {
       this.log('node', `${identifier} ${arg}`.trim())
       this.roster.applyMessage(identifier, arg, t)
+      const short = this.roster.takeIncompleteReply()
+      if (short) {
+        // A line of the reply was lost: its absences were not reconciled (#132). Debug only.
+        this.log(
+          'node',
+          `roster reply incomplete: ${short.received} of ${short.expected} rows; absences not reconciled`
+        )
+      }
       if (!this.legacyNodesWarned && this.roster.legacyBridge()) {
         // Every v2 row is dropped as malformed (and its END ignored, M3): say why the Cockpit is
         // empty, once.
@@ -464,11 +471,14 @@ export class NodeHub implements NodeLineSink {
    * availability by the model's one rule, and whether fresh PDU pages say it is live.
    */
   private offlineSignals(nodeId: number, now: number): OfflineSignals {
-    const st = this.roster.snapshot().find((n) => n.nodeId === nodeId)
-    return {
-      availability: nodeAvailability(st, this.roster.rosterCompleteAt() !== undefined),
-      pduTelemetry: pduTelemetryLive(this.telem.snapshot(now), nodeId)
-    }
+    const { availability } = availabilityOf({
+      status: this.roster.snapshot().find((n) => n.nodeId === nodeId),
+      seen: this.roster.seenInfo().get(nodeId),
+      rosterComplete: this.roster.rosterCompleteAt() !== undefined,
+      telemetry: this.telem.snapshot(now).find((t) => t.nodeId === nodeId),
+      now
+    })
+    return { availability }
   }
 
   private refusal(gate: OfflineGate, what: 'hidden' | 'forgotten'): NodeMappingResult | undefined {
@@ -556,7 +566,8 @@ export class NodeHub implements NodeLineSink {
       rosterCompleteAt: this.roster.rosterCompleteAt(),
       telemetry: this.telem.snapshot(now),
       defaults: this.defaults,
-      file: this.mapping()
+      file: this.mapping(),
+      now
     })
   }
 

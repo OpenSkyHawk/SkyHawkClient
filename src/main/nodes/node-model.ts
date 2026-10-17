@@ -15,7 +15,7 @@ import type {
 import { differingCount, effectiveMapping } from './mapping-rules'
 import { boardIdentity, isAdoptableKind } from './node-kind'
 import { BRIDGE_NODE_ID } from './node-status-wire'
-import { hasFreshPduPage } from './node-telem'
+import { hasFreshPduPage, pduPagesLive } from './node-telem'
 import { pduOutages } from './power-zone'
 
 export interface NodeModelInput {
@@ -25,19 +25,68 @@ export interface NodeModelInput {
   telemetry: NodeTelemSnapshot[]
   defaults: Map<number, NodeDefaults>
   file: NodeMappingFile
+  /** When `telemetry` was taken: page ages are counted back from it. */
+  now: number
+}
+
+/** What a board's availability was decided from: its roster row, its PDU pages, or nothing. */
+export type AvailabilityEvidence = 'roster' | 'telemetry' | 'none'
+
+export interface Availability {
+  availability: NodeAvailability
+  evidence: AvailabilityEvidence
 }
 
 /**
- * The one availability rule: online while the roster lists it present, offline once it lists it
- * absent or a complete roster left it out (there is no "waiting"), else unknown — no complete
- * roster since the link opened, and it has not reported.
+ * The one availability rule (X2 / S10), with what it was decided from:
+ * - online while the roster lists it present (roster);
+ * - online while its PDU pages say so (telemetry): fresh, and newer than the roster's last
+ *   "absent" reading for it (node-telem.ts pduPagesLive — the newest evidence wins);
+ * - offline once the roster lists it absent, or a complete roster left it out (roster) — there is
+ *   no "waiting";
+ * - else unknown (none): no complete roster since the link opened, and it has not reported.
+ * `pduTelemetry` is that page evidence already weighed (availabilityOf).
  */
 export function nodeAvailability(
   st: NodeStatus | undefined,
+  rosterComplete: boolean,
+  pduTelemetry: boolean
+): Availability {
+  if (st?.present) return { availability: 'online', evidence: 'roster' }
+  if (pduTelemetry) return { availability: 'online', evidence: 'telemetry' }
+  if (st || rosterComplete) return { availability: 'offline', evidence: 'roster' }
+  return { availability: 'unknown', evidence: 'none' }
+}
+
+/** What the rule reads for one board: its roster row and timing, and its PDU pages. */
+export interface AvailabilitySignals {
+  status?: NodeStatus
+  seen?: NodeSeen
   rosterComplete: boolean
-): NodeAvailability {
-  if (st) return st.present ? 'online' : 'offline'
-  return rosterComplete ? 'offline' : 'unknown'
+  telemetry?: NodeTelemSnapshot
+  /** When `telemetry` was taken. */
+  now: number
+}
+
+/**
+ * A board's availability from its signals: the model's, and the one NodeHub refuses Hide and Forget
+ * by, so the two always agree. Pages count against the roster's last "absent" reading — the time
+ * it learned the board was offline (seen.offlineAt) — only while the roster lists it absent.
+ */
+export function availabilityOf(s: AvailabilitySignals): Availability {
+  const absentAt = s.status && !s.status.present ? s.seen?.offlineAt : undefined
+  const pages = !!s.telemetry && pduPagesLive(s.telemetry, s.now, absentAt)
+  return nodeAvailability(s.status, s.rosterComplete, pages)
+}
+
+/**
+ * On the bus now: the link is up and the one availability rule says online. Every "on the bus"
+ * surface reads this — the Cockpit's "New on the bus" and its strays, the Overview's new-devices
+ * notice, Connection › Connected nodes and Settings › About's On the bus — so while the Gateway is
+ * unplugged they all go quiet, whatever the last model said (X2 / R5).
+ */
+export function onBusNow(e: Pick<NodeModelEntry, 'availability'>, live: boolean): boolean {
+  return live && e.availability === 'online'
 }
 
 /**
@@ -51,14 +100,24 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
   const roster = new Map(i.roster.map((n) => [n.nodeId, n]))
   const telem = new Map(i.telemetry.map((t) => [t.nodeId, t]))
   const complete = i.rosterCompleteAt !== undefined
+  const signals = (nodeId: number): AvailabilitySignals => ({
+    status: roster.get(nodeId),
+    seen: i.seen.get(nodeId),
+    rosterComplete: complete,
+    telemetry: telem.get(nodeId),
+    now: i.now
+  })
   const known = [...mapping.values()].filter((m) => m.known).map((m) => m.nodeId)
   // Not in your cockpit, registry or not: shown as new only while it is on the bus. The roster
   // keeps absent rows; one that dropped (or that you just forgot) comes back when it reports.
   const waiting = [...roster.values()].filter((n) => n.present).map((n) => n.nodeId)
-  // PDU pages are a report too: a registry or adopted PDU sending them now is on the bus. Pages are
-  // kept (only marked stale), so one that stopped sending — dropped, or forgotten — is not.
+  // PDU pages are a report too: a registry or adopted PDU sending them now is on the bus — online
+  // by them (nodeAvailability), so it can be adopted (S10). Pages are kept (only marked stale), so
+  // one that stopped sending — dropped, or forgotten — is not.
   const sending = [...telem.values()]
-    .filter((t) => mapping.get(t.nodeId)?.known || (mapping.has(t.nodeId) && hasFreshPduPage(t)))
+    .filter(
+      (t) => mapping.has(t.nodeId) && availabilityOf(signals(t.nodeId)).availability === 'online'
+    )
     .map((t) => t.nodeId)
   // The bridge's own row (node 0, v3) is this client's link, not a cockpit node.
   const ids = [...new Set([...known, ...waiting, ...sending])]
@@ -96,7 +155,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
       pduTelemetry: t?.isPdu
     })
     const kind: NodeKind = identified === 'pdu' ? 'pdu' : 'panel'
-    const availability = nodeAvailability(st, complete)
+    const { availability } = availabilityOf(signals(nodeId))
     const e: NodeModelEntry = {
       nodeId,
       name: mapped?.name ?? `Node ${nodeId}`,
@@ -141,11 +200,10 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
 }
 
 /**
- * A new device worth telling the user about: not in the registry or adopted, on the bus now, and
+ * A new device worth telling the user about: not in your cockpit, on the bus now (onBusNow), and
  * identified as something that can be adopted. Until then it is not news — not on the Cockpit
- * count, the Overview notice or the event log. One predicate for every tab (node 0 is never in the
- * model).
+ * count or the Overview notice. One predicate for every tab (node 0 is never in the model).
  */
-export function isReportableNew(e: NodeModelEntry): boolean {
-  return e.source === 'new' && e.availability === 'online' && isAdoptableKind(e.identified)
+export function isReportableNew(e: NodeModelEntry, live: boolean): boolean {
+  return e.source === 'new' && onBusNow(e, live) && isAdoptableKind(e.identified)
 }

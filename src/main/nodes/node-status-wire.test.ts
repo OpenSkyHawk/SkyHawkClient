@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canRequestRoster,
   cleanNodeLine,
+  endRowCount,
   isLegacyNodeStatus,
   NODE_END_MSG,
   NODE_MSG,
@@ -265,6 +266,110 @@ describe('NodeRoster — a new request never cuts a reply short (M2)', () => {
       [1, false],
       [3, true]
     ])
+  })
+})
+
+describe('NodeRoster — a reply missing a line reconciles nothing (#132)', () => {
+  const row = (id: number) => statusRow(id, true, id === 0 ? 3 : 1)
+  /** One v3 reply: the node-0 row, a row per board (less any `lost`), END with the true count. */
+  const reply = (r: NodeRoster, ids: number[], t: number, lost: number[] = []) => {
+    r.beginBurst(t)
+    for (const id of [0, ...ids]) if (!lost.includes(id)) r.applyMessage(NODE_MSG, row(id), t)
+    r.applyMessage(NODE_END_MSG, String(ids.length + 1), t) // PanelBridge counts node 0 too
+  }
+  const states = (r: NodeRoster) =>
+    r
+      .snapshot()
+      .filter((n) => n.nodeId !== 0)
+      .map((n) => [n.nodeId, n.present])
+
+  it('the END count is PanelBridge’s rows, node 0 included; no count is undefined', () => {
+    expect(endRowCount('3')).toBe(3)
+    expect(endRowCount(' 1\r')).toBe(1)
+    expect(endRowCount('')).toBeUndefined()
+    expect(endRowCount('x')).toBeUndefined()
+  })
+
+  it('a board whose line was lost keeps its state; the next whole reply decides', () => {
+    const r = new NodeRoster()
+    reply(r, [1, 2, 3], 0)
+    reply(r, [1, 2, 3], 5000, [2]) // board 2's line is lost on the way
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, true],
+      [3, true]
+    ])
+    expect(r.seenInfo().get(2)?.offlineAt).toBeUndefined()
+    expect(r.takeIncompleteReply()).toEqual({ expected: 4, received: 3 })
+    expect(r.takeIncompleteReply()).toBeUndefined() // taken once
+    reply(r, [1, 3], 10_000) // board 2 really left: the next whole reply says so
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, false],
+      [3, true]
+    ])
+    expect(r.seenInfo().get(2)).toMatchObject({ offlineAt: 10_000, offlineVia: 'roster' })
+    expect(r.takeIncompleteReply()).toBeUndefined()
+  })
+
+  it('a whole reply still marks a missing board offline', () => {
+    const r = new NodeRoster()
+    reply(r, [1, 2], 0)
+    reply(r, [1], 5000)
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, false]
+    ])
+  })
+
+  it('a lost node-0 row or END is a short reply too: nothing goes offline', () => {
+    const r = new NodeRoster()
+    reply(r, [1, 2], 0)
+    reply(r, [1, 2], 5000, [0]) // the node-0 row is lost
+    expect(r.takeIncompleteReply()).toEqual({ expected: 3, received: 2 })
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, true]
+    ])
+    // The END of the next reply is lost; the one after it ends whole.
+    r.beginBurst(10_000)
+    for (const id of [0, 1]) r.applyMessage(NODE_MSG, row(id), 10_000)
+    reply(r, [1, 2], 15_000)
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, true]
+    ])
+  })
+
+  it('a first reply that is short leaves the roster incomplete: remembered boards stay unknown', () => {
+    const r = new NodeRoster()
+    reply(r, [1, 2], 0, [2])
+    expect(r.rosterCompleteAt()).toBeUndefined()
+    reply(r, [1, 2], 5000)
+    expect(r.rosterCompleteAt()).toBe(5000)
+  })
+
+  it('deltas before a reply’s node-0 row are not counted as its rows', () => {
+    const r = new NodeRoster()
+    reply(r, [1, 2], 0)
+    r.beginBurst(5000)
+    r.applyMessage(NODE_MSG, statusRow(2, false, 1), 5001) // a live delta: board 2 dropped
+    for (const id of [0, 1]) r.applyMessage(NODE_MSG, row(id), 5002)
+    r.applyMessage(NODE_END_MSG, '2', 5002) // whole: node 0 and board 1
+    expect(r.takeIncompleteReply()).toBeUndefined()
+    expect(states(r)).toEqual([
+      [1, true],
+      [2, false]
+    ])
+  })
+
+  it('an END with no count completes as before', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, row(1), 0)
+    r.beginBurst(5000)
+    r.applyMessage(NODE_END_MSG, '', 5000)
+    expect(states(r)).toEqual([[1, false]])
+    expect(r.rosterCompleteAt()).toBe(5000)
   })
 })
 

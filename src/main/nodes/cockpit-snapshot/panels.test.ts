@@ -81,18 +81,18 @@ describe('boardActions', () => {
   const off = { availability: 'offline' as const }
 
   it('Forget and Hide wait until the board is offline, with the reason', () => {
-    const on = boardActions(node(1), false)
+    const on = boardActions(node(1))
     expect(on.forget.disabled).toBe(true)
     expect(on.hide.disabled).toBe(true)
     expect(on.forget.tip).toMatch(/^Online — it’s active on the bus/)
     expect(on.note).toBe(on.forget.tip)
-    const a = boardActions(node(1, off), false)
+    const a = boardActions(node(1, off))
     expect(a.forget.disabled).toBe(false)
     expect(a.hide.disabled).toBe(false)
   })
 
   it('never before the roster says offline — and says so, not "online" (#93 review)', () => {
-    const a = boardActions(node(1, { availability: 'unknown', status: undefined }), false)
+    const a = boardActions(node(1, { availability: 'unknown', status: undefined }))
     expect(a.forget.disabled).toBe(true)
     expect(a.hide.disabled).toBe(true)
     expect(a.forget.tip).toBe(
@@ -102,28 +102,28 @@ describe('boardActions', () => {
   })
 
   it('Reset is for registry boards, greyed out at the defaults', () => {
-    expect(boardActions(node(1), false).reset).toEqual({
+    expect(boardActions(node(1)).reset).toEqual({
       disabled: true,
       tip: 'Already at the NODE_IDS.md defaults'
     })
-    expect(boardActions(node(1, { differs: true }), false).reset?.disabled).toBe(false)
-    expect(boardActions(node(9, { source: 'adopted' }), false).reset).toBeUndefined()
+    expect(boardActions(node(1, { differs: true })).reset?.disabled).toBe(false)
+    expect(boardActions(node(9, { source: 'adopted' })).reset).toBeUndefined()
   })
 
   it('the note says where a forgotten board comes back', () => {
-    expect(boardActions(node(1, off), false).note).toMatch(/waits in New on the bus, pre-filled/)
-    expect(boardActions(node(9, { ...off, source: 'adopted' }), false).note).toMatch(/shows as new/)
+    expect(boardActions(node(1, off)).note).toMatch(/waits in New on the bus, pre-filled/)
+    expect(boardActions(node(9, { ...off, source: 'adopted' })).note).toMatch(/shows as new/)
   })
 
   it('a PDU: Forget unlinks its boards, Hide keeps the links', () => {
     const p = node(4, { ...off, kind: 'pdu', pduId: null })
-    expect(boardActions(p, false, 3).note).toBe(
+    expect(boardActions(p, 3).note).toBe(
       'Forget removes this PDU from your cockpit. Its 3 boards move to No power zone and keep no link to it, even if it comes back. Hide keeps the links: they return under it when it reports.'
     )
-    expect(boardActions(p, false, 0).note).toBe(
+    expect(boardActions(p, 0).note).toBe(
       'Forget removes this PDU from your cockpit. Hide keeps the links: they return under it when it reports.'
     )
-    expect(boardActions(p, false).hide.tip).toMatch(/keep the link/)
+    expect(boardActions(p).hide.tip).toMatch(/keep the link/)
   })
 })
 
