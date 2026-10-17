@@ -14,7 +14,7 @@ import { listSerialPorts } from '../gateway'
 import { loadCalCache, saveCalCache } from '../hid/calibration'
 import { Session } from './session'
 import { debugLog, debugLogPath, setDebugEnabled } from './debug-log'
-import { storePaths, userDataOverride } from './user-data'
+import { storeFiles, storePaths, userDataOverride } from './user-data'
 
 // Before anything touches userData: dev worktrees get their own folder (#81).
 const userDataDir = userDataOverride({
@@ -30,6 +30,8 @@ if (userDataDir) {
 
 /** The <userData> files, handed to the topics that own them (P6: only app asks electron). */
 const paths = storePaths(() => app.getPath('userData'))
+/** The same files as ports, for ConfigTransfer's calibration section. */
+const { cacheFile } = storeFiles(paths)
 
 /** Report indices the firmware catalogues, derived from HIDControls.h. */
 function hidAvailability(): HidAvailability {
@@ -80,8 +82,8 @@ const transfer = new ConfigTransfer({
   getConfig: () => session.getConfig(),
   setConfig: (config) => applyConfig(config),
   nodes: session.link.nodes,
-  loadCalCache: () => loadCalCache(paths),
-  saveCalCache: (cache) => saveCalCache(cache, paths),
+  loadCalCache: () => loadCalCache(cacheFile),
+  saveCalCache: (cache) => saveCalCache(cache, cacheFile),
   backupDir: () => join(app.getPath('userData'), 'backups'),
   clientVersion: () => app.getVersion()
 })

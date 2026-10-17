@@ -1,6 +1,6 @@
 // Node mapping: display name, console and power zone (PDU) per NODE_ID, when each board was last
 // seen, and "hidden until it reports again" flags. Pure, no Node/Electron deps — main persists it
-// as <userData>/node-mapping.json (src/main/nodes/mapping-store.ts).
+// as <userData>/node-mapping.json (src/main/nodes/mapping-store.ts, file format mapping-file.ts).
 //
 // The registry (the bundled NODE_IDS) is a dictionary: a registry board joins your cockpit when you
 // add it in New on the bus (pre-filled with its registry defaults), and the file stores that it was

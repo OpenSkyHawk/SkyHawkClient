@@ -1,5 +1,6 @@
-// Node data layer in main: taps `_NODE_TELEM`, owns the node mapping, and pushes the combined
-// node picture. Kept out of app/session.ts so the session only feeds it lines and ticks.
+// Node data layer in main: taps `_NODE_TELEM`, holds the node mapping (through MappingStore), and
+// pushes the combined node picture. Kept out of app/session.ts so the session only feeds it lines
+// and ticks.
 import type {
   AdoptSpec,
   MappedNode,
@@ -44,30 +45,17 @@ import { resolveKind } from './node-kind'
 import { BRIDGE_NODE_ID, type NodeRoster } from './node-status-wire'
 import { NodeTelemStore, parseNodeTelem } from './node-telem'
 import { registryDefaults } from './registry'
-import {
-  loadNodeMapping,
-  MappingSaveError,
-  saveNodeMapping,
-  type LoadedMapping,
-  type MappingPaths
-} from './mapping-store'
+import { MappingSaveError, MappingStore, type MappingFileIO } from './mapping-store'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
 
-/** What NodeHub needs from app, through DeviceLink: where node-mapping.json lives, and the log. */
+/** What NodeHub needs from app, through DeviceLink: the node-mapping.json port, and the log. */
 export interface NodeHubDeps {
-  paths?: MappingPaths
+  mappingFile?: MappingFileIO
   log?: Log
-}
-
-/** Until a path is handed in: fails loudly on first use rather than guess one. */
-const NO_PATHS: MappingPaths = {
-  nodeMappingFile: () => {
-    throw new Error('NodeHub: no node-mapping.json path was handed in')
-  }
 }
 
 /** Shortest gap between `nodes:telemetry` pushes. ~3 PDUs send ~3 frames/s between them. */
@@ -100,7 +88,6 @@ export function withFaultInfo(n: NodeStatus): NodeStatus {
 export class NodeHub {
   private readonly telem = new NodeTelemStore()
   private readonly defaults = registryDefaults(NODE_NAMES)
-  private loaded?: LoadedMapping
   private telemPushedAt = 0
   private modelDirty = true
   /** Present NODE_IDs at the last roster change, to tell "came back" from "still listed". */
@@ -118,8 +105,8 @@ export class NodeHub {
   })
   private mappedFor?: NodeMappingFile
   private mappedCache = new Map<number, MappedNode>()
-  private readonly paths: MappingPaths
-  private readonly log: Log
+  /** The node mapping and its file. */
+  private readonly store: MappingStore
 
   constructor(
     private readonly emit: Emit,
@@ -127,17 +114,17 @@ export class NodeHub {
     private readonly onEvents: (events: LogEventInput[]) => void = () => {},
     deps: NodeHubDeps = {}
   ) {
-    this.paths = deps.paths ?? NO_PATHS
-    this.log = deps.log ?? (() => {})
-  }
-
-  /** Read lazily: the userData path is only safe to touch once the app is up. */
-  private store(): LoadedMapping {
-    return (this.loaded ??= loadNodeMapping(this.paths))
+    this.store = new MappingStore({
+      file: deps.mappingFile,
+      log: deps.log,
+      onCommit: () => {
+        this.modelDirty = true
+      }
+    })
   }
 
   private mapping(): NodeMappingFile {
-    return this.store().file
+    return this.store.mapping()
   }
 
   /** New session: telemetry and first-seen times start over; the mapping persists. */
@@ -195,7 +182,7 @@ export class NodeHub {
    */
   linkClosed(now = Date.now()): void {
     if (!this.wasPresent.size) return
-    this.persist(
+    this.store.persist(
       markSeen(this.mapping(), this.defaults, this.wasPresent, new Date(now).toISOString())
     )
     this.wasPresent.clear()
@@ -344,38 +331,9 @@ export class NodeHub {
     this.wasPresent = present
     if (!came.length && !went.length) return
     const at = new Date(now).toISOString()
-    this.persist(
+    this.store.persist(
       markSeen(clearReportedHidden(this.mapping(), came), this.defaults, [...came, ...went], at)
     )
-  }
-
-  /**
-   * Save a change main made on its own (not a user edit). If the save fails the change still
-   * applies in memory — a reporting board must show, so un-hiding it is right — and may be lost
-   * after a restart, which is the lesser problem.
-   */
-  private persist(next: NodeMappingFile): void {
-    try {
-      this.save(next)
-    } catch (err) {
-      if (!(err instanceof MappingSaveError)) throw err
-      this.log('nodes.mapping', err.message)
-      this.commit(next)
-    }
-  }
-
-  /** Persist, then adopt in memory — never the other way round, or a failed write looks saved. */
-  private save(next: NodeMappingFile): void {
-    if (next === this.mapping()) return
-    const { readOnly } = this.store()
-    if (readOnly) throw new MappingSaveError(`Not saved: ${readOnly}`)
-    saveNodeMapping(next, this.paths)
-    this.commit(next)
-  }
-
-  private commit(next: NodeMappingFile): void {
-    this.store().file = next
-    this.modelDirty = true
   }
 
   /** Apply one mapping change, persist it, and push the new model straight away. */
@@ -384,7 +342,7 @@ export class NodeHub {
     let next: NodeMappingFile
     try {
       next = fn(before)
-      this.save(next)
+      this.store.save(next)
     } catch (err) {
       if (err instanceof MappingError || err instanceof MappingSaveError) {
         return { ok: false, error: err.message }

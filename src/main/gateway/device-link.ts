@@ -30,7 +30,8 @@ import {
   nackReasonName,
   regressedAxes,
   saveCalCache,
-  storeAxes
+  storeAxes,
+  type CacheFileIO
 } from '../hid/calibration'
 import {
   findSimGatewayPort,
@@ -55,20 +56,20 @@ import {
   isLegacyNodeStatus,
   nodeRosterRequest,
   parseNodeStatus,
-  withFaultInfo
+  withFaultInfo,
+  type MappingFileIO
 } from '../nodes'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
 /**
- * What DeviceLink needs from app (P6: it never asks electron): where its two files live under
- * <userData>, and the debug log. Handed on to NodeHub, CalLink and SerialBridge.
+ * What DeviceLink needs from app (P6: it never asks electron): its two files under <userData>,
+ * as ports (node-mapping.json for NodeHub, calibration-cache.json for the cache), and the debug
+ * log. Handed on to NodeHub, CalLink and SerialBridge.
  */
 export interface DeviceLinkDeps {
-  paths: {
-    nodeMappingFile(): string
-    calibrationCacheFile(): string
-  }
+  mappingFile: MappingFileIO
+  cacheFile: CacheFileIO
   log: Log
 }
 
@@ -618,7 +619,7 @@ export class DeviceLink {
    * renderer never sees a board identity it could accidentally key on.
    */
   calCacheRead(): CalResult<{ board?: CachedBoard; regressed: number[] }> {
-    const cache = loadCalCache(this.deps.paths)
+    const cache = loadCalCache(this.deps.cacheFile)
     return {
       ok: true,
       value: {
@@ -637,8 +638,8 @@ export class DeviceLink {
       entries[a.idx] = { min: a.min, centre: a.centre, max: a.max, selfCentring: a.selfCentring }
     }
     saveCalCache(
-      storeAxes(loadCalCache(this.deps.paths), serial, entries, new Date().toISOString()),
-      this.deps.paths
+      storeAxes(loadCalCache(this.deps.cacheFile), serial, entries, new Date().toISOString()),
+      this.deps.cacheFile
     )
     return { ok: true, value: null }
   }
@@ -648,8 +649,8 @@ export class DeviceLink {
     const serial = this.calSerialNumber
     if (!serial) return { ok: true, value: null }
     saveCalCache(
-      dropAxis(loadCalCache(this.deps.paths), serial, idx === CAL_AXIS_NONE ? undefined : idx),
-      this.deps.paths
+      dropAxis(loadCalCache(this.deps.cacheFile), serial, idx === CAL_AXIS_NONE ? undefined : idx),
+      this.deps.cacheFile
     )
     return { ok: true, value: null }
   }

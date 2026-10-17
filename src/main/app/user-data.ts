@@ -2,6 +2,7 @@
 // <repo>/.userdata so parallel worktrees (and the installed app) don't share
 // settings. SKYHAWK_USER_DATA overrides both. Pure, so it's testable without Electron.
 import { join, resolve } from 'node:path'
+import { JSON_POLICY, jsonFile } from '../config'
 
 export const USER_DATA_ENV = 'SKYHAWK_USER_DATA'
 
@@ -35,3 +36,15 @@ export function storePaths(userData: () => string) {
 }
 
 export type StorePaths = ReturnType<typeof storePaths>
+
+/**
+ * The two <userData> files other topics reach through a port, each under the JSON store with its
+ * own policy: satisfies nodes' MappingFileIO and hid/calibration's CacheFileIO. config.json is
+ * config's own, so settings-service builds its file itself.
+ */
+export function storeFiles(paths: StorePaths) {
+  return {
+    mappingFile: jsonFile(() => paths.nodeMappingFile(), JSON_POLICY.nodeMapping),
+    cacheFile: jsonFile(() => paths.calibrationCacheFile(), JSON_POLICY.calibrationCache)
+  }
+}

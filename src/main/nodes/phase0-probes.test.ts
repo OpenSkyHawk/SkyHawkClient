@@ -22,7 +22,7 @@ import { DEFAULT_APP_SETTINGS } from '../../test-fixtures/config'
 
 const disk: { file: NodeMappingFile } = { file: { version: 3, nodes: {} } }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
-vi.mock('./mapping-store', () => {
+vi.mock('./mapping-file', () => {
   class MappingSaveError extends Error {}
   return {
     MappingSaveError,

@@ -32,7 +32,7 @@ import {
 import { clientErrorEvent, EventLog } from '../events'
 import { deviceEvent, DeviceLink } from '../gateway'
 import { debugLog } from './debug-log'
-import { storePaths, type StorePaths } from './user-data'
+import { storeFiles, storePaths, type StorePaths } from './user-data'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
@@ -116,7 +116,7 @@ export class Session {
     paths: StorePaths = storePaths(() => app.getPath('userData'))
   ) {
     this.parser = new DcsBiosProtocol((addr, val) => this.onWrite(addr, val))
-    this.link = new DeviceLink(emit, { paths, log: debugLog })
+    this.link = new DeviceLink(emit, { ...storeFiles(paths), log: debugLog })
     this.link.onBytes((bytes) => this.fromDevice(bytes))
     this.link.onLine((l) => {
       if (l.kind !== 'command') return

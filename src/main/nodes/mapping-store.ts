@@ -1,81 +1,88 @@
-// Persist the node mapping to <userData>/node-mapping.json (shape and rules: mapping-rules.ts).
-// Where that file lives is handed in by app (MappingPaths): this module never asks electron.
-//
-// Unlike config.json, a lost write here is user work gone (names, adopted boards, hidden boards), so
-// failures are reported rather than swallowed, writes are atomic, and a file this build cannot
-// safely overwrite — unreadable, or from a newer client — is loaded read-only.
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from './mapping-rules'
+// MappingStore: the node mapping main holds, and how it reaches node-mapping.json. Loaded lazily
+// through the MappingFileIO port (the file format: mapping-file.ts; the rules: mapping-rules.ts),
+// saved before it is adopted in memory, and refused while the file is read-only.
 import type { NodeMappingFile } from '@shared/nodes'
-import { errorText, stamp } from '@shared/format'
+import {
+  loadNodeMapping,
+  MappingSaveError,
+  saveNodeMapping,
+  type LoadedMapping,
+  type MappingFileIO
+} from './mapping-file'
 
-/** A save that did not reach the disk. The message is ready to show. */
-export class MappingSaveError extends Error {}
+export { MappingSaveError, type LoadedMapping, type MappingFileIO } from './mapping-file'
 
-export interface LoadedMapping {
-  file: NodeMappingFile
-  /** Set when saving must not overwrite what is on disk; the reason is shown on a refused save. */
-  readOnly?: string
+/** Port: the debug log, handed in by app (debug.log lives in app). */
+type Log = (tag: string, data?: unknown) => void
+
+/** Until a file is handed in: fails loudly on first use rather than guess one. */
+const NO_FILE: MappingFileIO = {
+  read: () => {
+    throw new Error('NodeHub: no node-mapping.json path was handed in')
+  },
+  write: () => {
+    throw new Error('NodeHub: no node-mapping.json path was handed in')
+  }
 }
 
-/** Port: where node-mapping.json lives. app provides it; resolved at each use, as before. */
-export interface MappingPaths {
-  nodeMappingFile(): string
+export interface MappingStoreDeps {
+  file?: MappingFileIO
+  log?: Log
+  /** The mapping in memory changed (saved, or kept unsaved by `persist`). */
+  onCommit?: () => void
 }
 
-const empty = (): NodeMappingFile => ({ ...EMPTY_MAPPING, nodes: {} })
+export class MappingStore {
+  private loaded?: LoadedMapping
+  private readonly io: MappingFileIO
+  private readonly log: Log
+  private readonly onCommit: () => void
 
-export function loadNodeMapping(paths: MappingPaths): LoadedMapping {
-  const p = paths.nodeMappingFile()
-  let text: string
-  try {
-    if (!existsSync(p)) return { file: empty() }
-    text = readFileSync(p, 'utf8')
-  } catch (err) {
-    return { file: empty(), readOnly: `node-mapping.json could not be read: ${errorText(err)}` }
+  constructor(deps: MappingStoreDeps = {}) {
+    this.io = deps.file ?? NO_FILE
+    this.log = deps.log ?? (() => {})
+    this.onCommit = deps.onCommit ?? (() => {})
   }
 
-  let raw: unknown
-  try {
-    raw = JSON.parse(text)
-  } catch {
-    // Move the damaged file aside, so the next save cannot destroy whatever it still holds.
-    const bad = `${p}.bad-${stamp(new Date())}`
+  /** Read lazily: the userData path is only safe to touch once the app is up. */
+  private store(): LoadedMapping {
+    return (this.loaded ??= loadNodeMapping(this.io))
+  }
+
+  /** The mapping as main holds it now. */
+  mapping(): NodeMappingFile {
+    return this.store().file
+  }
+
+  /**
+   * Save a change main made on its own (not a user edit). If the save fails the change still
+   * applies in memory — a reporting board must show, so un-hiding it is right — and may be lost
+   * after a restart, which is the lesser problem.
+   */
+  persist(next: NodeMappingFile): void {
     try {
-      renameSync(p, bad)
-      return { file: empty() }
+      this.save(next)
     } catch (err) {
-      return {
-        file: empty(),
-        readOnly: `node-mapping.json is damaged and could not be moved aside: ${errorText(err)}`
-      }
+      if (!(err instanceof MappingSaveError)) throw err
+      this.log('nodes.mapping', err.message)
+      this.commit(next)
     }
   }
 
-  const file = sanitizeNodeMapping(raw)
-  const version = (raw as { version?: unknown } | null)?.version
-  if (typeof version === 'number' && version > NODE_MAPPING_VERSION) {
-    return { file, readOnly: 'node-mapping.json was written by a newer client' }
+  /**
+   * Persist, then adopt in memory — never the other way round, or a failed write looks saved.
+   * Throws MappingSaveError when read-only or when the write failed. The same file is a no-op.
+   */
+  save(next: NodeMappingFile): void {
+    if (next === this.mapping()) return
+    const { readOnly } = this.store()
+    if (readOnly) throw new MappingSaveError(`Not saved: ${readOnly}`)
+    saveNodeMapping(next, this.io)
+    this.commit(next)
   }
-  return { file }
-}
 
-/**
- * Write via a temp file and rename, so a crash mid-write leaves the old file intact rather than
- * half a JSON document. Throws MappingSaveError if the file did not reach the disk.
- */
-export function saveNodeMapping(file: NodeMappingFile, paths: MappingPaths): void {
-  const p = paths.nodeMappingFile()
-  const tmp = `${p}.tmp`
-  try {
-    writeFileSync(tmp, JSON.stringify(file, null, 2))
-    renameSync(tmp, p)
-  } catch (err) {
-    try {
-      rmSync(tmp, { force: true })
-    } catch {
-      // the write already failed; a stray .tmp is harmless and overwritten next time
-    }
-    throw new MappingSaveError(`Could not save node mapping: ${errorText(err)}`)
+  private commit(next: NodeMappingFile): void {
+    this.store().file = next
+    this.onCommit()
   }
 }
