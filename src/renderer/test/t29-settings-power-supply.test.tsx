@@ -1,10 +1,14 @@
 // T29 — Settings › Cockpit › Power supply: the NX650 preset or limits typed by hand.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
+import { DEFAULT_CONFIG } from '@shared/config'
 import type { PsuSetting } from '@shared/nodes'
+import { CockpitSection } from '../src/app/settings/CockpitSection'
 import { Settings } from '../src/app/settings/Settings'
+import { ConfigurationSection } from '../src/config'
+import { AXIS_LABELS } from '../src/hid'
 import { renderScenario, settle } from './render'
-import { connected } from './scenarios'
+import { configFileText, connected, importPreview, setup } from './scenarios'
 
 const LIMITS = ['12 V rail limit', '5 V rail limit', 'Total power'] as const
 
@@ -114,5 +118,39 @@ describe('T29 Settings › Cockpit › Power supply (B87)', () => {
     await user.type(field('Total power'), typed)
     expect(field('Total power')).toHaveAttribute('aria-invalid', 'true')
     expect(saved()?.custom.w).not.toBe(Number(typed))
+  })
+
+  it('N8: an import with other limits refreshes the fields, a refused text included', async () => {
+    const psu: PsuSetting = { mode: 'custom', preset: 'nx650', custom: { a12: 40 } }
+    const imported: PsuSetting = { mode: 'custom', preset: 'nx650', custom: { a12: 30, w: 400 } }
+    // Both sections on screen, so the limit fields are there when the import's push lands.
+    const { sky, user } = await renderScenario(
+      <>
+        <CockpitSection />
+        <ConfigurationSection axisLabels={AXIS_LABELS} />
+      </>,
+      { device: connected(), config: { psu } }
+    )
+    const field = (l: (typeof LIMITS)[number]) =>
+      screen.getByRole('textbox', { name: l }) as HTMLInputElement
+    await user.type(field('5 V rail limit'), '15x')
+    expect(field('5 V rail limit')).toHaveAttribute('aria-invalid', 'true')
+
+    sky.openConfigImport.mockResolvedValueOnce({
+      status: 'ready',
+      preview: importPreview(configFileText({ powerSupply: imported }), setup({ powerSupply: psu }))
+    })
+    sky.applyConfigImport.mockResolvedValueOnce({
+      ok: true,
+      applied: ['powerSupply'],
+      config: { ...DEFAULT_CONFIG, psu: imported }
+    })
+    await user.click(screen.getByRole('button', { name: 'Import…' }))
+    await settle()
+    const dlg = screen.getByRole('dialog', { name: 'Import configuration' })
+    await user.click(within(dlg).getByRole('button', { name: 'Apply 1 section' }))
+    await settle()
+    expect(LIMITS.map((l) => field(l).value)).toEqual(['30', '', '400'])
+    expect(field('5 V rail limit')).toHaveAttribute('aria-invalid', 'false')
   })
 })

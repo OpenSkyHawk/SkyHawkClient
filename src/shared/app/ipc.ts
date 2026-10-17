@@ -10,6 +10,7 @@ import {
   type AppConfig,
   type BackupList,
   type ConfigEdit,
+  type ConfigEditResult,
   type ConfigPushChannels,
   type ConfigView,
   type ConfigExportResult,
@@ -220,9 +221,9 @@ export interface SkyhawkApi {
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
   /**
    * A form's change, as typed (R3.3): main builds the save over what it holds and pushes
-   * `config:changed`.
+   * `config:changed`, or refuses it (nothing saved) and answers why (N5).
    */
-  editConfig(edit: ConfigEdit): Promise<AppConfig>
+  editConfig(edit: ConfigEdit): Promise<ConfigEditResult>
 
   // ── configuration export / import (#67) ──────────────────────────────────
   /** Save dialog, then write every section to one file. */

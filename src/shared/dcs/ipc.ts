@@ -189,15 +189,15 @@ export interface TelemetryReadout {
 }
 
 /**
- * The idle gauges (value NaN -> "—") the renderer shows until live telemetry arrives: the
- * decoder's idle variant (X10 — its ids and units are not the live readouts'; main pins them,
- * main/dcs/sim-telemetry-decoder.test.ts).
+ * The idle gauges (value NaN -> "—") the renderer shows until live telemetry arrives: the live
+ * readouts with nothing decoded yet, in the same units (X10 — main pins it to the decoder's one
+ * spec, main/dcs/sim-telemetry-decoder.test.ts).
  */
 export const TELEMETRY_IDLE: TelemetryReadout[] = [
   { id: 'RPM', label: 'RPM', value: NaN, pct: 0, unit: '% RPM', tone: 'primary' },
-  { id: 'D_IAS_DEG', label: 'IAS', value: NaN, pct: 0, unit: '% FS', tone: 'primary' },
+  { id: 'D_IAS_DEG', label: 'IAS', value: NaN, pct: 0, unit: 'kt', tone: 'primary' },
   { id: 'D_FLAPS_IND', label: 'Flap', value: NaN, pct: 0, unit: '% DN', tone: 'secondary' },
-  { id: 'D_ALT_NEEDLE', label: 'Press Alt', value: NaN, pct: 0, unit: '% FS', tone: 'primary' },
+  { id: 'ALT_FT', label: 'Press Alt', value: NaN, pct: 0, unit: 'ft', tone: 'secondary' },
   { id: 'D_FUEL', label: 'Fuel', value: NaN, pct: 0, unit: '% QTY', tone: 'fuel-low' }
 ]
 

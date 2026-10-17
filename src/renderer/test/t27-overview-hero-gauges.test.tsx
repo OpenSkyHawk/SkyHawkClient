@@ -188,13 +188,13 @@ describe('T27 Overview hero tiles and gauges (B56, B57)', () => {
     }
   )
 
-  it('gauges: five idle readouts, "—", until the first telemetry tick', async () => {
+  it('gauges: five idle readouts, "—", until the first tick — in kt / ft already (X10)', async () => {
     await renderScenario(<Overview />, { device: connected() })
     expect(['RPM', 'IAS', 'Flap', 'Press Alt', 'Fuel'].map((l) => gauge(l).text)).toEqual([
       '—% RPM',
-      '—% FS',
+      '—kt',
       '—% DN',
-      '—% FS',
+      '—ft',
       '—% QTY'
     ])
   })

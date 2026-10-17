@@ -25,6 +25,8 @@ const TRANSPORTS: { id: TransportId; title: string; detail: string }[] = [
 export function Connection() {
   const s = useConfigStore()
   const setConfigField = useConfigStore((x) => x.setConfigField)
+  const typeLinkField = useConfigStore((x) => x.typeLinkField)
+  const commitLinkField = useConfigStore((x) => x.commitLinkField)
   // The mode and the transport the relay's facts were judged against (R3.4c): the segment, its
   // hint and the radios flip in the same push as the cards, Start and the pill, once main has
   // taken the click.
@@ -75,18 +77,28 @@ export function Connection() {
               <input
                 className="input"
                 value={s.host}
-                onChange={(e) => setConfigField({ host: e.target.value })}
+                onChange={(e) => typeLinkField('host', e.target.value)}
+                onBlur={() => commitLinkField('host')}
+                onKeyDown={(e) => e.key === 'Enter' && commitLinkField('host')}
               />
             </div>
             <div style={{ width: 92 }}>
               <div className="input-label">Port</div>
               <input
-                className="input"
+                className={`input${s.portError ? ' input--bad' : ''}`}
+                aria-invalid={!!s.portError}
                 value={s.port}
-                onChange={(e) => setConfigField({ port: e.target.value })}
+                onChange={(e) => typeLinkField('port', e.target.value)}
+                onBlur={() => commitLinkField('port')}
+                onKeyDown={(e) => e.key === 'Enter' && commitLinkField('port')}
               />
             </div>
           </div>
+          {s.portError && (
+            <div className="set-err" style={{ marginBottom: 12 }}>
+              {s.portError}
+            </div>
+          )}
           <div className="input-label">Transport</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {TRANSPORTS.map((t) => (

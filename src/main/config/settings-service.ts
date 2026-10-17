@@ -17,6 +17,7 @@ import {
   type AppConfig,
   type ConfigChanged,
   type ConfigEdit,
+  type ConfigEditResult,
   type ConfigView,
   type SettingsStore
 } from '@shared/config'
@@ -157,10 +158,12 @@ export class SettingsService {
    * A form's change (`config:edit`, R3.3): what the renderer's store rebuilt into a save before —
    * read-modify-write over the settings held here, the port as typed (settings-form.ts).
    */
-  edit(edit: ConfigEdit): AppConfig {
-    const save = savedEdit(this.get(), edit)
-    // A refused PSU limit saves and pushes nothing: the form sent nothing for it before (R3.4a).
-    return save === undefined ? this.get() : this.apply(save)
+  edit(edit: ConfigEdit): ConfigEditResult {
+    const built = savedEdit(this.get(), edit)
+    // A refused change saves and pushes nothing: a port that is not one answers why (N5); a
+    // refused PSU limit, quietly, as the form sent nothing for it before (R3.4a).
+    if (!built.ok) return built
+    return { ok: true, config: this.apply(built.save) }
   }
 
   /**
