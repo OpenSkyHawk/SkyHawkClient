@@ -333,6 +333,20 @@ export interface NodeSnapshot {
 /** A mapping change: the new model, or why the input was refused (nothing was written). */
 export type NodeMappingResult = { ok: true; model: NodeModel } | { ok: false; error: string }
 
+/** One board for "Add all" (R3.2): the NODE_ID and what to adopt it as. */
+export interface AdoptRequest {
+  nodeId: number
+  spec: AdoptSpec
+}
+
+/**
+ * Mapping changes run one board at a time ("Add all", "Un-hide all"; R3.2): the NODE_IDs done in
+ * order, and — when one was refused — that one and why. The boards after it were not tried.
+ */
+export type NodeBatchResult =
+  | { ok: true; done: number[] }
+  | { ok: false; done: number[]; nodeId: number; error: string }
+
 // ── consoles ────────────────────────────────────────────────────────────────
 
 /** NODE_IDS.md console names, as the mapping stores them. */
@@ -804,5 +818,7 @@ export const NODES_CTRL = {
   nodeMappingReset: 'node-mapping:reset',
   nodeMappingResetPreview: 'node-mapping:reset-preview',
   nodeRegistry: 'nodes:registry',
-  nodeMappingHide: 'node-mapping:hide'
+  nodeMappingHide: 'node-mapping:hide',
+  nodeMappingAddAll: 'node-mapping:add-all',
+  nodeMappingUnhide: 'node-mapping:unhide'
 } as const

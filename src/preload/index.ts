@@ -16,7 +16,13 @@ import type {
 } from '@shared/config'
 import type { CaptureState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs'
 import type { HidAvailability } from '@shared/hid'
-import type { NodeMappingResult, NodeRegistryInfo, NodeSnapshot, ResetPreview } from '@shared/nodes'
+import type {
+  NodeBatchResult,
+  NodeMappingResult,
+  NodeRegistryInfo,
+  NodeSnapshot,
+  ResetPreview
+} from '@shared/nodes'
 
 // Typed bridge: main -> renderer push subscriptions + renderer -> main control.
 const api: SkyhawkApi = {
@@ -66,6 +72,10 @@ const api: SkyhawkApi = {
   getNodeRegistry: () => ipcRenderer.invoke(CTRL.nodeRegistry) as Promise<NodeRegistryInfo>,
   hideNode: (nodeId, on) =>
     ipcRenderer.invoke(CTRL.nodeMappingHide, nodeId, on) as Promise<NodeMappingResult>,
+  addAllNodes: (bulk) =>
+    ipcRenderer.invoke(CTRL.nodeMappingAddAll, bulk) as Promise<NodeBatchResult>,
+  unhideNodes: (nodeIds) =>
+    ipcRenderer.invoke(CTRL.nodeMappingUnhide, nodeIds) as Promise<NodeBatchResult>,
   setSerialMonitor: (on: boolean) => ipcRenderer.invoke(CTRL.serialMonitor, on) as Promise<void>,
   dumpSerialPorts: () => ipcRenderer.invoke(CTRL.debugDumpPorts) as Promise<DebugDumpResult>,
   revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>,

@@ -221,6 +221,65 @@ describe('NodeHub', () => {
     expect(disk.file.nodes[2]).toEqual({ added: true, lastSeen: '1970-01-01T00:00:09.000Z' })
   })
 
+  it('Add all (R3.2b) adopts each board in turn, each pushed as it lands; a refusal stops it', async () => {
+    const { h, roster, pushes } = hub()
+    // 41 and 42 report as panel groups; 43 has not said what it is.
+    for (const id of [41, 42, 43]) {
+      const kind = id === 43 ? '00' : '01'
+      roster.applyMessage(
+        NODE_MSG,
+        `${id.toString(16).toUpperCase()}010000000000000080000000${kind}`,
+        0
+      )
+    }
+    h.flush(roster.takeDirty(), 0)
+    const spec = (name: string) => ({ name, console: 'Left', pduId: null, kind: 'panel' }) as const
+    pushes.length = 0
+    const r = await h.addAll([
+      { nodeId: 41, spec: spec('A') },
+      { nodeId: 43, spec: spec('C') },
+      { nodeId: 42, spec: spec('B') }
+    ])
+    expect(r).toEqual({
+      ok: false,
+      done: [41],
+      nodeId: 43,
+      error: 'Its board type is not known yet'
+    })
+    expect(Object.keys(disk.file.nodes).map(Number)).toEqual([1, 2, 3, 4, 5, 41])
+    // One adopt's pushes, as one node-mapping:adopt invoke made them; 42 was not tried.
+    expect(pushes.map(([c]) => c)).toEqual(['cockpit:snapshot', 'nodes:model'])
+
+    pushes.length = 0
+    expect(await h.addAll([{ nodeId: 42, spec: spec('B') }])).toEqual({ ok: true, done: [42] })
+    expect(pushes.map(([c]) => c)).toEqual(['cockpit:snapshot', 'nodes:model'])
+  })
+
+  it('Un-hide all (R3.2b) un-hides each board in turn, each pushed as it lands', async () => {
+    disk.file = {
+      version: 3,
+      nodes: { 1: { added: true, hidden: true }, 2: { added: true, hidden: true } }
+    }
+    const { h, pushes } = hub()
+    expect(await h.unhide([2, 1])).toEqual({ ok: true, done: [2, 1] })
+    expect(disk.file.nodes).toEqual({ 1: { added: true }, 2: { added: true } })
+    expect(pushes.map(([c]) => c)).toEqual([
+      'cockpit:snapshot',
+      'nodes:model',
+      'cockpit:snapshot',
+      'nodes:model'
+    ])
+    disk.file = { version: 3, nodes: { 1: { added: true, hidden: true } } }
+    disk.readOnly = 'node-mapping.json was written by a newer client'
+    const ro = hub().h
+    expect(await ro.unhide([1, 2])).toEqual({
+      ok: false,
+      done: [],
+      nodeId: 1,
+      error: 'Not saved: node-mapping.json was written by a newer client'
+    })
+  })
+
   it('hiding a new node is refused and writes nothing', () => {
     const { h } = hub()
     expect(h.hide(41, true)).toEqual({

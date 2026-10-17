@@ -1,6 +1,12 @@
 // nodes' intents: the roster, the node data and the node mapping. app/ipc.ts registers them.
 import type { IpcRegistrar } from '@shared/app'
-import { NODES_CTRL, type AdoptSpec, type MappingPatch, type ResetOptions } from '@shared/nodes'
+import {
+  NODES_CTRL,
+  type AdoptRequest,
+  type AdoptSpec,
+  type MappingPatch,
+  type ResetOptions
+} from '@shared/nodes'
 import type { NodeHub } from './node-hub'
 
 export interface NodesIpcDeps {
@@ -23,4 +29,6 @@ export function registerNodesIpc(ipc: IpcRegistrar, deps: NodesIpcDeps): void {
   ipc.handle(NODES_CTRL.nodeMappingResetPreview, () => nodes.previewReset())
   ipc.handle(NODES_CTRL.nodeRegistry, () => nodes.registry())
   ipc.handle(NODES_CTRL.nodeMappingHide, (_e, id: number, on: boolean) => nodes.hide(id, on))
+  ipc.handle(NODES_CTRL.nodeMappingAddAll, (_e, bulk: AdoptRequest[]) => nodes.addAll(bulk))
+  ipc.handle(NODES_CTRL.nodeMappingUnhide, (_e, ids: number[]) => nodes.unhide(ids))
 }

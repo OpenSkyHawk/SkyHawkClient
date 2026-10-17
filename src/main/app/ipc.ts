@@ -60,7 +60,10 @@ const IPC_ORDER = [
   'cal:restore',
   'cal:delete-axis',
   'cal:set-restore-open',
-  'cal:attach'
+  'cal:attach',
+  // The node-mapping sequences (R3.2b), after every channel that was here before them.
+  'node-mapping:add-all',
+  'node-mapping:unhide'
 ] as const satisfies readonly CtrlChannel[]
 
 /** IPC_ORDER's type when it lists every channel; otherwise the channels it leaves out. */

@@ -13,6 +13,11 @@
 // R3.2a (cockpit snapshot to main): the push `cockpit:snapshot` → `CockpitSnapshot` was added.
 // No intent and no method changed.
 //
+// R3.2b (cockpit snapshot for the Overview, Connection and Settings): the intents
+// `node-mapping:add-all` (addAllNodes) and `node-mapping:unhide` (unhideNodes) → `NodeBatchResult`
+// were added — the Adopt dialog's "Add all" and Settings' "Un-hide all" loops, now run in main.
+// `CockpitSnapshot` gained its Overview, Connection and Settings sections (a type change only).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -40,9 +45,11 @@ import type { CTRL, DebugDumpResult, IPC, PushChannels, RelayStatus, SkyhawkApi 
 import type { DeviceStatus, SerialFrame } from '../gateway/ipc'
 import type { HidAvailability, HidSnapshot } from '../hid/ipc'
 import type {
+  AdoptRequest,
   AdoptSpec,
   CockpitSnapshot,
   MappingPatch,
+  NodeBatchResult,
   NodeMappingResult,
   NodeModel,
   NodeRegistryInfo,
@@ -143,6 +150,8 @@ interface OldCTRL {
   readonly calDeleteAxis: 'cal:delete-axis'
   readonly calSetRestoreOpen: 'cal:set-restore-open'
   readonly calAttach: 'cal:attach'
+  readonly nodeMappingAddAll: 'node-mapping:add-all'
+  readonly nodeMappingUnhide: 'node-mapping:unhide'
 }
 
 interface OldSkyhawkApi {
@@ -178,6 +187,8 @@ interface OldSkyhawkApi {
   previewNodeReset(): Promise<ResetPreview>
   getNodeRegistry(): Promise<NodeRegistryInfo>
   hideNode(nodeId: number, on: boolean): Promise<NodeMappingResult>
+  addAllNodes(bulk: AdoptRequest[]): Promise<NodeBatchResult>
+  unhideNodes(nodeIds: number[]): Promise<NodeBatchResult>
   setSerialMonitor(on: boolean): Promise<void>
   dumpSerialPorts(): Promise<DebugDumpResult>
   revealDebugLog(): Promise<void>
