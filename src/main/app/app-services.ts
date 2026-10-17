@@ -53,12 +53,20 @@ export class AppServices {
    */
   constructor(emit: Emit, paths: StorePaths = storePaths(() => app.getPath('userData'))) {
     const { mappingFile, cacheFile } = storeFiles(paths)
-    this.settings = new SettingsService({ paths, debugMode: (on) => setDebugEnabled(on), emit })
+    // The event log first (no constructor here has a side effect): the three <userData> files
+    // report their problems to it (#136).
     this.journal = new EventJournal(emit, debugLog)
+    this.settings = new SettingsService({
+      paths,
+      events: this.journal,
+      debugMode: (on) => setDebugEnabled(on),
+      emit
+    })
     this.calibration = new HidCalibrationService(emit, {
       write: (data) => this.connection.write(data),
       serialNumber: () => this.connection.usbSerialNumber(),
       cacheFile,
+      cacheEvents: this.journal,
       log: debugLog
     })
     this.hid = new HidService(emit, debugLog)
@@ -71,6 +79,7 @@ export class AppServices {
     })
     this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,
+      mappingEvents: this.journal,
       log: debugLog,
       link: this.connection
     })

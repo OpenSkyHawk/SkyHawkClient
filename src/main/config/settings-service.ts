@@ -1,7 +1,9 @@
 // The app settings (AppConfig): the live copy, and config.json in <userData> so they survive
 // restarts. Where that file lives is handed in by app (SettingsPaths): this module never asks
-// electron. The file mechanics are the JSON store's, under config.json's policy: a tolerant read
-// (anything wrong loads the defaults) and a best-effort write.
+// electron. The file mechanics are the JSON store's (fsync, `.bak`, fallback to it). What a
+// problem means here: a tolerant read (a file that cannot be loaded, nor its backup, loads the
+// defaults) and a write that never crashes the app nor blocks the change in memory. Either one
+// that goes wrong is an event row (SettingsFileEvents), never silent.
 //
 // The live copy is one zustand/vanilla store under `subscribeWithSelector`. SettingsService owns
 // it and hands out the read-only view (`store`); the services that read settings are given that
@@ -21,27 +23,63 @@ import {
 import { resolvePsu } from '../nodes'
 import { sanitizeConfig } from './settings-schema'
 import { savedEdit } from './settings-form'
-import { JSON_POLICY, jsonFile } from './json-store'
+import { jsonFile, type JsonWriteError } from './json-store'
 
 /** Port: where config.json lives. app provides it; resolved at each use, as before. */
 export interface SettingsPaths {
   configFile(): string
 }
 
-const configFile = (paths: SettingsPaths) => jsonFile(() => paths.configFile(), JSON_POLICY.config)
+/**
+ * Port: the event log, as config.json reports to it (app wires the EventJournal). `error` is a
+ * client error row, deduped per tag; `forget` makes the tag's next error news again.
+ */
+export interface SettingsFileEvents {
+  error(tag: string, message: string): void
+  forget(tag: string): void
+}
 
-export function loadConfig(paths: SettingsPaths): AppConfig {
+/** The event-log tag of config.json's rows. */
+export const CONFIG_FILE_TAG = 'config.json'
+
+const NO_EVENTS: SettingsFileEvents = { error: () => {}, forget: () => {} }
+
+const configFile = (paths: SettingsPaths) => jsonFile(() => paths.configFile())
+
+export function loadConfig(paths: SettingsPaths, events = NO_EVENTS): AppConfig {
   try {
     const r = configFile(paths).read()
-    return r.kind === 'read' ? sanitizeConfig(r.data) : { ...DEFAULT_CONFIG }
+    switch (r.kind) {
+      case 'read':
+        return sanitizeConfig(r.data)
+      case 'fallback':
+        events.error(CONFIG_FILE_TAG, r.note)
+        return sanitizeConfig(r.data)
+      case 'failed':
+        events.error(CONFIG_FILE_TAG, `${r.note} Using the default settings.`)
+        return { ...DEFAULT_CONFIG }
+      case 'missing':
+        return { ...DEFAULT_CONFIG }
+    }
   } catch {
+    // the path could not be resolved (no <userData>): nothing was read
     return { ...DEFAULT_CONFIG }
   }
 }
 
-/** Best effort (the policy swallows a failure): a read-only userData dir shouldn't crash the app. */
-export function saveConfig(config: AppConfig, paths: SettingsPaths): void {
-  configFile(paths).write(config)
+/**
+ * Never throws: a read-only userData dir must not crash the app, and the change stays in memory.
+ * A failed write is an event row, one per failure until a write succeeds again.
+ */
+export function saveConfig(config: AppConfig, paths: SettingsPaths, events = NO_EVENTS): void {
+  let failed: JsonWriteError | undefined
+  try {
+    failed = configFile(paths).write(config)
+  } catch {
+    return // the path could not be resolved (no <userData>): nothing was written
+  }
+  if (failed) events.error(CONFIG_FILE_TAG, failed.note)
+  else events.forget(CONFIG_FILE_TAG)
 }
 
 /** A settings store of its own, starting at `initial` (a copy). Not a singleton: each owner builds one. */
@@ -51,6 +89,8 @@ function createSettingsStore(initial: AppConfig = DEFAULT_CONFIG) {
 
 export interface SettingsServiceDeps {
   paths: SettingsPaths
+  /** Where config.json's problems are reported (the event log); none, for a quiet owner. */
+  events?: SettingsFileEvents
   /** The debug log's switch (app's debug-log), set from each applied or loaded config. */
   debugMode(on: boolean): void
   /** The renderer push (`config:changed`, R3.3); none, for an owner that only stores settings. */
@@ -94,7 +134,7 @@ export class SettingsService {
   apply(patch: Partial<AppConfig>, push = true): AppConfig {
     const config = this.update(patch)
     this.deps.debugMode(config.debugMode)
-    saveConfig(config, this.deps.paths)
+    saveConfig(config, this.deps.paths, this.deps.events)
     if (push) this.changed('edit')
     return config
   }
@@ -120,7 +160,7 @@ export class SettingsService {
 
   /** App launch: seed from config.json. Not written back. */
   load(): AppConfig {
-    const cfg = this.update(loadConfig(this.deps.paths)) // seed from persisted settings
+    const cfg = this.update(loadConfig(this.deps.paths, this.deps.events)) // seed from persisted settings
     this.deps.debugMode(cfg.debugMode)
     return cfg
   }
