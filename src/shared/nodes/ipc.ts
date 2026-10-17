@@ -1,6 +1,7 @@
 // Nodes topic contract (arch-phase0-v2 §2.3): the CAN node roster, PDU telemetry, the node mapping
 // and the PSU limits the Cockpit draws against. Imported by main, preload and the renderer.
 import type { TELEM_PAGES } from '../firmware'
+import { DASH } from '../format'
 
 export interface NodeStatus {
   nodeId: number // 0 = the bridge's own row (v3), 1..MAX_NODE_ID CAN nodes
@@ -332,18 +333,339 @@ export interface NodeSnapshot {
 /** A mapping change: the new model, or why the input was refused (nothing was written). */
 export type NodeMappingResult = { ok: true; model: NodeModel } | { ok: false; error: string }
 
+// ── consoles ────────────────────────────────────────────────────────────────
+
+/** NODE_IDS.md console names, as the mapping stores them. */
+export const CONSOLE_OPTIONS = [
+  { value: 'Left', label: 'Left console' },
+  { value: 'Center', label: 'Instrument panel' },
+  { value: 'Right', label: 'Right console' }
+] as const
+
+export function consoleLabel(console: string | null): string {
+  return CONSOLE_OPTIONS.find((c) => c.value === console)?.label ?? console ?? DASH
+}
+
+// ── the Cockpit snapshot (R3.2): built in main, pushed on `cockpit:snapshot` ──
+//
+// Everything the Cockpit tab decides, decided once in main (nodes/cockpit-snapshot) from the node
+// model, the telemetry, the link and the time, and pushed with a revision. The tab keeps only
+// presentation: the plan's geometry, wording, the search box and its own view state.
+
+/** How a node reads on the plan. 'unknown' = no complete roster yet and it has not reported. */
+export type NodeState = 'on' | 'warn' | 'off' | 'new' | 'unknown'
+
+/** A PDU's pages that are fresh right now. A stale page is not a reading. */
+export interface PduReadings {
+  rail12V?: PduRailPage
+  rail5V?: PduRailPage
+  status?: PduStatusPage
+}
+
+export interface NodeHealth {
+  state: NodeState
+  /** Short reason shown on Attention and tile tooltips, e.g. `OFFLINE`, `I2C`, `5V UNDER-V`. */
+  flag?: string
+}
+
+/** Everything the tab needs about one node, computed once per push. */
+export interface NodeView {
+  entry: NodeModelEntry
+  health: NodeHealth
+  /** PDUs: fresh pages only. */
+  readings: PduReadings
+  /** PDUs: online but no fresh telemetry. */
+  noReadings: boolean
+}
+
+export interface AttentionItem {
+  key: string
+  nodeId: number
+  name: string
+  state: NodeState
+  flag: string
+  /** A PDU outage: one item for the PDU and every node that dropped with it. */
+  outage?: PduOutage
+  /** A new board on the bus that can't be adopted (#93): its cog opens the Adopt dialog. */
+  stray?: boolean
+}
+
+/** A new board that can't be adopted, and what Attention says about it (strayNew). */
+export interface StrayItem {
+  nodeId: number
+  flag: string
+}
+
+export interface HealthBand {
+  online: number
+  /**
+   * Your cockpit's boards (registry + adopted, PDUs included), plus new boards on the bus that
+   * can't be adopted — those are active and a warning (#93). New boards waiting for Adopt are not
+   * counted.
+   */
+  total: number
+  warn: number
+  off: number
+  /** No complete roster yet and not reported: no data, so neither online nor offline. */
+  unknown: number
+  /** Summed over PDUs with fresh readings. null = no PDU has any. */
+  amps12: number | null
+  amps5: number | null
+  watts12: number | null
+  watts: number | null
+  /** PDUs on the plan that have no fresh readings (offline or none). */
+  pdusWithout: number
+  pdusWith: number
+  /** Lowest 5 V rail average and the PDU it is on. */
+  low5?: { volts: number; nodeId: number; name: string }
+  /** Highest TEC / REC among online nodes. */
+  worstCan?: { tec: number; rec: number; nodeId: number; name: string }
+  busOff: number
+  /** The first board that is bus-off (lowest NODE_ID): the CAN card names it before any count. */
+  busOffBoard?: { nodeId: number; name: string }
+  hottest?: { tempC: number; nodeId: number; name: string; level: 'ok' | 'warn' | 'crit' }
+}
+
+/** The health band: the counts and totals, and what the CAN errors card says. */
+export interface CockpitBand {
+  band: HealthBand
+  /** The CAN card's value: the worse of TEC and REC (REC only when it is higher). */
+  canValue?: { counter: 'TEC' | 'REC'; value: number }
+  /** The CAN card's sub-line. */
+  canSub: string
+  /** Who the CAN card's "worst" is, for its tooltip; undefined when it names no board. */
+  canWorst?: string
+  /** Highest total W the client computed this session. */
+  peakW: number
+}
+
+/** Cockpit › Attention. Items only while the link is up. */
+export interface CockpitAttention {
+  /** The Gateway's own problem (#94): first, taking one of the shown slots. */
+  gateway?: { flag: string; state: 'off' | 'warn' }
+  /** Every item, most severe first (without the Gateway's). */
+  items: AttentionItem[]
+  /** The items that fit before "+N more". */
+  shown: AttentionItem[]
+  /** Items in all, the Gateway's included. */
+  count: number
+  /** How many did not fit. */
+  more: number
+  /** "New on the bus · N": new boards that identified as something adoptable. */
+  newCount: number
+}
+
+/** Plan console: `Left` / `Center` / `Right` in NODE_IDS.md; anything else lands on the panel. */
+export type ConsoleKey = 'L' | 'C' | 'R'
+
+/** A PDU group's header on the plan. */
+export interface PlanGroupHead {
+  /** The PDU is offline: OFFLINE is its only flag. */
+  off: boolean
+  /** Its flags, most important first (the header shows the first, the tooltip all). */
+  flags: string[]
+  /** Online without fresh telemetry. */
+  noReadings: boolean
+  /** A rail's average, while it has one to show; `alert` when the PDU flags that rail. */
+  rail12V?: { mv: number; alert: boolean }
+  rail5V?: { mv: number; alert: boolean }
+}
+
+/** One power zone on a console: a PDU and the panels it feeds, or the panels with no zone. */
+export interface PlanZone {
+  key: string
+  /** The PDU heading this group; null = nodes with no power zone on this console. */
+  pdu: NodeView | null
+  head?: PlanGroupHead
+  members: NodeView[]
+  outage?: PduOutage
+}
+
+export interface PlanConsole {
+  key: ConsoleKey
+  zones: PlanZone[]
+  /** The console's PDUs in plan order: one feed line each, `true` while it raises a rail flag. */
+  feeds: boolean[]
+}
+
+/** A footer button: shown, and when it can't be used, why (its tooltip). */
+export interface BoardAction {
+  disabled: boolean
+  tip: string
+}
+
+/** The footer every board panel shares (#93), besides Save. */
+export interface BoardActions {
+  /** Registry boards only: back to the NODE_IDS.md name, console and power zone. */
+  reset?: BoardAction
+  forget: BoardAction
+  hide: BoardAction
+  /** The line under the footer: what Forget and Hide do here, or why they can't. */
+  note: string
+}
+
+export interface FaultBox {
+  tone: 'warn' | 'err' | 'new'
+  title: string
+  text: string
+}
+
+export interface Row {
+  k: string
+  v: string
+}
+
+export interface RailRow {
+  rail: '12 V' | '5 V'
+  avg: string
+  min: string
+  amps: string
+  peak: string
+  /** Client-computed V × A; '' when there is nothing to compute. */
+  watts: string
+  flagged: boolean
+}
+
+/** One board's side panel: what it says and offers. */
+export interface BoardPanel {
+  /** In your cockpit (not new): Powered by, Placement and the footer show. */
+  placed: boolean
+  /** The boxes at the top of the Status tab, stacked. */
+  faults: FaultBox[]
+  actions: BoardActions
+  /** Panel groups: "Reported by the node". */
+  status?: Row[]
+  /** Panel groups: the PDU feeding it (its power zone, wherever that PDU is). */
+  poweredBy?: number
+  /** PDUs: "Rails · live". */
+  rails?: RailRow[]
+  /** PDUs: "Board status". */
+  board?: Row[]
+  /** PDUs: the boards in your cockpit it feeds, each with its state. */
+  feeds?: { nodeId: number; detail: string }[]
+  /** PDUs: the other PDUs in your cockpit on its console. */
+  sharedWith?: string[]
+}
+
+/**
+ * The power zones a panel can be given. `options[console][current]` is the Power zone list for a
+ * panel on `console` whose zone is `current` ('' = none, or a PDU not in your cockpit); `first` is
+ * the zone picking that console picks.
+ */
+export interface ZoneChoices {
+  options: Record<string, Record<string, { value: number; label: string }[]>>
+  first: Record<string, number | null>
+}
+
+/** What the Adopt dialog can say about a new NODE_ID: only what it has reported. */
+export interface Evidence {
+  /** What it identified as, and from which signal; or that it hasn't yet. */
+  detected: string
+  reporting: string
+  registry: string
+}
+
+export interface AdoptForm {
+  name: string
+  console: string
+  /** Panels only. '' = not chosen yet; null = None (no PDU feeds it). */
+  pduId: number | null | ''
+}
+
+export type AdoptBadge = 'PDU' | 'PANEL GROUP' | 'IDENTIFYING' | 'BRIDGE' | 'UNKNOWN TYPE'
+
+/** One row of the Adopt dialog's queue. */
+export interface AdoptRow {
+  view: NodeView
+  /** Set only when it can be adopted: what it identified as. */
+  kind?: NodeKind
+  badge: AdoptBadge
+  /** Why it can't be adopted (yet), shown in place of the form. */
+  note?: string
+  evidence: Evidence
+  /** The same, once it has dropped off the bus (the dialog keeps it listed, offline). */
+  goneEvidence: Evidence
+  /** Where the form starts: the NODE_IDS.md pre-fill, or blank. */
+  prefill: AdoptForm
+  /** Its default PDU when that PDU is not in your cockpit: offered as "(not added)", by this name. */
+  pending?: { pduId: number; name: string }
+  /**
+   * "Add all" (registry panel groups only): the power zone an untouched form is added with — its
+   * default PDU only when that PDU is in your cockpit, else None.
+   */
+  addAllPduId?: number | null
+}
+
+export interface CockpitSnapshot {
+  /** Increases with every snapshot main builds. */
+  rev: number
+  /** The Gateway link was up when this was built. */
+  live: boolean
+  views: NodeView[]
+  outages: PduOutage[]
+  plan: PlanConsole[]
+  band: CockpitBand
+  attention: CockpitAttention
+  /** Each board's side panel, by NODE_ID. */
+  panels: Record<number, BoardPanel>
+  zones: ZoneChoices
+  /** The Adopt dialog's queue: new NODE_IDs, oldest first seen first. */
+  adopt: AdoptRow[]
+}
+
+/** What the Cockpit shows before main's first snapshot: no model, link down. */
+export const COCKPIT_IDLE: CockpitSnapshot = {
+  rev: 0,
+  live: false,
+  views: [],
+  outages: [],
+  plan: [
+    { key: 'L', zones: [], feeds: [] },
+    { key: 'C', zones: [], feeds: [] },
+    { key: 'R', zones: [], feeds: [] }
+  ],
+  band: {
+    band: {
+      online: 0,
+      total: 0,
+      warn: 0,
+      off: 0,
+      unknown: 0,
+      amps12: null,
+      amps5: null,
+      watts12: null,
+      watts: null,
+      pdusWithout: 0,
+      pdusWith: 0,
+      busOff: 0
+    },
+    canSub: '0 bus-off',
+    peakW: 0
+  },
+  attention: { items: [], shown: [], count: 0, more: 0, newCount: 0 },
+  panels: {},
+  zones: {
+    options: { '': { '': [] }, Left: { '': [] }, Center: { '': [] }, Right: { '': [] } },
+    first: { '': null, Left: null, Center: null, Right: null }
+  },
+  adopt: []
+}
+
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */
 export interface NodesPushChannels {
   /** Latest PDU telemetry per node (#61). At most once a second, and only on change. */
   'nodes:telemetry': NodeTelemSnapshot[]
   /** Roster + telemetry + node mapping combined: what the Cockpit tab shows (#61, UI in #63). */
   'nodes:model': NodeModel
+  /** Everything the Cockpit tab decides, built in main (R3.2). */
+  'cockpit:snapshot': CockpitSnapshot
 }
 
 /** Push channel names (main -> renderer). */
 export const NODES_PUSH = {
   nodesTelemetry: 'nodes:telemetry',
-  nodesModel: 'nodes:model'
+  nodesModel: 'nodes:model',
+  cockpitSnapshot: 'cockpit:snapshot'
 } as const
 
 /** Intent channel names (renderer -> main, invoke/response). */

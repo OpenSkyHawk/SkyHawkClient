@@ -21,6 +21,12 @@
 // today's channels. The change stays inside this file: every component test keeps its scenarios
 // and its assertions unchanged.
 //
+// The Cockpit tab draws main's own snapshot (R3.2): the mock hosts a real CockpitSnapshotHost — the
+// pure builder main pushes `cockpit:snapshot` from, its peak W and its stray timer — on the test's
+// clock and timers. It is handed what main would hand it, in the same steps: each `nodes:model` and
+// `nodes:telemetry` push and each `device:status` push (the link and the Gateway's health), and
+// the renderer's load (`getStatus`, main's relay:status).
+//
 // Calibration runs main's own workflow (R3.1): the mock hosts a real CalibrationWorkflowHost — the
 // workflow, the dialog's start/close sequencing, the restore offer and the derived CalibrationState
 // main pushes on `cal:workflow` — on the test's clock and timers. Its protocol commands are the one
@@ -65,6 +71,7 @@ import {
 } from '../../main/hid/calibration/cache-rules'
 import type { CalibrationCommands } from '../../main/hid/calibration/calibration-workflow'
 import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
+import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app'
 import type { LogEvent } from '@shared/events'
@@ -196,6 +203,11 @@ export function installSkyhawkMock(): SkyhawkMock {
     getConfig: vi.fn(() => resolve({ ...DEFAULT_CONFIG, ...state.config })),
     getStatus: vi.fn(() => {
       host.rendererLoaded() // main's relay:status handler: a renderer (re)loaded
+      // …and the Cockpit snapshot starts over from what main holds. Main's push reaches a page that
+      // has subscribed by then (IPC is asynchronous); here the push waits for the same.
+      void Promise.resolve().then(() =>
+        cockpit.rendererLoaded(state.model ?? EMPTY_MODEL, state.telemetry ?? [])
+      )
       return resolve({
         running: state.relay?.running ?? false,
         relay: state.relay ?? { running: false },
@@ -372,6 +384,11 @@ export function installSkyhawkMock(): SkyhawkMock {
   /** Main's calibration workflow (HidCalibrationService hosts the same), over the spies above. */
   const host = new CalibrationWorkflowHost(calSpies, (st) => push('cal:workflow', st))
 
+  /** Main's Cockpit snapshot (NodeHub hosts the same), over the scenario as main holds it. */
+  const cockpit = new CockpitSnapshotHost((snap) => push('cockpit:snapshot', snap), {
+    device: () => state.device ?? { state: 'no-device' }
+  })
+
   const mock = Object.defineProperty(Object.assign(fns, calSpies), 'scenario', {
     get: () => state
   }) as SkyhawkMock
@@ -390,8 +407,12 @@ export function installSkyhawkMock(): SkyhawkMock {
           if (data === undefined) continue
           push(ch, data as never)
           // What main does next, inside the same step: the workflow follows the link's state
-          // (onStatus, after `device:status`) and takes the report (calRead, after `cal:data`).
+          // (onStatus, after `device:status`) and takes the report (calRead, after `cal:data`);
+          // the Cockpit snapshot follows the link and each node push (NodeHub).
           if (key === 'device') host.linkStatus(s.device!.state)
+          if (key === 'device') cockpit.linkChanged()
+          if (key === 'model') cockpit.modelPushed(s.model!)
+          if (key === 'telemetry') cockpit.telemetryPushed(s.telemetry!)
           if (key === 'cal') host.reported(s.cal!)
         }
         // RAW: main's 50 ms batches, into the workflow (main-internal since R3.1).

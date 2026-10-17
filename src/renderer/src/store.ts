@@ -10,8 +10,14 @@ import type {
 } from '@shared/dcs'
 import type { AppConfig, DcsTransport } from '@shared/config'
 import { CALIBRATION_IDLE, type CalibrationState } from '@shared/hid/calibration'
-import { DEFAULT_PSU, type NodeModel, type NodeTelemSnapshot, type PsuSetting } from '@shared/nodes'
-import { nodeViews, totalWatts } from './cockpit'
+import {
+  COCKPIT_IDLE,
+  DEFAULT_PSU,
+  type CockpitSnapshot,
+  type NodeModel,
+  type NodeTelemSnapshot,
+  type PsuSetting
+} from '@shared/nodes'
 import type { LogEvent } from '@shared/events'
 import { mergeEvents, restoreEvents, type EventSourceFilter, type LogView } from './log-view'
 
@@ -106,8 +112,11 @@ export interface AppState {
   /** Roster + telemetry + mapping, as main combines them (#61). Kept, dimmed, while the link is down. */
   nodeModel?: NodeModel
   nodeTelemetry: NodeTelemSnapshot[]
-  /** Highest total W the client computed this session (Cockpit health band). */
-  nodesPeakW: number
+  /**
+   * The Cockpit tab's picture as main pushes it (`cockpit:snapshot`, R3.2): views, plan zones, band
+   * (peak W included), Attention, side panels and the Adopt queue. Kept, dimmed, while the link is down.
+   */
+  cockpit: CockpitSnapshot
   /** When the device link last went down after being up — "last known" time on the Cockpit. */
   linkDownAt?: number
 
@@ -302,7 +311,7 @@ export const useStore = create<AppState>((set, get) => ({
   devicePopOpen: false,
   aircraft: { name: 'NONE', inferred: false, supported: true },
   nodeTelemetry: [],
-  nodesPeakW: 0,
+  cockpit: COCKPIT_IDLE,
 
   recording: false,
   replayDriveSerial: false,
@@ -483,8 +492,7 @@ export const useStore = create<AppState>((set, get) => ({
     )
 
     const setNodes = (model: NodeModel | undefined, telemetry: NodeTelemSnapshot[]) => {
-      const w = model ? (totalWatts(nodeViews(model, telemetry)) ?? 0) : 0
-      set({ nodeModel: model, nodeTelemetry: telemetry, nodesPeakW: Math.max(get().nodesPeakW, w) })
+      set({ nodeModel: model, nodeTelemetry: telemetry })
     }
 
     const unsubs = [
@@ -513,6 +521,7 @@ export const useStore = create<AppState>((set, get) => ({
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:model', (m) => setNodes(m, get().nodeTelemetry)),
       api.on('nodes:telemetry', (t) => setNodes(get().nodeModel, t)),
+      api.on('cockpit:snapshot', (c) => set({ cockpit: c })),
       api.on('serial:traffic', (frames) => {
         const s = get()
         let seq = s.private_serialSeq

@@ -1,22 +1,18 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DASH, voltsValue } from '@shared/format'
-import type { NodeMappingResult, NodeModelEntry, NodeRegistryInfo } from '@shared/nodes'
-import type { NodeView } from '../../cockpit'
 import {
-  boardActions,
   CONSOLE_OPTIONS,
   consoleLabel,
-  firstPduOn,
-  mappingPatch,
-  nodeFaultBoxes,
-  nodeStatusRows,
-  pduBoardRows,
-  pduFaultBoxes,
-  pduRailRows,
-  powerZoneOptions,
-  reportAge,
-  type FaultBox
-} from '../../cockpit-panels'
+  type BoardActions,
+  type BoardPanel,
+  type FaultBox,
+  type NodeMappingResult,
+  type NodeModelEntry,
+  type NodeRegistryInfo,
+  type NodeView,
+  type ZoneChoices
+} from '@shared/nodes'
+import { firstZone, mappingPatch, reportAge, zoneOptions } from '../../panel-view'
 import { useModalFocus } from '../../useModalFocus'
 import { Dot } from './Dot'
 
@@ -263,12 +259,13 @@ function ConsoleSelect(props: { id: string; value: string; onChange: (v: string)
  */
 function BoardFooter(props: {
   e: NodeModelEntry
-  fed?: number
+  /** What Forget, Hide and Reset offer here (main's). */
+  actions: BoardActions
   call: ReturnType<typeof useMappingCall>
   onSave: () => void
 }) {
   const { e, call } = props
-  const a = boardActions(e, props.fed)
+  const a = props.actions
   const api = window.skyhawk
   return (
     <>
@@ -326,22 +323,28 @@ function useNow(on: boolean): number {
 
 export function NodePanel(props: {
   view: NodeView
+  /** What this board's panel says and offers (main's). */
+  panel: BoardPanel
   views: NodeView[]
+  zones: ZoneChoices
   live: boolean
   /** Switch to another board's panel (Powered by). */
   onOpen: (nodeId: number) => void
   onClose: () => void
 }) {
-  const { view: v, views } = props
+  const { view: v, views, panel, zones } = props
   const e = v.entry
   const [tab, setTab] = useState<'status' | 'settings'>('status')
-  const pdu = views.find((p) => p.entry.kind === 'pdu' && p.entry.nodeId === e.pduId)
+  const pdu =
+    panel.poweredBy === undefined
+      ? undefined
+      : views.find((p) => p.entry.nodeId === panel.poweredBy)
   // The form starts from the mapping when the panel opens; pushes while editing don't reset it.
   const [name, setName] = useState(e.name)
   const [con, setCon] = useState(e.console ?? '')
   const [pduId, setPduId] = useState<number | null>(e.pduId)
   const call = useMappingCall(props.onClose)
-  const placed = e.source !== 'new'
+  const placed = panel.placed
   const now = useNow(props.live && tab === 'status')
   const age = props.live ? reportAge(e, now) : 'last known'
 
@@ -378,14 +381,14 @@ export function NodePanel(props: {
     >
       {tab === 'status' ? (
         <>
-          {nodeFaultBoxes(v).map((b) => (
+          {panel.faults.map((b) => (
             <Fault key={b.title} box={b} />
           ))}
           <div className="sh__sec">
             <div className="section-h">
               Reported by the node{age && <span className="sh__age">· {age}</span>}
             </div>
-            <Rows rows={nodeStatusRows(v)} />
+            <Rows rows={panel.status ?? []} />
           </div>
           {placed && (
             <div className="sh__sec">
@@ -420,7 +423,7 @@ export function NodePanel(props: {
                     value={con}
                     onChange={(c) => {
                       setCon(c)
-                      setPduId(firstPduOn(views, c))
+                      setPduId(firstZone(zones, c))
                     }}
                   />
                 </div>
@@ -435,7 +438,7 @@ export function NodePanel(props: {
                     onChange={(ev) => setPduId(ev.target.value ? Number(ev.target.value) : null)}
                   >
                     <option value="">None</option>
-                    {powerZoneOptions(views, con, pduId).map((o) => (
+                    {zoneOptions(zones, con, pduId).map((o) => (
                       <option key={o.value} value={o.value}>
                         {o.label}
                       </option>
@@ -449,7 +452,7 @@ export function NodePanel(props: {
               </div>
             </div>
           )}
-          {placed && <BoardFooter e={e} call={call} onSave={save} />}
+          {placed && <BoardFooter e={e} actions={panel.actions} call={call} onSave={save} />}
         </>
       )}
     </Sheet>
@@ -460,34 +463,30 @@ export function NodePanel(props: {
 
 export function PduPanel(props: {
   view: NodeView
+  /** What this PDU's panel says and offers (main's). */
+  panel: BoardPanel
   views: NodeView[]
-  outage: boolean
   live: boolean
   /** Switch to another board's panel (Feeds). */
   onOpen: (nodeId: number) => void
   onClose: () => void
 }) {
-  const { view: v, views } = props
+  const { view: v, views, panel } = props
   const e = v.entry
   const [tab, setTab] = useState<'status' | 'feeds' | 'settings'>('status')
   const [name, setName] = useState(e.name)
   const [con, setCon] = useState(e.console ?? '')
   const call = useMappingCall(props.onClose)
-  const others = views.filter(
-    (p) =>
-      p.entry.kind === 'pdu' &&
-      p.entry.source !== 'new' &&
-      p.entry.console === e.console &&
-      p.entry.nodeId !== e.nodeId
-  )
-  const feeds = views.filter(
-    (n) => n.entry.kind === 'panel' && n.entry.source !== 'new' && n.entry.pduId === e.nodeId
-  )
-  const rails = pduRailRows(v)
+  const others = panel.sharedWith ?? []
+  const feeds = (panel.feeds ?? []).flatMap((f) => {
+    const n = views.find((o) => o.entry.nodeId === f.nodeId)
+    return n ? [{ view: n, detail: f.detail }] : []
+  })
+  const rails = panel.rails ?? []
   const watts = rails.every((r) => r.watts)
     ? ` Power (W) is computed here: ${rails.map((r) => `${r.watts} W`).join(' + ')}.`
     : ''
-  const placed = e.source !== 'new'
+  const placed = panel.placed
 
   const save = () => {
     const patch = mappingPatch(e, { name, console: con, pduId: e.pduId })
@@ -505,7 +504,7 @@ export function PduPanel(props: {
         <>
           <BoardHead
             v={v}
-            sub={`${consoleLabel(e.console)}${others.length ? ` · shared with ${others.map((o) => o.entry.name).join(', ')}` : ''}`}
+            sub={`${consoleLabel(e.console)}${others.length ? ` · shared with ${others.join(', ')}` : ''}`}
             live={props.live}
           />
           <Tabs
@@ -523,7 +522,7 @@ export function PduPanel(props: {
     >
       {tab === 'status' && (
         <>
-          {pduFaultBoxes(v, props.outage).map((b) => (
+          {panel.faults.map((b) => (
             <Fault key={b.title} box={b} />
           ))}
           <div className="sh__sec">
@@ -549,7 +548,7 @@ export function PduPanel(props: {
           </div>
           <div className="sh__sec">
             <div className="section-h">Board status</div>
-            <Rows rows={pduBoardRows(v)} />
+            <Rows rows={panel.board ?? []} />
             <div className="hint">
               Limits and fuses are fixed in the PDU firmware. Calibrate at the bench over serial.
             </div>
@@ -562,8 +561,13 @@ export function PduPanel(props: {
           <div className="section-h">Boards on this PDU</div>
           {feeds.length ? (
             <ul className="evt att sh__list">
-              {feeds.map((n) => (
-                <BoardLink key={n.entry.nodeId} v={n} detail={feedState(n)} onOpen={props.onOpen} />
+              {feeds.map((f) => (
+                <BoardLink
+                  key={f.view.entry.nodeId}
+                  v={f.view}
+                  detail={f.detail}
+                  onOpen={props.onOpen}
+                />
               ))}
             </ul>
           ) : (
@@ -602,17 +606,9 @@ export function PduPanel(props: {
               </div>
             </div>
           )}
-          {placed && <BoardFooter e={e} fed={feeds.length} call={call} onSave={save} />}
+          {placed && <BoardFooter e={e} actions={panel.actions} call={call} onSave={save} />}
         </>
       )}
     </Sheet>
   )
-}
-
-/** A fed board's state in the Feeds list: its flag, else online / no status yet. */
-function feedState(v: NodeView): string {
-  const e = v.entry
-  if (e.notSeen) return 'not seen this session'
-  if (v.health.flag) return v.health.flag
-  return v.health.state === 'unknown' ? 'no status yet' : 'online'
 }

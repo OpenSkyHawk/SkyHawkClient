@@ -147,6 +147,9 @@ export class AppServices {
     // The calibration workflow follows the link (pauses on a drop, drops the device's report),
     // after the link's own reactions and after `device:status` has gone out (R3.1).
     this.connection.onStatus((s) => this.calibration.linkStatus(s.state))
+    // The Cockpit snapshot follows the link too (strays and Attention only while it is up), after
+    // `device:status` has gone out, as the Cockpit re-rendered on it (R3.2).
+    this.connection.onStatus(() => this.nodes.linkStatus())
     // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
     this.settings.store.subscribe((config, prev) => {
       if (prev.autoConnect !== config.autoConnect) {
@@ -167,6 +170,7 @@ export class AppServices {
     this.relay.stop()
     this.connection.shutdown()
     this.streamLog.close()
+    this.nodes.dispose()
   }
 
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */

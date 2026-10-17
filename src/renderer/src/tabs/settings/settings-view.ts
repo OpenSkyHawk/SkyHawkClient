@@ -2,7 +2,7 @@
 import { GATEWAY_NODE_ID } from '@shared/firmware'
 import { day, hhmm, plural } from '@shared/format'
 import type { HiddenNode, NodeModel, NodeRegistryInfo } from '@shared/nodes'
-import { consoleLabel } from '../../cockpit-panels'
+import { consoleLabel } from '@shared/nodes'
 
 /** "Reset node mapping" row description. */
 export function resetRowDesc(differing: number): string {

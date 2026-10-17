@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { seenAgo } from '@shared/format'
-import type { NodeMappingResult } from '@shared/nodes'
-import type { NodeView } from '../../cockpit'
 import {
-  adoptability,
-  adoptEvidence,
+  CONSOLE_OPTIONS,
+  type AdoptBadge,
+  type AdoptForm as FormValues,
+  type AdoptRow,
+  type NodeMappingResult,
+  type ZoneChoices
+} from '@shared/nodes'
+import {
   adoptPduChoices,
-  adoptQueue,
   adoptSpec,
   identState,
   keptQueue,
   nextSelection,
-  prefill,
-  registrySpecs,
-  type AdoptForm as FormValues
-} from '../../cockpit-adopt'
-import { CONSOLE_OPTIONS } from '../../cockpit-panels'
+  registrySpecs
+} from '../../adopt-view'
 import { useModalFocus } from '../../useModalFocus'
 import { Dot } from './Dot'
 
@@ -25,29 +25,37 @@ import { Dot } from './Dot'
  * while it's on the bus (#93 — no Ignore). Esc, the scrim and Close shut it; focus returns to
  * what opened it. `initial` selects a NODE_ID (a stray's Attention cog).
  */
-export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClose: () => void }) {
+export function AdoptDialog(props: {
+  /** Main's queue: new NODE_IDs, oldest first seen first. */
+  rows: AdoptRow[]
+  zones: ZoneChoices
+  initial?: number
+  onClose: () => void
+}) {
   const ref = useRef<HTMLElement>(null)
   useModalFocus(ref, props.onClose)
 
-  const live = useMemo(() => adoptQueue(props.views), [props.views])
+  const live = props.rows
   // Rows this dialog has shown, so one that drops (power-cycled to identify it) stays listed.
-  const shown = useRef(new Map<number, NodeView>())
-  for (const v of live) shown.current.set(v.entry.nodeId, v)
+  const shown = useRef(new Map<number, AdoptRow>())
+  for (const r of live) shown.current.set(r.view.entry.nodeId, r)
   const [done, setDone] = useState<ReadonlySet<number>>(new Set())
   const queue = useMemo(() => keptQueue(live, shown.current, done), [live, done])
-  const ids = queue.map((v) => v.entry.nodeId)
+  const ids = queue.map((r) => r.view.entry.nodeId)
   // The queue as the dialog showed it, so "next" keeps its place as nodes leave it.
   const order = useRef<number[]>(ids)
   for (const id of ids) if (!order.current.includes(id)) order.current.push(id)
   const [sel, setSel] = useState<number | null>(
     props.initial !== undefined && ids.includes(props.initial) ? props.initial : (ids[0] ?? null)
   )
-  const current = queue.find((v) => v.entry.nodeId === sel) ?? queue[0]
+  const current = queue.find((r) => r.view.entry.nodeId === sel) ?? queue[0]
 
   // NODE_IDs that dropped off the bus while the dialog was open (power-cycle to identify).
   const [dropped, setDropped] = useState<ReadonlySet<number>>(new Set())
   useEffect(() => {
-    const off = queue.filter((v) => v.entry.availability !== 'online').map((v) => v.entry.nodeId)
+    const off = queue
+      .filter((r) => r.view.entry.availability !== 'online')
+      .map((r) => r.view.entry.nodeId)
     if (off.some((id) => !dropped.has(id))) setDropped(new Set([...dropped, ...off]))
   }, [queue, dropped])
 
@@ -61,7 +69,7 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
   // Each board's form, as you left it, while the dialog is open: switching rows keeps it, and
   // "Add all" takes it (None included) over the NODE_IDS.md defaults.
   const [edits, setEdits] = useState<ReadonlyMap<number, FormValues>>(new Map())
-  const bulk = registrySpecs(queue, props.views, edits)
+  const bulk = registrySpecs(queue, edits)
   const [bulkError, setBulkError] = useState('')
   const addAll = async () => {
     setBulkError('')
@@ -79,8 +87,8 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
 
   if (!current) return null
   const move = (how: 'done' | 'later') => {
-    if (how === 'done') setDone(new Set([...done, current.entry.nodeId]))
-    const next = nextSelection(order.current, ids, current.entry.nodeId, how)
+    if (how === 'done') setDone(new Set([...done, current.view.entry.nodeId]))
+    const next = nextSelection(order.current, ids, current.view.entry.nodeId, how)
     if (next === null && how === 'later') return props.onClose()
     setSel(next)
   }
@@ -113,8 +121,9 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
         </div>
         <div className="ad__b">
           <div className="ad__q" role="listbox" aria-label="New NODE_IDs">
-            {queue.map((v) => {
-              const on = v.entry.nodeId === current.entry.nodeId
+            {queue.map((r) => {
+              const v = r.view
+              const on = v.entry.nodeId === current.view.entry.nodeId
               return (
                 <button
                   key={v.entry.nodeId}
@@ -126,7 +135,7 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
                   <div className="ad__in">
                     <span className="node__dot new" aria-hidden="true" />
                     NODE_ID {v.entry.nodeId}
-                    <Badge badge={adoptability(v.entry).badge} />
+                    <Badge badge={r.badge} />
                   </div>
                   <div className="ad__im">
                     {v.entry.registry
@@ -138,13 +147,13 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
             })}
           </div>
           <AdoptForm
-            key={current.entry.nodeId}
-            view={current}
-            views={props.views}
-            dropped={dropped.has(current.entry.nodeId)}
-            position={`${ids.indexOf(current.entry.nodeId) + 1} of ${ids.length}`}
-            form={edits.get(current.entry.nodeId)}
-            onForm={(f) => setEdits(new Map(edits).set(current.entry.nodeId, f))}
+            key={current.view.entry.nodeId}
+            row={current}
+            zones={props.zones}
+            dropped={dropped.has(current.view.entry.nodeId)}
+            position={`${ids.indexOf(current.view.entry.nodeId) + 1} of ${ids.length}`}
+            form={edits.get(current.view.entry.nodeId)}
+            onForm={(f) => setEdits(new Map(edits).set(current.view.entry.nodeId, f))}
             bulk={bulk.length > 1 ? bulk.length : 0}
             bulkError={bulkError}
             onAddAll={() => void addAll()}
@@ -158,8 +167,9 @@ export function AdoptDialog(props: { views: NodeView[]; initial?: number; onClos
 }
 
 function AdoptForm(props: {
-  view: NodeView
-  views: NodeView[]
+  /** Main's row: what it is, what it starts as, what it is seen doing. */
+  row: AdoptRow
+  zones: ZoneChoices
   dropped: boolean
   position: string
   /** Registry panel groups waiting (2 or more): offer "Add all N panel groups from NODE_IDS.md". */
@@ -172,23 +182,22 @@ function AdoptForm(props: {
   onDone: () => void
   onLater: () => void
 }) {
-  const e = props.view.entry
+  const { row } = props
+  const e = row.view.entry
   const id = e.nodeId
   // Only a node identified as a PDU or a panel group gets the form; anything else is shown as-is.
-  const able = adoptability(e)
-  const kind = able.kind
-  const form =
-    props.form ?? (kind ? prefill(e, kind) : prefill({ ...e, registry: undefined }, 'panel'))
+  const kind = row.kind
+  const form = props.form ?? row.prefill
   const { name, console: con, pduId } = form
   const setName = (v: string) => props.onForm({ ...form, name: v })
   const setPduId = (v: number | null | '') => props.onForm({ ...form, pduId: v })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const ev = adoptEvidence(props.view)
+  const ev = row.evidence
   // #93: the PDU is explicit — one in your cockpit on another console is "(other console)"; a
   // default PDU not in your cockpit yet stays a choice, "(not added)", and the board moves under it
   // once that PDU is added.
-  const { zones, pending } = adoptPduChoices(props.views, con, pduId, e)
+  const { zones, pending } = adoptPduChoices(props.zones, row, con, pduId)
   const spec = kind ? adoptSpec(kind, { name, console: con, pduId }) : null
   const ident = identState(e.availability === 'online', props.dropped)
 
@@ -222,7 +231,7 @@ function AdoptForm(props: {
         </div>
         {!kind ? (
           <div className="ad__wait" role="status">
-            {able.note}
+            {row.note}
           </div>
         ) : (
           <>
@@ -345,7 +354,7 @@ function AdoptForm(props: {
   )
 }
 
-const BADGE_CLASS: Record<ReturnType<typeof adoptability>['badge'], string> = {
+const BADGE_CLASS: Record<AdoptBadge, string> = {
   PDU: 'kind--pdu',
   'PANEL GROUP': 'kind--pg',
   IDENTIFYING: 'kind--wait',
@@ -353,6 +362,6 @@ const BADGE_CLASS: Record<ReturnType<typeof adoptability>['badge'], string> = {
   'UNKNOWN TYPE': 'kind--no'
 }
 
-function Badge({ badge }: { badge: ReturnType<typeof adoptability>['badge'] }) {
+function Badge({ badge }: { badge: AdoptBadge }) {
   return <span className={`kind ${BADGE_CLASS[badge]}`}>{badge}</span>
 }

@@ -1,28 +1,27 @@
-// Cockpit side panels (#76, one design for every board since #93): the pure decisions behind the
-// panel group and PDU panels — which actions a board offers, what its fault box says, the rows each panel shows and the mapping patch Save
-// sends. Every value is something a board reported or the client computed, labelled as such.
+// The Cockpit's side panels (moved from the renderer's cockpit-panels.ts and SidePanels.tsx, R3.2;
+// one design for every board since #93): which actions a board offers, what its fault boxes say,
+// the rows each panel shows, which PDU feeds a panel group and which boards a PDU feeds, and the
+// power zones a panel can be given. Every value is something a board reported or the client
+// computed, labelled as such.
 import { DASH, fmtUptime, lastSeenLabel } from '@shared/format'
-import type { MappingPatch, NodeModelEntry, PduRailPage } from '@shared/nodes'
-import { displayCurrentMa, nodeFaultTag, PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
-import { pduAlertFlags, type NodeView } from './cockpit'
+import {
+  CONSOLE_OPTIONS,
+  type BoardAction,
+  type BoardActions,
+  type BoardPanel,
+  type FaultBox,
+  type NodeModelEntry,
+  type NodeView,
+  type PduOutage,
+  type PduRailPage,
+  type RailRow,
+  type Row,
+  type ZoneChoices
+} from '@shared/nodes'
+import { displayCurrentMa, nodeFaultTag, PDU_FLAG } from '@shared/nodes/legacy-rules'
+import { pduAlertFlags, pduFlagMeanings } from '../faults'
 
 // ── board actions ───────────────────────────────────────────────────────────
-
-/** A footer button: shown, and when it can't be used, why (its tooltip). */
-export interface BoardAction {
-  disabled: boolean
-  tip: string
-}
-
-/** The footer every board panel shares (#93), besides Save. */
-export interface BoardActions {
-  /** Registry boards only: back to the NODE_IDS.md name, console and power zone. */
-  reset?: BoardAction
-  forget: BoardAction
-  hide: BoardAction
-  /** The line under the footer: what Forget and Hide do here, or why they can't. */
-  note: string
-}
 
 const ONLINE_NOTE =
   'Online — it’s active on the bus, so it can’t be removed. Forget and Hide work once it’s offline.'
@@ -32,7 +31,9 @@ const NO_ROSTER_NOTE =
 
 /**
  * Same rules for a panel group and a PDU (#93). Hide and Forget only tidy the display, and a board
- * that is online is active on the bus, so both wait until it is offline (main refuses them too).
+ * that is online is active on the bus, so both wait until it is offline (main refuses them too —
+ * X5 co-located: this offers them only once the model says offline; NodeHub.onlineRefusal refuses
+ * only while the roster lists the board present).
  * `fed` = boards in your cockpit this PDU feeds (Forget unlinks them; Hide keeps the links).
  */
 export function boardActions(e: NodeModelEntry, fed = 0): BoardActions {
@@ -92,25 +93,7 @@ function notSeenBox(e: NodeModelEntry): FaultBox {
   }
 }
 
-/**
- * How fresh "Reported by the node" is: the bridge resends the roster every 5 s, so the values
- * change in steps — this ticks between them instead of inventing values. "updated 3 s ago" while it
- * reports; "last report 2 min ago" once it stopped; nothing when this session never heard from it.
- */
-export function reportAge(e: NodeModelEntry, now: number): string {
-  if (e.reportedAt === undefined) return ''
-  const s = Math.max(0, Math.floor((now - e.reportedAt) / 1000))
-  const ago = s < 60 ? `${s} s ago` : `${Math.floor(s / 60)} min ago`
-  return e.availability === 'online' ? `updated ${ago}` : `last report ${ago}`
-}
-
 // ── fault box ───────────────────────────────────────────────────────────────
-
-export interface FaultBox {
-  tone: 'warn' | 'err' | 'new'
-  title: string
-  text: string
-}
 
 /**
  * The boxes at the top of the node panel's Status tab, stacked; empty when there is nothing to
@@ -178,34 +161,6 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
   return out
 }
 
-/** Flag meanings as NodeStatus.h states them. */
-const RAIL_MEANING: [number, string][] = [
-  [RAIL_FLAG.UNDER_V, 'below its under-voltage threshold'],
-  [RAIL_FLAG.OVER_V, 'above its over-voltage threshold'],
-  [RAIL_FLAG.OVER_CURRENT, 'drawing sustained current above the over-current threshold'],
-  [RAIL_FLAG.FUSE_OPEN, 'reading ~0 V while the node is powered — fuse blown'],
-  [RAIL_FLAG.SENSOR_FAULT, 'reading implausibly on its voltage or current channel']
-]
-const STATUS_MEANING: [number, string][] = [
-  [PDU_FLAG.TEMP_CRIT, 'board temperature at the critical threshold'],
-  [PDU_FLAG.TEMP_WARN, 'board temperature at the warning threshold'],
-  [PDU_FLAG.NTC_FAULT, 'NTC channel open or shorted']
-]
-
-/** What each raised PDU flag means, in plain words. */
-export function pduFlagMeanings(v: NodeView): string[] {
-  const out: string[] = []
-  const rail = (label: string, p?: PduRailPage) => {
-    for (const [bit, m] of RAIL_MEANING)
-      if (p && p.flags & bit) out.push(`the ${label} rail is ${m}`)
-  }
-  rail('12 V', v.readings.rail12V)
-  rail('5 V', v.readings.rail5V)
-  const s = v.readings.status
-  for (const [bit, m] of STATUS_MEANING) if (s && s.flags & bit) out.push(m)
-  return out
-}
-
 /**
  * The boxes at the top of the PDU panel, stacked. Offline says it all on its own. Otherwise the
  * PDU's own node faults (the same as any node's) come first, then its rail / status flags, then
@@ -249,11 +204,6 @@ export function pduFaultBoxes(v: NodeView, outage: boolean): FaultBox[] {
 
 // ── rows ────────────────────────────────────────────────────────────────────
 
-export interface Row {
-  k: string
-  v: string
-}
-
 /** "Reported by the node" on the Status tab. An offline node keeps what it last said. */
 export function nodeStatusRows(v: NodeView): Row[] {
   const st = v.entry.status
@@ -285,17 +235,6 @@ export function nodeStatusRows(v: NodeView): Row[] {
     },
     { k: 'MCU temp', v: live && live.dieTempC !== null ? `${live.dieTempC} °C` : DASH }
   ]
-}
-
-export interface RailRow {
-  rail: '12 V' | '5 V'
-  avg: string
-  min: string
-  amps: string
-  peak: string
-  /** Client-computed V × A; '' when there is nothing to compute. */
-  watts: string
-  flagged: boolean
 }
 
 /** "Rails · live" on the PDU panel: per rail avg V / min V / A / peak A over the 3 s window. */
@@ -347,18 +286,7 @@ export function pduBoardRows(v: NodeView): Row[] {
   ]
 }
 
-// ── placement (Settings tab) ────────────────────────────────────────────────
-
-/** NODE_IDS.md console names, as the mapping stores them. */
-export const CONSOLE_OPTIONS = [
-  { value: 'Left', label: 'Left console' },
-  { value: 'Center', label: 'Instrument panel' },
-  { value: 'Right', label: 'Right console' }
-] as const
-
-export function consoleLabel(console: string | null): string {
-  return CONSOLE_OPTIONS.find((c) => c.value === console)?.label ?? console ?? DASH
-}
+// ── power zones ─────────────────────────────────────────────────────────────
 
 /**
  * The PDUs a panel on `console` can be fed by: the placed PDUs on that console (a PDU on the left
@@ -389,17 +317,91 @@ export function firstPduOn(views: NodeView[], console: string): number | null {
   return pdu ? pdu.entry.nodeId : null
 }
 
-export interface PlacementForm {
-  name: string
-  console: string
-  pduId: number | null
+/**
+ * Every Power zone list the forms can ask for (X4 co-located: the panel's Settings tab and the
+ * Adopt form both read these, through `powerZoneOptions` and `firstPduOn`): for each console a
+ * form can hold — the three NODE_IDS.md consoles, none yet, and any console a board or its
+ * NODE_IDS.md row names — with no zone (or one not in your cockpit), and with each PDU in your
+ * cockpit as the stored zone.
+ */
+export function zoneChoices(views: NodeView[]): ZoneChoices {
+  const consoles = new Set<string>(['', ...CONSOLE_OPTIONS.map((c) => c.value)])
+  for (const v of views) {
+    if (v.entry.console !== null) consoles.add(v.entry.console)
+    if (v.entry.registry) consoles.add(v.entry.registry.console)
+  }
+  const placed = views
+    .filter((v) => v.entry.kind === 'pdu' && v.entry.source !== 'new')
+    .map((v) => v.entry.nodeId)
+  const out: ZoneChoices = { options: {}, first: {} }
+  for (const c of consoles) {
+    const byZone: Record<string, { value: number; label: string }[]> = {
+      '': powerZoneOptions(views, c, null)
+    }
+    for (const id of placed) byZone[id] = powerZoneOptions(views, c, id)
+    out.options[c] = byZone
+    out.first[c] = firstPduOn(views, c)
+  }
+  return out
 }
 
-/** Only what changed, so Save writes nothing when nothing did. A PDU has no power zone. */
-export function mappingPatch(e: NodeModelEntry, f: PlacementForm): MappingPatch {
-  const p: MappingPatch = {}
-  if (f.name.trim() !== e.name) p.name = f.name.trim()
-  if (f.console !== (e.console ?? '')) p.console = f.console
-  if (e.kind === 'panel' && f.pduId !== e.pduId) p.pduId = f.pduId
-  return p
+// ── the panels ──────────────────────────────────────────────────────────────
+
+/** A fed board's state in the Feeds list: its flag, else online / no status yet. */
+export function feedState(v: NodeView): string {
+  const e = v.entry
+  if (e.notSeen) return 'not seen this session'
+  if (v.health.flag) return v.health.flag
+  return v.health.state === 'unknown' ? 'no status yet' : 'online'
+}
+
+/**
+ * Every board's side panel. A panel group is powered by the PDU its zone names, placed or not (X4
+ * co-located: the plan puts it under that PDU only once the PDU is placed). A PDU feeds the panel
+ * groups in your cockpit whose zone it is; that count is what Forget says it unlinks (X7
+ * co-located: an outage counts the fed boards seen this session, pduOutages).
+ */
+export function boardPanels(views: NodeView[], outages: PduOutage[]): Record<number, BoardPanel> {
+  const out: Record<number, BoardPanel> = {}
+  for (const v of views) {
+    const e = v.entry
+    const placed = e.source !== 'new'
+    let p: BoardPanel
+    if (e.kind === 'pdu') {
+      const feeds = views.filter(
+        (n) => n.entry.kind === 'panel' && n.entry.source !== 'new' && n.entry.pduId === e.nodeId
+      )
+      p = {
+        placed,
+        faults: pduFaultBoxes(
+          v,
+          outages.some((o) => o.pduId === e.nodeId)
+        ),
+        actions: boardActions(e, feeds.length),
+        rails: pduRailRows(v),
+        board: pduBoardRows(v),
+        feeds: feeds.map((n) => ({ nodeId: n.entry.nodeId, detail: feedState(n) })),
+        sharedWith: views
+          .filter(
+            (o) =>
+              o.entry.kind === 'pdu' &&
+              o.entry.source !== 'new' &&
+              o.entry.console === e.console &&
+              o.entry.nodeId !== e.nodeId
+          )
+          .map((o) => o.entry.name)
+      }
+    } else {
+      const pdu = views.find((o) => o.entry.kind === 'pdu' && o.entry.nodeId === e.pduId)
+      p = {
+        placed,
+        faults: nodeFaultBoxes(v),
+        actions: boardActions(e),
+        status: nodeStatusRows(v)
+      }
+      if (pdu) p.poweredBy = pdu.entry.nodeId
+    }
+    out[e.nodeId] = p
+  }
+  return out
 }

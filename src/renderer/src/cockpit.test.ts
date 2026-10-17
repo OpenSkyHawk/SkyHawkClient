@@ -1,3 +1,6 @@
+// The Overview's and Connection's copy of the Cockpit's picture (cockpit.ts, until R3.2b). The
+// Cockpit tab's own logic moved to main with its tests (main/nodes/cockpit-snapshot); the cases left
+// here pin the copy those surfaces still use.
 import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeTelemSnapshot, PduOutage } from '@shared/nodes'
 import {
@@ -7,26 +10,14 @@ import {
 } from '../../test-fixtures/nodes'
 import { PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
 import { TELEM_PAGE } from '../../main/nodes/node-telem'
-import { fmtPct, lastSeenLabel } from '@shared/format'
+import { lastSeenLabel } from '@shared/format'
 import {
-  STATE_SYMBOL,
   affected,
   attentionItems,
-  canErrorsSub,
-  canErrorsWorst,
-  consoleKey,
-  headroom,
   healthBand,
-  newCount,
   nodeHealth,
   nodeViews,
-  outageHint,
   pduAlertFlags,
-  planLayout,
-  psuName,
-  shortName,
-  tileMatches,
-  tileWidth,
   totalWatts
 } from './cockpit'
 
@@ -76,10 +67,6 @@ const telem = (
 })
 
 describe('nodeHealth', () => {
-  it('maps every state to a symbol, healthy and unknown to none', () => {
-    expect(STATE_SYMBOL).toEqual({ on: '', warn: '!', off: '✕', new: '+', unknown: '' })
-  })
-
   it('offline wins over every flag', () => {
     const e = node(1, { availability: 'offline', status: status(1, { degraded: true }) })
     expect(nodeHealth(e)).toEqual({ state: 'off', flag: 'OFFLINE' })
@@ -154,192 +141,6 @@ describe('nodeViews', () => {
   it('an offline PDU has no readings even while its last pages are still fresh', () => {
     const [v] = nodeViews(model([pdu(3, 'Left', { availability: 'offline' })]), [telem(3)])
     expect(v!.readings).toEqual({})
-  })
-})
-
-describe('tileMatches', () => {
-  const [ok, bad] = nodeViews(
-    model([
-      node(1, { name: 'Center_Armament' }),
-      node(2, { name: 'Right_Navigation', availability: 'offline' })
-    ]),
-    []
-  )
-
-  it('matches name (case-insensitive) or NODE_ID, with or without #', () => {
-    expect(tileMatches(ok!, 'armam', false)).toBe(true)
-    expect(tileMatches(ok!, '#1', false)).toBe(true)
-    expect(tileMatches(ok!, '1', false)).toBe(true)
-    expect(tileMatches(ok!, 'nav', false)).toBe(false)
-  })
-
-  it('Issues keeps only nodes with a problem', () => {
-    expect(tileMatches(ok!, '', true)).toBe(false)
-    expect(tileMatches(bad!, '', true)).toBe(true)
-  })
-})
-
-describe('consoleKey', () => {
-  it('maps NODE_IDS consoles; anything else lands on the instrument panel', () => {
-    expect(consoleKey('Left')).toBe('L')
-    expect(consoleKey('Right')).toBe('R')
-    expect(consoleKey('Center')).toBe('C')
-    expect(consoleKey('Aft')).toBe('C')
-    expect(consoleKey(null)).toBe('C')
-  })
-})
-
-describe('shortName', () => {
-  it('drops the console prefix however it is joined, never the whole name', () => {
-    expect(shortName('Center_Armament')).toBe('Armament')
-    expect(shortName('Center Armament')).toBe('Armament')
-    expect(shortName('Left-Fuel')).toBe('Fuel')
-    expect(shortName('Centerline')).toBe('Centerline')
-    expect(shortName('Center')).toBe('Center')
-  })
-})
-
-describe('planLayout', () => {
-  const nodes = [
-    node(1, { name: 'Center_Armament', console: 'Center', pduId: 5 }),
-    node(2, { name: 'Right_Navigation', console: 'Right', pduId: 4 }),
-    pdu(3, 'Left'),
-    pdu(4, 'Right'),
-    pdu(5, 'Center'),
-    pdu(6, 'Center'),
-    node(7, { name: 'Center_Clock', console: 'Center', pduId: 6 }),
-    node(8, { name: 'Left_Loose', console: 'Left', pduId: null }),
-    node(41, { source: 'new', console: null })
-  ]
-
-  it('one group per PDU on its console, then nodes without a power zone', () => {
-    const l = planLayout(nodeViews(model(nodes), []), [])
-    expect(
-      l.groups.map((g) => [g.key, g.console, g.tiles.map((t) => t.view.entry.nodeId)])
-    ).toEqual([
-      ['pdu-3', 'L', []],
-      ['none-L', 'L', [8]],
-      ['pdu-5', 'C', [1]],
-      ['pdu-6', 'C', [7]],
-      ['pdu-4', 'R', [2]]
-    ])
-    expect(l.consoles.find((c) => c.key === 'C')!.sub).toBe('2 PDUs')
-    expect(l.consoles.find((c) => c.key === 'L')!.sub).toBe('')
-  })
-
-  it('places a panel under its PDU even when its own console differs', () => {
-    const l = planLayout(
-      nodeViews(model([pdu(4, 'Right'), node(1, { console: 'Center', pduId: 4 })]), []),
-      []
-    )
-    expect(l.groups).toHaveLength(1)
-    expect(l.groups[0]!.tiles[0]!.view.entry.nodeId).toBe(1)
-  })
-
-  it('tiles fit their names, from the column width up to ~2 columns, then "…" (#93)', () => {
-    expect(tileWidth('Armament', 99, 206)).toBe(99) // short: the column width
-    expect(tileWidth('Fuel_Quantity_Gauge', 99, 206)).toBe(172) // room for the symbol always kept
-    expect(tileWidth('Angle_Of_Attack_Indexer_Lights', 99, 206)).toBe(206) // capped
-  })
-
-  it('a board changing state never moves a tile (#93 re-review I)', () => {
-    const names = ['Left_ARC51_UHF', 'Left_Fuel', 'Left_Trim']
-    const at = (state: Partial<NodeModelEntry>) =>
-      planLayout(
-        nodeViews(
-          model([
-            pdu(3, 'Left'),
-            ...names.map((name, i) => node(10 + i, { name, pduId: 3, ...(i === 0 ? state : {}) }))
-          ]),
-          []
-        ),
-        []
-      ).groups[0]!.tiles.map((t) => [t.x, t.y, t.w])
-    expect(at({ availability: 'offline' })).toEqual(at({})) // ✕ appears: same places, same widths
-  })
-
-  it('tiles flow left to right and wrap inside their group', () => {
-    const names = ['Left_Engine', 'Left_ARC51_UHF_Radio', 'Left_Fuel', 'Left_Trim', 'Left_Gear']
-    const l = planLayout(
-      nodeViews(
-        model([pdu(3, 'Left'), ...names.map((name, i) => node(10 + i, { name, pduId: 3 }))]),
-        []
-      ),
-      []
-    )
-    const g = l.groups[0]!
-    // Left console: 200 wide, two 96-px columns. ARC51 needs 145, so it takes its row.
-    expect(g.tiles.map((t) => [t.short, t.x - g.x, t.y - g.tiles[0]!.y, t.w])).toEqual([
-      ['Engine', 0, 0, 96],
-      ['ARC51_UHF_Radio', 0, 42, 145],
-      ['Fuel', 0, 84, 96],
-      ['Trim', 104, 84, 96],
-      ['Gear', 0, 126, 96]
-    ])
-    for (const t of g.tiles) expect(t.x + t.w).toBeLessThanOrEqual(g.x + g.w)
-  })
-
-  it('never places new nodes', () => {
-    const l = planLayout(nodeViews(model(nodes), []), [])
-    expect(l.groups.flatMap((g) => g.tiles).some((t) => t.view.entry.nodeId === 41)).toBe(false)
-  })
-
-  it('strips the console prefix from tile names', () => {
-    const l = planLayout(nodeViews(model(nodes), []), [])
-    expect(l.groups.find((g) => g.key === 'pdu-5')!.tiles[0]!.short).toBe('Armament')
-  })
-
-  it('lays tiles out in the console’s columns, row by row', () => {
-    const left = Array.from({ length: 3 }, (_, i) => node(10 + i, { console: 'Left', pduId: 3 }))
-    const g = planLayout(nodeViews(model([pdu(3, 'Left'), ...left]), []), []).groups[0]!
-    const [a, b, c] = g.tiles
-    expect(a!.y).toBe(b!.y)
-    expect(b!.x).toBeGreaterThan(a!.x)
-    expect(c!.x).toBe(a!.x)
-    expect(c!.y).toBeGreaterThan(a!.y)
-  })
-
-  it('draws one feed line per PDU, gold when it raises a rail flag', () => {
-    const l = planLayout(
-      nodeViews(model(nodes), [telem(4, { flags5: RAIL_FLAG.UNDER_V }), telem(3)]),
-      []
-    )
-    expect(l.wires).toHaveLength(4)
-    expect(l.wires.filter((w) => w.alert)).toHaveLength(1)
-  })
-
-  it('grows the stage when a console overflows', () => {
-    const many = Array.from({ length: 30 }, (_, i) => node(10 + i, { console: 'Left', pduId: 3 }))
-    const l = planLayout(nodeViews(model([pdu(3, 'Left'), ...many]), []), [])
-    expect(l.height).toBeGreaterThan(600)
-    expect(l.psu.y + 52).toBe(l.height)
-  })
-
-  it('adds the outage hint under the dropped PDU', () => {
-    const o: PduOutage = { pduId: 6, nodeIds: [7], fedCount: 1, at: 1 }
-    const l = planLayout(nodeViews(model(nodes, [o]), []), [o])
-    const g = l.groups.find((x) => x.key === 'pdu-6')!
-    expect(g.outage).toBe(o)
-    expect(g.hint!.text).toBe(
-      'The only node on this PDU lost power with it — a blown 5 V fuse at the PDU looks like this.'
-    )
-  })
-})
-
-describe('outageHint', () => {
-  it('says "N of M" when only some fed nodes dropped', () => {
-    expect(outageHint({ pduId: 3, nodeIds: [1, 2, 3], fedCount: 4, at: 0 })).toBe(
-      '3 of 4 nodes on this PDU lost power together — a blown 5 V fuse at the PDU looks like this.'
-    )
-  })
-
-  it('says "All N" when every fed node dropped, and "The only node" for one', () => {
-    expect(outageHint({ pduId: 3, nodeIds: [1, 2], fedCount: 2, at: 0 })).toBe(
-      'All 2 nodes on this PDU lost power together — a blown 5 V fuse at the PDU looks like this.'
-    )
-    expect(outageHint({ pduId: 3, nodeIds: [1], fedCount: 1, at: 0 })).toBe(
-      'The only node on this PDU lost power with it — a blown 5 V fuse at the PDU looks like this.'
-    )
   })
 })
 
@@ -423,32 +224,6 @@ describe('healthBand', () => {
     expect([b.pdusWith, b.pdusWithout]).toEqual([2, 1])
   })
 
-  it('finds the lowest 5 V rail, worst CAN counters, bus-off count and the hottest PDU', () => {
-    expect(b.low5).toEqual({ volts: 4.7, nodeId: 4, name: 'PDU_Right' })
-    expect(b.worstCan).toMatchObject({ nodeId: 1, tec: 8 })
-    expect(canErrorsSub(b)).toBe('worst #7 · 1 bus-off') // the bus-off board is named first
-    const quiet = healthBand(
-      nodeViews(model([node(1, { status: status(1, { tec: 0, rec: 0 }) })]), [])
-    )
-    expect(canErrorsSub(quiet)).toBe('no errors · 0 bus-off') // no board named when all are 0
-    expect(canErrorsSub(healthBand([]))).toBe('0 bus-off')
-    // A bus-off board can read TEC 0: never "no errors" while one is bus-off — it is named first.
-    const off = healthBand(
-      nodeViews(
-        model([
-          node(1, { status: status(1, { tec: 40 }) }),
-          node(7, { name: 'Center_Clock', status: status(7, { boff: true, tec: 0, rec: 0 }) })
-        ]),
-        []
-      )
-    )
-    expect(canErrorsSub(off)).toBe('worst #7 · 1 bus-off')
-    expect(canErrorsWorst(off)).toBe('Center_Clock')
-    expect(canErrorsWorst(quiet)).toBeUndefined()
-    expect(b.busOff).toBe(1)
-    expect(b.hottest).toEqual({ tempC: 41.3, nodeId: 4, name: 'PDU_Right', level: 'warn' })
-  })
-
   it('has no totals when no PDU has readings', () => {
     const e = healthBand(nodeViews(model([pdu(3, 'Left', { readings: 'none' })]), []))
     expect([e.amps12, e.amps5, e.watts, e.hottest]).toEqual([null, null, null, undefined])
@@ -462,63 +237,6 @@ describe('healthBand', () => {
     ])
     expect(totalWatts(views)).toBeCloseTo(12)
     expect(healthBand(views).watts).toBeCloseTo(12)
-  })
-})
-
-describe('newCount', () => {
-  it('counts new NODE_IDs on the bus that identified as something adoptable', () => {
-    expect(
-      newCount(
-        model([
-          node(1),
-          node(41, { source: 'new', identified: 'panel' }),
-          node(42, { source: 'new', identified: 'pdu' }),
-          node(43, { source: 'new' }), // still identifying: not news yet
-          node(44, { source: 'new', identified: 'bridge' }), // never adoptable
-          node(45, { source: 'new', identified: 'pdu', availability: 'offline' }) // left the bus
-        ])
-      )
-    ).toBe(2)
-  })
-})
-
-describe('headroom', () => {
-  it('is null when the limit is unknown, so the card keeps its plain total', () => {
-    expect(headroom(2.5, undefined)).toBeNull()
-    expect(headroom(null, undefined)).toBeNull()
-  })
-
-  it('keeps the limit with an empty bar when there is no reading', () => {
-    expect(headroom(null, 54)).toEqual({ limit: 54, pct: null, bar: 0 })
-  })
-
-  it('measures the value against the limit', () => {
-    expect(headroom(0, 20)).toEqual({ limit: 20, pct: 0, bar: 0 })
-    expect(headroom(5, 20)).toEqual({ limit: 20, pct: 25, bar: 25 })
-    expect(headroom(650, 650)).toEqual({ limit: 650, pct: 100, bar: 100 })
-  })
-
-  it('caps the bar but not the share when over the limit', () => {
-    expect(headroom(22.4, 20)).toMatchObject({ bar: 100 })
-    expect(headroom(22.4, 20)?.pct).toBeCloseTo(112)
-  })
-})
-
-describe('fmtPct', () => {
-  it('shows one decimal under 10 % and whole numbers from there', () => {
-    expect(fmtPct(0)).toBe('0.0%')
-    expect(fmtPct(4.59)).toBe('4.6%')
-    expect(fmtPct(9.94)).toBe('9.9%')
-    expect(fmtPct(9.96)).toBe('10%')
-    expect(fmtPct(53.2)).toBe('53%')
-    expect(fmtPct(112)).toBe('112%')
-  })
-})
-
-describe('psuName', () => {
-  it('names a preset by its model and a custom supply plainly', () => {
-    expect(psuName({ mode: 'preset', preset: 'nx650', custom: {} })).toBe('NX650')
-    expect(psuName({ mode: 'custom', preset: 'nx650', custom: { w: 500 } })).toBe('PSU')
   })
 })
 

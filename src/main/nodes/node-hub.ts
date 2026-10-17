@@ -2,7 +2,8 @@
 // tap hands it (`_NODE_STATUS`, `_NODE_TELEM`), the Gateway's own health (it drives GatewayWatch,
 // UD-C), the node mapping (through MappingStore), and the combined node picture it pushes. It
 // rides on the Gateway connection (its `rider`, a gateway LinkRider) and writes the roster request
-// through the connection's write (R2.2b).
+// through the connection's write (R2.2b). It also hosts the Cockpit snapshot (R3.2): built from
+// each node push and the link, and pushed with them on `cockpit:snapshot`.
 import type {
   AdoptSpec,
   MappedNode,
@@ -59,6 +60,7 @@ import {
 import { NODE_TELEM_MSG, NodeTelemStore, parseNodeTelem } from './node-telem'
 import { registryDefaults } from './registry'
 import { MappingSaveError, MappingStore, type MappingFileIO } from './mapping-store'
+import { CockpitSnapshotHost } from './cockpit-host'
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
@@ -152,6 +154,8 @@ export class NodeHub implements NodeLineSink {
   private mappedCache = new Map<number, MappedNode>()
   /** The node mapping and its file. */
   private readonly store: MappingStore
+  /** The Cockpit tab's picture (R3.2), pushed on `cockpit:snapshot` with each node push. */
+  private readonly cockpit: CockpitSnapshotHost
 
   constructor(
     private readonly emit: Emit,
@@ -167,6 +171,9 @@ export class NodeHub implements NodeLineSink {
       onCommit: () => {
         this.modelDirty = true
       }
+    })
+    this.cockpit = new CockpitSnapshotHost((snapshot) => this.emit('cockpit:snapshot', snapshot), {
+      device: () => this.link.deviceStatus()
     })
   }
 
@@ -204,8 +211,30 @@ export class NodeHub implements NodeLineSink {
     tick: () => {
       this.flush(this.roster.takeDirty())
       this.onEvents(this.gateway.tick(Date.now(), this.link.exportGated))
-      if (this.gateway.takeChanged()) this.link.pushGatewayHealth(this.gateway.status())
+      if (this.gateway.takeChanged()) {
+        this.link.pushGatewayHealth(this.gateway.status())
+        this.cockpit.linkChanged()
+      }
     }
+  }
+
+  /** `device:status` went out with a new link state (the connection's onStatus). */
+  linkStatus(): void {
+    this.cockpit.linkChanged()
+  }
+
+  /**
+   * A renderer (re)loaded (`relay:status`, its first pull): the Cockpit snapshot starts over from
+   * what main holds now, as the renderer's store did from its `nodes:get`.
+   */
+  rendererLoaded(now = Date.now()): void {
+    const { model, telemetry } = this.snapshot(now)
+    this.cockpit.rendererLoaded(model, telemetry)
+  }
+
+  /** App quit: the Cockpit's stray timer stops. */
+  dispose(): void {
+    this.cockpit.dispose()
   }
 
   /** The Gateway's health as it stands, for the connected status. */
@@ -310,7 +339,10 @@ export class NodeHub implements NodeLineSink {
     let changed = rosterChanged || this.modelDirty
     if (now - this.telemPushedAt >= NODE_TELEM_PUSH_MS && this.telem.takeChanged(now)) {
       this.telemPushedAt = now
-      this.emit('nodes:telemetry', this.telem.snapshot(now))
+      const telemetry = this.telem.snapshot(now)
+      // The Cockpit's snapshot goes out just ahead of the push it mirrors.
+      this.cockpit.telemetryPushed(telemetry)
+      this.emit('nodes:telemetry', telemetry)
       changed = true
     }
     if (rosterChanged) this.rosterTransitions(now)
@@ -448,6 +480,7 @@ export class NodeHub implements NodeLineSink {
   private pushModel(now = Date.now()): NodeModel {
     const model = this.model(now)
     this.modelDirty = false
+    this.cockpit.modelPushed(model) // just ahead of the push it mirrors
     this.emit('nodes:model', model)
     return model
   }
