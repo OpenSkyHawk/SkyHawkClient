@@ -31,13 +31,15 @@ export interface CacheFileIO {
  */
 export interface CacheFileEvents {
   error(tag: string, message: string): void
+  /** The same row at warn: recovered, nothing lost. Same tag and dedupe as `error`. */
+  warn(tag: string, message: string): void
   forget(tag: string): void
 }
 
 /** The event-log tag of calibration-cache.json's rows. */
 export const CACHE_FILE_TAG = 'calibration-cache.json'
 
-const NO_EVENTS: CacheFileEvents = { error: () => {}, forget: () => {} }
+const NO_EVENTS: CacheFileEvents = { error: () => {}, warn: () => {}, forget: () => {} }
 
 export function loadCalCache(io: CacheFileIO, events = NO_EVENTS): CalCache {
   try {
@@ -45,8 +47,8 @@ export function loadCalCache(io: CacheFileIO, events = NO_EVENTS): CalCache {
     switch (r.kind) {
       case 'read':
         return sanitizeCache(r.data)
-      case 'fallback':
-        events.error(CACHE_FILE_TAG, r.note)
+      case 'fallback': // loaded from the backup: nothing lost, a warn row
+        events.warn(CACHE_FILE_TAG, r.note)
         return sanitizeCache(r.data)
       case 'failed':
         events.error(CACHE_FILE_TAG, `${r.note} Starting with an empty calibration cache.`)

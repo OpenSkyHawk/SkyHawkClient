@@ -36,13 +36,15 @@ export interface SettingsPaths {
  */
 export interface SettingsFileEvents {
   error(tag: string, message: string): void
+  /** The same row at warn: recovered, nothing lost. Same tag and dedupe as `error`. */
+  warn(tag: string, message: string): void
   forget(tag: string): void
 }
 
 /** The event-log tag of config.json's rows. */
 export const CONFIG_FILE_TAG = 'config.json'
 
-const NO_EVENTS: SettingsFileEvents = { error: () => {}, forget: () => {} }
+const NO_EVENTS: SettingsFileEvents = { error: () => {}, warn: () => {}, forget: () => {} }
 
 const configFile = (paths: SettingsPaths) => jsonFile(() => paths.configFile())
 
@@ -52,8 +54,8 @@ export function loadConfig(paths: SettingsPaths, events = NO_EVENTS): AppConfig 
     switch (r.kind) {
       case 'read':
         return sanitizeConfig(r.data)
-      case 'fallback':
-        events.error(CONFIG_FILE_TAG, r.note)
+      case 'fallback': // loaded from the backup: nothing lost, a warn row
+        events.warn(CONFIG_FILE_TAG, r.note)
         return sanitizeConfig(r.data)
       case 'failed':
         events.error(CONFIG_FILE_TAG, `${r.note} Using the default settings.`)

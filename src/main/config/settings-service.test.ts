@@ -35,12 +35,15 @@ const bak = (): string => join(dir, 'config.json.bak')
 function eventLog() {
   const rows: string[] = []
   const last = new Map<string, string>()
+  /** `<severity> <tag>: <message>`, deduped per tag across both severities. */
+  const add = (severity: string, tag: string, msg: string) => {
+    if (last.get(tag) === msg) return
+    last.set(tag, msg)
+    rows.push(`${severity} ${tag}: ${msg}`)
+  }
   const events: SettingsFileEvents = {
-    error: (tag, msg) => {
-      if (last.get(tag) === msg) return
-      last.set(tag, msg)
-      rows.push(`${tag}: ${msg}`)
-    },
+    error: (tag, msg) => add('error', tag, msg),
+    warn: (tag, msg) => add('warn', tag, msg),
     forget: (tag) => last.delete(tag)
   }
   return { rows, events }
@@ -81,7 +84,7 @@ describe('B97 config.json load / save round trip', () => {
     expect(readdirSync(dir)).toEqual([badCopy()])
     expect(readFileSync(join(dir, badCopy()), 'utf8')).toBe('{"debugMode":tr')
     expect(log.rows).toEqual([
-      `config.json: config.json is damaged, and there is no backup. The bad copy was kept as ` +
+      `error config.json: config.json is damaged, and there is no backup. The bad copy was kept as ` +
         `${badCopy()}. Using the default settings.`
     ])
   })
@@ -92,7 +95,7 @@ describe('B97 config.json load / save round trip', () => {
     expect(loadConfig(paths, log.events)).toEqual(DEFAULT_CONFIG)
     expect(log.rows).toHaveLength(1)
     expect(log.rows[0]).toMatch(
-      /^config\.json: config\.json could not be read \(EISDIR: .*\), and there is no backup\. Using the default settings\.$/
+      /^error config\.json: config\.json could not be read \(EISDIR: .*\), and there is no backup\. Using the default settings\.$/
     )
   })
 
@@ -103,7 +106,7 @@ describe('B97 config.json load / save round trip', () => {
     const log = eventLog()
     expect(loadConfig(paths, log.events)).toEqual(custom)
     expect(log.rows).toEqual([
-      `config.json: config.json is damaged. Loaded the backup, config.json.bak. The bad copy was ` +
+      `warn config.json: config.json is damaged. Loaded the backup, config.json.bak. The bad copy was ` +
         `kept as ${badCopy()}.`
     ])
     expect(readFileSync(join(dir, badCopy()), 'utf8')).toBe('{"debugMode":tr')
@@ -117,7 +120,7 @@ describe('B97 config.json load / save round trip', () => {
     const log = eventLog()
     expect(loadConfig(paths, log.events)).toEqual(DEFAULT_CONFIG)
     expect(log.rows).toEqual([
-      `config.json: config.json is damaged, and its backup is damaged too. The bad copy was kept ` +
+      `error config.json: config.json is damaged, and its backup is damaged too. The bad copy was kept ` +
         `as ${badCopy()}. Using the default settings.`
     ])
   })
@@ -142,7 +145,7 @@ describe('B97 config.json load / save round trip', () => {
     expect(() => saveConfig(custom, nowhere, log.events)).not.toThrow()
     expect(readdirSync(dir)).toEqual([])
     expect(log.rows).toHaveLength(1)
-    expect(log.rows[0]).toMatch(/^config\.json: config\.json could not be saved: ENOENT: /)
+    expect(log.rows[0]).toMatch(/^error config\.json: config\.json could not be saved: ENOENT: /)
   })
 
   it.skipIf(process.getuid?.() === 0)(
@@ -154,7 +157,7 @@ describe('B97 config.json load / save round trip', () => {
       expect(() => saveConfig(DEFAULT_CONFIG, paths, log.events)).not.toThrow()
       saveConfig({ ...DEFAULT_CONFIG, host: 'x' }, paths, log.events) // the same failure again
       expect(log.rows).toHaveLength(1) // deduped per file
-      expect(log.rows[0]).toMatch(/^config\.json: config\.json could not be saved: EACCES: /)
+      expect(log.rows[0]).toMatch(/^error config\.json: config\.json could not be saved: EACCES: /)
       expect(loadConfig(paths)).toEqual(custom)
       // A write that works makes the next failure news again.
       chmodSync(dir, 0o700)

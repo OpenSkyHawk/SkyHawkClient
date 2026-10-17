@@ -28,12 +28,15 @@ const cache = (min: number): CalCache => ({
 function eventLog() {
   const rows: string[] = []
   const last = new Map<string, string>()
+  /** `<severity> <tag>: <message>`, deduped per tag across both severities. */
+  const add = (severity: string, tag: string, msg: string) => {
+    if (last.get(tag) === msg) return
+    last.set(tag, msg)
+    rows.push(`${severity} ${tag}: ${msg}`)
+  }
   const events: CacheFileEvents = {
-    error: (tag, msg) => {
-      if (last.get(tag) === msg) return
-      last.set(tag, msg)
-      rows.push(`${tag}: ${msg}`)
-    },
+    error: (tag, msg) => add('error', tag, msg),
+    warn: (tag, msg) => add('warn', tag, msg),
     forget: (tag) => last.delete(tag)
   }
   return { rows, events }
@@ -67,7 +70,7 @@ describe('calibration-cache.json', () => {
     const log = eventLog()
     expect(loadCalCache(io, log.events)).toEqual(cache(10))
     expect(log.rows).toEqual([
-      `calibration-cache.json: calibration-cache.json is damaged. Loaded the backup, ` +
+      `warn calibration-cache.json: calibration-cache.json is damaged. Loaded the backup, ` +
         `calibration-cache.json.bak. The bad copy was kept as ${badCopy()}.`
     ])
     // The cache is read on every use: the backup is back in place, so the next read is quiet.
@@ -80,7 +83,7 @@ describe('calibration-cache.json', () => {
     const log = eventLog()
     expect(loadCalCache(io, log.events)).toEqual(emptyCache())
     expect(log.rows).toEqual([
-      `calibration-cache.json: calibration-cache.json is damaged, and there is no backup. The bad ` +
+      `error calibration-cache.json: calibration-cache.json is damaged, and there is no backup. The bad ` +
         `copy was kept as ${badCopy()}. Starting with an empty calibration cache.`
     ])
   })
@@ -95,7 +98,7 @@ describe('calibration-cache.json', () => {
       saveCalCache(cache(30), io, log.events)
       expect(log.rows).toHaveLength(1)
       expect(log.rows[0]).toMatch(
-        /^calibration-cache\.json: calibration-cache\.json could not be saved: EACCES: /
+        /^error calibration-cache\.json: calibration-cache\.json could not be saved: EACCES: /
       )
       expect(loadCalCache(io)).toEqual(cache(10))
       chmodSync(dir, 0o700)

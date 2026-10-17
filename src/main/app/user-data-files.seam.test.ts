@@ -28,7 +28,7 @@ describe('#136 a damaged file comes back from its backup, and the event log says
     const bad = app.files.list().find((f) => f.startsWith('config.json.bad-'))
     expect(fileRows(app, 'config.json')).toEqual([
       expect.objectContaining({
-        severity: 'error',
+        severity: 'warn', // recovered: nothing lost
         event: 'error',
         detail:
           `config.json is damaged. Loaded the backup, config.json.bak. The bad copy was kept ` +
@@ -49,8 +49,8 @@ describe('#136 a damaged file comes back from its backup, and the event log says
     const trim = app.invoke(CTRL.nodesGet).model.nodes.find((n) => n.nodeId === 1)
     expect(trim).toMatchObject({ name: 'Trim' })
     const bad = app.files.list().find((f) => f.startsWith('node-mapping.json.bad-'))
-    expect(fileRows(app, 'node-mapping.json').map((e) => e.detail)).toEqual([
-      `node-mapping.json is damaged. Loaded the backup, node-mapping.json.bak. The bad copy was ` +
+    expect(fileRows(app, 'node-mapping.json').map((e) => `${e.severity} ${e.detail}`)).toEqual([
+      `warn node-mapping.json is damaged. Loaded the backup, node-mapping.json.bak. The bad copy was ` +
         `kept as ${bad}.`
     ])
     // Writable: a rename saves, and the file it replaces becomes the backup.
@@ -72,6 +72,7 @@ describe('#136 a damaged file comes back from its backup, and the event log says
         expect(app.invoke(CTRL.configGet).config.host).toBe('10.0.0.9')
         const rows = fileRows(app, 'config.json')
         expect(rows).toHaveLength(1)
+        expect(rows[0]!.severity).toBe('error')
         expect(rows[0]!.detail).toMatch(/^config\.json could not be saved: EACCES: /)
       } finally {
         chmodSync(app.files.dir, 0o700)

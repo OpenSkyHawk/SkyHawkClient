@@ -23,8 +23,16 @@ export interface LoadedMapping {
    * access tries the load again (M11).
    */
   retry?: true
-  /** What went wrong loading the file, and what was done about it: an event row. */
-  notice?: string
+  /**
+   * What went wrong loading the file, and what was done about it: an event row. `warn` when the
+   * backup loaded and nothing was lost; `error` when the cockpit is empty or stuck read-only.
+   */
+  notice?: MappingNotice
+}
+
+export interface MappingNotice {
+  severity: 'warn' | 'error'
+  text: string
 }
 
 type Damage = { kind: 'unreadable'; error: unknown } | { kind: 'damaged' }
@@ -87,16 +95,26 @@ export function loadNodeMapping(io: MappingFileIO): LoadedMapping {
           file: sanitizeNodeMapping(r.data),
           readOnly,
           retry: true,
-          notice: r.note + NOT_SAVED
+          notice: { severity: 'error', text: r.note + NOT_SAVED }
         }
       }
-      return { ...fromData(r.data), notice: r.note }
+      return { ...fromData(r.data), notice: { severity: 'warn', text: r.note } }
     }
     case 'failed': {
       const readOnly = stuckReason(r.damage, r.aside)
-      if (readOnly) return { file: empty(), readOnly, retry: true, notice: r.note + NOT_SAVED }
+      if (readOnly) {
+        return {
+          file: empty(),
+          readOnly,
+          retry: true,
+          notice: { severity: 'error', text: r.note + NOT_SAVED }
+        }
+      }
       // Moved aside, so the next save cannot destroy whatever the damaged file still holds.
-      return { file: empty(), notice: `${r.note} Starting with an empty cockpit.` }
+      return {
+        file: empty(),
+        notice: { severity: 'error', text: `${r.note} Starting with an empty cockpit.` }
+      }
     }
   }
 }

@@ -34,12 +34,15 @@ const badCopy = (): string | undefined =>
 function eventLog() {
   const rows: string[] = []
   const last = new Map<string, string>()
+  /** `<severity> <tag>: <message>`, deduped per tag across both severities. */
+  const add = (severity: string, tag: string, msg: string) => {
+    if (last.get(tag) === msg) return
+    last.set(tag, msg)
+    rows.push(`${severity} ${tag}: ${msg}`)
+  }
   const events: MappingFileEvents = {
-    error: (tag, msg) => {
-      if (last.get(tag) === msg) return
-      last.set(tag, msg)
-      rows.push(`${tag}: ${msg}`)
-    },
+    error: (tag, msg) => add('error', tag, msg),
+    warn: (tag, msg) => add('warn', tag, msg),
     forget: (tag) => last.delete(tag)
   }
   return { rows, events }
@@ -90,9 +93,12 @@ describe('node-mapping.json', () => {
     // No backup to load: an empty, writable cockpit, and a notice for the event log.
     expect(loaded).toEqual({
       file: { version: 3, nodes: {} },
-      notice:
-        `node-mapping.json is damaged, and there is no backup. The bad copy was kept as ` +
-        `${bad[0]}. Starting with an empty cockpit.`
+      notice: {
+        severity: 'error',
+        text:
+          `node-mapping.json is damaged, and there is no backup. The bad copy was kept as ` +
+          `${bad[0]}. Starting with an empty cockpit.`
+      }
     })
   })
 
@@ -102,9 +108,13 @@ describe('node-mapping.json', () => {
     writeFileSync(file(), '{"version":3,"nodes":{"1":{"name":"Arm')
     expect(loadNodeMapping()).toEqual({
       file: sample,
-      notice:
-        `node-mapping.json is damaged. Loaded the backup, node-mapping.json.bak. The bad copy ` +
-        `was kept as ${badCopy()}.`
+      // Nothing lost: a warn row.
+      notice: {
+        severity: 'warn',
+        text:
+          `node-mapping.json is damaged. Loaded the backup, node-mapping.json.bak. The bad copy ` +
+          `was kept as ${badCopy()}.`
+      }
     })
     expect(readFileSync(join(userData.dir, badCopy()!), 'utf8')).toContain('"Arm')
     expect(loadNodeMapping()).toEqual({ file: sample }) // the backup is back in place
@@ -115,9 +125,12 @@ describe('node-mapping.json', () => {
     writeFileSync(bak(), '{"version":3,"no')
     expect(loadNodeMapping()).toEqual({
       file: { version: 3, nodes: {} },
-      notice:
-        `node-mapping.json is damaged, and its backup is damaged too. The bad copy was kept as ` +
-        `${badCopy()}. Starting with an empty cockpit.`
+      notice: {
+        severity: 'error',
+        text:
+          `node-mapping.json is damaged, and its backup is damaged too. The bad copy was kept as ` +
+          `${badCopy()}. Starting with an empty cockpit.`
+      }
     })
   })
 
@@ -127,7 +140,8 @@ describe('node-mapping.json', () => {
     expect(loaded.file).toEqual({ version: 3, nodes: {} })
     expect(loaded.readOnly).toMatch(/^node-mapping\.json could not be read: EISDIR: /)
     expect(loaded.retry).toBe(true)
-    expect(loaded.notice).toMatch(
+    expect(loaded.notice?.severity).toBe('error')
+    expect(loaded.notice?.text).toMatch(
       /^node-mapping\.json could not be read \(EISDIR: .*\), and there is no backup\. Cockpit changes are not saved until it can be loaded\.$/
     )
     expect(readdirSync(userData.dir)).toEqual(['node-mapping.json'])
@@ -190,7 +204,7 @@ describe('MappingStore: a load that failed is tried again on the next access (M1
     )
     expect(log.rows).toHaveLength(1) // retried on each access, reported once
     expect(log.rows[0]).toMatch(
-      /^node-mapping\.json: node-mapping\.json could not be read \(EISDIR/
+      /^error node-mapping\.json: node-mapping\.json could not be read \(EISDIR/
     )
 
     // The trouble passes (no timer: nothing happens until the next access).
@@ -239,9 +253,39 @@ describe('MappingStore: a load that failed is tried again on the next access (M1
     expect(writes).toEqual([next])
     expect(ms.mapping()).toBe(next)
     expect(results).toEqual([]) // no further reads once loaded
-    expect(log.rows.map((r) => r.replace(/^node-mapping\.json: /, ''))).toEqual([
+    expect(log.rows.map((r) => r.replace(/^error node-mapping\.json: /, ''))).toEqual([
       'n1 Cockpit changes are not saved until it can be loaded.',
       'n2 Cockpit changes are not saved until it can be loaded.'
+    ])
+  })
+
+  it('reports a backup that loaded at warn, and one stuck read-only at error', () => {
+    type Fallback = Extract<ReturnType<MappingFileIO['read']>, { kind: 'fallback' }>
+    const fallback = (aside: Fallback['aside']): Fallback => ({
+      kind: 'fallback',
+      data: sample,
+      damage: { kind: 'damaged' },
+      aside,
+      note: 'restored'
+    })
+    const write = () => undefined
+    const moved = eventLog()
+    new MappingStore({
+      file: { read: () => fallback({ kind: 'moved', to: 'x' }), write },
+      events: moved.events
+    }).mapping()
+    expect(moved.rows).toEqual(['warn node-mapping.json: restored'])
+    const stuck = eventLog()
+    const ms = new MappingStore({
+      file: { read: () => fallback({ kind: 'stuck', error: new Error('EACCES') }), write },
+      events: stuck.events
+    })
+    expect(ms.mapping()).toEqual(sample) // the backup is shown…
+    expect(() => ms.save({ ...sample, nodes: {} })).toThrow(
+      'Not saved: node-mapping.json is damaged and could not be moved aside: EACCES'
+    ) // …but nothing is saved over the bad file
+    expect(stuck.rows).toEqual([
+      'error node-mapping.json: restored Cockpit changes are not saved until it can be loaded.'
     ])
   })
 

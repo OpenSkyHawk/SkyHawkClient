@@ -9,7 +9,8 @@ import {
   MappingSaveError,
   saveNodeMapping,
   type LoadedMapping,
-  type MappingFileIO
+  type MappingFileIO,
+  type MappingNotice
 } from './mapping-file'
 
 export { MappingSaveError, type LoadedMapping, type MappingFileIO } from './mapping-file'
@@ -23,13 +24,15 @@ type Log = (tag: string, data?: unknown) => void
  */
 export interface MappingFileEvents {
   error(tag: string, message: string): void
+  /** The same row at warn: recovered, nothing lost. Same tag and dedupe as `error`. */
+  warn(tag: string, message: string): void
   forget(tag: string): void
 }
 
 /** The event-log tag of node-mapping.json's rows. */
 export const MAPPING_FILE_TAG = 'node-mapping.json'
 
-const NO_EVENTS: MappingFileEvents = { error: () => {}, forget: () => {} }
+const NO_EVENTS: MappingFileEvents = { error: () => {}, warn: () => {}, forget: () => {} }
 
 /** Until a file is handed in: fails loudly on first use rather than guess one. */
 const NO_FILE: MappingFileIO = {
@@ -90,10 +93,11 @@ export class MappingStore {
     return next
   }
 
-  private report(notice: string | undefined): void {
-    if (notice === undefined || notice === this.reported) return
-    this.reported = notice
-    this.events.error(MAPPING_FILE_TAG, notice)
+  private report(notice: MappingNotice | undefined): void {
+    if (notice === undefined || notice.text === this.reported) return
+    this.reported = notice.text
+    if (notice.severity === 'warn') this.events.warn(MAPPING_FILE_TAG, notice.text)
+    else this.events.error(MAPPING_FILE_TAG, notice.text)
   }
 
   /** The mapping as main holds it now. */
