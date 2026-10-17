@@ -364,7 +364,7 @@ describe('device link is independent of the relay (#69)', () => {
     expect((await HID()).stopped).toBe(false)
     expect(session.status().device.state).toBe('connected')
     // CalLink is still attached: an exchange is attempted rather than refused as offline.
-    const hello = session.link.calHello()
+    const hello = session.calibration.calHello()
     session.shutdown() // fails the in-flight exchange
     const r = await hello
     expect(r.ok ? 'ok' : r.kind).not.toBe('offline')
@@ -515,7 +515,7 @@ describe('device link is independent of the relay (#69)', () => {
     session.link.disconnect()
     expect(serial.stopped).toBe(true)
     expect((await HID()).stopped, 'HID is shared with DCS and stays up').toBe(false)
-    const cal = await session.link.calHello()
+    const cal = await session.calibration.calHello()
     expect(cal.ok ? 'ok' : cal.kind, 'calibration rides on serial').toBe('offline')
     expect(session.status().device.state).toBe('disconnected')
     session.link.connect()

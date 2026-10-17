@@ -29,8 +29,10 @@ import {
   type ReplayInfo,
   type Transport
 } from '../dcs'
-import { clientErrorEvent, EventLog } from '../events'
+import { clientErrorEvent, EventJournal, EventLog } from '../events'
 import { deviceEvent, DeviceLink } from '../gateway'
+import { HidService } from '../hid'
+import { HidCalibrationService } from '../hid/calibration'
 import { debugLog } from './debug-log'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
 
@@ -85,8 +87,14 @@ export function relayContext(cfg: AppConfig): RelayContext {
 }
 
 export class Session {
-  /** The device link: serial, calibration, HID and nodes. Up independently of the relay. */
+  /** The device link: serial and nodes. Up independently of the relay. */
   readonly link: DeviceLink
+  /** Axis calibration (#46), riding on the device link's port. */
+  readonly calibration: HidCalibrationService
+  /** The HID joystick, up for as long as the app is. */
+  readonly hid: HidService
+  /** Where the link's event-log rows are reported. */
+  readonly journal = new EventJournal()
   private config: AppConfig = { ...DEFAULT_CONFIG }
   private transport?: Transport
   private replay?: ReplaySource
@@ -116,7 +124,24 @@ export class Session {
     paths: StorePaths = storePaths(() => app.getPath('userData'))
   ) {
     this.parser = new DcsBiosProtocol((addr, val) => this.onWrite(addr, val))
-    this.link = new DeviceLink(emit, { ...storeFiles(paths), log: debugLog })
+    const { mappingFile, cacheFile } = storeFiles(paths)
+    this.calibration = new HidCalibrationService(emit, {
+      write: (data) => this.link.write(data),
+      cacheFile,
+      log: debugLog
+    })
+    this.hid = new HidService(emit, debugLog)
+    this.link = new DeviceLink(emit, {
+      mappingFile,
+      log: debugLog,
+      report: (events) => this.journal.report(events),
+      frames: this.calibration
+    })
+    // The order is load-bearing: at each of the link's moments its riders run in the order added,
+    // and where both handle one (start's timers, a port opening) calibration's part came first
+    // inside DeviceLink before the split (R2.2a). See LinkRider.
+    this.link.ride(this.calibration)
+    this.link.ride(this.hid)
     this.link.onBytes((bytes) => this.fromDevice(bytes))
     this.link.onLine((l) => {
       if (l.kind !== 'command') return
@@ -128,7 +153,7 @@ export class Session {
       this.stats.error()
       this.logError(tag, message)
     })
-    this.link.onNodeEvents((events) => this.events.add(events))
+    this.journal.onEvents((events) => this.events.add(events))
     this.link.onStatus((s) => {
       if (s.state === 'reconnecting') this.stats.reconnect()
       // The port's own retry loop stays in `error`; any other state (an explicit Connect or Retry
@@ -290,7 +315,7 @@ export class Session {
     this.recorder?.record('in', chunk)
     // Forward byte-for-byte to the SimGateway — unless a calibration exchange is in flight.
     // Parsing for our own UI continues; only the forward pauses.
-    if (exportToDevice(this.config) && !this.link.exportGated) this.link.write(chunk)
+    if (exportToDevice(this.config) && !this.calibration.exportGated) this.link.write(chunk)
   }
 
   /** Device traffic, calibration frames already removed by the link: relay to DCS:7778. */
@@ -334,7 +359,7 @@ export class Session {
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
   status(): RelayStatus {
     const device: DeviceStatus = this.link.deviceStatus()
-    return { running: this.running, relay: this.relay, device, cal: this.link.calSnapshot() }
+    return { running: this.running, relay: this.relay, device, cal: this.calibration.calSnapshot() }
   }
 
   /** Push a client diagnostic into the event log + the debug log file. */
