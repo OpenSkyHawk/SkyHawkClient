@@ -9,8 +9,9 @@
 //     (`getStatus`, `getNodes`, `getConfig`, `getEvents`, `getNodeRegistry`) answer from it, and
 //   - it pushes each part on today's channel: `device:status`, `relay:state`, `nodes:model`,
 //     `nodes:telemetry`, `events:batch`, `cal:data`, `hid:report`, `aircraft:changed`, the relay's
-//     ticks `telemetry:tick` and `stats:tick`, and the stream batches `log:batch`,
-//     `serial:traffic` and `cal:raw`.
+//     ticks `telemetry:tick` and `stats:tick`, and the stream batches `log:batch` and
+//     `serial:traffic` — and hands the link's state, the device's calibration report and the RAW
+//     batches to main's calibration workflow, which pushes `cal:workflow`.
 // Tests never set renderer store fields and never push channels by hand, so they assert what the
 // user sees for a given main-side situation — not how the renderer stores it.
 //
@@ -20,13 +21,16 @@
 // today's channels. The change stays inside this file: every component test keeps its scenarios
 // and its assertions unchanged.
 //
-// The calibration channel is the one intent set with a scripted answer: a `CalDevice` is the
-// Gateway's side of the protocol (what HELLO, GET_CAL, SESSION_OPEN, STREAM_SELECT, COMMIT and
-// RESET answer), plus the client's restore cache on disk. The `cal*` invokes answer the way
-// main's HidCalibrationService does over it — `offline` while the port is closed, GET_CAL also
-// pushing `cal:data`, the cache keyed by the board's serial through main's own cache rules — and
-// the RAW stream arrives as `calRaw` batches. Nothing in the renderer's calibration controller is
-// stubbed. (R3.1 moves the workflow into main; the same CalDevice answers then feed it here.)
+// Calibration runs main's own workflow (R3.1): the mock hosts a real CalibrationWorkflowHost — the
+// workflow, the dialog's start/close sequencing, the restore offer and the derived CalibrationState
+// main pushes on `cal:workflow` — on the test's clock and timers. Its protocol commands are the one
+// part with a scripted answer: a `CalDevice` is the Gateway's side of the protocol (what HELLO,
+// GET_CAL, SESSION_OPEN, STREAM_SELECT, COMMIT and RESET answer), plus the client's restore cache
+// on disk. The `cal*` commands (spies on the mock, so a test can assert the exchange) answer the
+// way main's HidCalibrationService does over it — `offline` while the port is closed, GET_CAL also
+// pushing `cal:data` and reporting to the workflow, the cache keyed by the board's serial through
+// main's own cache rules — and the RAW stream arrives as `calRaw` batches into the workflow. The
+// renderer's dialog sends the workflow intents (`calOpen`, `calSave`, …), which the host answers.
 //
 // Intents (renderer → main requests) are `vi.fn`s with harmless defaults, so a test can assert the
 // call (`expect(sky.forgetNode).toHaveBeenCalledWith(4)`) or override the answer
@@ -59,6 +63,8 @@ import {
   regressedAxes,
   storeAxes
 } from '../../main/hid/calibration/cache-rules'
+import type { CalibrationCommands } from '../../main/hid/calibration/calibration-workflow'
+import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, SkyhawkApi } from '@shared/app'
 import type { LogEvent } from '@shared/events'
@@ -101,7 +107,7 @@ export interface Scenario {
   stream?: LogRow[]
   /** Raw serial chunks (`serial:traffic`). A batch: pushed, never pulled. */
   serial?: SerialFrame[]
-  /** RAW samples for the streamed axis, stamped on arrival in main (`cal:raw`). A batch. */
+  /** RAW samples for the streamed axis, stamped on arrival in main (its 50 ms batches). A batch. */
   calRaw?: CalRawSample[]
 }
 
@@ -119,15 +125,20 @@ export interface CalDevice {
 
 type Fns = { [K in keyof SkyhawkApi]: Mock<SkyhawkApi[K]> }
 
-export type SkyhawkMock = Fns & {
-  /** Main's current state: what the pulls answer from. Grows with each `emitScenario`. */
-  readonly scenario: Scenario
-  /**
-   * Main's state changes: merge `s` into the scenario and push each part it holds, in the order
-   * main's session would (device link first). Wrapped in `act`, so the UI has caught up on return.
-   */
-  emitScenario(s: Scenario): void
-}
+/** Main's calibration commands (HidCalibrationService), as the workflow calls them: spies. */
+type CalCommands = CalibrationCommands & { calHello(): Promise<CalResult<CalHello>> }
+type CalSpies = { [K in keyof CalCommands]: Mock<CalCommands[K]> }
+
+export type SkyhawkMock = Fns &
+  CalSpies & {
+    /** Main's current state: what the pulls answer from. Grows with each `emitScenario`. */
+    readonly scenario: Scenario
+    /**
+     * Main's state changes: merge `s` into the scenario and push each part it holds, in the order
+     * main's session would (device link first). Wrapped in `act`, so the UI has caught up on return.
+     */
+    emitScenario(s: Scenario): void
+  }
 
 const EMPTY_MODEL: NodeModel = {
   nodes: [],
@@ -158,8 +169,7 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel } = {
   cal: 'cal:data',
   hid: 'hid:report',
   stream: 'log:batch',
-  serial: 'serial:traffic',
-  calRaw: 'cal:raw'
+  serial: 'serial:traffic'
 }
 
 /** Main's answer to any calibration exchange while the port is closed (HidCalibrationService). */
@@ -184,14 +194,15 @@ export function installSkyhawkMock(): SkyhawkMock {
 
     // ── pulls: answered from the scenario ──
     getConfig: vi.fn(() => resolve({ ...DEFAULT_CONFIG, ...state.config })),
-    getStatus: vi.fn(() =>
-      resolve({
+    getStatus: vi.fn(() => {
+      host.rendererLoaded() // main's relay:status handler: a renderer (re)loaded
+      return resolve({
         running: state.relay?.running ?? false,
         relay: state.relay ?? { running: false },
         device: state.device ?? { state: 'no-device' },
-        ...(state.cal && { cal: state.cal })
+        cal: host.state()
       })
-    ),
+    }),
     getNodes: vi.fn(() =>
       resolve({ model: state.model ?? EMPTY_MODEL, telemetry: state.telemetry ?? [] })
     ),
@@ -228,6 +239,22 @@ export function installSkyhawkMock(): SkyhawkMock {
     setSerialMonitor: vi.fn(() => resolve(undefined)),
     dumpSerialPorts: vi.fn(() => resolve({ path: '/tmp/serial-ports.txt', count: 0 })),
     revealDebugLog: vi.fn(() => resolve(undefined)),
+    // ── calibration intents: main's workflow answers them (the host below) ──
+    calOpen: vi.fn((axis: number, review?: boolean) => host.open(axis, review)),
+    calClose: vi.fn(() => host.close()),
+    calSelectAxis: vi.fn((axis: number) => host.selectAxis(axis)),
+    calStartCapture: vi.fn(() => resolve(host.startCapture())),
+    calRetry: vi.fn(() => resolve(host.retry())),
+    calSetSelfCentring: vi.fn((on: boolean) => resolve(host.setSelfCentring(on))),
+    calSave: vi.fn(() => host.save()),
+    calRestore: vi.fn(() => host.restore()),
+    calDeleteAxis: vi.fn((idx: number) => host.deleteAxis(idx)),
+    calSetRestoreOpen: vi.fn((open: boolean) => resolve(host.setRestoreOpen(open))),
+    calAttach: vi.fn((on: boolean) => resolve(host.attach(on)))
+  }
+
+  // ── main's calibration commands, over the scripted Gateway (HidCalibrationService's cal*) ──
+  const calSpies: CalSpies = {
     calHello: vi.fn(() => resolve(cal((d) => ok(d.hello)) ?? calFail)),
     calRead: vi.fn(() => resolve(cal((d) => ok(readCal(d))) ?? calFail)),
     calSessionOpen: vi.fn((axisIdx: number) =>
@@ -318,7 +345,11 @@ export function installSkyhawkMock(): SkyhawkMock {
     const snap = snapshotOf(d)
     lastCal = snap
     state = { ...state, cal: snap }
-    act(() => push('cal:data', snap)) // main's calRead pushes what it read
+    // main's calRead pushes what it read, and reports it to the workflow
+    act(() => {
+      push('cal:data', snap)
+      host.reported(snap)
+    })
     return snap
   }
   const setStored = (
@@ -338,7 +369,12 @@ export function installSkyhawkMock(): SkyhawkMock {
     return f && ({ ok: false as const, ...f } satisfies CalResult<never>)
   }
 
-  const mock = Object.defineProperty(fns, 'scenario', { get: () => state }) as SkyhawkMock
+  /** Main's calibration workflow (HidCalibrationService hosts the same), over the spies above. */
+  const host = new CalibrationWorkflowHost(calSpies, (st) => push('cal:workflow', st))
+
+  const mock = Object.defineProperty(Object.assign(fns, calSpies), 'scenario', {
+    get: () => state
+  }) as SkyhawkMock
   Object.assign(mock, {
     emitScenario(given: Scenario) {
       // The port opened on a calibration-capable Gateway: main reads its calibration (GET_CAL)
@@ -351,8 +387,15 @@ export function installSkyhawkMock(): SkyhawkMock {
       act(() => {
         for (const [key, ch] of Object.entries(PUSHES) as [keyof Scenario, PushChannel][]) {
           const data = s[key]
-          if (data !== undefined) push(ch, data as never)
+          if (data === undefined) continue
+          push(ch, data as never)
+          // What main does next, inside the same step: the workflow follows the link's state
+          // (onStatus, after `device:status`) and takes the report (calRead, after `cal:data`).
+          if (key === 'device') host.linkStatus(s.device!.state)
+          if (key === 'cal') host.reported(s.cal!)
         }
+        // RAW: main's 50 ms batches, into the workflow (main-internal since R3.1).
+        if (s.calRaw !== undefined) host.ingest(s.calRaw)
       })
     }
   })

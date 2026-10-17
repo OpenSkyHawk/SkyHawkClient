@@ -33,13 +33,8 @@ import { HID_CTRL, HID_PUSH, type HidAvailability, type HidPushChannels } from '
 import {
   CALIBRATION_CTRL,
   CALIBRATION_PUSH,
-  type CachedBoard,
-  type CalCacheEntry,
-  type CalCommitAxis,
-  type CalHello,
   type CalibrationPushChannels,
-  type CalResult,
-  type CalSnapshot
+  type CalibrationState
 } from '../hid/calibration/ipc'
 import {
   NODES_CTRL,
@@ -60,13 +55,14 @@ export interface RelayStatus {
   relay: RelayState
   device: DeviceStatus
   /**
-   * Last calibration the device confirmed, if the link is still up.
+   * The calibration workflow's last `cal:workflow` push: the device's last report (if the link is
+   * still up), the badges and the restore offer, and the dialog if it is open.
    *
-   * Carried here because `cal:data` is only pushed when the port opens. A renderer reload
+   * Carried here because the report is only pushed when the port opens. A renderer reload
    * creates a fresh store while the main-process session keeps running, so without this the
    * badges would stay blank until the next reconnect — indefinitely, on a stable link.
    */
-  cal?: CalSnapshot
+  cal?: CalibrationState
 }
 
 export interface DebugDumpResult {
@@ -77,9 +73,10 @@ export interface DebugDumpResult {
 // main -> renderer channel payloads
 //
 // Two scopes (#69). **Link-scoped** pushes flow whenever the device link is up, relaying or not:
-// device:status, nodes:*, serial:traffic, cal:*. On link down they stop and the renderer keeps
+// device:status, nodes:*, serial:traffic, cal:data. On link down they stop and the renderer keeps
 // the last state, dimmed via isLinkUp(). hid:report is neither: the joystick is read for as long
-// as the app runs, serial port open or not. **Relay-scoped** pushes flow only while
+// as the app runs, serial port open or not; nor is cal:workflow, which follows the link's state
+// and the dialog's actions. **Relay-scoped** pushes flow only while
 // relaying: relay:state changes, aircraft:changed, stats:tick, telemetry:tick. log:batch carries
 // both (panel commands are logged while stopped too), and so does events:batch.
 // Each topic declares its own pushes (shared/<topic>/ipc.ts); this is their union.
@@ -219,37 +216,30 @@ export interface SkyhawkApi {
   revealDebugLog(): Promise<void>
 
   // ── axis calibration (#46) ────────────────────────────────────────────────
-  // hello/read are answered outside a session, so badges work with no dialog open.
-  calHello(): Promise<CalResult<CalHello>>
-  calRead(): Promise<CalResult<CalSnapshot>>
-  /** Opens a session and streams RAW for one axis. 0xFF streams none. */
-  calSessionOpen(axisIdx: number): Promise<CalResult<{ timeoutMs: number; axisIdx: number }>>
-  calStreamSelect(axisIdx: number): Promise<CalResult<null>>
-  /** Writes and persists exactly one axis. Acknowledged != stored; follow with calRead(). */
-  calCommit(axis: CalCommitAxis): Promise<CalResult<null>>
-  /** Deletes stored calibration for one axis, or all with 0xFF. Persists immediately. */
-  calReset(idx: number): Promise<CalResult<null>>
-  calSessionClose(): Promise<CalResult<null>>
-
-  // ── the client's copy of what the device confirmed storing (#46, part 5) ──
+  // The dialog's actions. Main runs the workflow — the protocol exchanges, the restore cache —
+  // and answers each by pushing `cal:workflow`.
+  /** Open the dialog on `axis`: a session first, then the dialog. `review` expands the restore offer. */
+  calOpen(axis: number, review?: boolean): Promise<void>
+  /** Close the session and the dialog, then re-read what the device holds. */
+  calClose(): Promise<void>
+  /** Show and stream another axis; drafts survive the switch. */
+  calSelectAxis(axis: number): Promise<void>
+  calStartCapture(): Promise<void>
+  /** Redo a rejected sweep, keeping the accepted ones. */
+  calRetry(): Promise<void>
+  /** The rest-position setting for the axis on screen. */
+  calSetSelfCentring(selfCentring: boolean): Promise<void>
+  /** Write every edited axis, each verified by a read-back. */
+  calSave(): Promise<void>
+  /** Write the cached copy back for the axes the device has lost. */
+  calRestore(): Promise<void>
+  /** Delete stored calibration for one axis. Persists immediately. */
+  calDeleteAxis(idx: number): Promise<void>
+  /** Expand or fold the restore offer. */
+  calSetRestoreOpen(open: boolean): Promise<void>
   /**
-   * What the cache holds for the board currently attached, and which of its axes the device has
-   * since lost. `board` is undefined when nothing is cached, or when the port reports no serial —
-   * without one there is no way to tell this board's calibration from another's.
+   * The HID tab mounted (`true`) or unmounted (`false`): main builds the calibration workflow for
+   * the view, or disposes it.
    */
-  calCacheRead(): Promise<CalResult<{ board?: CachedBoard; regressed: number[] }>>
-  /**
-   * Record axes the device has **confirmed** storing — call after the read-back, never after the
-   * ACK. Caching what was sent rather than what came back would preserve client optimism as if it
-   * were device state, which is the one thing this copy must never do.
-   */
-  calCacheStore(axes: CalCacheEntry[]): Promise<CalResult<null>>
-  /**
-   * Forget an axis the user deliberately deleted, or the whole board with `0xFF`.
-   *
-   * A deletion has to reach the cache. Inferring it from a later read is impossible — an axis that
-   * is uncalibrated because the user erased it looks exactly like one that lost its calibration,
-   * and the client would offer to restore what was just deleted.
-   */
-  calCacheDrop(idx: number): Promise<CalResult<null>>
+  calAttach(on: boolean): Promise<void>
 }

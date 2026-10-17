@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CalSnapshot } from '@shared/hid/calibration'
+import { CALIBRATION_IDLE, type CalibrationState, type CalSnapshot } from '@shared/hid/calibration'
 import type { NodeModel, NodeSnapshot, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import type { LogEvent } from '@shared/events'
@@ -80,6 +80,11 @@ const snapshot = (calibratedMask: number, serial = 'BOARD-A'): CalSnapshot => ({
   serialNumber: serial
 })
 
+/** What main pushes on `cal:workflow` with `snap` reported (only the snapshot matters here). */
+const calibration = (snap: CalSnapshot): CalibrationState => ({
+  tab: { ...CALIBRATION_IDLE.tab, snapshot: snap }
+})
+
 /**
  * A fresh module instance per test.
  *
@@ -104,15 +109,17 @@ describe('calibration state lifecycle', () => {
     status = { running: false, relay: { running: false }, device: { state: 'no-device' } }
   })
 
+  // The report itself — taken from GET_CAL, dropped whenever the link is not up — is main's since
+  // R3.1 (main/hid/calibration/workflow-host.test.ts). The store holds what main pushes.
   it('starts with no snapshot, which is not the same as uncalibrated', async () => {
     const s = await freshStore()
-    expect(s.getState().cal).toBeUndefined()
+    expect(s.getState().calibration.tab.snapshot).toBeUndefined()
   })
 
-  it('takes the snapshot from a cal:data push', async () => {
+  it('takes the snapshot from a cal:workflow push', async () => {
     const s = await freshStore()
-    push('cal:data', snapshot(0b01))
-    expect(s.getState().cal?.calibratedMask).toBe(0b01)
+    push('cal:workflow', calibration(snapshot(0b01)))
+    expect(s.getState().calibration.tab.snapshot?.calibratedMask).toBe(0b01)
   })
 
   it('carries the report age, not just the rate', async () => {
@@ -132,47 +139,20 @@ describe('calibration state lifecycle', () => {
       running: true,
       relay: { running: true, stream: 'connected' },
       device: { state: 'connected', portPath: '/dev/fake' },
-      cal: snapshot(0b01)
+      cal: calibration(snapshot(0b01))
     }
     const s = await freshStore()
-    expect(s.getState().cal?.calibratedMask, 'reload must recover the badges').toBe(0b01)
+    expect(
+      s.getState().calibration.tab.snapshot?.calibratedMask,
+      'reload must recover the badges'
+    ).toBe(0b01)
     expect(s.getState().deviceState).toBe('connected')
   })
 
   it('rehydrates nothing when the link is down', async () => {
     status = { running: false, relay: { running: false }, device: { state: 'no-device' } }
     const s = await freshStore()
-    expect(s.getState().cal).toBeUndefined()
-  })
-
-  // Clearing only on `no-device` would leave the previous board's badges on screen through a
-  // reconnect -- and permanently, if the next board runs firmware that never sends cal:data.
-  for (const state of ['reconnecting', 'error', 'no-device', 'scanning', 'disconnected'] as const) {
-    it(`drops the snapshot when the device goes ${state}`, async () => {
-      const s = await freshStore()
-      push('cal:data', snapshot(0b01))
-      expect(s.getState().cal).toBeDefined()
-      push('device:status', { state })
-      expect(s.getState().cal, `${state} means the snapshot cannot be vouched for`).toBeUndefined()
-    })
-  }
-
-  it('keeps the snapshot while the link stays up', async () => {
-    const s = await freshStore()
-    push('cal:data', snapshot(0b01))
-    push('device:status', { state: 'connected', portPath: '/dev/fake' })
-    expect(s.getState().cal?.calibratedMask).toBe(0b01)
-  })
-
-  it('replaces one board’s snapshot with the next board’s, never merging them', async () => {
-    const s = await freshStore()
-    push('cal:data', snapshot(0b11, 'BOARD-A'))
-    push('device:status', { state: 'reconnecting' })
-    expect(s.getState().cal).toBeUndefined()
-    push('device:status', { state: 'connected' })
-    push('cal:data', snapshot(0b00, 'BOARD-B'))
-    expect(s.getState().cal?.serialNumber).toBe('BOARD-B')
-    expect(s.getState().cal?.calibratedMask).toBe(0b00)
+    expect(s.getState().calibration.tab.snapshot).toBeUndefined()
   })
 })
 

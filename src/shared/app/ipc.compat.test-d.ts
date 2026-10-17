@@ -5,6 +5,11 @@
 // method added, removed, renamed or re-typed, a push channel re-typed, a channel string changed.
 // A later PR that changes the API on purpose updates the copy in the same diff.
 //
+// R3.1 (calibration workflow to main): the ten protocol intents (cal:hello … cal:cache-drop) left
+// the API, the ten workflow intents (cal:open … cal:set-restore-open) and the lifecycle intent
+// cal:attach joined it, `cal:raw` became
+// main-internal, `cal:workflow` was added, and `relay:status`'s `cal` became the CalibrationState.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -16,15 +21,7 @@ import type {
   SectionId,
   SettingsStore
 } from '../config/ipc'
-import type {
-  CachedBoard,
-  CalCacheEntry,
-  CalCommitAxis,
-  CalHello,
-  CalRawSample,
-  CalResult,
-  CalSnapshot
-} from '../hid/calibration/ipc'
+import type { CalibrationState, CalSnapshot } from '../hid/calibration/ipc'
 import type {
   AircraftStatus,
   CaptureState,
@@ -57,6 +54,13 @@ type Equal<X, Y> =
   (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false
 type Expect<T extends true> = T
 
+interface OldRelayStatus {
+  running: boolean
+  relay: RelayState
+  device: DeviceStatus
+  cal?: CalibrationState
+}
+
 interface OldPushChannels {
   'device:status': DeviceStatus
   'relay:state': RelayState
@@ -70,7 +74,7 @@ interface OldPushChannels {
   'nodes:model': NodeModel
   'serial:traffic': SerialFrame[]
   'cal:data': CalSnapshot
-  'cal:raw': CalRawSample[]
+  'cal:workflow': CalibrationState
 }
 
 type OldPushChannel = keyof OldPushChannels
@@ -88,7 +92,7 @@ interface OldIPC {
   readonly nodesModel: 'nodes:model'
   readonly serialTraffic: 'serial:traffic'
   readonly calData: 'cal:data'
-  readonly calRaw: 'cal:raw'
+  readonly calWorkflow: 'cal:workflow'
 }
 
 interface OldCTRL {
@@ -122,16 +126,17 @@ interface OldCTRL {
   readonly serialMonitor: 'serial:monitor'
   readonly debugDumpPorts: 'debug:dump-ports'
   readonly debugReveal: 'debug:reveal'
-  readonly calHello: 'cal:hello'
-  readonly calRead: 'cal:read'
-  readonly calSessionOpen: 'cal:session-open'
-  readonly calStreamSelect: 'cal:stream-select'
-  readonly calCommit: 'cal:commit'
-  readonly calReset: 'cal:reset'
-  readonly calSessionClose: 'cal:session-close'
-  readonly calCacheRead: 'cal:cache-read'
-  readonly calCacheStore: 'cal:cache-store'
-  readonly calCacheDrop: 'cal:cache-drop'
+  readonly calOpen: 'cal:open'
+  readonly calClose: 'cal:close'
+  readonly calSelectAxis: 'cal:select-axis'
+  readonly calStartCapture: 'cal:start-capture'
+  readonly calRetry: 'cal:retry'
+  readonly calSetSelfCentring: 'cal:set-self-centring'
+  readonly calSave: 'cal:save'
+  readonly calRestore: 'cal:restore'
+  readonly calDeleteAxis: 'cal:delete-axis'
+  readonly calSetRestoreOpen: 'cal:set-restore-open'
+  readonly calAttach: 'cal:attach'
 }
 
 interface OldSkyhawkApi {
@@ -147,7 +152,7 @@ interface OldSkyhawkApi {
   ): Promise<ConfigImportApplyResult>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
-  getStatus(): Promise<RelayStatus>
+  getStatus(): Promise<OldRelayStatus>
   connectDevice(): Promise<void>
   disconnectDevice(): Promise<void>
   exportLog(text: string): Promise<ExportResult>
@@ -170,23 +175,25 @@ interface OldSkyhawkApi {
   setSerialMonitor(on: boolean): Promise<void>
   dumpSerialPorts(): Promise<DebugDumpResult>
   revealDebugLog(): Promise<void>
-  calHello(): Promise<CalResult<CalHello>>
-  calRead(): Promise<CalResult<CalSnapshot>>
-  calSessionOpen(axisIdx: number): Promise<CalResult<{ timeoutMs: number; axisIdx: number }>>
-  calStreamSelect(axisIdx: number): Promise<CalResult<null>>
-  calCommit(axis: CalCommitAxis): Promise<CalResult<null>>
-  calReset(idx: number): Promise<CalResult<null>>
-  calSessionClose(): Promise<CalResult<null>>
-  calCacheRead(): Promise<CalResult<{ board?: CachedBoard; regressed: number[] }>>
-  calCacheStore(axes: CalCacheEntry[]): Promise<CalResult<null>>
-  calCacheDrop(idx: number): Promise<CalResult<null>>
+  calOpen(axis: number, review?: boolean): Promise<void>
+  calClose(): Promise<void>
+  calSelectAxis(axis: number): Promise<void>
+  calStartCapture(): Promise<void>
+  calRetry(): Promise<void>
+  calSetSelfCentring(selfCentring: boolean): Promise<void>
+  calSave(): Promise<void>
+  calRestore(): Promise<void>
+  calDeleteAxis(idx: number): Promise<void>
+  calSetRestoreOpen(open: boolean): Promise<void>
+  calAttach(on: boolean): Promise<void>
 }
 
 export type ApiSurfaceUnchanged = [
   Expect<Equal<OldSkyhawkApi, SkyhawkApi>>,
   Expect<Equal<OldPushChannels, PushChannels>>,
   Expect<Equal<OldIPC, typeof IPC>>,
-  Expect<Equal<OldCTRL, typeof CTRL>>
+  Expect<Equal<OldCTRL, typeof CTRL>>,
+  Expect<Equal<OldRelayStatus, RelayStatus>>
 ]
 
 /**

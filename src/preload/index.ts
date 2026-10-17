@@ -14,14 +14,6 @@ import type {
   ConfigImportApplyResult,
   ConfigImportOpen
 } from '@shared/config'
-import type {
-  CachedBoard,
-  CalCacheEntry,
-  CalCommitAxis,
-  CalHello,
-  CalResult,
-  CalSnapshot
-} from '@shared/hid/calibration'
 import type { CaptureState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs'
 import type { HidAvailability } from '@shared/hid'
 import type { NodeMappingResult, NodeRegistryInfo, NodeSnapshot, ResetPreview } from '@shared/nodes'
@@ -77,26 +69,20 @@ const api: SkyhawkApi = {
   setSerialMonitor: (on: boolean) => ipcRenderer.invoke(CTRL.serialMonitor, on) as Promise<void>,
   dumpSerialPorts: () => ipcRenderer.invoke(CTRL.debugDumpPorts) as Promise<DebugDumpResult>,
   revealDebugLog: () => ipcRenderer.invoke(CTRL.debugReveal) as Promise<void>,
-  calHello: () => ipcRenderer.invoke(CTRL.calHello) as Promise<CalResult<CalHello>>,
-  calRead: () => ipcRenderer.invoke(CTRL.calRead) as Promise<CalResult<CalSnapshot>>,
-  calSessionOpen: (axisIdx: number) =>
-    ipcRenderer.invoke(CTRL.calSessionOpen, axisIdx) as Promise<
-      CalResult<{ timeoutMs: number; axisIdx: number }>
-    >,
-  calStreamSelect: (axisIdx: number) =>
-    ipcRenderer.invoke(CTRL.calStreamSelect, axisIdx) as Promise<CalResult<null>>,
-  calCommit: (axis: CalCommitAxis) =>
-    ipcRenderer.invoke(CTRL.calCommit, axis) as Promise<CalResult<null>>,
-  calReset: (idx: number) => ipcRenderer.invoke(CTRL.calReset, idx) as Promise<CalResult<null>>,
-  calCacheRead: () =>
-    ipcRenderer.invoke(CTRL.calCacheRead) as Promise<
-      CalResult<{ board?: CachedBoard; regressed: number[] }>
-    >,
-  calCacheStore: (axes: CalCacheEntry[]) =>
-    ipcRenderer.invoke(CTRL.calCacheStore, axes) as Promise<CalResult<null>>,
-  calCacheDrop: (idx: number) =>
-    ipcRenderer.invoke(CTRL.calCacheDrop, idx) as Promise<CalResult<null>>,
-  calSessionClose: () => ipcRenderer.invoke(CTRL.calSessionClose) as Promise<CalResult<null>>
+  calOpen: (axis: number, review?: boolean) =>
+    ipcRenderer.invoke(CTRL.calOpen, axis, review) as Promise<void>,
+  calClose: () => ipcRenderer.invoke(CTRL.calClose) as Promise<void>,
+  calSelectAxis: (axis: number) => ipcRenderer.invoke(CTRL.calSelectAxis, axis) as Promise<void>,
+  calStartCapture: () => ipcRenderer.invoke(CTRL.calStartCapture) as Promise<void>,
+  calRetry: () => ipcRenderer.invoke(CTRL.calRetry) as Promise<void>,
+  calSetSelfCentring: (selfCentring: boolean) =>
+    ipcRenderer.invoke(CTRL.calSetSelfCentring, selfCentring) as Promise<void>,
+  calSave: () => ipcRenderer.invoke(CTRL.calSave) as Promise<void>,
+  calRestore: () => ipcRenderer.invoke(CTRL.calRestore) as Promise<void>,
+  calDeleteAxis: (idx: number) => ipcRenderer.invoke(CTRL.calDeleteAxis, idx) as Promise<void>,
+  calSetRestoreOpen: (open: boolean) =>
+    ipcRenderer.invoke(CTRL.calSetRestoreOpen, open) as Promise<void>,
+  calAttach: (on: boolean) => ipcRenderer.invoke(CTRL.calAttach, on) as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('skyhawk', api)

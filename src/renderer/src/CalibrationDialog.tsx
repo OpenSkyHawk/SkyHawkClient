@@ -1,152 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  DEFAULT_CAPTURE_CONFIG,
-  hasTravelled,
-  holdProgress,
-  holdRemainingMs,
-  sweepsRemaining
-} from '@shared/hid/calibration/legacy-rules'
+import { useEffect, useRef, useState } from 'react'
 import { CAL_PROTO, HID_REPORT_LAYOUT } from '@shared/firmware'
-import type { CalSnapshot } from '@shared/hid/calibration'
-import { CalibrationController, type CalibrationState } from './calibration-controller'
-import { AXIS_LABELS, useStore } from './store'
-
-/** 32768: the unsigned -> signed offset, from the HID report's axis range. */
-const AXIS_OFFSET = -HID_REPORT_LAYOUT.axes.min
-/** 65535: the full unsigned span, from the HID report's axis range. */
-const AXIS_SPAN = HID_REPORT_LAYOUT.axes.max - HID_REPORT_LAYOUT.axes.min
-
-/**
- * Display units: signed ±32767, matching what DCS shows and what the HID tab reads off the
- * report. The wire, storage, capture and COMMIT all stay unsigned 0–65535 — that is the device's
- * language — so this is the single place the two meet.
- *
- * **Display only. Never call this on a value being committed.** The offset applied twice, or
- * zero times, still yields plausible in-range numbers and fails silently.
- */
-const toDisplay = (unsigned: number) => unsigned - AXIS_OFFSET
-const fmt = (n: number) => toDisplay(n).toLocaleString('en-US')
-/** A span, not a position — no offset applies. */
-const fmtSpan = (n: number) => n.toLocaleString('en-US')
-const pct = (v: number) => Math.max(0, Math.min(100, (v / AXIS_SPAN) * 100)).toFixed(2) + '%'
+import type { CalibrationDialogState } from '@shared/hid/calibration'
+import { AXIS_OFFSET, AXIS_SPAN, fmt, fmtSpan, pct, promptText } from './calibration-view'
+import { AXIS_LABELS, type CalibrationIntents } from './store'
 
 type Point = 'stopA' | 'stopB' | 'centre'
 
-/** Descriptive, never an error: 40% is the expected healthy result for a short-arc axis. */
-const TRAVEL_BANDS = [
-  { at: 0.6, label: 'Good', tone: 'ok' },
-  { at: 0.3, label: 'Workable', tone: '' },
-  { at: 0, label: 'Low', tone: 'warn' }
-] as const
-
-function travelQuality(min?: number, max?: number) {
-  if (min === undefined || max === undefined) return null
-  const counts = max - min
-  const band = TRAVEL_BANDS.find((b) => counts / AXIS_SPAN >= b.at)!
-  return { counts, pct: Math.round((counts / AXIS_SPAN) * 100), ...band }
-}
-
 /**
- * The live prompt during a capture.
- *
- * Two states per step, because they ask for opposite things and reading the wrong one wastes a
- * sweep: **travelling** (gold — keep moving, the bar is not counting yet) and **holding**
- * (green — stop moving, the bar is the dwell timer). The split is `hasTravelled`, not
- * `awaitingMovement`: that flag only rises after a full hold has already elapsed, so it reads
- * false for the first second of every step whether or not the user has touched the axis.
- *
- * Direction words are derived, never assumed. `startRaw` is where the axis sat when capture
- * opened, so "upper" means the raw count went up from there — which stays correct on an
- * inverted axis and on a short-arc axis that never crosses the midpoint. Before the axis has
- * moved at all in the first step there is no evidence either way, so the copy stays neutral.
+ * The axis calibration dialog. Main runs the workflow and decides everything shown here (`d`, the
+ * pushed CalibrationDialogState); the dialog draws it, words it, and sends the user's actions.
  */
-function prompt(s: CalibrationState, startRaw: number | null) {
-  const cap = s.capture
-  if (!cap || cap.phase !== 'capturing') return null
-  const holding = hasTravelled(cap)
-  const dir = (v: number) => (startRaw === null || v >= startRaw ? 'upper' : 'lower')
-
-  if (cap.step === 'centre') {
-    return {
-      arrow: holding ? '■' : '↓',
-      text: holding ? 'Let it settle — hands off' : 'Release the axis and let it return to rest',
-      note: holding
-        ? 'The axis is settled, so the device has stopped reporting. That is normal — the dwell timer runs on the clock.'
-        : 'Take your hand off it completely; a hand resting on the axis is a held position.',
-      holding
-    }
-  }
-
-  // stopA has no direction until the axis moves; stopB is whichever way stopA was not.
-  const side =
-    cap.step === 'stopA'
-      ? s.live && cap.movedBy > 0
-        ? dir(s.live.raw)
-        : null
-      : cap.current.stopA !== undefined
-        ? dir(cap.current.stopA) === 'upper'
-          ? 'lower'
-          : 'upper'
-        : null
-
-  if (holding) {
-    return {
-      arrow: '■',
-      text: side ? `HOLD it at the ${side} stop` : 'HOLD it against the stop',
-      note: 'The axis is settled, so the device has stopped reporting. That is normal — the dwell timer runs on the clock.',
-      holding
-    }
-  }
-  return {
-    arrow: side === 'lower' ? '▼' : side === 'upper' ? '▲' : '↕',
-    text: !side
-      ? 'Sweep the axis all the way to either stop'
-      : cap.step === 'stopA'
-        ? `Push the axis to its ${side.toUpperCase()} stop`
-        : `Now ${side === 'lower' ? 'pull' : 'push'} it to its ${side.toUpperCase()} stop`,
-    note: cap.awaitingMovement
-      ? 'Nothing has moved yet — take the axis all the way to the mechanical stop.'
-      : 'Keep moving steadily until you reach the stop.',
-    holding
-  }
-}
-
 export function CalibrationDialog({
-  controller,
-  onClose
+  d,
+  calibrate
 }: {
-  controller: CalibrationController
-  onClose: () => void
+  d: CalibrationDialogState
+  calibrate: CalibrationIntents
 }) {
-  const [s, setS] = useState<CalibrationState>(() => controller.snapshot())
-  useEffect(() => controller.subscribe(setS), [controller])
-
-  const present = useMemo(() => s.device?.axes.filter((a) => a.present) ?? [], [s.device])
-  const draft = s.drafts[s.axis]
-  const stored = s.device?.axes[s.axis]
+  const s = d.workflow
+  const { present, writing, invalid, shown, travel, selfCentring, dirty } = d
   const cap = s.capture
-  // 'done' is the held confirmation, not work in progress. Treating it as writing left the
-  // footer reading "Writing…" beside a strip saying the device had already confirmed the write,
-  // and kept Cancel and Delete disabled for three seconds after there was anything to wait for.
-  const writing = !!s.write && s.write.phase !== 'done'
-  const invalid = controller.invalidAxis()
-  const shown = draft ?? (stored?.calibrated ? stored : undefined)
-  const travel = travelQuality(shown?.min, shown?.max)
-  const selfCentring = controller.selfCentring()
-  // Where the axis sat when capture opened — the only honest anchor for "upper"/"lower".
-  const startRaw = useRef<number | null>(null)
-  if (!cap) startRaw.current = null
-  else if (startRaw.current === null && s.live) startRaw.current = s.live.raw
-  // A paused capture is frozen, so "push it to its stop" would ask for movement nothing records.
-  const p = s.paused ? null : prompt(s, startRaw.current)
-  const dirty = controller.dirtyAxes()
+  const p = d.prompt && promptText(d.prompt)
+  const onClose = () => calibrate.close()
 
   // Centre is not a stage the user navigates to — it is captured inside the same sweep as the
   // stops, and naming it as step 2 promised a separate thing to do that never arrives.
   const steps = ['Full travel', 'Review & write']
-  // A rejected sweep is still step 1: nothing was captured, and Redo continues the same capture.
-  const inTravel = cap?.phase === 'capturing' || cap?.phase === 'rejected'
-  const stepIndex = inTravel ? 0 : 1
+  const stepIndex = d.stepIndex
 
   /**
    * Delete is armed by the first click and performed by the second.
@@ -212,12 +92,12 @@ export function CalibrationDialog({
             <span className="cd__pilldot" />
             <span>DCS link paused</span>
           </span>
-          <button className="cd__x" onClick={onClose} disabled={writing}>
+          <button className="cd__x" onClick={onClose} disabled={d.disabled.close}>
             ✕
           </button>
         </header>
 
-        {(cap || draft) && (
+        {d.strip && (
           <div className="cd__strip">
             {steps.map((label, i) => (
               <div key={label} className="cd__step">
@@ -232,8 +112,8 @@ export function CalibrationDialog({
               </div>
             ))}
             <span className="cd__hint">
-              {inTravel && cap
-                ? `${sweepsRemaining(cap)} sweep${sweepsRemaining(cap) === 1 ? '' : 's'} remaining`
+              {d.sweepsRemaining !== undefined
+                ? `${d.sweepsRemaining} sweep${d.sweepsRemaining === 1 ? '' : 's'} remaining`
                 : 'Captured, not written — nothing reaches the device until you write.'}
             </span>
           </div>
@@ -245,8 +125,8 @@ export function CalibrationDialog({
               <button
                 key={a.idx}
                 className={`cd__axis${a.idx === s.axis ? ' is-on' : ''}`}
-                onClick={() => void controller.selectAxis(a.idx)}
-                disabled={writing || s.switchingTo !== undefined}
+                onClick={() => calibrate.selectAxis(a.idx)}
+                disabled={d.disabled.axisSwitch}
               >
                 <span className="cd__axisname">{AXIS_LABELS[a.idx]}</span>
                 <span className="cd__slot">Axis {a.idx}</span>
@@ -308,7 +188,7 @@ export function CalibrationDialog({
               <span className="cd__label">
                 Captured range <span className="cd__dim">· sensor</span>
               </span>
-              {cap?.phase === 'capturing' && !cap.awaitingMovement && (
+              {d.holdAtStops && (
                 <span className="cd__holding">
                   <span className="cd__holddot" />
                   Hold at each stop
@@ -356,15 +236,15 @@ export function CalibrationDialog({
               <div className="cd__seg">
                 <button
                   className={`cd__segbtn${selfCentring ? ' is-on' : ''}`}
-                  onClick={() => controller.setSelfCentring(true)}
-                  disabled={writing || cap?.phase === 'capturing'}
+                  onClick={() => calibrate.setSelfCentring(true)}
+                  disabled={d.disabled.rest}
                 >
                   Self-centring
                 </button>
                 <button
                   className={`cd__segbtn${!selfCentring ? ' is-on' : ''}`}
-                  onClick={() => controller.setSelfCentring(false)}
-                  disabled={writing || cap?.phase === 'capturing'}
+                  onClick={() => calibrate.setSelfCentring(false)}
+                  disabled={d.disabled.rest}
                 >
                   None
                 </button>
@@ -377,29 +257,29 @@ export function CalibrationDialog({
             </div>
 
             <div className="cd__actions">
-              {cap?.phase === 'rejected' ? (
+              {d.capture.action === 'redo' ? (
                 <button
                   className="cd__primary"
-                  onClick={() => controller.retry()}
-                  disabled={s.paused}
+                  onClick={() => calibrate.retry()}
+                  disabled={d.capture.disabled}
                 >
                   Redo that sweep
                 </button>
               ) : (
                 <button
                   className="cd__primary"
-                  onClick={() => controller.startCapture()}
-                  disabled={writing || cap?.phase === 'capturing' || s.paused}
+                  onClick={() => calibrate.startCapture()}
+                  disabled={d.capture.disabled}
                 >
-                  {draft || stored?.calibrated ? 'Re-capture travel' : 'Start travel capture'}
+                  {d.capture.recapture ? 'Re-capture travel' : 'Start travel capture'}
                 </button>
               )}
               <span className="cd__diag">
-                {cap?.phase === 'capturing'
-                  ? `Sweep ${cap.accepted.length + 1} of ${cap.config.sweepsRequired}`
-                  : draft
-                    ? `${DEFAULT_CAPTURE_CONFIG.sweepsRequired} of ${DEFAULT_CAPTURE_CONFIG.sweepsRequired} sweeps captured`
-                    : `${DEFAULT_CAPTURE_CONFIG.sweepsRequired} sweeps per axis`}
+                {d.sweeps.kind === 'capturing'
+                  ? `Sweep ${d.sweeps.sweep} of ${d.sweeps.of}`
+                  : d.sweeps.kind === 'captured'
+                    ? `${d.sweeps.of} of ${d.sweeps.of} sweeps captured`
+                    : `${d.sweeps.of} sweeps per axis`}
               </span>
             </div>
 
@@ -418,12 +298,12 @@ export function CalibrationDialog({
                       : cap.awaitingConfirmation
                         ? 'waiting for a sample'
                         : p.holding
-                          ? `hold ${(holdRemainingMs(cap) / 1000).toFixed(1)} s more`
+                          ? `hold ${(d.hold!.remainingMs / 1000).toFixed(1)} s more`
                           : ''}
                   </span>
                 </div>
                 <div className="cd__dwellbar">
-                  <span style={{ width: (p.holding ? holdProgress(cap) * 100 : 0) + '%' }} />
+                  <span style={{ width: (p.holding ? d.hold!.progress * 100 : 0) + '%' }} />
                 </div>
                 <div className="cd__dwellnote">
                   {cap.awaitingConfirmation
@@ -440,14 +320,11 @@ export function CalibrationDialog({
               </div>
             )}
 
-            {cap && cap.accepted.length > 0 && (
+            {d.convergence.length > 0 && (
               <div className="cd__conv">
                 <div className="cd__label">Sweep convergence</div>
-                {cap.accepted.map((w, i) => {
-                  // Accepted sweeps are within slack by construction, so this flags the ones that
-                  // still contribute nothing under widest-wins rather than reporting a fault.
-                  const widest = Math.max(...cap.accepted.map((a) => a.max - a.min))
-                  const short = widest - (w.max - w.min) > widest * cap.config.shortfallFraction
+                {d.convergence.map((w, i) => {
+                  const short = w.short
                   return (
                     <div key={i} className="cd__convrow">
                       <span className="cd__convn">Sweep {i + 1}</span>
@@ -504,7 +381,7 @@ export function CalibrationDialog({
           </div>
         )}
 
-        {s.restorable && s.restoreOpen && !s.write && !s.paused && (
+        {d.restore === 'panel' && s.restorable && (
           <div className="cd__restore">
             <div className="cd__restorehead">
               <span className="cd__restoretitle">Restore calibration to the device</span>
@@ -536,13 +413,10 @@ export function CalibrationDialog({
                 <code>{s.device?.serialNumber ?? 'unknown'}</code>. Only axes the device has lost
                 are written; anything it still holds is left alone.
               </span>
-              <button className="cd__ghost" onClick={() => controller.setRestoreOpen(false)}>
+              <button className="cd__ghost" onClick={() => calibrate.setRestoreOpen(false)}>
                 Not now
               </button>
-              <button
-                className="cd__primary cd__primary--sm"
-                onClick={() => void controller.restore()}
-              >
+              <button className="cd__primary cd__primary--sm" onClick={() => calibrate.restore()}>
                 Restore {s.restorable.axes.length}{' '}
                 {s.restorable.axes.length === 1 ? 'axis' : 'axes'}
               </button>
@@ -550,15 +424,15 @@ export function CalibrationDialog({
           </div>
         )}
 
-        {s.restorable && !s.restoreOpen && !s.write && !s.paused && (
-          <button className="cd__reoffer" onClick={() => controller.setRestoreOpen(true)}>
+        {d.restore === 'reoffer' && s.restorable && (
+          <button className="cd__reoffer" onClick={() => calibrate.setRestoreOpen(true)}>
             <span className="cd__reofferdot" />
             {s.restorable.axes.length} {s.restorable.axes.length === 1 ? 'axis has' : 'axes have'} a
             saved copy this device no longer holds — review
           </button>
         )}
 
-        {s.notice && !s.write && (
+        {d.notice && s.notice && (
           <div className={`cd__notice${s.notice.kind === 'erased' ? ' is-erased' : ''}`}>
             <span className="cd__noticeicon">{s.notice.kind === 'written' ? '✓' : '⌫'}</span>
             <span>
@@ -600,35 +474,35 @@ export function CalibrationDialog({
         )}
 
         <footer className="cd__bar2">
-          {invalid && !writing && (
+          {d.showInvalid && invalid && (
             <span className="cd__invalid">
               {AXIS_LABELS[invalid.axis]}: {invalid.reason}
             </span>
           )}
           <div className="cd__spacer" />
-          {stored?.calibrated && !writing && (
+          {d.remove.shown && (
             <button
               className={`cd__ghost${armed ? ' cd__ghost--danger' : ''}`}
-              disabled={s.paused}
+              disabled={d.remove.disabled}
               onClick={() => {
                 if (!armed) {
                   setArmed(true)
                   return
                 }
                 setArmed(false)
-                void controller.deleteAxis(s.axis)
+                calibrate.deleteAxis(s.axis)
               }}
             >
               {armed ? `Erase ${AXIS_LABELS[s.axis]} from the device?` : 'Delete calibration'}
             </button>
           )}
-          <button className="cd__ghost" onClick={onClose} disabled={writing}>
+          <button className="cd__ghost" onClick={onClose} disabled={d.disabled.close}>
             Cancel
           </button>
           <button
             className="cd__primary cd__primary--sm"
-            onClick={() => void controller.save()}
-            disabled={writing || !dirty.length || !!invalid || s.paused}
+            onClick={() => calibrate.save()}
+            disabled={d.disabled.write}
           >
             {writing ? 'Writing…' : dirty.length ? `Write ${dirty.length} axis` : 'Write'}
           </button>
@@ -636,74 +510,4 @@ export function CalibrationDialog({
       </div>
     </div>
   )
-}
-
-/** Owns the controller's lifetime and feeds it the RAW stream. */
-export function useCalibration(device: CalSnapshot | undefined, linkUp: boolean) {
-  const api = window.skyhawk
-  const ref = useRef<CalibrationController | null>(null)
-  if (!ref.current && api) ref.current = new CalibrationController(api)
-  const controller = ref.current
-  const [open, setOpen] = useState(false)
-  const [offer, setOffer] = useState<{ confirmedAt: string; axes: number[] }>()
-  const setCal = useStore((st) => st.set)
-
-  useEffect(() => {
-    if (!controller || !api) return
-    const off = api.on('cal:raw', (batch) => controller.ingest(batch))
-    return () => {
-      off()
-      controller.dispose()
-    }
-  }, [controller, api])
-
-  // Order matters: the link going down clears the store's snapshot in the same render, and the
-  // controller must already be paused when that empty snapshot arrives — otherwise it reads as a
-  // different board and the captured sweeps are thrown away.
-  useEffect(() => controller?.linkChanged(linkUp), [controller, linkUp])
-  useEffect(() => controller?.deviceChanged(device), [controller, device])
-
-  // Checked whenever the device's report changes, and needs no session: GET_CAL already ran to
-  // drive the badges, and the cache is a local file. So the offer can appear on the HID tab with
-  // no dialog open — which is the point, since the user has no reason to open one for an axis
-  // they think is calibrated.
-  useEffect(() => {
-    let live = true
-    void api?.calCacheRead().then((r) => {
-      if (!live) return
-      setOffer(
-        r.ok && r.value.board && r.value.regressed.length
-          ? { confirmedAt: r.value.board.confirmedAt, axes: r.value.regressed }
-          : undefined
-      )
-    })
-    return () => {
-      live = false
-    }
-  }, [api, device])
-
-  return {
-    controller,
-    open,
-    offer,
-    async start(axis: number, showRestore = false) {
-      if (!controller) return
-      await controller.open(axis, device)
-      controller.setRestoreOpen(showRestore)
-      setOpen(true)
-    },
-    async close() {
-      if (!controller) return
-      await controller.close()
-      setOpen(false)
-      const r = await window.skyhawk?.calRead()
-      if (r?.ok) setCal({ cal: r.value })
-      const c = await api?.calCacheRead()
-      setOffer(
-        c?.ok && c.value.board && c.value.regressed.length
-          ? { confirmedAt: c.value.board.confirmedAt, axes: c.value.regressed }
-          : undefined
-      )
-    }
-  }
 }

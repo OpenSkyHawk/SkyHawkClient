@@ -9,7 +9,7 @@ import type {
   TelemetryReadout
 } from '@shared/dcs'
 import type { AppConfig, DcsTransport } from '@shared/config'
-import type { CalSnapshot } from '@shared/hid/calibration'
+import { CALIBRATION_IDLE, type CalibrationState } from '@shared/hid/calibration'
 import { DEFAULT_PSU, type NodeModel, type NodeTelemSnapshot, type PsuSetting } from '@shared/nodes'
 import { nodeViews, totalWatts } from './cockpit'
 import type { LogEvent } from '@shared/events'
@@ -150,13 +150,13 @@ export interface AppState {
   availButtons: number[]
 
   /**
-   * Stored axis calibration, as last read back from the attached device.
-   *
-   * `undefined` means "not known" — no device, or a gateway whose firmware predates the
-   * calibration protocol and never answers. That is deliberately distinct from "uncalibrated":
-   * showing every axis as uncalibrated because we failed to ask would be a lie.
+   * Axis calibration as main pushes it (`cal:workflow`): the device's stored calibration and the
+   * HID tab's badges and offer, and the calibration dialog while it is open. Main runs the
+   * workflow; the HID tab and the dialog only render this and send `calibrate` intents.
    */
-  cal?: CalSnapshot
+  calibration: CalibrationState
+  /** The calibration dialog's actions, sent to main. */
+  calibrate: CalibrationIntents
 
   log: LogRow[]
   private_logSeq: number
@@ -212,6 +212,41 @@ export interface AppState {
   dumpSerialPorts: () => void
   revealDebugLog: () => void
   initBridge: () => (() => void) | void
+}
+
+/** The calibration dialog's actions (R3.1): main runs the workflow and pushes `cal:workflow`. */
+export interface CalibrationIntents {
+  /** Open the dialog on `axis`; `review` expands the restore offer. */
+  open(axis: number, review?: boolean): void
+  close(): void
+  selectAxis(axis: number): void
+  startCapture(): void
+  retry(): void
+  setSelfCentring(selfCentring: boolean): void
+  save(): void
+  restore(): void
+  deleteAxis(idx: number): void
+  setRestoreOpen(open: boolean): void
+  /** The HID tab mounted (`true`) or unmounted (`false`). */
+  attach(on: boolean): void
+}
+
+/** The calibration intents, each a call to main. */
+function calibrationIntents(): CalibrationIntents {
+  const api = () => window.skyhawk
+  return {
+    open: (axis, review) => void api()?.calOpen(axis, review),
+    close: () => void api()?.calClose(),
+    selectAxis: (axis) => void api()?.calSelectAxis(axis),
+    startCapture: () => void api()?.calStartCapture(),
+    retry: () => void api()?.calRetry(),
+    setSelfCentring: (selfCentring) => void api()?.calSetSelfCentring(selfCentring),
+    save: () => void api()?.calSave(),
+    restore: () => void api()?.calRestore(),
+    deleteAxis: (idx) => void api()?.calDeleteAxis(idx),
+    setRestoreOpen: (open) => void api()?.calSetRestoreOpen(open),
+    attach: (on) => void api()?.calAttach(on)
+  }
 }
 
 /** The store fields an AppConfig sets — on load, and after a config import replaces it. */
@@ -294,6 +329,9 @@ export const useStore = create<AppState>((set, get) => ({
   availButtons: [],
   hidRate: 0,
   hidAgeMs: 0,
+
+  calibration: CALIBRATION_IDLE,
+  calibrate: calibrationIntents(),
 
   log: [],
   private_logSeq: 1000,
@@ -436,10 +474,11 @@ export const useStore = create<AppState>((set, get) => ({
         devicePort: st.device.portPath,
         deviceDetail: st.device.detail,
         deviceGateway: st.device.gateway,
-        // cal:data is only pushed when the port opens. A renderer reload builds a fresh store
-        // while the main-process session keeps running, so without carrying the snapshot here
-        // the badges would stay blank until the next reconnect — forever, on a stable link.
-        cal: st.cal
+        // The device's report is only pushed when the port opens. A renderer reload builds a
+        // fresh store while the main-process session keeps running, so without carrying the
+        // calibration here the badges would stay blank until the next reconnect — forever, on a
+        // stable link.
+        calibration: st.cal ?? CALIBRATION_IDLE
       })
     )
 
@@ -468,16 +507,9 @@ export const useStore = create<AppState>((set, get) => ({
         })
         if (wasUp && !isLinkUp(d.state)) set({ linkDownAt: Date.now() })
         else if (isLinkUp(d.state)) set({ linkDownAt: undefined })
-        // Calibration describes the gateway currently attached, so it is only trustworthy while
-        // the link is up. Everything else — reconnecting after a close, error, no-device,
-        // disconnected — means the snapshot may describe a board that is gone. Clearing only on
-        // `no-device` would leave the old board's badges on screen through a reconnect, and if
-        // the next board runs firmware predating the calibration protocol it never sends
-        // `cal:data`, so they would never be corrected.
-        if (!isLinkUp(d.state)) set({ cal: undefined })
       }),
       api.on('relay:state', (r) => set({ relaying: r.running, relayStream: r.stream })),
-      api.on('cal:data', (c) => set({ cal: c })),
+      api.on('cal:workflow', (c) => set({ calibration: c })),
       api.on('aircraft:changed', (a) => set({ aircraft: a })),
       api.on('nodes:model', (m) => setNodes(m, get().nodeTelemetry)),
       api.on('nodes:telemetry', (t) => setNodes(get().nodeModel, t)),
