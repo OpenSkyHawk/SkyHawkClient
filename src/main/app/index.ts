@@ -8,12 +8,11 @@ import type { CaptureState, ReplayLoad } from '@shared/dcs'
 import type { HidAvailability } from '@shared/hid'
 import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes'
 import { HID_CONTROLS, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
-import { ConfigTransfer, loadConfig, saveConfig } from '../config'
-import { eventsToTsv } from '../events'
+import { ConfigTransfer } from '../config'
 import { listSerialPorts } from '../gateway'
 import { loadCalCache, saveCalCache } from '../hid/calibration'
 import { Session } from './session'
-import { debugLog, debugLogPath, setDebugEnabled } from './debug-log'
+import { debugLog, debugLogPath } from './debug-log'
 import { storeFiles, storePaths, userDataOverride } from './user-data'
 
 // Before anything touches userData: dev worktrees get their own folder (#81).
@@ -70,17 +69,9 @@ function emit<C extends PushChannel>(channel: C, payload: PushChannels[C]): void
 
 const session = new Session(emit, paths)
 
-/** Apply and persist a settings change: the one path for config:set and a config import. */
-function applyConfig(patch: Partial<AppConfig>): AppConfig {
-  const config = session.setConfig(patch)
-  setDebugEnabled(config.debugMode)
-  saveConfig(config, paths)
-  return config
-}
-
 const transfer = new ConfigTransfer({
-  getConfig: () => session.getConfig(),
-  setConfig: (config) => applyConfig(config),
+  getConfig: () => session.settings.get(),
+  setConfig: (config) => session.settings.apply(config),
   nodes: session.nodes,
   loadCalCache: () => loadCalCache(cacheFile),
   saveCalCache: (cache) => saveCalCache(cache, cacheFile),
@@ -95,8 +86,8 @@ const CONFIG_MAX_BYTES = 5 * 1024 * 1024
 const CAPTURE_FILTER = [{ name: 'DCS-BIOS capture', extensions: ['json'] }]
 
 function registerIpc(): void {
-  ipcMain.handle(CTRL.configGet, () => session.getConfig())
-  ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => applyConfig(patch))
+  ipcMain.handle(CTRL.configGet, () => session.settings.get())
+  ipcMain.handle(CTRL.configSet, (_e, patch: Partial<AppConfig>) => session.settings.apply(patch))
   ipcMain.handle(CTRL.configExport, async (): Promise<ConfigExportResult> => {
     const res = await dialog.showSaveDialog({
       title: 'Export configuration',
@@ -189,17 +180,17 @@ function registerIpc(): void {
     return { path: res.filePath }
   })
 
-  ipcMain.handle(CTRL.eventsGet, () => session.events.snapshot())
-  ipcMain.handle(CTRL.eventsClear, () => session.events.clear())
+  ipcMain.handle(CTRL.eventsGet, () => session.journal.snapshot())
+  ipcMain.handle(CTRL.eventsClear, () => session.journal.clear())
   ipcMain.handle(CTRL.eventsExport, async () => {
-    const rows = session.events.snapshot()
+    const text = session.journal.exportTsv() // the rows as they are when asked
     const res = await dialog.showSaveDialog({
       title: 'Export events',
       defaultPath: `skyhawk-events-${Date.now()}.tsv`,
       filters: [{ name: 'Events', extensions: ['tsv', 'txt'] }]
     })
     if (res.canceled || !res.filePath) return {}
-    writeFileSync(res.filePath, eventsToTsv(rows))
+    writeFileSync(res.filePath, text)
     return { path: res.filePath }
   })
 
@@ -280,8 +271,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  const cfg = session.setConfig(loadConfig(paths)) // seed from persisted settings
-  setDebugEnabled(cfg.debugMode)
+  session.settings.load() // seed from persisted settings
   registerIpc()
   createWindow()
   session.open() // the device link is up from launch, relaying or not (#69)

@@ -1,22 +1,22 @@
 // The main process's services, built and wired: the Gateway link (gateway/), the nodes (nodes/),
 // HID and calibration (hid/), and the DCS side — the relay, its network end, the stream log, the
-// stats and the recorder (dcs/). Session owns the settings, the event log and the rehydrate
-// bundle; everything else lives with its owner, and Session only connects them.
+// stats and the recorder (dcs/), the settings (config/) and the event log (events/). Each lives
+// with its owner; Session only builds and connects them, and answers the rehydrate bundle.
 //
 // The device link is not started or stopped by the relay. It is up whenever the board is plugged
 // in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
-import { DEFAULT_CONFIG, type AppConfig } from '@shared/config'
-import type { DeviceState, DeviceStatus } from '@shared/gateway'
+import type { DeviceStatus } from '@shared/gateway'
 import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import { app } from 'electron'
 import { DcsConnection, DcsRelay, SessionRecorder, Stats, StreamLog } from '../dcs'
-import { clientErrorEvent, EventJournal, EventLog } from '../events'
+import { SettingsService } from '../config'
+import { EventJournal } from '../events'
 import { deviceEvent, DeviceLineTap, GatewayConnection, SerialTrafficMonitor } from '../gateway'
 import { HidService } from '../hid'
 import { HidCalibrationService } from '../hid/calibration'
 import { NodeHub, NodeRoster } from '../nodes'
-import { debugLog } from './debug-log'
+import { debugLog, setDebugEnabled } from './debug-log'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
@@ -34,8 +34,10 @@ export class Session {
   readonly calibration: HidCalibrationService
   /** The HID joystick, up for as long as the app is. */
   readonly hid: HidService
-  /** Where the link's event-log rows are reported. */
-  readonly journal = new EventJournal()
+  /** The settings (config.json): the live copy, its store, and config:set. */
+  readonly settings: SettingsService
+  /** The event log (#64): where every owner reports its rows; events:get / clear / export. */
+  readonly journal: EventJournal
   /** The relay: Start/Stop, the source mode, the stream and its ticks. */
   readonly relay: DcsRelay
   /** Recording a live session to a capture file. */
@@ -44,14 +46,7 @@ export class Session {
   private readonly dcs: DcsConnection
   /** The Log tab's stream rows and their flush. */
   private readonly streamLog: StreamLog
-  private config: AppConfig = { ...DEFAULT_CONFIG }
   private readonly stats = new Stats()
-  /** The event log (#64): node and client events, this app run only. */
-  readonly events = new EventLog()
-  /** Last device state the event log reported (scanning never is). */
-  private lastDevice?: DeviceState
-  /** Last message per error tag: a retry loop repeating one failure is one row, not one per try. */
-  private lastErr = new Map<string, string>()
 
   /**
    * `paths`: the <userData> files, from app/index.ts. The default resolves the same paths the
@@ -59,6 +54,8 @@ export class Session {
    */
   constructor(emit: Emit, paths: StorePaths = storePaths(() => app.getPath('userData'))) {
     const { mappingFile, cacheFile } = storeFiles(paths)
+    this.settings = new SettingsService({ paths, debugMode: (on) => setDebugEnabled(on) })
+    this.journal = new EventJournal(emit, debugLog)
     this.calibration = new HidCalibrationService(emit, {
       write: (data) => this.connection.write(data),
       serialNumber: () => this.connection.usbSerialNumber(),
@@ -79,20 +76,16 @@ export class Session {
     this.serialMonitor = new SerialTrafficMonitor(emit)
     this.lines = new DeviceLineTap(this.nodes)
     this.recorder = new SessionRecorder()
-    this.streamLog = new StreamLog(emit, this.stats, this.events)
+    this.streamLog = new StreamLog(emit, this.stats, this.journal)
     this.dcs = new DcsConnection()
     this.relay = new DcsRelay(emit, {
-      options: () => this.config,
+      settings: this.settings.store,
       device: this.connection,
       dcs: this.dcs,
       stats: this.stats,
       log: this.streamLog,
       recorder: this.recorder,
-      events: {
-        add: (events) => this.events.add(events),
-        error: (tag, message) => this.logError(tag, message),
-        forget: (tag) => this.lastErr.delete(tag)
-      }
+      events: this.journal
     })
     // The wiring order is load-bearing (R2.2b): it is the order DeviceLink ran these in before the
     // split. At each of the connection's moments its riders run in the order added:
@@ -115,8 +108,15 @@ export class Session {
     //                    its close is stale) → the stream log flushed → `stopped`
     //   export chunk     stats in → parser (named rows: stats frames, then the log) → recorder →
     //                    device write (Bridge / driven Replay, not while calibration gates it)
-    //   setConfig        auto-connect → the relay rebuilt if a setting it is built from changed
     //   shutdown         relay Stop → the connection's shutdown → the stream log's flush cleared
+    // Settings and the event log (R2.3b). Neither constructor has a side effect. The settings
+    // store is one instance: the relay reads it (`settings.store`); the connection is handed its
+    // auto-connect slice at open and, on a change, by the store's subscriber.
+    //   settings change  the store's one subscriber, below: auto-connect → the relay rebuilt if a
+    //                    setting it is built from changed. config:set and a config import then
+    //                    switch the debug log and write config.json; the launch seed only
+    //                    switches the debug log
+    //   stream-log flush the event log's new rows (`events:batch`), then the stream's (`log:batch`)
     this.connection.ride(this.serialMonitor)
     this.connection.ride(this.calibration)
     this.connection.ride(this.hid)
@@ -133,26 +133,30 @@ export class Session {
     // Link faults and the v2-Gateway warning: one path, as when DeviceLink raised both.
     const onError = (tag: string, message: string): void => {
       this.stats.error()
-      this.logError(tag, message)
+      this.journal.error(tag, message)
     }
     this.connection.onError(onError)
     this.nodes.onError(onError)
-    this.journal.onEvents((events) => this.events.add(events))
     this.connection.onStatus((s) => {
       if (s.state === 'reconnecting') this.stats.reconnect()
       // The port's own retry loop stays in `error`; any other state (an explicit Connect or Retry
       // goes through `scanning`) ends that loop, so the next failure is news again.
-      if (s.state !== 'error') this.lastErr.delete('SERIAL')
-      const e = deviceEvent(this.lastDevice, s, Date.now())
-      if (e) this.events.add([e])
-      if (s.state !== 'scanning') this.lastDevice = s.state
+      if (s.state !== 'error') this.journal.forget('SERIAL')
+      this.journal.linkState(s.state, (last) => deviceEvent(last, s, Date.now()))
+    })
+    // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
+    this.settings.store.subscribe((config, prev) => {
+      if (prev.autoConnect !== config.autoConnect) {
+        this.connection.setAutoConnect(config.autoConnect)
+      }
+      this.relay.reconfigure(prev, config)
     })
   }
 
   /** App launch: bring up the device link and the log, independent of any relay. */
   open(): void {
     if (!this.streamLog.open()) return
-    this.connection.start(this.config.autoConnect)
+    this.connection.start(this.settings.get().autoConnect)
   }
 
   /** App quit. */
@@ -162,32 +166,10 @@ export class Session {
     this.streamLog.close()
   }
 
-  getConfig(): AppConfig {
-    return this.config
-  }
-
-  setConfig(patch: Partial<AppConfig>): AppConfig {
-    const prev = this.config
-    this.config = { ...prev, ...patch }
-    if (prev.autoConnect !== this.config.autoConnect) {
-      this.connection.setAutoConnect(this.config.autoConnect)
-    }
-    this.relay.reconfigure(prev, this.config)
-    return this.config
-  }
-
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
   status(): RelayStatus {
     const device: DeviceStatus = this.connection.deviceStatus()
     const { running, relay } = this.relay.status()
     return { running, relay, device, cal: this.calibration.calSnapshot() }
-  }
-
-  /** Push a client diagnostic into the event log + the debug log file. */
-  private logError(tag: string, msg: string): void {
-    debugLog(`error.${tag}`, msg) // always reaches debug.log when debug mode is on
-    if (this.lastErr.get(tag) === msg) return // dedupe the event log only
-    this.lastErr.set(tag, msg)
-    this.events.add([clientErrorEvent(tag, msg, Date.now())])
   }
 }
