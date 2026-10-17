@@ -1,12 +1,12 @@
 // The Cockpit snapshot (arch-phase0-v2 §1.2, R3.2): everything the Cockpit tab decides, built once
 // in main and pushed on `cockpit:snapshot`. Pure: the time and the revision are handed in.
 //
+// Your cockpit is one set for every section (members.ts, X1): the boards on the plan and the hidden
+// ones. The PDU choices, Add all, Settings' Reset… and Connected nodes' zone names all read it.
+//
 // Where the Cockpit and another surface answer differently today, this builder keeps the Cockpit's
-// own answer as its own function (X1–X8 option a, co-located, not unified — the fix track does
+// own answer as its own function (X2–X8 option a, co-located, not unified — the fix track does
 // that):
-//   X1 hidden in cockpit    the PDU choices, Add all and the plan see the boards on the plan only:
-//                           a hidden PDU is not "in your cockpit" here (adopt.ts addAllPduId,
-//                           panels.ts powerZoneOptions / firstPduOn, plan-zones.ts planZones)
 //   X2 on the bus unplugged strays and Attention items only while the link is up
 //                           (attention.ts cockpitAttention, here)
 //   X3 strays               counted in the Cockpit's band, online and warning (band.ts
@@ -15,8 +15,6 @@
 //   X4 zone choices         powerZoneOptions / firstPduOn (panel Settings), adoptPduChoices
 //                           "(not added)" and addAllPduId (Adopt), poweredBy any source (panels.ts
 //                           boardPanels), No power zone for a PDU not on the plan (planZones)
-//   X5 Forget / Hide        offered once the model says offline (panels.ts boardActions); main's
-//                           own guard is NodeHub.onlineRefusal
 //   X6 fault order          the tile and Attention (views.ts nodeHealth), the fault boxes
 //                           (panels.ts nodeFaultBoxes / pduFaultBoxes), the Adopt evidence
 //                           (adopt.ts adoptEvidence)
@@ -24,11 +22,10 @@
 //                           outage's fed count is power-zone.ts pduOutages
 //   X8 registry wording     NOT IN REGISTRY / "Not in registry" for a new board (views.ts,
 //                           panels.ts)
+// Hide and Forget (X5) are offered by the one rule main refuses them by (offline-actions.ts).
 //
 // The Overview, Connection and Settings read their own sections (R3.2b), each with its own answer
 // where it differs from the Cockpit's — the same option a, co-located:
-//   X1 in cockpit           Settings' Reset… misses a hidden adopted board (registry-rows.ts
-//                           settingsNodes)
 //   X2 on the bus unplugged the Overview's banner and notice only while the link is up; Connected
 //                           nodes and the registry's CAN rows read the last model whatever the link
 //                           (summaries.ts, registry-rows.ts registryOnBus)
@@ -50,6 +47,7 @@ import type {
 import { adoptRows } from './adopt'
 import { cockpitAttention, strayFlag, strayNew } from './attention'
 import { cockpitBand, totalWatts } from './band'
+import { cockpitMembers } from './members'
 import { boardPanels, zoneChoices } from './panels'
 import { planZones } from './plan-zones'
 import { settingsNodes } from './registry-rows'
@@ -81,6 +79,7 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
   const views = i.model ? nodeViews(i.model, i.telemetry) : []
   const outages = i.model?.outages ?? []
   const live = isLinkUp(i.device.state)
+  const members = cockpitMembers(i.model)
   // New boards that can't be adopted are active on the bus, so they are warnings (#93) — once an
   // unidentified one has had IDENTIFY_WAIT_MS to report its kind, so a normal board never flashes.
   const stray = strayNew(views, i.now)
@@ -95,11 +94,11 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     plan: planZones(views, outages),
     band: cockpitBand(views, strays.length, i.peakW),
     attention: cockpitAttention(i.model, views, outages, strays, live, i.device.gateway),
-    panels: boardPanels(views, outages),
-    zones: zoneChoices(views),
-    adopt: adoptRows(views),
+    panels: boardPanels(views, outages, i.telemetry),
+    zones: zoneChoices(views, members),
+    adopt: adoptRows(views, members),
     overview: overviewSummary(views, outages, live),
-    nodesCard: nodesSummary(views, outages),
+    nodesCard: nodesSummary(views, outages, members),
     settings: settingsNodes(i.model, i.registry, live)
   }
   return stray.nextAt === undefined ? { snapshot } : { snapshot, nextAt: stray.nextAt }

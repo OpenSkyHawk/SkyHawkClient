@@ -2,15 +2,17 @@
 // R3.2b): Reset…'s gate, the Hidden boards list, and About › Node registry — its
 // summary line and each row's "On the bus".
 //
+// Reset… reads your cockpit as every surface does (members.ts, X1): a hidden adopted board is still
+// one it can forget.
+//
 // Each keeps Settings' own answer where it differs from the Cockpit's (co-located, not unified):
-//   X1 in cockpit  Reset… counts an adopted board only while it is on the plan: a hidden adopted
-//                  board is missed (anyAdopted)
 //   X2 on the bus  a CAN row reads the last model whatever the link; only the Gateway row follows
 //                  the link (registryOnBus)
 //   X8 wording     the bridge row is "Gateway", whatever NODE_IDS.md calls it (registryName)
 import { GATEWAY_NODE_ID } from '@shared/firmware'
 import { plural } from '@shared/format'
 import type { NodeModel, NodeRegistryInfo, OnBus, RegistryRow, SettingsNodes } from '@shared/nodes'
+import { cockpitMembers } from './members'
 
 /**
  * A registry row's name as the client shows it: the bridge row is the Gateway (#94), whatever
@@ -51,8 +53,9 @@ export function registryOnBus(
 
 /**
  * Settings' sections, as CockpitSection and AboutSection computed them from the model: the
- * differing count, Reset… enabled when something differs or any adopted board is on the plan
- * (X1), the hidden boards, and the registry rows. No registry yet (the launch snapshot): no rows.
+ * differing count, Reset… enabled when something differs or any adopted board is in your cockpit —
+ * hidden ones included, since "Also forget adopted nodes" forgets them too (X1, R4) — the hidden
+ * boards, and the registry rows. No registry yet (the launch snapshot): no rows.
  */
 export function settingsNodes(
   model: NodeModel | undefined,
@@ -60,7 +63,7 @@ export function settingsNodes(
   live: boolean
 ): SettingsNodes {
   const differing = model?.differingCount ?? 0
-  const anyAdopted = model?.nodes.some((n) => n.source === 'adopted') ?? false
+  const anyAdopted = cockpitMembers(model).all.some((m) => m.source === 'adopted')
   const rows = (registry?.nodes ?? []).map(
     (n): RegistryRow => ({
       nodeId: n.nodeId,

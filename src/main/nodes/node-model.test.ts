@@ -111,6 +111,7 @@ describe('availability', () => {
   })
 
   // Review of #85: Settings › Hidden nodes showed registry names, not what the Cockpit showed.
+  // X1: a hidden board is still in your cockpit, so each also carries its kind and source.
   it('lists each hidden node with the name and console the Cockpit showed', () => {
     const file: NodeMappingFile = {
       version: 4,
@@ -129,15 +130,22 @@ describe('availability', () => {
     const m = buildNodeModel(input({ file, rosterCompleteAt: 0 }))
     expect(m.hidden).toEqual([2, 41])
     expect(m.hiddenNodes).toEqual([
-      { nodeId: 2, name: 'Nav_Repeater', console: 'Left' },
-      { nodeId: 41, name: 'Left_Lights', console: 'Left' }
+      { nodeId: 2, name: 'Nav_Repeater', console: 'Left', kind: 'panel', source: 'registry' },
+      { nodeId: 41, name: 'Left_Lights', console: 'Left', kind: 'panel', source: 'adopted' }
+    ])
+  })
+
+  it('a hidden PDU is still a PDU in your cockpit (X1: never "(not added)")', () => {
+    const file: NodeMappingFile = { version: 4, nodes: { 4: { hidden: true } } }
+    expect(buildNodeModel(input({ file })).hiddenNodes).toEqual([
+      { nodeId: 4, name: 'PDU_Right', console: 'Right', kind: 'pdu', source: 'registry' }
     ])
   })
 
   it('a hidden registry node with no overrides keeps its registry name', () => {
     const file: NodeMappingFile = { version: 4, nodes: { 2: { hidden: true } } }
     expect(buildNodeModel(input({ file })).hiddenNodes).toEqual([
-      { nodeId: 2, name: 'Right_Navigation', console: 'Right' }
+      { nodeId: 2, name: 'Right_Navigation', console: 'Right', kind: 'panel', source: 'registry' }
     ])
   })
 })

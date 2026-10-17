@@ -34,8 +34,10 @@ describe('import texts', () => {
 })
 
 describe('hiddenRow (#76)', () => {
+  const hidden = { kind: 'panel', source: 'registry' } as const
+
   it('uses the name and console the Cockpit showed: a renamed registry node', () => {
-    expect(hiddenRow({ nodeId: 2, name: 'Nav_Repeater', console: 'Left' })).toEqual({
+    expect(hiddenRow({ ...hidden, nodeId: 2, name: 'Nav_Repeater', console: 'Left' })).toEqual({
       nodeId: 2,
       label: 'Nav_Repeater',
       desc: 'Left console · returns when it reports again'
@@ -43,14 +45,15 @@ describe('hiddenRow (#76)', () => {
   })
 
   it('an adopted node keeps the name the user gave it', () => {
-    expect(hiddenRow({ nodeId: 41, name: 'Left_Lights', console: 'Left' }).label).toBe(
-      'Left_Lights'
-    )
+    expect(
+      hiddenRow({ ...hidden, nodeId: 41, name: 'Left_Lights', console: 'Left', source: 'adopted' })
+        .label
+    ).toBe('Left_Lights')
   })
 
   it('no console, no console part', () => {
-    expect(hiddenRow({ nodeId: 41, name: 'Spare', console: '' }).desc).toBe(
-      'returns when it reports again'
-    )
+    expect(
+      hiddenRow({ ...hidden, nodeId: 41, name: 'Spare', console: '', source: 'adopted' }).desc
+    ).toBe('returns when it reports again')
   })
 })

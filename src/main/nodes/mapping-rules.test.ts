@@ -16,11 +16,20 @@ import {
   resetPreview,
   sanitizeNodeMapping,
   setHidden,
-  setNodeMapping
+  setNodeMapping,
+  type KindOf
 } from './mapping-rules'
 import { registryDefaults } from './registry'
 import { forgettable } from './membership'
-import type { AdoptSpec, MappingPatch, NodeMappingFile } from '@shared/nodes'
+import { boardIdentity } from './node-kind'
+import { NODE_KINDS } from '@shared/firmware'
+import type {
+  AdoptSpec,
+  MappingPatch,
+  NodeDefaults,
+  NodeKind,
+  NodeMappingFile
+} from '@shared/nodes'
 
 // Mirrors the bundled NODE_IDS at the #216 pin.
 const REGISTRY = {
@@ -32,6 +41,21 @@ const REGISTRY = {
   5: { name: 'PDU_Center', console: 'Center' }
 }
 const defaults = registryDefaults(REGISTRY)
+
+/**
+ * main's KindOf (NodeHub.kindOf, node-kind.ts boardIdentity): what a board reports now (`said`),
+ * else the kind stored for a board in your cockpit. kindOf is required (S7), so every call says it.
+ */
+const kinds =
+  (f: NodeMappingFile, d: Map<number, NodeDefaults>, said: Record<number, NodeKind> = {}): KindOf =>
+  (id) =>
+    boardIdentity(effectiveMapping(d, f), id, {
+      reported: said[id] === undefined ? undefined : REPORTS[said[id]]
+    })
+const REPORTS = { panel: NODE_KINDS.PANEL_GROUP, pdu: NODE_KINDS.PDU } as const
+/** The board being adopted reports what the request says it is; the rest as stored. */
+const reports = (f: NodeMappingFile, d: Map<number, NodeDefaults>, id: number, spec: AdoptSpec) =>
+  kinds(f, d, { [id]: spec.kind })
 /** Every registry board added to your cockpit (#93): what editing, hiding and zoning need. */
 const ADDED: NodeMappingFile = {
   version: 4,
@@ -163,7 +187,13 @@ describe('effectiveMapping / setNodeMapping', () => {
   })
 
   it('stores only differences, and a value set back to its default is removed', () => {
-    let f = setNodeMapping(ADDED, defaults, 1, { name: 'Armament', pduId: null })
+    let f = setNodeMapping(
+      ADDED,
+      defaults,
+      1,
+      { name: 'Armament', pduId: null },
+      kinds(ADDED, defaults)
+    )
     expect(stored(f)).toEqual({ 1: { name: 'Armament', pduId: null } })
     expect(effectiveMapping(defaults, f).get(1)).toMatchObject({
       name: 'Armament',
@@ -171,28 +201,36 @@ describe('effectiveMapping / setNodeMapping', () => {
       differs: true
     })
     expect(differingCount(defaults, f)).toBe(1)
-    f = setNodeMapping(f, defaults, 1, { name: 'Center_Armament', pduId: 5 })
+    f = setNodeMapping(f, defaults, 1, { name: 'Center_Armament', pduId: 5 }, kinds(f, defaults))
     expect(stored(f)).toEqual({})
     expect(differingCount(defaults, f)).toBe(0)
   })
 
   it('rejects empty text, bad PDU ids and unknown nodes', () => {
-    expect(() => setNodeMapping(ADDED, defaults, 1, { name: '  ' })).toThrow(MappingError)
-    expect(() => setNodeMapping(ADDED, defaults, 1, { pduId: 0 })).toThrow(MappingError)
-    expect(() => setNodeMapping(ADDED, defaults, 30, { name: 'x' })).toThrow(/add it first/)
-    expect(() => setNodeMapping(EMPTY_MAPPING, defaults, 1, { name: 'x' })).toThrow(/add it first/)
+    expect(() =>
+      setNodeMapping(ADDED, defaults, 1, { name: '  ' }, kinds(ADDED, defaults))
+    ).toThrow(MappingError)
+    expect(() => setNodeMapping(ADDED, defaults, 1, { pduId: 0 }, kinds(ADDED, defaults))).toThrow(
+      MappingError
+    )
+    expect(() =>
+      setNodeMapping(ADDED, defaults, 30, { name: 'x' }, kinds(ADDED, defaults))
+    ).toThrow(/add it first/)
+    expect(() =>
+      setNodeMapping(EMPTY_MAPPING, defaults, 1, { name: 'x' }, kinds(EMPTY_MAPPING, defaults))
+    ).toThrow(/add it first/)
   })
 
   it('refuses a change or adopt request that is not a plain object (renderer input)', () => {
     for (const bad of [null, undefined, 'x', 7, [], [{ name: 'x' }]]) {
       const patch = bad as unknown as MappingPatch
       const spec = bad as unknown as AdoptSpec
-      expect(() => setNodeMapping(ADDED, defaults, 1, patch)).toThrow(
+      expect(() => setNodeMapping(ADDED, defaults, 1, patch, kinds(ADDED, defaults))).toThrow(
         new MappingError('Invalid mapping change')
       )
-      expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, spec)).toThrow(
-        new MappingError('Invalid adopt request')
-      )
+      expect(() =>
+        adoptNode(EMPTY_MAPPING, defaults, 41, spec, kinds(EMPTY_MAPPING, defaults))
+      ).toThrow(new MappingError('Invalid adopt request'))
     }
   })
 })
@@ -206,15 +244,27 @@ describe('adopt / forget', () => {
       [{ ...spec, console: undefined }, 'Console cannot be empty'],
       [{ ...spec, console: ' ' }, 'Console cannot be empty']
     ] as const) {
-      expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, bad as unknown as AdoptSpec)).toThrow(
-        new MappingError(error)
-      )
+      expect(() =>
+        adoptNode(
+          EMPTY_MAPPING,
+          defaults,
+          41,
+          bad as unknown as AdoptSpec,
+          kinds(EMPTY_MAPPING, defaults)
+        )
+      ).toThrow(new MappingError(error))
     }
   })
 
   it('a panel adopted without a power zone stores an explicit none', () => {
     const spec = { name: 'Trim', console: 'Left', kind: 'panel' } as unknown as AdoptSpec
-    const f = adoptNode(EMPTY_MAPPING, defaults, 41, spec)
+    const f = adoptNode(
+      EMPTY_MAPPING,
+      defaults,
+      41,
+      spec,
+      reports(EMPTY_MAPPING, defaults, 41, spec)
+    )
     expect(f.nodes[41]).toEqual({
       added: true,
       name: 'Trim',
@@ -225,12 +275,18 @@ describe('adopt / forget', () => {
   })
 
   it('stores an adopted node in full and lets it be edited afterwards', () => {
-    let f = adoptNode(EMPTY_MAPPING, defaults, 41, {
-      name: ' Left_Trim ',
-      console: 'Left',
-      pduId: 3,
-      kind: 'panel'
-    })
+    let f = adoptNode(
+      EMPTY_MAPPING,
+      defaults,
+      41,
+      {
+        name: ' Left_Trim ',
+        console: 'Left',
+        pduId: 3,
+        kind: 'panel'
+      },
+      kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+    )
     expect(f.nodes[41]).toEqual({
       added: true,
       name: 'Left_Trim',
@@ -242,35 +298,56 @@ describe('adopt / forget', () => {
       source: 'adopted',
       differs: false
     })
-    f = setNodeMapping(f, defaults, 41, { name: 'Trim' })
+    f = setNodeMapping(f, defaults, 41, { name: 'Trim' }, kinds(f, defaults))
     expect(f.nodes[41]?.name).toBe('Trim')
-    expect(forgetNode(f, defaults, 41).nodes[41]).toBeUndefined()
+    expect(forgetNode(f, defaults, 41, kinds(f, defaults)).nodes[41]).toBeUndefined()
   })
 
   it('an adopted PDU has no power zone', () => {
-    const f = adoptNode(EMPTY_MAPPING, defaults, 42, {
-      name: 'PDU_Aux',
-      console: 'Left',
-      pduId: 3,
-      kind: 'pdu'
-    })
+    const f = adoptNode(
+      EMPTY_MAPPING,
+      defaults,
+      42,
+      {
+        name: 'PDU_Aux',
+        console: 'Left',
+        pduId: 3,
+        kind: 'pdu'
+      },
+      kinds(EMPTY_MAPPING, defaults, { 42: 'pdu' })
+    )
     expect(f.nodes[42]?.pduId).toBeNull()
   })
 
   it('adding a registry board (#93): its defaults stay defaults, only changes are stored', () => {
+    // With kindOf required (S7) the kind the board reported is always stored with the marker (S1).
     const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
-    const f = adoptNode(EMPTY_MAPPING, defaults, 1, spec)
-    expect(f.nodes[1]).toEqual({ added: true })
+    const f = adoptNode(EMPTY_MAPPING, defaults, 1, spec, reports(EMPTY_MAPPING, defaults, 1, spec))
+    expect(f.nodes[1]).toEqual({ added: true, kind: 'panel' })
     expect(effectiveMapping(defaults, f).get(1)).toMatchObject({ known: true, source: 'registry' })
     expect(
-      adoptNode(EMPTY_MAPPING, defaults, 1, { ...spec, name: 'Arm', pduId: null }).nodes[1]
-    ).toEqual({ added: true, name: 'Arm', pduId: null })
+      adoptNode(
+        EMPTY_MAPPING,
+        defaults,
+        1,
+        { ...spec, name: 'Arm', pduId: null },
+        reports(EMPTY_MAPPING, defaults, 1, { ...spec, name: 'Arm', pduId: null })
+      ).nodes[1]
+    ).toEqual({ added: true, name: 'Arm', pduId: null, kind: 'panel' })
     // A registry PDU: never a zone, whatever the form sent; its default PDU may be not added yet.
     const pdu = { name: 'PDU_Center', console: 'Center', pduId: 3, kind: 'pdu' } as const
-    expect(adoptNode(EMPTY_MAPPING, defaults, 5, pdu).nodes[5]).toEqual({ added: true })
-    expect(() => adoptNode(EMPTY_MAPPING, defaults, 1, { ...spec, name: ' ' })).toThrow(
-      new MappingError('Name cannot be empty')
-    )
+    expect(
+      adoptNode(EMPTY_MAPPING, defaults, 5, pdu, reports(EMPTY_MAPPING, defaults, 5, pdu)).nodes[5]
+    ).toEqual({ added: true, kind: 'pdu' })
+    expect(() =>
+      adoptNode(
+        EMPTY_MAPPING,
+        defaults,
+        1,
+        { ...spec, name: ' ' },
+        reports(EMPTY_MAPPING, defaults, 1, { ...spec, name: ' ' })
+      )
+    ).toThrow(new MappingError('Name cannot be empty'))
   })
 })
 
@@ -322,12 +399,18 @@ describe('reset / hidden', () => {
         new MappingError('Only a board in your cockpit can be hidden')
       )
     }
-    const adoptedOnly = adoptNode(EMPTY_MAPPING, defaults, 41, {
-      name: 'Trim',
-      console: 'Left',
-      pduId: 3,
-      kind: 'panel'
-    })
+    const adoptedOnly = adoptNode(
+      EMPTY_MAPPING,
+      defaults,
+      41,
+      {
+        name: 'Trim',
+        console: 'Left',
+        pduId: 3,
+        kind: 'panel'
+      },
+      kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+    )
     expect(
       effectiveMapping(defaults, setHidden(adoptedOnly, defaults, 41, true)).get(41)?.hidden
     ).toBe(true)
@@ -344,7 +427,7 @@ describe('forget (#93)', () => {
       version: 4,
       nodes: { 2: { name: 'Nav', hidden: true, lastSeen: seen, added: true } }
     }
-    const g = forgetNode(f, defaults, 2)
+    const g = forgetNode(f, defaults, 2, kinds(f, defaults))
     expect(g.nodes).toEqual({})
     expect(effectiveMapping(defaults, g).get(2)).toMatchObject({
       known: false,
@@ -362,7 +445,7 @@ describe('forget (#93)', () => {
         43: { added: true, name: 'Lamp', console: 'Right', pduId: 3, kind: 'panel' }
       }
     }
-    const g = forgetNode(f, defaults, 4)
+    const g = forgetNode(f, defaults, 4, kinds(f, defaults))
     expect(g.nodes).toEqual({
       2: { added: true, pduId: null },
       41: { added: true, name: 'Trim', console: 'Right', pduId: null, kind: 'panel' },
@@ -370,18 +453,24 @@ describe('forget (#93)', () => {
     })
     expect(effectiveMapping(defaults, g).get(2)?.pduId).toBeNull()
     // Links are not restored when it comes back.
-    const back = adoptNode(g, defaults, 4, {
-      name: 'PDU_Right',
-      console: 'Right',
-      pduId: null,
-      kind: 'pdu'
-    })
+    const back = adoptNode(
+      g,
+      defaults,
+      4,
+      {
+        name: 'PDU_Right',
+        console: 'Right',
+        pduId: null,
+        kind: 'pdu'
+      },
+      kinds(g, defaults, { 4: 'pdu' })
+    )
     expect(effectiveMapping(defaults, back).get(2)?.pduId).toBeNull()
   })
 
   it('a PDU: a registry board not in your cockpit is left alone', () => {
     const f: NodeMappingFile = { version: 4, nodes: { 4: { added: true, lastSeen: seen } } }
-    expect(forgetNode(f, defaults, 4).nodes).toEqual({}) // Right_Navigation was never added
+    expect(forgetNode(f, defaults, 4, kinds(f, defaults)).nodes).toEqual({}) // Right_Navigation was never added
   })
 
   it('uses what the board reports for its kind when given', () => {
@@ -389,19 +478,25 @@ describe('forget (#93)', () => {
       version: 4,
       nodes: { 41: { added: true, name: 'Trim', console: 'Right', pduId: 42, kind: 'panel' } }
     }
-    expect(forgetNode(f, defaults, 42).nodes[41]?.pduId).toBe(42) // nothing says 42 is a PDU
+    expect(forgetNode(f, defaults, 42, kinds(f, defaults)).nodes[41]?.pduId).toBe(42) // nothing says 42 is a PDU
     expect(forgetNode(f, defaults, 42, () => 'pdu').nodes[41]?.pduId).toBeNull()
   })
 })
 
 describe('adopted, then in the registry (#93 re-review F)', () => {
   it('a board you adopted stays in your cockpit once its NODE_ID is in NODE_IDS.md', () => {
-    const f = adoptNode(EMPTY_MAPPING, defaults, 41, {
-      name: 'Left_Oxygen',
-      console: 'Left',
-      pduId: 3,
-      kind: 'panel'
-    })
+    const f = adoptNode(
+      EMPTY_MAPPING,
+      defaults,
+      41,
+      {
+        name: 'Left_Oxygen',
+        console: 'Left',
+        pduId: 3,
+        kind: 'panel'
+      },
+      kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+    )
     // A later client bundles a NODE_IDS.md that lists 41.
     const later = registryDefaults({ ...REGISTRY, 41: { name: 'Left_Oxy', console: 'Left' } })
     expect(effectiveMapping(later, f).get(41)).toMatchObject({
@@ -413,7 +508,7 @@ describe('adopted, then in the registry (#93 re-review F)', () => {
     // Every in-cockpit check agrees: last seen, hide, edits; reset keeps it in your cockpit.
     expect(markSeen(f, later, [41], '2026-10-16T12:00:00.000Z').nodes[41]?.lastSeen).toBeDefined()
     expect(effectiveMapping(later, setHidden(f, later, 41, true)).get(41)?.hidden).toBe(true)
-    expect(setNodeMapping(f, later, 41, { name: 'O2' }).nodes[41]?.name).toBe('O2')
+    expect(setNodeMapping(f, later, 41, { name: 'O2' }, kinds(f, later)).nodes[41]?.name).toBe('O2')
     expect(effectiveMapping(later, resetNode(f, later, 41)).get(41)).toMatchObject({
       known: true,
       name: 'Left_Oxy'
@@ -508,12 +603,18 @@ describe('markSeen (#93)', () => {
   })
 
   it('records adopted boards too, never a new NODE_ID', () => {
-    const adopted = adoptNode(EMPTY_MAPPING, defaults, 41, {
-      name: 'Trim',
-      console: 'Left',
-      pduId: null,
-      kind: 'panel'
-    })
+    const adopted = adoptNode(
+      EMPTY_MAPPING,
+      defaults,
+      41,
+      {
+        name: 'Trim',
+        console: 'Left',
+        pduId: null,
+        kind: 'panel'
+      },
+      kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+    )
     const f = markSeen(adopted, defaults, [41, 50], at)
     expect(f.nodes[41]?.lastSeen).toBe(at)
     expect(f.nodes[50]).toBeUndefined()
@@ -534,7 +635,9 @@ describe('renderer input: on/off values and no-op changes', () => {
 
   it('forget checks the NODE_ID', () => {
     for (const bad of [NaN, 0, 64, '3']) {
-      expect(() => forgetNode(EMPTY_MAPPING, defaults, bad as number)).toThrow(MappingError)
+      expect(() =>
+        forgetNode(EMPTY_MAPPING, defaults, bad as number, kinds(EMPTY_MAPPING, defaults))
+      ).toThrow(MappingError)
     }
   })
 
@@ -543,43 +646,51 @@ describe('renderer input: on/off values and no-op changes', () => {
       version: 4,
       nodes: { 1: { name: 'Arm', hidden: true, added: true } }
     }
-    expect(forgetNode(f, defaults, 41)).toBe(f)
+    expect(forgetNode(f, defaults, 41, kinds(f, defaults))).toBe(f)
     expect(setHidden(f, defaults, 1, true)).toBe(f)
     expect(setHidden(f, defaults, 2, false)).toBe(f)
-    expect(setNodeMapping(f, defaults, 1, { name: 'Arm' })).toBe(f)
-    expect(forgetNode(f, defaults, 1).nodes).toEqual({})
+    expect(setNodeMapping(f, defaults, 1, { name: 'Arm' }, kinds(f, defaults))).toBe(f)
+    expect(forgetNode(f, defaults, 1, kinds(f, defaults)).nodes).toEqual({})
   })
 })
 
 describe('power zones', () => {
   const trim: AdoptSpec = { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
-  const withAux = adoptNode(ADDED, defaults, 42, {
-    name: 'PDU_Aux',
-    console: 'Left',
-    pduId: null,
-    kind: 'pdu'
-  })
+  const withAux = adoptNode(
+    ADDED,
+    defaults,
+    42,
+    {
+      name: 'PDU_Aux',
+      console: 'Left',
+      pduId: null,
+      kind: 'pdu'
+    },
+    kinds(ADDED, defaults, { 42: 'pdu' })
+  )
 
   it('a PDU has no power zone', () => {
-    expect(() => setNodeMapping(ADDED, defaults, 3, { pduId: 4 })).toThrow(
+    expect(() => setNodeMapping(ADDED, defaults, 3, { pduId: 4 }, kinds(ADDED, defaults))).toThrow(
       new MappingError('A PDU has no power zone')
     )
-    expect(() => setNodeMapping(withAux, defaults, 42, { pduId: 3 })).toThrow(
-      new MappingError('A PDU has no power zone')
-    )
-    expect(setNodeMapping(ADDED, defaults, 3, { pduId: null })).toBe(ADDED)
+    expect(() =>
+      setNodeMapping(withAux, defaults, 42, { pduId: 3 }, kinds(withAux, defaults))
+    ).toThrow(new MappingError('A PDU has no power zone'))
+    expect(setNodeMapping(ADDED, defaults, 3, { pduId: null }, kinds(ADDED, defaults))).toBe(ADDED)
   })
 
   it('a panel is zoned only to a registry or adopted PDU', () => {
     const notPdu = new MappingError('Power zone must be a PDU')
     const set = (f: NodeMappingFile, pduId: number) => () =>
-      setNodeMapping(f, defaults, 1, { pduId })
+      setNodeMapping(f, defaults, 1, { pduId }, kinds(f, defaults))
     expect(set(ADDED, 1)).toThrow(notPdu) // itself
     expect(set(ADDED, 2)).toThrow(notPdu) // another panel
     expect(set(ADDED, 42)).toThrow(notPdu) // not adopted
     expect(set(ADDED, 3)().nodes[1]).toEqual({ added: true, pduId: 3 }) // registry PDU
     expect(set(withAux, 42)().nodes[1]).toEqual({ added: true, pduId: 42 }) // adopted PDU
-    expect(setNodeMapping(ADDED, defaults, 1, { pduId: null }).nodes[1]).toEqual({
+    expect(
+      setNodeMapping(ADDED, defaults, 1, { pduId: null }, kinds(ADDED, defaults)).nodes[1]
+    ).toEqual({
       added: true,
       pduId: null
     })
@@ -587,11 +698,51 @@ describe('power zones', () => {
 
   it('adopting a panel applies the same rule', () => {
     const notPdu = new MappingError('Power zone must be a PDU')
-    expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, { ...trim, pduId: 41 })).toThrow(notPdu)
-    expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, { ...trim, pduId: 1 })).toThrow(notPdu)
-    expect(() => adoptNode(EMPTY_MAPPING, defaults, 41, { ...trim, pduId: 42 })).toThrow(notPdu)
-    expect(adoptNode(withAux, defaults, 41, { ...trim, pduId: 42 }).nodes[41]?.pduId).toBe(42)
-    expect(adoptNode(EMPTY_MAPPING, defaults, 41, { ...trim, pduId: 5 }).nodes[41]?.pduId).toBe(5)
+    expect(() =>
+      adoptNode(
+        EMPTY_MAPPING,
+        defaults,
+        41,
+        { ...trim, pduId: 41 },
+        kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+      )
+    ).toThrow(notPdu)
+    expect(() =>
+      adoptNode(
+        EMPTY_MAPPING,
+        defaults,
+        41,
+        { ...trim, pduId: 1 },
+        kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+      )
+    ).toThrow(notPdu)
+    expect(() =>
+      adoptNode(
+        EMPTY_MAPPING,
+        defaults,
+        41,
+        { ...trim, pduId: 42 },
+        kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+      )
+    ).toThrow(notPdu)
+    expect(
+      adoptNode(
+        withAux,
+        defaults,
+        41,
+        { ...trim, pduId: 42 },
+        kinds(withAux, defaults, { 41: 'panel' })
+      ).nodes[41]?.pduId
+    ).toBe(42)
+    expect(
+      adoptNode(
+        EMPTY_MAPPING,
+        defaults,
+        41,
+        { ...trim, pduId: 5 },
+        kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+      ).nodes[41]?.pduId
+    ).toBe(5)
   })
 })
 
@@ -731,23 +882,36 @@ describe('file v4: one marker, the reported kind, only what you changed (S1, M9)
 
   it('bug 1: a board renamed to its NODE_IDS.md name stays in your cockpit', () => {
     // Adopted while NODE_IDS.md did not list 41; a later one does, as "Left_Oxy".
-    const f = adoptNode(EMPTY_MAPPING, defaults, 41, {
-      name: 'Left_Oxygen',
-      console: 'Left',
-      pduId: 3,
-      kind: 'panel'
-    })
-    const g = setNodeMapping(f, later, 41, { name: 'Left_Oxy' })
+    const f = adoptNode(
+      EMPTY_MAPPING,
+      defaults,
+      41,
+      {
+        name: 'Left_Oxygen',
+        console: 'Left',
+        pduId: 3,
+        kind: 'panel'
+      },
+      kinds(EMPTY_MAPPING, defaults, { 41: 'panel' })
+    )
+    const g = setNodeMapping(f, later, 41, { name: 'Left_Oxy' }, kinds(f, later))
     expect(g.nodes[41]?.name).toBeUndefined() // the registry's name is not stored…
     expect(effectiveMapping(later, g).get(41)).toMatchObject({ known: true, name: 'Left_Oxy' })
     // …so a still later NODE_IDS.md name reaches it, and it can still be edited.
     const latest = registryDefaults({ ...REGISTRY, 41: { name: 'Left_O2', console: 'Left' } })
     expect(effectiveMapping(latest, g).get(41)).toMatchObject({ known: true, name: 'Left_O2' })
-    expect(setNodeMapping(g, latest, 41, { console: 'Right' }).nodes[41]?.console).toBe('Right')
+    expect(
+      setNodeMapping(g, latest, 41, { console: 'Right' }, kinds(g, latest)).nodes[41]?.console
+    ).toBe('Right')
     // A registry board renamed back to its NODE_IDS.md name stays in too.
-    const nav = setNodeMapping(setNodeMapping(ADDED, defaults, 2, { name: 'Nav' }), defaults, 2, {
-      name: 'Right_Navigation'
-    })
+    const named = setNodeMapping(ADDED, defaults, 2, { name: 'Nav' }, kinds(ADDED, defaults))
+    const nav = setNodeMapping(
+      named,
+      defaults,
+      2,
+      { name: 'Right_Navigation' },
+      kinds(named, defaults)
+    )
     expect(effectiveMapping(defaults, nav).get(2)).toMatchObject({ known: true, differs: false })
   })
 
@@ -784,16 +948,16 @@ describe('file v4: one marker, the reported kind, only what you changed (S1, M9)
         41: { added: true, name: 'Trim', console: 'Center', pduId: 1, kind: 'panel' }
       }
     }
-    const notSeen = () => undefined // nothing on the bus says what it is this session
-    const g = forgetNode(f, defaults, 1, notSeen)
+    // Nothing on the bus says what it is this session: main's KindOf has only the stored kind.
+    const g = forgetNode(f, defaults, 1, kinds(f, defaults))
     expect(g.nodes[1]).toBeUndefined()
     expect(g.nodes[2]).toEqual({ added: true, pduId: null })
     expect(g.nodes[41]?.pduId).toBeNull()
   })
 
   it('Reset never links a board back to a PDU you forgot', () => {
-    const named = setNodeMapping(ADDED, defaults, 2, { name: 'Nav' })
-    const forgot = forgetNode(named, defaults, 4) // PDU_Right, Right_Navigation's default zone
+    const named = setNodeMapping(ADDED, defaults, 2, { name: 'Nav' }, kinds(ADDED, defaults))
+    const forgot = forgetNode(named, defaults, 4, kinds(named, defaults)) // PDU_Right, Right_Navigation's default zone
     expect(forgot.nodes[2]).toEqual({ added: true, name: 'Nav', pduId: null })
     expect(differingCount(defaults, forgot)).toBe(1) // the name only
     expect(resetPreview(defaults, forgot).rows).toEqual([
@@ -806,7 +970,13 @@ describe('file v4: one marker, the reported kind, only what you changed (S1, M9)
     }
     // Once the PDU is in your cockpit again, the board's none is a difference Reset undoes.
     const pdu = { name: 'PDU_Right', console: 'Right', pduId: null, kind: 'pdu' } as const
-    const back = adoptNode(resetMapping(forgot, defaults), defaults, 4, pdu)
+    const back = adoptNode(
+      resetMapping(forgot, defaults),
+      defaults,
+      4,
+      pdu,
+      reports(resetMapping(forgot, defaults), defaults, 4, pdu)
+    )
     expect(differingCount(defaults, back)).toBe(1)
     expect(effectiveMapping(defaults, resetMapping(back, defaults)).get(2)?.pduId).toBe(4)
   })
@@ -815,7 +985,9 @@ describe('file v4: one marker, the reported kind, only what you changed (S1, M9)
     const f = sanitizeNodeMapping({ version: 2, nodes: { 30: { name: 'Old', lastSeen: seen } } })
     expect(f.nodes[30]).toEqual({ name: 'Old', lastSeen: seen, added: true })
     expect(effectiveMapping(defaults, f).has(30)).toBe(false)
-    expect(() => setNodeMapping(f, defaults, 30, { name: 'X' })).toThrow(/add it first/)
+    expect(() => setNodeMapping(f, defaults, 30, { name: 'X' }, kinds(f, defaults))).toThrow(
+      /add it first/
+    )
     expect(() => setHidden(f, defaults, 30, true)).toThrow(
       new MappingError('Only a board in your cockpit can be hidden')
     )
@@ -825,7 +997,7 @@ describe('file v4: one marker, the reported kind, only what you changed (S1, M9)
     // A NODE_IDS.md that lists it puts it in your cockpit, shown and editable alike.
     const listed = registryDefaults({ ...REGISTRY, 30: { name: 'Left_Old', console: 'Left' } })
     expect(effectiveMapping(listed, f).get(30)).toMatchObject({ known: true, name: 'Old' })
-    expect(setNodeMapping(f, listed, 30, { name: 'X' }).nodes[30]?.name).toBe('X')
+    expect(setNodeMapping(f, listed, 30, { name: 'X' }, kinds(f, listed)).nodes[30]?.name).toBe('X')
   })
 
   it('import: a v3 section is upgraded as the file is, a v4 one read as written, a newer one refused', () => {

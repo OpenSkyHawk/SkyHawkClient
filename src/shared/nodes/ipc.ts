@@ -221,7 +221,7 @@ export interface NodeModelEntry {
   /** For drawing: 'pdu' once identified as one, else 'panel'. Never stored, never a gate. */
   kind: NodeKind
   /**
-   * What the node is, from the strongest signal (node-kind.ts resolveKind); undefined = not known
+   * What the node is, from the strongest signal (node-kind.ts identityOf); undefined = not known
    * yet. Adopt, the new-device counts and the event log key on this, never on `kind`.
    */
   identified?: NodeIdentity
@@ -270,13 +270,21 @@ export interface PduOutage {
   at: number
 }
 
-/** One hidden node, as Settings › Hidden nodes lists it: what the Cockpit called it. */
+/**
+ * One hidden node, as Settings › Hidden nodes lists it: what the Cockpit called it. A hidden board
+ * is still in your cockpit (X1), so it carries what membership needs: its kind and where it came
+ * from — a hidden PDU is still a PDU you can be powered by, a hidden adopted board still one
+ * Reset… can forget.
+ */
 export interface HiddenNode {
   nodeId: number
   /** Effective name: the user's own (renamed or adopted), else the registry's. */
   name: string
   /** Effective console; '' for an adopted node placed nowhere. */
   console: string
+  /** Its stored kind: the one it reported, else its registry kind. */
+  kind: NodeKind
+  source: 'registry' | 'adopted'
 }
 
 export interface NodeModel {
@@ -284,9 +292,12 @@ export interface NodeModel {
   outages: PduOutage[]
   /** Registry nodes that differ from their defaults (what "Reset all" changes). */
   differingCount: number
-  /** Hidden until they report again — left out of `nodes`. */
+  /** Hidden until they report again — left out of `nodes`, still in your cockpit. */
   hidden: number[]
-  /** The same ids with the name and console the Cockpit showed (the hidden nodes are not in `nodes`). */
+  /**
+   * The same ids with the name and console the Cockpit showed (the hidden nodes are not in `nodes`)
+   * and their kind and source. Every board in your cockpit is in `nodes` (source not 'new') or here.
+   */
   hiddenNodes: HiddenNode[]
   /**
    * The first complete roster since the session started has arrived. Stays false when PanelBridge

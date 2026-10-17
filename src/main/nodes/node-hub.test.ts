@@ -37,6 +37,8 @@ vi.mock('./mapping-file', () => {
 })
 
 const { NodeHub } = await import('./node-hub')
+const { buildCockpitSnapshot } = await import('./cockpit-snapshot')
+const { requireAdoptable } = await import('./node-kind')
 
 const T0 = '1970-01-01T00:00:00.000Z'
 /** The registry boards added to your cockpit (#93): the setup most tests assume. */
@@ -56,6 +58,16 @@ function hub() {
   const roster = new NodeRoster()
   const h = new NodeHub((c, p) => pushes.push([c, p]), roster)
   return { h, roster, pushes }
+}
+
+/**
+ * A hub whose roster has come back empty: every board in your cockpit is offline, so Hide and
+ * Forget are allowed (offline-actions.ts) — before any roster they are refused (M1/C3).
+ */
+function offlineHub() {
+  const r = hub()
+  r.roster.applyMessage(NODE_END_MSG, '0', 0)
+  return r
 }
 
 describe('NodeHub', () => {
@@ -80,7 +92,7 @@ describe('NodeHub', () => {
 
   it('a read-only mapping (newer client, unreadable) refuses every save', () => {
     disk.readOnly = 'node-mapping.json was written by a newer client'
-    const { h } = hub()
+    const { h } = offlineHub()
     expect(h.hide(2, true)).toEqual({
       ok: false,
       error: 'Not saved: node-mapping.json was written by a newer client'
@@ -292,7 +304,7 @@ describe('NodeHub', () => {
   })
 
   it('hiding a new node is refused and writes nothing', () => {
-    const { h } = hub()
+    const { h } = offlineHub()
     expect(h.hide(41, true)).toEqual({
       ok: false,
       error: 'Only a board in your cockpit can be hidden'
@@ -306,7 +318,7 @@ describe('NodeHub', () => {
       version: 4,
       nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' }, 4: { added: true, lastSeen: T0 } }
     }
-    const { h } = hub()
+    const { h } = offlineHub()
     expect(h.forget(4).ok).toBe(true)
     expect(disk.file.nodes).toEqual({ 2: { added: true, lastSeen: T0, name: 'Nav', pduId: null } })
     expect(h.resetBoard(2).ok).toBe(true)
@@ -315,7 +327,7 @@ describe('NodeHub', () => {
   })
 
   it('a non-boolean on/off is refused; a no-op change writes and pushes nothing', () => {
-    const { h, pushes } = hub()
+    const { h, pushes } = offlineHub()
     expect(h.hide(5, 'no' as never)).toEqual({ ok: false, error: 'Invalid on/off value' })
     expect(h.forget(NaN)).toEqual({ ok: false, error: 'Not a NODE_ID: NaN' })
     const forgot = h.forget(41) // nothing mapped
@@ -520,7 +532,7 @@ describe('board kind (#344)', () => {
       version: 4,
       nodes: { 1: { added: true, pduId: 2 }, 2: { added: true, kind: 'pdu', lastSeen: T0 } }
     }
-    const { h } = hub() // nothing on the bus
+    const { h } = offlineHub() // nothing on the bus
     expect(h.forget(2).ok).toBe(true)
     expect(disk.file.nodes).toEqual({ 1: { added: true, pduId: null } })
   })
@@ -606,4 +618,133 @@ describe('bench capture, v3 firmware (2026-10-16)', () => {
       status: { degraded: true, faultId: 1, faultLabel: 'I2C peripheral', nodeKind: 1 }
     })
   })
+})
+
+describe('one rule for the footer and main (M1/C3, S7)', () => {
+  beforeEach(() => {
+    disk.file = added()
+    disk.saves = 0
+    disk.readOnly = undefined
+    disk.fail = false
+  })
+
+  const row = (id: number, kind: number, present = true) =>
+    `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
+      .toString(16)
+      .padStart(2, '0')}`.toUpperCase()
+  const NOW = 10_000
+  /** PDU_Right's (#4) 12 V page, as `_NODE_TELEM` carries it. */
+  const PDU4_PAGE = '040100E02E182EBC02'
+
+  /** A hub where board `id` is `state` by the roster, and maybe sending fresh PDU pages. */
+  function scene(
+    id: number,
+    kind: number,
+    state: 'online' | 'offline' | 'unknown',
+    pages: boolean
+  ) {
+    disk.file = added() // each scene starts from the same mapping
+    const { h, roster } = hub()
+    if (state !== 'unknown') {
+      roster.applyMessage(NODE_MSG, row(id, kind, state === 'online'), 0)
+      roster.applyMessage(NODE_END_MSG, '1', 0)
+    }
+    if (pages) h.telemetry(PDU4_PAGE, NOW)
+    h.flush(roster.takeDirty(), NOW)
+    return h
+  }
+
+  /** What the Cockpit footer offers, built from the hub's own push as the snapshot host does. */
+  function footer(h: InstanceType<typeof NodeHub>, id: number) {
+    const { model, telemetry } = h.snapshot(NOW)
+    const { snapshot } = buildCockpitSnapshot({
+      model,
+      telemetry,
+      device: { state: 'connected' },
+      peakW: 0,
+      now: NOW,
+      rev: 0
+    })
+    return snapshot.panels[id]!.actions
+  }
+
+  const cases = [
+    { id: 2, kind: 1, pages: false }, // a panel group
+    { id: 4, kind: 2, pages: false }, // a PDU, no pages
+    { id: 4, kind: 2, pages: true } // a PDU sending fresh pages
+  ]
+  for (const c of cases) {
+    for (const state of ['online', 'offline', 'unknown'] as const) {
+      it(`#${c.id}${c.pages ? ' with fresh pages' : ''}, ${state}: Forget and Hide agree`, () => {
+        const offered = footer(scene(c.id, c.kind, state, c.pages), c.id)
+        const forgot = scene(c.id, c.kind, state, c.pages).forget(c.id, NOW)
+        const hid = scene(c.id, c.kind, state, c.pages).hide(c.id, true, NOW)
+        expect(forgot.ok).toBe(!offered.forget.disabled)
+        expect(hid.ok).toBe(!offered.hide.disabled)
+        // Allowed exactly when it is offline by the roster and sends no fresh pages.
+        expect(forgot.ok).toBe(state === 'offline' && !c.pages)
+        if (state === 'unknown' && !c.pages) {
+          // The reason main refuses with is the footer's own line.
+          expect(forgot).toEqual({ ok: false, error: offered.note })
+        }
+      })
+    }
+  }
+
+  // S7: every adopt path goes through requireAdoptable — main's mutators (an unregistered NODE_ID
+  // and a registry board), NodeHub.adopt and Add all, and the Adopt dialog's form (its row kind).
+  const said = [
+    { byte: 0, identity: undefined },
+    { byte: 1, identity: 'panel' },
+    { byte: 2, identity: 'pdu' },
+    { byte: 3, identity: 'bridge' },
+    { byte: 9, identity: 'other' }
+  ] as const
+  for (const { byte, identity } of said) {
+    it(`a board that reports ${identity ?? 'nothing'}: every adopt path answers as requireAdoptable`, async () => {
+      disk.file = { version: 4, nodes: {} }
+      const gate = (as?: 'pdu' | 'panel') => {
+        try {
+          return { ok: true, kind: requireAdoptable(identity, as) }
+        } catch (err) {
+          return { ok: false, error: (err as Error).message }
+        }
+      }
+      const { h, roster } = hub()
+      roster.applyMessage(NODE_MSG, row(41, byte), 0) // unregistered
+      roster.applyMessage(NODE_MSG, row(2, byte), 0) // Right_Navigation, not added yet
+      h.flush(roster.takeDirty(), 0)
+      const spec = (name: string) =>
+        ({ name, console: 'Right', pduId: null, kind: 'panel' }) as const
+      const answer = (r: { ok: boolean; error?: string }) =>
+        r.ok ? { ok: true } : { ok: false, error: r.error }
+      const asked = gate('panel')
+      expect(answer(h.adopt(41, spec('Aux')))).toEqual(
+        asked.ok ? { ok: true } : { ok: false, error: asked.error }
+      )
+      const reg = gate()
+      expect(answer(h.adopt(2, spec('Right_Navigation')))).toEqual(
+        reg.ok ? { ok: true } : { ok: false, error: reg.error }
+      )
+      // Add all is one adopt each: the same answer for the next board that reports the same.
+      roster.applyMessage(NODE_MSG, row(42, byte), 0)
+      h.flush(roster.takeDirty(), 0)
+      const all = await h.addAll([{ nodeId: 42, spec: spec('Aux2') }])
+      expect(all.ok).toBe(asked.ok)
+      // The dialog offers a form only for what the gate lets through, as that kind.
+      disk.file = { version: 4, nodes: {} }
+      const fresh = hub()
+      fresh.roster.applyMessage(NODE_MSG, row(43, byte), 0)
+      fresh.h.flush(fresh.roster.takeDirty(), 0)
+      const { snapshot } = buildCockpitSnapshot({
+        ...fresh.h.snapshot(0),
+        device: { state: 'connected' },
+        peakW: 0,
+        now: 0,
+        rev: 0
+      })
+      const r = snapshot.adopt.find((x) => x.view.entry.nodeId === 43)!
+      expect(r.kind).toBe(gate().ok ? identity : undefined)
+    })
+  }
 })

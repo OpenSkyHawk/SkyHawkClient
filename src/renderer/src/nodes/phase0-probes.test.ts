@@ -26,6 +26,7 @@ import {
   strayNew
 } from '../../../main/nodes/cockpit-snapshot/attention'
 import { adoptPduChoices, adoptRows } from '../../../main/nodes/cockpit-snapshot/adopt'
+import { cockpitMembers } from '../../../main/nodes/cockpit-snapshot/members'
 import { nodeFaultBoxes } from '../../../main/nodes/cockpit-snapshot/panels'
 import { registrySpecs } from './adopt-view'
 import {
@@ -74,7 +75,11 @@ describe('fix-track probes (today)', () => {
     expect(attentionSummary(ovBand, attentionItems(views, []))).toBeNull()
     expect(newDevices(views, true)).toBeNull()
     // Connection
-    expect(nodesSummary(views, [])).toMatchObject({ known: 0, warn: 0, rows: [] })
+    expect(nodesSummary(views, [], cockpitMembers(model))).toMatchObject({
+      known: 0,
+      warn: 0,
+      rows: []
+    })
   })
 
   it('S6: grace counts from first sighting — a board seen absent then online late is a stray at once', () => {
@@ -111,7 +116,7 @@ describe('fix-track probes (today)', () => {
     ).toBe('Not in registry')
   })
 
-  it('#95 bug 2: a hidden in-cockpit PDU is "(not added)" to Add all and the PDU choices', () => {
+  it('#95 bug 2 (fixed, #131 X1): a hidden in-cockpit PDU is in your cockpit to Add all and the PDU choices', () => {
     let f: NodeMappingFile = { version: 4, nodes: { 5: { added: true } } }
     f = setHidden(f, defaults, 5, true)
     const roster = new NodeRoster()
@@ -125,9 +130,15 @@ describe('fix-track probes (today)', () => {
       file: f
     })
     const views = cockpitViews(m, [])
-    expect(registrySpecs(adoptRows(views))[0]?.spec.pduId).toBeNull()
-    expect(adoptPduChoices(views, 'Center', 5, m.nodes.find((n) => n.nodeId === 1)!).pending).toBe(
-      'PDU_Center'
+    const members = cockpitMembers(m)
+    expect(registrySpecs(adoptRows(views, members))[0]?.spec.pduId).toBe(5)
+    const choices = adoptPduChoices(
+      views,
+      members,
+      'Center',
+      5,
+      m.nodes.find((n) => n.nodeId === 1)!
     )
+    expect(choices).toEqual({ zones: [{ value: 5, label: 'PDU_Center' }] })
   })
 })

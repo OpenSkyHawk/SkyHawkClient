@@ -6,6 +6,7 @@ import type { AdoptForm, NodeModelEntry, NodeStatus, NodeView } from '@shared/no
 import { modelNode, nodeModel as model, nodeStatus } from '../../../test-fixtures/nodes'
 import { seenAgo } from '@shared/format'
 import { adoptRows } from '../../../main/nodes/cockpit-snapshot/adopt'
+import { cockpitMembers } from '../../../main/nodes/cockpit-snapshot/members'
 import { nodeViews } from '../../../main/nodes/cockpit-snapshot/views'
 import { adoptSpec, identState, keptQueue, nextSelection, registrySpecs } from './adopt-view'
 
@@ -22,12 +23,16 @@ const fresh = (nodeId: number, over: Partial<NodeModelEntry> = {}): NodeModelEnt
     ...over
   })
 
+/** main's rows for these views, your cockpit being the boards among them that are not new. */
+const rows = (views: NodeView[]) =>
+  adoptRows(views, cockpitMembers(model(views.map((v) => v.entry))))
+
 /**
  * "Add all" over main's rows: the boards waiting in `queue`, each checked against the boards in your
  * cockpit in `views` (registrySpecs(queue, views, edits) before R3.2).
  */
 const specs = (queue: NodeView[], views: NodeView[], edits?: ReadonlyMap<number, AdoptForm>) =>
-  registrySpecs(adoptRows([...views.filter((v) => v.entry.source !== 'new'), ...queue]), edits)
+  registrySpecs(rows([...views.filter((v) => v.entry.source !== 'new'), ...queue]), edits)
 
 describe('seenAgo', () => {
   it('says how long ago this session first saw it', () => {
@@ -89,7 +94,7 @@ describe('nextSelection', () => {
 })
 
 describe('keptQueue (#93 re-review)', () => {
-  const at = (nodes: NodeModelEntry[]) => adoptRows(nodeViews(model(nodes), []))
+  const at = (nodes: NodeModelEntry[]) => rows(nodeViews(model(nodes), []))
   const ids = (q: ReturnType<typeof keptQueue>) =>
     q.map((r) => [r.view.entry.nodeId, r.view.entry.availability])
 

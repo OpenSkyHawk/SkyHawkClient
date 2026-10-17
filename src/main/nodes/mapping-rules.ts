@@ -24,13 +24,16 @@ import type {
   ResetPreview,
   ResetRow
 } from '@shared/nodes'
-import { isAdoptableKind } from './node-kind'
+import { requireAdoptable } from './node-kind'
 import { adopted, forgettable, inCockpit } from './membership'
+import { MappingError } from './mapping-error'
+
+export { MappingError }
 
 /**
- * A NODE_ID's type from live signals (node-kind.ts resolveKind over the roster's reported kind and
- * PDU telemetry, then what is stored). main passes it so validation sees what the model shows;
- * without it (tests, older callers) only stored kinds count.
+ * A NODE_ID's identity (node-kind.ts boardIdentity: the roster's reported kind and PDU telemetry,
+ * then what is stored for a board in your cockpit). Required: every mutator that needs a board's
+ * kind is handed main's, so validation sees exactly what the model shows (S7).
  */
 export type KindOf = (nodeId: number) => NodeIdentity | undefined
 
@@ -206,9 +209,6 @@ export function differingCount(defaults: Map<number, NodeDefaults>, file: NodeMa
   return n
 }
 
-/** Thrown for input the UI should have prevented; main turns it into an error result. */
-export class MappingError extends Error {}
-
 function sameOverride(a: NodeOverride, b: NodeOverride): boolean {
   const ka = Object.keys(a) as (keyof NodeOverride)[]
   return ka.length === Object.keys(b).length && ka.every((k) => a[k] === b[k])
@@ -253,13 +253,13 @@ function checkPowerZone(
   nodeId: number,
   kind: NodeKind,
   pduId: number | null | undefined,
-  kindOf?: KindOf
+  kindOf: KindOf
 ): void {
   if (pduId === undefined || pduId === null) return
-  if ((kindOf?.(nodeId) ?? kind) === 'pdu') throw new MappingError('A PDU has no power zone')
+  if ((kindOf(nodeId) ?? kind) === 'pdu') throw new MappingError('A PDU has no power zone')
   // The zone must be a placed node that is a PDU — by what it reports, not only what was stored.
   const zone = pduId === nodeId ? undefined : effectiveMapping(defaults, file).get(pduId)
-  if (!zone || (kindOf?.(pduId) ?? zone.kind) !== 'pdu') {
+  if (!zone || (kindOf(pduId) ?? zone.kind) !== 'pdu') {
     throw new MappingError('Power zone must be a PDU')
   }
 }
@@ -293,7 +293,7 @@ export function setNodeMapping(
   defaults: Map<number, NodeDefaults>,
   nodeId: number,
   patch: MappingPatch,
-  kindOf?: KindOf
+  kindOf: KindOf
 ): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
   if (!isPlainObject(patch)) throw new MappingError('Invalid mapping change')
@@ -321,7 +321,7 @@ export function adoptNode(
   defaults: Map<number, NodeDefaults>,
   nodeId: number,
   spec: AdoptSpec,
-  kindOf?: KindOf
+  kindOf: KindOf
 ): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
   if (!isPlainObject(spec)) throw new MappingError('Invalid adopt request')
@@ -335,14 +335,8 @@ export function adoptNode(
   if (!console) throw new MappingError('Console cannot be empty')
   checkPatch(spec)
   if (spec.kind !== 'pdu' && spec.kind !== 'panel') throw new MappingError('Unknown node kind')
-  if (kindOf) {
-    // Adopt only what a board has said it is (#344): a PDU or a panel group, never a guess.
-    const k = kindOf(nodeId)
-    if (k === undefined) throw new MappingError('Its board type is not known yet')
-    if (!isAdoptableKind(k)) throw new MappingError('This board cannot be adopted')
-    if (k !== spec.kind)
-      throw new MappingError(`It reports as a ${k === 'pdu' ? 'PDU' : 'panel group'}`)
-  }
+  // Adopt only what a board has said it is, and as what it said (#344): never a guess.
+  requireAdoptable(kindOf(nodeId), spec.kind)
   // A PDU's zone is forced to none below (the adopt form has a group label, not powered-by).
   if (spec.kind === 'panel') checkPowerZone(file, defaults, nodeId, 'panel', spec.pduId, kindOf)
   const o: NodeOverride = {
@@ -362,7 +356,7 @@ function addRegistryBoard(
   nodeId: number,
   d: NodeDefaults,
   spec: AdoptSpec,
-  kindOf?: KindOf
+  kindOf: KindOf
 ): NodeMappingFile {
   const name = text(spec.name)
   if (!name) throw new MappingError('Name cannot be empty')
@@ -371,22 +365,13 @@ function addRegistryBoard(
   checkPatch(spec)
   // Added only once the board has said what it is — a PDU or a panel group — like any new board
   // (#344): a registry entry is never taken as its kind. What it said is stored (S1 bug 3).
-  let reported: NodeKind | undefined
-  if (kindOf) {
-    const k = kindOf(nodeId)
-    if (k === undefined) throw new MappingError('Its board type is not known yet')
-    if (!isAdoptableKind(k)) throw new MappingError('This board cannot be adopted')
-    reported = k
-  }
-  const kind = reported ?? d.kind
+  const kind = requireAdoptable(kindOf(nodeId))
   const patch: MappingPatch = { name, console }
   if (kind !== 'pdu') {
     checkPowerZone(file, defaults, nodeId, kind, spec.pduId, kindOf)
     patch.pduId = spec.pduId ?? null
   }
-  const o: NodeOverride = { ...patched(file.nodes[nodeId], d, patch), added: true }
-  if (reported) o.kind = reported
-  return withNode(file, nodeId, o)
+  return withNode(file, nodeId, { ...patched(file.nodes[nodeId], d, patch), added: true, kind })
 }
 
 /**
@@ -400,14 +385,13 @@ export function forgetNode(
   file: NodeMappingFile,
   defaults: Map<number, NodeDefaults>,
   nodeId: number,
-  kindOf?: KindOf
+  kindOf: KindOf
 ): NodeMappingFile {
   if (!isNodeId(nodeId)) throw new MappingError(`Not a NODE_ID: ${nodeId}`)
   const mapped = effectiveMapping(defaults, file)
-  const self = mapped.get(nodeId)
   let next = withNode(file, nodeId, undefined)
-  // A PDU by what it reports now, else by the kind it reported before (stored), else the registry's.
-  if ((kindOf?.(nodeId) ?? self?.kind) === 'pdu') {
+  // A PDU by what it reports now, else by the kind stored for it in your cockpit (KindOf).
+  if (kindOf(nodeId) === 'pdu') {
     for (const m of mapped.values()) {
       if (m.nodeId === nodeId || !m.known || m.pduId !== nodeId) continue
       const d = defaults.get(m.nodeId)
