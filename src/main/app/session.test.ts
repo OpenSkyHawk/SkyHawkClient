@@ -85,7 +85,7 @@ vi.mock('../gateway/serial-bridge', () => ({
 }))
 vi.mock('../dcs/transports', () => ({ createTransport: () => new FakeTransport() }))
 // Keep the node mapping off the real disk.
-vi.mock('../nodes/mapping-store', () => ({
+vi.mock('../nodes/mapping-file', () => ({
   // Center_Armament and Right_Navigation are in this cockpit (#93: added).
   loadNodeMapping: () => ({
     file: { version: 3, nodes: { 1: { added: true }, 2: { added: true } } }

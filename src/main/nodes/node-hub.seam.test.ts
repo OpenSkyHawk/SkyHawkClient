@@ -9,7 +9,7 @@ import { statusRow } from '../../test-fixtures/nodes'
 
 const disk: { file: NodeMappingFile; saves: number } = { file: { version: 3, nodes: {} }, saves: 0 }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } })) // debug log path
-vi.mock('./mapping-store', () => ({
+vi.mock('./mapping-file', () => ({
   MappingSaveError: class MappingSaveError extends Error {},
   loadNodeMapping: () => ({ file: disk.file }),
   saveNodeMapping: (f: NodeMappingFile) => {

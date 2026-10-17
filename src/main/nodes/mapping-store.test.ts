@@ -4,16 +4,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EMPTY_MAPPING, importMapping } from './mapping-rules'
 import type { NodeMappingFile } from '@shared/nodes'
-import { storePaths } from '../app/user-data'
+import { storeFiles, storePaths } from '../app/user-data'
 
 const userData = vi.hoisted(() => ({ dir: '' }))
-// <userData> is handed in the way app hands it in (the store no longer asks electron, P6).
-const paths = storePaths(() => userData.dir)
+// <userData> is handed in the way app hands it in (the store no longer asks electron, P6), as the
+// node-mapping.json port app wires (the JSON store under the file's policy).
+const io = storeFiles(storePaths(() => userData.dir)).mappingFile
 
-const store = await import('./mapping-store')
+const store = await import('./mapping-file')
 const { MappingSaveError } = store
-const loadNodeMapping = () => store.loadNodeMapping(paths)
-const saveNodeMapping = (f: NodeMappingFile) => store.saveNodeMapping(f, paths)
+const loadNodeMapping = () => store.loadNodeMapping(io)
+const saveNodeMapping = (f: NodeMappingFile) => store.saveNodeMapping(f, io)
 
 const file = (): string => join(userData.dir, 'node-mapping.json')
 const sample: NodeMappingFile = {
