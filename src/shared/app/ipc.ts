@@ -237,4 +237,9 @@ export interface SkyhawkApi {
   calDeleteAxis(idx: number): Promise<void>
   /** Expand or fold the restore offer. */
   calSetRestoreOpen(open: boolean): Promise<void>
+  /**
+   * The HID tab mounted (`true`) or unmounted (`false`): main builds the calibration workflow for
+   * the view, or disposes it.
+   */
+  calAttach(on: boolean): Promise<void>
 }

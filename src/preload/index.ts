@@ -81,7 +81,8 @@ const api: SkyhawkApi = {
   calRestore: () => ipcRenderer.invoke(CTRL.calRestore) as Promise<void>,
   calDeleteAxis: (idx: number) => ipcRenderer.invoke(CTRL.calDeleteAxis, idx) as Promise<void>,
   calSetRestoreOpen: (open: boolean) =>
-    ipcRenderer.invoke(CTRL.calSetRestoreOpen, open) as Promise<void>
+    ipcRenderer.invoke(CTRL.calSetRestoreOpen, open) as Promise<void>,
+  calAttach: (on: boolean) => ipcRenderer.invoke(CTRL.calAttach, on) as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('skyhawk', api)

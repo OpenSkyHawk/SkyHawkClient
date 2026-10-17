@@ -583,8 +583,10 @@ export const CALIBRATION_PUSH = {
 } as const
 
 /**
- * Intent channel names (renderer -> main, invoke/response): the workflow's user actions. The
- * protocol exchanges they drive (HELLO, GET_CAL, SESSION_OPEN, …) and the cache are main-internal.
+ * Intent channel names (renderer -> main, invoke/response): the workflow's user actions, and
+ * `cal:attach` — the HID tab mounting and unmounting, which is where the workflow's lifetime begins
+ * and ends. The protocol exchanges they drive (HELLO, GET_CAL, SESSION_OPEN, …) and the cache are
+ * main-internal.
  */
 export const CALIBRATION_CTRL = {
   calOpen: 'cal:open',
@@ -596,5 +598,6 @@ export const CALIBRATION_CTRL = {
   calSave: 'cal:save',
   calRestore: 'cal:restore',
   calDeleteAxis: 'cal:delete-axis',
-  calSetRestoreOpen: 'cal:set-restore-open'
+  calSetRestoreOpen: 'cal:set-restore-open',
+  calAttach: 'cal:attach'
 } as const

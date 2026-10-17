@@ -227,6 +227,8 @@ export interface CalibrationIntents {
   restore(): void
   deleteAxis(idx: number): void
   setRestoreOpen(open: boolean): void
+  /** The HID tab mounted (`true`) or unmounted (`false`). */
+  attach(on: boolean): void
 }
 
 /** The calibration intents, each a call to main. */
@@ -242,7 +244,8 @@ function calibrationIntents(): CalibrationIntents {
     save: () => void api()?.calSave(),
     restore: () => void api()?.calRestore(),
     deleteAxis: (idx) => void api()?.calDeleteAxis(idx),
-    setRestoreOpen: (open) => void api()?.calSetRestoreOpen(open)
+    setRestoreOpen: (open) => void api()?.calSetRestoreOpen(open),
+    attach: (on) => void api()?.calAttach(on)
   }
 }
 

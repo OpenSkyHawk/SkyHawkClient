@@ -27,4 +27,6 @@ export function registerCalibrationIpc(ipc: IpcRegistrar, deps: CalibrationIpcDe
   ipc.handle(CALIBRATION_CTRL.calSetRestoreOpen, (_e, open: boolean) =>
     workflow.setRestoreOpen(open)
   )
+  // The HID tab's mount and unmount: the workflow's lifetime (useCalibration's, before R3.1).
+  ipc.handle(CALIBRATION_CTRL.calAttach, (_e, on: boolean) => workflow.attach(on))
 }

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { HID_REPORT_LAYOUT } from '@shared/firmware'
 import { isLinkUp } from '@shared/gateway'
 import type { CalBadge } from '@shared/hid/calibration'
@@ -99,6 +100,12 @@ export function Hid() {
   // The joystick is read alongside DCS and never needs the serial link; calibration does (#74).
   // So the live view below ignores the link, and only calibration is gated on it.
   const linkUp = isLinkUp(s.deviceState)
+  // The calibration workflow lives as long as this tab is mounted (main builds and disposes it).
+  const { attach } = s.calibrate
+  useEffect(() => {
+    attach(true)
+    return () => attach(false)
+  }, [attach])
   const cal = s.calibration.tab
   const lit = new Set(s.buttons)
   const availAxes = new Set(s.availAxes)

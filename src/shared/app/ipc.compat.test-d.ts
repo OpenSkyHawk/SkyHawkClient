@@ -6,7 +6,8 @@
 // A later PR that changes the API on purpose updates the copy in the same diff.
 //
 // R3.1 (calibration workflow to main): the ten protocol intents (cal:hello … cal:cache-drop) left
-// the API, the ten workflow intents (cal:open … cal:set-restore-open) joined it, `cal:raw` became
+// the API, the ten workflow intents (cal:open … cal:set-restore-open) and the lifecycle intent
+// cal:attach joined it, `cal:raw` became
 // main-internal, `cal:workflow` was added, and `relay:status`'s `cal` became the CalibrationState.
 //
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
@@ -135,6 +136,7 @@ interface OldCTRL {
   readonly calRestore: 'cal:restore'
   readonly calDeleteAxis: 'cal:delete-axis'
   readonly calSetRestoreOpen: 'cal:set-restore-open'
+  readonly calAttach: 'cal:attach'
 }
 
 interface OldSkyhawkApi {
@@ -183,6 +185,7 @@ interface OldSkyhawkApi {
   calRestore(): Promise<void>
   calDeleteAxis(idx: number): Promise<void>
   calSetRestoreOpen(open: boolean): Promise<void>
+  calAttach(on: boolean): Promise<void>
 }
 
 export type ApiSurfaceUnchanged = [

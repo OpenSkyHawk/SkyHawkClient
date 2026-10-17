@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CALIBRATION_IDLE, type CalibrationState, type CalSnapshot } from '@shared/hid/calibration'
 import type { CalibrationCommands } from './calibration-workflow'
 import { CalibrationWorkflowHost } from './workflow-host'
@@ -45,6 +45,72 @@ describe('CalibrationWorkflowHost', () => {
     const { h, pushed } = host()
     expect(h.state()).toEqual(CALIBRATION_IDLE)
     expect(pushed, 'nothing is pushed before anything happens').toEqual([])
+  })
+})
+
+// The workflow's lifetime is the HID tab's mount (`cal:attach`), as useCalibration's controller's
+// was: a remount, or a renderer reload, starts from a fresh one.
+describe('the HID-tab view (cal:attach)', () => {
+  afterEach(() => vi.useRealTimers())
+
+  const sample = (raw: number) => [{ t: Date.now(), idx: 1, raw, cal: raw }]
+
+  async function opened() {
+    const spied = { ...commands, calRead: vi.fn(commands.calRead) }
+    const pushed: CalibrationState[] = []
+    const h = new CalibrationWorkflowHost(spied, (s) => pushed.push(s))
+    h.linkStatus('connected')
+    h.reported(snapshot(0b01))
+    h.attach(true)
+    await h.open(1)
+    return { h, spied, pushed }
+  }
+
+  it('has nothing to act on, and drops RAW, until the tab mounts', async () => {
+    const { h } = host()
+    await h.open(1)
+    h.ingest(sample(40_000))
+    expect(h.state().dialog).toBeUndefined()
+  })
+
+  it('a remount starts a fresh workflow: nothing from the last view comes back', async () => {
+    const { h } = await opened()
+    h.ingest(sample(40_000))
+    expect(h.state().dialog?.workflow.live?.raw).toBe(40_000)
+    h.attach(false)
+    expect(h.state().dialog, 'unmounted: no dialog').toBeUndefined()
+    h.ingest(sample(41_000))
+    h.attach(true)
+    await h.open(1)
+    expect(h.state().dialog?.workflow.live, 'the earlier reading is gone').toBeUndefined()
+  })
+
+  it('an unmount disposes the workflow: its ticker and timers stop', async () => {
+    vi.useFakeTimers()
+    const { h } = await opened()
+    h.startCapture()
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+    h.attach(false)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('a reload (a mount with the old view never unmounted) leaves the old view behind', async () => {
+    const { h } = await opened()
+    expect(h.state().dialog).toBeDefined()
+    h.attach(true)
+    expect(h.state().dialog).toBeUndefined()
+  })
+
+  it('a renderer load drops the old view; what it started never reaches the device again', async () => {
+    const { h, spied } = await opened()
+    const closing = h.close()
+    h.rendererLoaded()
+    expect(h.state().dialog).toBeUndefined()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(spied.calRead, 'the dead page never asked for its re-read').not.toHaveBeenCalled()
+    void closing
   })
 })
 

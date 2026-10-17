@@ -194,14 +194,15 @@ export function installSkyhawkMock(): SkyhawkMock {
 
     // ── pulls: answered from the scenario ──
     getConfig: vi.fn(() => resolve({ ...DEFAULT_CONFIG, ...state.config })),
-    getStatus: vi.fn(() =>
-      resolve({
+    getStatus: vi.fn(() => {
+      host.rendererLoaded() // main's relay:status handler: a renderer (re)loaded
+      return resolve({
         running: state.relay?.running ?? false,
         relay: state.relay ?? { running: false },
         device: state.device ?? { state: 'no-device' },
         cal: host.state()
       })
-    ),
+    }),
     getNodes: vi.fn(() =>
       resolve({ model: state.model ?? EMPTY_MODEL, telemetry: state.telemetry ?? [] })
     ),
@@ -248,7 +249,8 @@ export function installSkyhawkMock(): SkyhawkMock {
     calSave: vi.fn(() => host.save()),
     calRestore: vi.fn(() => host.restore()),
     calDeleteAxis: vi.fn((idx: number) => host.deleteAxis(idx)),
-    calSetRestoreOpen: vi.fn((open: boolean) => resolve(host.setRestoreOpen(open)))
+    calSetRestoreOpen: vi.fn((open: boolean) => resolve(host.setRestoreOpen(open))),
+    calAttach: vi.fn((on: boolean) => resolve(host.attach(on)))
   }
 
   // ── main's calibration commands, over the scripted Gateway (HidCalibrationService's cal*) ──

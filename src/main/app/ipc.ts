@@ -59,7 +59,8 @@ const IPC_ORDER = [
   'cal:save',
   'cal:restore',
   'cal:delete-axis',
-  'cal:set-restore-open'
+  'cal:set-restore-open',
+  'cal:attach'
 ] as const satisfies readonly CtrlChannel[]
 
 /** IPC_ORDER's type when it lists every channel; otherwise the channels it leaves out. */
@@ -99,7 +100,12 @@ export function registerIpc(ipcMain: IpcRegistrar, deps: IpcDeps): void {
   registerCalibrationIpc(ipc, { calibration: services.calibration })
   registerEventsIpc(ipc, { journal: services.journal, dialogs })
 
-  ipc.handle(APP_CTRL.relayStatus, () => services.status())
+  ipc.handle(APP_CTRL.relayStatus, () => {
+    // A renderer's first pull on (re)load: a calibration view from before it went with the old
+    // page, as its controller did (R3.1).
+    services.calibration.workflow.rendererLoaded()
+    return services.status()
+  })
   ipc.handle(APP_CTRL.debugDumpPorts, async () => {
     const ports = await listSerialPorts()
     debugLog('serial.list', ports, true) // force-write regardless of the toggle
