@@ -9,9 +9,21 @@ import { NODE_MSG, NodeRoster } from '../../main/nodes/node-status-wire'
 import { setHidden, EMPTY_MAPPING } from '../../main/nodes/mapping-rules'
 import { registryDefaults } from '../../main/nodes/registry'
 import { buildNodeModel } from '../../main/nodes/node-model'
-import { nodeViews, healthBand, attentionItems, nodeHealth } from './cockpit'
-import { strayNew, registrySpecs, adoptPduChoices } from './cockpit-adopt'
-import { nodeFaultBoxes } from './cockpit-panels'
+// The Cockpit's half is built in main since R3.2 (cockpit-snapshot); the Overview and Connection
+// still run the renderer's copy (./cockpit) until R3.2b.
+import { nodeViews, healthBand, attentionItems } from './cockpit'
+import {
+  nodeViews as cockpitViews,
+  nodeHealth as cockpitNodeHealth
+} from '../../main/nodes/cockpit-snapshot/views'
+import { healthBand as cockpitHealthBand } from '../../main/nodes/cockpit-snapshot/band'
+import {
+  attentionItems as cockpitAttentionItems,
+  strayNew
+} from '../../main/nodes/cockpit-snapshot/attention'
+import { adoptPduChoices, adoptRows } from '../../main/nodes/cockpit-snapshot/adopt'
+import { nodeFaultBoxes } from '../../main/nodes/cockpit-snapshot/panels'
+import { registrySpecs } from './adopt-view'
 import { cockpitTile, attentionSummary, newDevices } from './overview'
 import { nodesSummary } from './connection-summary'
 
@@ -40,12 +52,13 @@ describe('fix-track probes (today)', () => {
       file: EMPTY_MAPPING
     })
     const views = nodeViews(model, [])
-    const { strays } = strayNew(views, 6000)
+    const cockpit = cockpitViews(model, [])
+    const { strays } = strayNew(cockpit, 6000)
     expect(strays).toHaveLength(1)
-    const cockpitBand = healthBand(views, strays.length)
+    const cockpitBand = cockpitHealthBand(cockpit, strays.length)
     expect(cockpitBand.warn).toBe(1)
     expect(
-      attentionItems(views, [], [{ nodeId: 9, flag: 'UNIDENTIFIED · can’t be adopted' }])
+      cockpitAttentionItems(cockpit, [], [{ nodeId: 9, flag: 'UNIDENTIFIED · can’t be adopted' }])
     ).toHaveLength(1)
     // Overview
     const ovBand = healthBand(views)
@@ -68,7 +81,7 @@ describe('fix-track probes (today)', () => {
       defaults,
       file: EMPTY_MAPPING
     })
-    expect(strayNew(nodeViews(model, []), 60_001).strays).toHaveLength(1)
+    expect(strayNew(cockpitViews(model, []), 60_001).strays).toHaveLength(1)
   })
 
   it('C6: a registry board waiting to be added is labelled "NOT IN REGISTRY" / "Not in registry"', () => {
@@ -84,10 +97,10 @@ describe('fix-track probes (today)', () => {
     })
     const e = model.nodes.find((n) => n.nodeId === 2)!
     expect(e.registry?.name).toBe('Right_Navigation')
-    expect(nodeHealth(e).flag).toBe('NOT IN REGISTRY')
-    expect(nodeFaultBoxes(nodeViews(model, []).find((v) => v.entry.nodeId === 2)!)[0]!.title).toBe(
-      'Not in registry'
-    )
+    expect(cockpitNodeHealth(e).flag).toBe('NOT IN REGISTRY')
+    expect(
+      nodeFaultBoxes(cockpitViews(model, []).find((v) => v.entry.nodeId === 2)!)[0]!.title
+    ).toBe('Not in registry')
   })
 
   it('#95 bug 2: a hidden in-cockpit PDU is "(not added)" to Add all and the PDU choices', () => {
@@ -103,8 +116,8 @@ describe('fix-track probes (today)', () => {
       defaults,
       file: f
     })
-    const views = nodeViews(m, [])
-    expect(registrySpecs(views, views)[0]?.spec.pduId).toBeNull()
+    const views = cockpitViews(m, [])
+    expect(registrySpecs(adoptRows(views))[0]?.spec.pduId).toBeNull()
     expect(adoptPduChoices(views, 'Center', 5, m.nodes.find((n) => n.nodeId === 1)!).pending).toBe(
       'PDU_Center'
     )

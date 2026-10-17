@@ -1,4 +1,5 @@
-import { STATE_SYMBOL, type NodeState } from '../../cockpit'
+import type { NodeState } from '@shared/nodes'
+import { STATE_SYMBOL } from '../../node-view'
 
 /** Status dot with its symbol — never colour alone. */
 export function Dot({ state }: { state: NodeState }) {

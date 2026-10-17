@@ -10,6 +10,9 @@
 // cal:attach joined it, `cal:raw` became
 // main-internal, `cal:workflow` was added, and `relay:status`'s `cal` became the CalibrationState.
 //
+// R3.2a (cockpit snapshot to main): the push `cockpit:snapshot` → `CockpitSnapshot` was added.
+// No intent and no method changed.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -38,6 +41,7 @@ import type { DeviceStatus, SerialFrame } from '../gateway/ipc'
 import type { HidAvailability, HidSnapshot } from '../hid/ipc'
 import type {
   AdoptSpec,
+  CockpitSnapshot,
   MappingPatch,
   NodeMappingResult,
   NodeModel,
@@ -75,6 +79,7 @@ interface OldPushChannels {
   'serial:traffic': SerialFrame[]
   'cal:data': CalSnapshot
   'cal:workflow': CalibrationState
+  'cockpit:snapshot': CockpitSnapshot
 }
 
 type OldPushChannel = keyof OldPushChannels
@@ -93,6 +98,7 @@ interface OldIPC {
   readonly serialTraffic: 'serial:traffic'
   readonly calData: 'cal:data'
   readonly calWorkflow: 'cal:workflow'
+  readonly cockpitSnapshot: 'cockpit:snapshot'
 }
 
 interface OldCTRL {

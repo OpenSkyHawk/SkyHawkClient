@@ -271,31 +271,6 @@ describe('node state (#63)', () => {
     push('device:status', { state: 'connected' })
     expect(s.getState().linkDownAt).toBeUndefined()
   })
-
-  it('tracks the session peak of the computed total power', async () => {
-    const s = await freshStore()
-    push('nodes:model', pduModel)
-    push('nodes:telemetry', telem(2000))
-    expect(s.getState().nodesPeakW).toBeCloseTo(24)
-    push('nodes:telemetry', telem(1000))
-    expect(s.getState().nodesPeakW).toBeCloseTo(24)
-  })
-
-  it('peaks over the same PDUs as the Total card: an unadopted PDU does not count', async () => {
-    // Review of #80: one registry PDU and one still in "New on the bus", 29 W each, read
-    // "Total 29.0 W · peak 58.0 W" — a peak the card could never show.
-    const withNew: NodeModel = {
-      ...pduModel,
-      nodes: [
-        ...pduModel.nodes,
-        { ...pduModel.nodes[0]!, nodeId: 42, name: 'Node 42', console: null, source: 'new' }
-      ]
-    }
-    const s = await freshStore()
-    push('nodes:model', withNew)
-    push('nodes:telemetry', [...telem(2417), { ...telem(2417)[0]!, nodeId: 42 }])
-    expect(s.getState().nodesPeakW).toBeCloseTo(29, 0)
-  })
 })
 
 describe('event log (#64)', () => {

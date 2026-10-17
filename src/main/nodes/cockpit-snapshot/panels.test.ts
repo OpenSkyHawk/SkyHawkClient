@@ -1,24 +1,23 @@
+// Ported from the renderer's cockpit-panels.test.ts (R3.2): what each board's side panel says and
+// offers, now built in main. Same cases, same expected values.
 import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeStatus, NodeTelemSnapshot } from '@shared/nodes'
-import { modelNode, nodeModel as model, nodeStatus } from '../../test-fixtures/nodes'
+import { CONSOLE_OPTIONS, consoleLabel } from '@shared/nodes'
+import { modelNode, nodeModel as model, nodeStatus } from '../../../test-fixtures/nodes'
 import { PDU_FLAG, RAIL_FLAG } from '@shared/nodes/legacy-rules'
-import { TELEM_PAGE } from '../../main/nodes/node-telem'
+import { TELEM_PAGE } from '../node-telem'
 import { lastSeenLabel } from '@shared/format'
-import { nodeViews } from './cockpit'
 import {
   boardActions,
-  CONSOLE_OPTIONS,
-  consoleLabel,
   firstPduOn,
-  mappingPatch,
   nodeFaultBoxes,
   nodeStatusRows,
   pduBoardRows,
   pduFaultBoxes,
   pduRailRows,
-  powerZoneOptions,
-  reportAge
-} from './cockpit-panels'
+  powerZoneOptions
+} from './panels'
+import { nodeViews } from './views'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
   nodeStatus(nodeId, { uptimeSec: 3725, rxCount: 12345, tec: 8, rec: 1, dieTempC: 33, ...over })
@@ -77,16 +76,6 @@ const telem = (
 })
 
 const view = (e: NodeModelEntry, t: NodeTelemSnapshot[] = []) => nodeViews(model([e]), t)[0]!
-
-describe('reportAge', () => {
-  it('ticks between the bridge’s 5 s reports, and says when it stopped', () => {
-    const e = node(1, { reportedAt: 10_000 })
-    expect(reportAge(e, 13_400)).toBe('updated 3 s ago')
-    expect(reportAge(e, 130_000)).toBe('updated 2 min ago')
-    expect(reportAge({ ...e, availability: 'offline' }, 40_000)).toBe('last report 30 s ago')
-    expect(reportAge(node(1), 40_000)).toBe('') // never reported this session
-  })
-})
 
 describe('boardActions', () => {
   const off = { availability: 'offline' as const }
@@ -418,27 +407,5 @@ describe('placement', () => {
   it('a console picks its first PDU, none when it has none', () => {
     expect(firstPduOn(views, 'Center')).toBe(5)
     expect(firstPduOn(views, 'Right')).toBeNull()
-  })
-
-  it('Save sends only what changed', () => {
-    const e = node(1, { name: 'Center_Armament', console: 'Center', pduId: 5 })
-    expect(mappingPatch(e, { name: 'Center_Armament ', console: 'Center', pduId: 5 })).toEqual({})
-    expect(mappingPatch(e, { name: 'Arm', console: 'Left', pduId: 3 })).toEqual({
-      name: 'Arm',
-      console: 'Left',
-      pduId: 3
-    })
-    expect(mappingPatch(e, { name: 'Center_Armament', console: 'Center', pduId: null })).toEqual({
-      pduId: null
-    })
-  })
-
-  it('a PDU renames and moves console, never takes a power zone (#93)', () => {
-    const p = pdu(3, 'Left')
-    expect(mappingPatch(p, { name: 'PDU_Port', console: 'Right', pduId: 4 })).toEqual({
-      name: 'PDU_Port',
-      console: 'Right'
-    })
-    expect(mappingPatch(p, { name: p.name, console: 'Left', pduId: 4 })).toEqual({})
   })
 })

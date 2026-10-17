@@ -1,32 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { isLinkUp } from '@shared/gateway'
-import type { NodeModel, PsuLimits } from '@shared/nodes'
+import type { CockpitAttention, CockpitBand, NodeView, PsuLimits } from '@shared/nodes'
 import { effectivePsuLimits } from '@shared/nodes/legacy-rules'
 import { fmtPct, hhmm, voltsValue } from '@shared/format'
 import { useStore } from '../store'
-import { strayFlag, strayNew } from '../cockpit-adopt'
-import { gatewayView, type GatewayView } from '../gateway-view'
-import {
-  ATTENTION_SHOWN,
-  STAGE_W,
-  STATE_SYMBOL,
-  attentionItems,
-  canErrorsSub,
-  canErrorsWorst,
-  headroom,
-  healthBand,
-  newCount,
-  nodeViews,
-  planLayout,
-  psuName,
-  tileMatches,
-  type AttentionItem,
-  type HealthBand,
-  type Headroom,
-  type NodeView,
-  type PlanGroup,
-  type PlanLayout
-} from '../cockpit'
+import { STATE_SYMBOL, tileMatches } from '../node-view'
+import { STAGE_W, planLayout, type PlanGroup, type PlanLayout } from '../plan-layout'
+import { headroom, psuName, type Headroom } from '../band-view'
 import { BoardEvents } from './cockpit/BoardEvents'
 import { Dot } from './cockpit/Dot'
 import { AdoptDialog } from './cockpit/AdoptDialog'
@@ -35,13 +14,9 @@ import { NodePanel, PduPanel } from './cockpit/SidePanels'
 const RING_C = 289.03 // 2π × 46, the ring's circumference
 
 export function Cockpit() {
-  const model = useStore((s) => s.nodeModel)
-  const telemetry = useStore((s) => s.nodeTelemetry)
-  const peakW = useStore((s) => s.nodesPeakW)
-  const live = useStore((s) => isLinkUp(s.deviceState))
-  const deviceGateway = useStore((s) => s.deviceGateway)
-  /** The Gateway's own problem (#94): an Attention item, never a tile on the plan. */
-  const gateway = gatewayView(deviceGateway, live).attention
+  /** Everything the tab decides, as main built it (cockpit:snapshot, R3.2). */
+  const snap = useStore((s) => s.cockpit)
+  const live = snap.live
   const linkDownAt = useStore((s) => s.linkDownAt)
   const psu = useStore((s) => s.psu)
   const limits = useMemo(() => effectivePsuLimits(psu), [psu])
@@ -69,28 +44,8 @@ export function Cockpit() {
     set({ cockpitAdopt: undefined })
   }, [pendingAdopt, set])
 
-  const views = useMemo(() => (model ? nodeViews(model, telemetry) : []), [model, telemetry])
-  const outages = useMemo(() => model?.outages ?? [], [model])
-  const layout = useMemo(() => planLayout(views, outages), [views, outages])
-  // New boards that can't be adopted are active on the bus, so they are warnings (#93) — once an
-  // unidentified one has had IDENTIFY_WAIT_MS to report its kind, so a normal board never flashes.
-  const [now, setNow] = useState(() => Date.now())
-  const stray = useMemo(() => strayNew(views, now), [views, now])
-  useEffect(() => {
-    if (stray.nextAt === undefined) return
-    const t = setTimeout(() => setNow(Date.now()), Math.max(0, stray.nextAt - Date.now()) + 50)
-    return () => clearTimeout(t)
-  }, [stray.nextAt])
-  const strays = useMemo(
-    () =>
-      live ? stray.strays.map((v) => ({ nodeId: v.entry.nodeId, flag: strayFlag(v.entry) })) : [],
-    [live, stray]
-  )
-  const band = useMemo(() => healthBand(views, strays.length), [views, strays])
-  const items = useMemo(
-    () => (live ? attentionItems(views, outages, strays) : []),
-    [live, views, outages, strays]
-  )
+  const { views } = snap
+  const layout = useMemo(() => planLayout(snap.plan), [snap.plan])
   /** The Adopt dialog opened on this NODE_ID (a stray's cog), else on the first in its queue. */
   const [adoptAt, setAdoptAt] = useState<number>()
   const openView = open === null ? undefined : views.find((v) => v.entry.nodeId === open)
@@ -107,7 +62,7 @@ export function Cockpit() {
 
   return (
     <div className="cv">
-      <Band band={band} live={live} peakW={peakW} linkDownAt={linkDownAt} limits={limits} />
+      <Band band={snap.band} live={live} linkDownAt={linkDownAt} limits={limits} />
 
       <div className="cv__main">
         <div>
@@ -116,7 +71,7 @@ export function Cockpit() {
               <span className="node__dot" aria-hidden="true" />
               <span>
                 <b>No live node status</b> — connect the Gateway.
-                {linkDownAt !== undefined && model?.nodes.length
+                {linkDownAt !== undefined && views.length
                   ? ` Showing the last known state from ${hhmm(linkDownAt)}.`
                   : ''}
               </span>
@@ -163,7 +118,7 @@ export function Cockpit() {
           <Plan
             layout={layout}
             live={live}
-            psuW={live ? band.watts : null}
+            psuW={live ? snap.band.band.watts : null}
             psuName={psuName(psu)}
             psuRating={limits.w}
             lit={(v) => tileMatches(v, query, issuesOnly)}
@@ -175,10 +130,8 @@ export function Cockpit() {
         <div className="cv__sidewrap">
           <div className="cv__side">
             <Attention
-              model={model}
               live={live}
-              items={items}
-              gateway={gateway}
+              attention={snap.attention}
               onOpenGateway={() => set({ devicePopOpen: true })}
               onShowOutage={(pduId) => {
                 setQuery('')
@@ -198,15 +151,20 @@ export function Cockpit() {
       </div>
 
       {adopting && (
-        <AdoptDialog views={views} initial={adoptAt} onClose={() => setAdopting(false)} />
+        <AdoptDialog
+          rows={snap.adopt}
+          zones={snap.zones}
+          initial={adoptAt}
+          onClose={() => setAdopting(false)}
+        />
       )}
       {openView &&
         (openView.entry.kind === 'pdu' ? (
           <PduPanel
             key={openView.entry.nodeId}
             view={openView}
+            panel={snap.panels[openView.entry.nodeId]!}
             views={views}
-            outage={outages.some((o) => o.pduId === openView.entry.nodeId)}
             live={live}
             onOpen={setOpen}
             onClose={() => setOpen(null)}
@@ -215,7 +173,9 @@ export function Cockpit() {
           <NodePanel
             key={openView.entry.nodeId}
             view={openView}
+            panel={snap.panels[openView.entry.nodeId]!}
             views={views}
+            zones={snap.zones}
             live={live}
             onOpen={setOpen}
             onClose={() => setOpen(null)}
@@ -243,14 +203,9 @@ function Bar({ h, of }: { h: Headroom | null; of: string }) {
   )
 }
 
-function Band(props: {
-  band: HealthBand
-  live: boolean
-  peakW: number
-  linkDownAt?: number
-  limits: PsuLimits
-}) {
-  const { band: b, live, limits } = props
+function Band(props: { band: CockpitBand; live: boolean; linkDownAt?: number; limits: PsuLimits }) {
+  const { band: cb, live, limits } = props
+  const b = cb.band
   const h12 = headroom(live ? b.amps12 : null, limits.a12)
   const h5 = headroom(live ? b.amps5 : null, limits.a5)
   const hW = headroom(live ? b.watts : null, limits.w)
@@ -264,7 +219,7 @@ function Band(props: {
       : b.hottest?.level === 'warn'
         ? 'var(--gold)'
         : undefined
-  const can = b.worstCan
+  const can = cb.canValue
   return (
     <div className="cv__top">
       <div className="ring">
@@ -345,20 +300,18 @@ function Band(props: {
         </div>
         <Bar h={hW} of="the PSU rating (Settings › Cockpit › Power supply)" />
         <div className="ring__sub" title="Highest this session, computed by the client">
-          {props.peakW > 0 ? `peak ${props.peakW.toFixed(1)} W` : live ? '' : noLive}
+          {cb.peakW > 0 ? `peak ${cb.peakW.toFixed(1)} W` : live ? '' : noLive}
         </div>
       </div>
 
       <div className="hcard">
         <div className="hcard__label">CAN errors</div>
-        <div className="hcard__value">
-          {live && can ? (can.rec > can.tec ? `REC ${can.rec}` : `TEC ${can.tec}`) : dash}
-        </div>
+        <div className="hcard__value">{live && can ? `${can.counter} ${can.value}` : dash}</div>
         <div
           className="ring__sub"
-          title={live && canErrorsWorst(b) ? `worst: ${canErrorsWorst(b)}` : undefined}
+          title={live && cb.canWorst ? `worst: ${cb.canWorst}` : undefined}
         >
-          {live ? canErrorsSub(b) : noLive}
+          {live ? cb.canSub : noLive}
         </div>
       </div>
 
@@ -487,27 +440,18 @@ function Group(props: {
 }) {
   const { g, focused } = props
   const p = g.pdu
-  const off = p?.health.state === 'off'
-  const dash = !p || off || p.noReadings
-  const r12 = p?.readings.rail12V
-  const r5 = p?.readings.rail5V
+  const h = g.head
+  const off = !!h?.off
+  const r12 = h?.rail12V
+  const r5 = h?.rail5V
   const rails = (
     <>
-      12 V{' '}
-      <b className={!dash && r12?.flags ? 'alert' : ''}>
-        {!dash && r12 ? voltsValue(r12.vAvgMv) : '—'}
-      </b>
+      12 V <b className={r12?.alert ? 'alert' : ''}>{r12 ? voltsValue(r12.mv) : '—'}</b>
       {g.wide ? ' · ' : ' '}5 V{' '}
-      <b className={!dash && r5?.flags ? 'alert' : ''}>
-        {!dash && r5 ? voltsValue(r5.vAvgMv) : '—'}
-      </b>
+      <b className={r5?.alert ? 'alert' : ''}>{r5 ? voltsValue(r5.mv) : '—'}</b>
     </>
   )
-  const flags = off
-    ? ['OFFLINE']
-    : p?.health.state === 'warn'
-      ? (p.health.flag ?? '').split(' · ')
-      : []
+  const flags = h?.flags ?? []
   // One flag fits the header; the rest are counted, and all of them are in the tooltip.
   const alert = flags.length ? flags[0] + (flags.length > 1 ? ` +${flags.length - 1}` : '') : ''
   const cls = `gh${off ? ' gh--off' : ''}${focused ? ' gh--focus' : ''}`
@@ -523,7 +467,7 @@ function Group(props: {
             {alert}
           </b>
         )}
-        {p?.noReadings && !off && <span className="nr">no readings</span>}
+        {h?.noReadings && <span className="nr">no readings</span>}
         {p && g.wide && <span className="gh__rails">{rails}</span>}
       </span>
       {p && !g.wide && <span className="gh__l">{rails}</span>}
@@ -583,11 +527,9 @@ function Group(props: {
 // ── Attention ───────────────────────────────────────────────────────────────
 
 function Attention(props: {
-  model?: NodeModel
   live: boolean
-  items: AttentionItem[]
-  /** The Gateway's own problem: first, and its cog opens the Device popover (#94). */
-  gateway?: GatewayView['attention']
+  /** Main's Attention card; the Gateway's own problem is first, its cog the Device popover (#94). */
+  attention: CockpitAttention
   onOpenGateway: () => void
   onShowOutage: (pduId: number) => void
   onShowAll: () => void
@@ -595,11 +537,8 @@ function Attention(props: {
   /** Open the Adopt dialog, on this NODE_ID when given. */
   onAdopt: (nodeId?: number) => void
 }) {
-  const { items, live, gateway } = props
-  const fresh = props.model ? newCount(props.model) : 0
-  const count = items.length + (gateway ? 1 : 0)
-  const shown = ATTENTION_SHOWN - (gateway ? 1 : 0)
-  const more = Math.max(0, count - ATTENTION_SHOWN)
+  const { live } = props
+  const { gateway, shown, count, more, newCount: fresh } = props.attention
   return (
     <div className="card field">
       <div className="panel-h">
@@ -645,7 +584,7 @@ function Attention(props: {
               </button>
             </li>
           )}
-          {items.slice(0, shown).map((i) => (
+          {shown.map((i) => (
             <li key={i.key}>
               <Dot state={i.state} />
               <span className="att__t">

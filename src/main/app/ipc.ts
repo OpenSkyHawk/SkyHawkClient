@@ -102,8 +102,10 @@ export function registerIpc(ipcMain: IpcRegistrar, deps: IpcDeps): void {
 
   ipc.handle(APP_CTRL.relayStatus, () => {
     // A renderer's first pull on (re)load: a calibration view from before it went with the old
-    // page, as its controller did (R3.1).
+    // page, as its controller did (R3.1)…
     services.calibration.workflow.rendererLoaded()
+    // …and the Cockpit snapshot starts over from what main holds, as the old page's store did (R3.2).
+    services.nodes.rendererLoaded()
     return services.status()
   })
   ipc.handle(APP_CTRL.debugDumpPorts, async () => {
