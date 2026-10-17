@@ -5,6 +5,7 @@
 // switch (config:edit).
 import { describe, expect, it } from 'vitest'
 import { CTRL } from '@shared/app'
+import { serializeCapture } from '../dcs/capture-file'
 import { makeServices } from '../test-harness/services'
 
 const monitor = { paths: { files: { 'config.json': { sourceMode: 'monitor' } } } }
@@ -81,16 +82,79 @@ describe('relay:facts: what the relay’s surfaces show', () => {
   it('a form’s edit: built over the settings held, the port as typed; the facts follow', () => {
     const app = makeServices(monitor)
     app.invoke(CTRL.configEdit, { transport: 'unicast-listen' })
-    expect(app.lastPush('relay:facts')?.endpoint).toEqual({
-      pill: { text: 'unicast listen' },
-      overview: { text: '239.255.50.10:5010 · local' }
-    })
+    expect(app.lastPush('relay:facts')?.endpoint).toBe('0.0.0.0:5010')
     app.invoke(CTRL.configEdit, { port: '77a' })
     expect(app.files.json('config.json')).toMatchObject({
       transport: 'unicast-listen',
       commandPort: 7778
     })
     expect(app.invoke(CTRL.configGet).config.commandPort).toBe(7778)
+  })
+})
+
+describe('fix track #134: the relay endpoint, Record and the waiting wording', () => {
+  it('X9: one endpoint, from the settings held, right for each transport', () => {
+    const app = makeServices(monitor)
+    expect(app.lastPush('relay:facts')?.endpoint).toBe('127.0.0.1:7778')
+    app.invoke(CTRL.configEdit, { host: '10.0.0.7', port: '7779' })
+    expect(app.lastPush('relay:facts')?.endpoint).toBe('10.0.0.7:7779')
+    app.invoke(CTRL.configEdit, { transport: 'loopback-multicast' })
+    expect(app.lastPush('relay:facts')?.endpoint).toBe('239.255.50.10:5010')
+    app.invoke(CTRL.configEdit, { transport: 'unicast-listen' })
+    expect(app.lastPush('relay:facts')?.endpoint).toBe('0.0.0.0:5010')
+  })
+
+  it('X12: Record refused while stopped, before any dialog; allowed while relaying', async () => {
+    const app = makeServices(monitor)
+    expect(app.lastPush('relay:facts')).toMatchObject({
+      running: { canRecord: true },
+      stopped: { canRecord: false }
+    })
+    app.dialogs.saveCapture('session.skyhawk-capture')
+    expect(await app.invoke(CTRL.captureToggle)).toEqual({ recording: false })
+    expect(app.lastPush('relay:facts')?.recording).toEqual({ on: false })
+    app.invoke(CTRL.relayStart)
+    expect(await app.invoke(CTRL.captureToggle)).toMatchObject({ recording: true })
+    // Stopped mid-recording: the recording can still be stopped.
+    app.invoke(CTRL.relayStop)
+    expect(app.lastPush('relay:facts')?.stopped.canRecord).toBe(true)
+    expect(await app.invoke(CTRL.captureToggle)).toMatchObject({ recording: false })
+    expect(app.lastPush('relay:facts')?.stopped.canRecord).toBe(false)
+  })
+
+  it('N2: Monitor relaying with no Gateway is running, not waiting for it', () => {
+    const app = makeServices(monitor)
+    app.invoke(CTRL.relayStart)
+    expect(app.lastPush('relay:facts')?.running).toMatchObject({
+      overviewLink: 'running',
+      tip: 'waiting-dcs',
+      waiting: 'dcs'
+    })
+  })
+
+  it('N3: a driven Replay that loses the Gateway waits for it, as Bridge does', async () => {
+    const app = makeServices({
+      paths: {
+        files: {
+          'config.json': { sourceMode: 'replay', replayDriveSerial: true },
+          'flight.skyhawk-capture': serializeCapture([
+            { t: 0, dir: 'in', hex: '55555555' },
+            { t: 1500, dir: 'in', hex: '55555555' }
+          ])
+        }
+      }
+    })
+    app.dialogs.openCapture('flight.skyhawk-capture')
+    await app.invoke(CTRL.replayOpen)
+    app.serial.open()
+    expect(app.invoke(CTRL.relayStart)).toEqual({ ok: true })
+    expect(app.lastPush('relay:facts')?.running.tip).toBe('replay-playing')
+    app.serial.close()
+    expect(app.lastPush('relay:facts')?.running).toMatchObject({
+      waiting: 'device',
+      tip: 'waiting-device',
+      overviewLink: 'waiting'
+    })
   })
 })
 
