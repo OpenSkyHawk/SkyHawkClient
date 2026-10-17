@@ -99,6 +99,18 @@
 // flag as main holds them (no type change there). `CalibrationTabState` (`cal:workflow`) gained
 // `badgeOpens`: the badges follow the Calibrate button's link rule (a type change only).
 //
+// Fix track #134 (X9, X12, N2: the relay's endpoint, Record, the waiting wording): a type change
+// only — no channel, intent or method was added, removed or renamed. `RelayFacts.endpoint` became
+// one string (relay-rules relayEndpoint), the same label for the pill, the Overview and the event
+// log; `EndpointLabel` was removed. `RelaySurfaces.canRecord` became one boolean, the same rule for
+// the Connection card and Settings › Connection. `OverviewLink` gained `running`: a relay that runs
+// without needing the board (Monitor, an undriven Replay) is never "waiting" for it.
+//
+// Fix track #134 (N5: the command port saved on commit, validated): no channel, intent or method
+// was added, removed or renamed. `config:edit` (editConfig) answers `ConfigEditResult` instead of
+// `AppConfig`: the settings now held, or the change refused (nothing saved) with why — a command
+// port that is not one shows main's error under the field.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -107,6 +119,7 @@ import type {
   BackupList,
   ConfigChanged,
   ConfigEdit,
+  ConfigEditResult,
   ConfigExportResult,
   ConfigImportApplyResult,
   ConfigImportOpen,
@@ -278,7 +291,7 @@ interface OldSkyhawkApi {
   on<C extends OldPushChannel>(channel: C, cb: (data: OldPushChannels[C]) => void): () => void
   getConfig(): Promise<ConfigView>
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
-  editConfig(edit: ConfigEdit): Promise<AppConfig>
+  editConfig(edit: ConfigEdit): Promise<ConfigEditResult>
   exportConfig(): Promise<ConfigExportResult>
   openConfigImport(): Promise<ConfigImportOpen>
   applyConfigImport(

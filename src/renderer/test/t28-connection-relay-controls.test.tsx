@@ -140,17 +140,23 @@ describe('T28 Connection device card and relay controls (B61, B62)', () => {
     )
   })
 
-  it('DCS link: host, port and transport are saved as typed or picked', async () => {
+  it('DCS link: host and port are saved on commit (blur / Enter), transport as picked', async () => {
     const { sky, user } = await renderScenario(<Connection />, { device: connected() })
     const host = screen.getByText('DCS host').nextElementSibling as HTMLInputElement
     const port = screen.getByText('Port').nextElementSibling as HTMLInputElement
     expect([host.value, port.value]).toEqual(['127.0.0.1', '7778'])
     await user.clear(host)
     await user.type(host, '10.0.0.7')
+    expect(sky.setConfig, 'N5: typing saves nothing').not.toHaveBeenCalled()
+    await user.tab() // the host's blur commits it
     expect(lastSaved(sky)).toMatchObject({ host: '10.0.0.7', commandPort: 7778 })
     await user.clear(port)
     await user.type(port, '7779')
+    expect(sky.setConfig).toHaveBeenCalledTimes(1)
+    await user.keyboard('{Enter}')
     expect(lastSaved(sky)).toMatchObject({ host: '10.0.0.7', commandPort: 7779 })
+    await user.tab() // the blur after Enter: nothing new typed, nothing sent again
+    expect(sky.setConfig).toHaveBeenCalledTimes(2)
 
     await user.click(screen.getByRole('button', { name: /^Loopback multicast/ }))
     expect(lastSaved(sky)).toMatchObject({ transport: 'loopback-multicast' })
@@ -158,6 +164,27 @@ describe('T28 Connection device card and relay controls (B61, B62)', () => {
     expect(lastSaved(sky)).toMatchObject({ transport: 'unicast-listen' })
     await user.click(screen.getByRole('button', { name: /^TCP to host/ }))
     expect(lastSaved(sky)).toMatchObject({ transport: 'tcp-to-host' })
+  })
+
+  it('DCS link: a junk port shows main’s error and saves nothing; a good one saves', async () => {
+    const { sky, user } = await renderScenario(<Connection />, { device: connected() })
+    const port = screen.getByText('Port').nextElementSibling as HTMLInputElement
+    await user.clear(port)
+    await user.type(port, '77a{Enter}')
+    await settle()
+    expect(port).toHaveValue('77a')
+    expect(port).toHaveAttribute('aria-invalid', 'true')
+    expect(
+      screen.getByText('Not a port. Enter a whole number from 1 to 65535.')
+    ).toBeInTheDocument()
+    expect(sky.setConfig, 'nothing saved, never a silent 7778').not.toHaveBeenCalled()
+
+    await user.clear(port)
+    await user.type(port, '7790{Enter}')
+    await settle()
+    expect(lastSaved(sky)).toMatchObject({ commandPort: 7790 })
+    expect(port).toHaveAttribute('aria-invalid', 'false')
+    expect(screen.queryByText(/^Not a port/)).toBeNull()
   })
 
   it('Record is greyed out until the relay runs', async () => {
@@ -227,6 +254,27 @@ describe('T28 Connection device card and relay controls (B61, B62)', () => {
     expect(startBtn()).toBeEnabled()
     expect(waitnote()).toBe('Relaying — waiting for the Gateway. Resumes when it connects.')
     sky.emitScenario({ device: connected() })
+    expect(waitnote()).toBeNull()
+  })
+
+  it('N3: a driven Replay that loses the board says it waits for the Gateway', async () => {
+    const { sky } = await renderScenario(<Connection />, {
+      device: link('reconnecting'),
+      config: { sourceMode: 'replay', replayDriveSerial: true },
+      relay: { running: true, stream: 'connected' }
+    })
+    expect(startBtn()).toHaveTextContent('Stop relay')
+    expect(waitnote()).toBe('Relaying — waiting for the Gateway. Resumes when it connects.')
+    sky.emitScenario({ device: connected() })
+    expect(waitnote()).toBeNull()
+  })
+
+  it('N2: Monitor relaying with no board has no waiting note', async () => {
+    await renderScenario(<Connection />, {
+      device: link('no-device'),
+      relay: { running: true, stream: 'connected' }
+    })
+    expect(startBtn()).toHaveTextContent('Stop relay')
     expect(waitnote()).toBeNull()
   })
 

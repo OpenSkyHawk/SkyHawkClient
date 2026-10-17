@@ -18,32 +18,12 @@ interface TelemetrySpec {
 
 /**
  * A gauge ring's alert level (the Overview's gaugeColor before R3.3): fuel goes to its alert under
- * 25 %; the flap and altitude rings are the secondary ones. Keyed on the readout's id, so the idle
- * placeholders (X10: `D_ALT_NEEDLE`, not `ALT_FT`) keep the plain ring they had.
+ * 25 %; the flap and altitude rings are the secondary ones. Keyed on the readout's id, the idle
+ * placeholders' and the live readouts' alike: both come from the one spec (TELEMETRY, X10).
  */
 export function gaugeTone(id: string, pct: number): GaugeTone {
   if (id === 'D_FUEL') return pct < 0.25 ? 'fuel-low' : 'fuel'
   return id === 'D_FLAPS_IND' || id === 'ALT_FT' ? 'secondary' : 'primary'
-}
-
-/**
- * The idle gauges (value NaN -> "—") the renderer shows until live telemetry arrives — the
- * decoder's idle variant, moved from the renderer's store (X10). Its ids, labels and units
- * drifted from the live readouts below (TELEMETRY): IAS and Press Alt read `% FS`, and Press Alt
- * keys on `D_ALT_NEEDLE`. Each surface keeps its own until the X10 fix: the renderer starts from
- * the contract's TELEMETRY_IDLE, which is this (main/dcs/sim-telemetry-decoder.test.ts).
- */
-const IDLE_TELEMETRY: TelemetrySpec[] = [
-  { id: 'RPM', label: 'RPM', unit: '% RPM' },
-  { id: 'D_IAS_DEG', label: 'IAS', unit: '% FS' },
-  { id: 'D_FLAPS_IND', label: 'Flap', unit: '% DN' },
-  { id: 'D_ALT_NEEDLE', label: 'Press Alt', unit: '% FS' },
-  { id: 'D_FUEL', label: 'Fuel', unit: '% QTY' }
-]
-
-/** The idle readouts: NaN values ("—"), empty rings, each with its ring's level. */
-export function idleTelemetry(): TelemetryReadout[] {
-  return IDLE_TELEMETRY.map((t) => ({ ...t, value: NaN, pct: 0, tone: gaugeTone(t.id, 0) }))
 }
 
 // Three altimeter drum addresses encode digit positions 0–9.999 as 0–65535.
@@ -81,6 +61,7 @@ function iasRawToKnots(raw: number): number {
   return NaN
 }
 
+/** The one telemetry spec: the five gauges, idle and live (X10). */
 const TELEMETRY: TelemetrySpec[] = [
   { id: 'RPM', label: 'RPM', unit: '% RPM' },
   { id: 'D_IAS_DEG', label: 'IAS', unit: 'kt' },
@@ -203,6 +184,16 @@ export class Decoder {
       return { id: t.id, label: t.label, value, pct, unit: t.unit, tone: gaugeTone(t.id, pct) }
     })
   }
+}
+
+/**
+ * The idle gauges (value NaN -> "—") the renderer shows until live telemetry arrives: the live
+ * readouts with nothing decoded yet, so the same ids, labels and units — kt and ft from the start
+ * (X10). The contract's TELEMETRY_IDLE, the renderer's starting value, is this
+ * (main/dcs/sim-telemetry-decoder.test.ts).
+ */
+export function idleTelemetry(): TelemetryReadout[] {
+  return new Decoder().telemetrySnapshot()
 }
 
 /** The two pushes the telemetry tick makes. */

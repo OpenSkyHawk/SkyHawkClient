@@ -51,14 +51,14 @@ export const DEFAULT_CONFIG: AppConfig = {
 
 /**
  * A change to the settings as the forms make it (R3.3): the fields they edit, the command port as
- * typed. Main builds the settings from it (buildConfig: a port that isn't a number saves as the
- * default, N5) over what it holds, and saves them.
+ * typed. Main builds the settings from it over what it holds, and saves them — or refuses it, and
+ * saves nothing (a port that is not one, N5: settings-form.ts commandPortOf).
  */
 export interface ConfigEdit {
   sourceMode?: SourceMode
   transport?: DcsTransport
   host?: string
-  /** The command port as typed, e.g. `'7778'`, `''` or `'77a'`. */
+  /** The command port as typed, e.g. `'7778'`, `''` or `'77a'`; sent when the field is committed. */
   port?: string
   autoConnect?: boolean
   replayDriveSerial?: boolean
@@ -76,6 +76,12 @@ export interface ConfigEdit {
    */
   psuLimit?: { key: keyof PsuLimits; text: string }
 }
+
+/**
+ * `config:edit`'s answer: the settings now held, or the change refused — nothing saved, and, for a
+ * field the form shows an error under (the command port, N5), why.
+ */
+export type ConfigEditResult = { ok: true; config: AppConfig } | { ok: false; error?: string }
 
 /** What the power supply setting comes to (R3.3): SettingsService resolves it. */
 export interface PsuView {

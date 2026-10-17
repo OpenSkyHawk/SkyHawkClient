@@ -14,6 +14,7 @@ import {
 import type {
   AppConfig,
   BackupList,
+  ConfigEditResult,
   ConfigExportResult,
   ConfigImportApplyResult,
   ConfigImportOpen,
@@ -53,7 +54,7 @@ const api: SkyhawkApi = {
   },
   getConfig: () => ipcRenderer.invoke(CTRL.configGet) as Promise<ConfigView>,
   setConfig: (patch) => ipcRenderer.invoke(CTRL.configSet, patch) as Promise<AppConfig>,
-  editConfig: (edit) => ipcRenderer.invoke(CTRL.configEdit, edit) as Promise<AppConfig>,
+  editConfig: (edit) => ipcRenderer.invoke(CTRL.configEdit, edit) as Promise<ConfigEditResult>,
   exportConfig: () => ipcRenderer.invoke(CTRL.configExport) as Promise<ConfigExportResult>,
   openConfigImport: () => ipcRenderer.invoke(CTRL.configImportOpen) as Promise<ConfigImportOpen>,
   applyConfigImport: (token, sections, backup) =>

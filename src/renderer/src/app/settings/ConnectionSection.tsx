@@ -6,11 +6,13 @@ export function ConnectionSection() {
   const s = useConfigStore()
   const dcs = useDcsStore()
   const setConfigField = useConfigStore((x) => x.setConfigField)
+  const typeLinkField = useConfigStore((x) => x.typeLinkField)
+  const commitLinkField = useConfigStore((x) => x.commitLinkField)
   const toggleCapture = useDcsStore((x) => x.toggleCapture)
-  // The recording and whether this row may start one (X12: whenever), as main decides (R3.3), and
-  // whether the row shows (always; R3.4a).
+  // The recording and whether this row may start one (X12: only while relaying, as the Connection
+  // tab's card), as main decides (R3.3), and whether the row shows (always; R3.4a).
   const recording = dcs.relayFacts.recording
-  const canRecord = relaySide(dcs.relayFacts, dcs.relaying).canRecord.settings
+  const canRecord = relaySide(dcs.relayFacts, dcs.relaying).canRecord
   const recordShown = dcs.relayFacts.recordShown.settings
 
   return (
@@ -27,15 +29,20 @@ export function ConnectionSection() {
             className="input"
             style={{ width: 160 }}
             value={s.host}
-            onChange={(e) => setConfigField({ host: e.target.value })}
+            onChange={(e) => typeLinkField('host', e.target.value)}
+            onBlur={() => commitLinkField('host')}
+            onKeyDown={(e) => e.key === 'Enter' && commitLinkField('host')}
           />
         </Row>
         <Row k="Command port" sub="DCS-BIOS import / command sink">
           <input
-            className="input"
+            className={`input${s.portError ? ' input--bad' : ''}`}
             style={{ width: 100 }}
+            aria-invalid={!!s.portError}
             value={s.port}
-            onChange={(e) => setConfigField({ port: e.target.value })}
+            onChange={(e) => typeLinkField('port', e.target.value)}
+            onBlur={() => commitLinkField('port')}
+            onKeyDown={(e) => e.key === 'Enter' && commitLinkField('port')}
           />
         </Row>
         <Row
@@ -69,6 +76,11 @@ export function ConnectionSection() {
           </Row>
         )}
       </div>
+      {s.portError && (
+        <div className="set-err" style={{ margin: '10px 2px 0' }}>
+          {s.portError}
+        </div>
+      )}
     </>
   )
 }

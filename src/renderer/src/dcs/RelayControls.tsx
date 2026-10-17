@@ -92,11 +92,7 @@ export function RecordCard() {
       <div className="card-h" style={{ marginBottom: 12 }}>
         Record
       </div>
-      <button
-        className="browse"
-        onClick={() => toggleCapture()}
-        disabled={!side.canRecord.connection}
-      >
+      <button className="browse" onClick={() => toggleCapture()} disabled={!side.canRecord}>
         {recording.on ? (
           <>
             {REC_DOT}Stop recording · {recording.events ?? 0} events
@@ -108,7 +104,7 @@ export function RecordCard() {
       <div className="hint">
         {recording.on
           ? 'Recording live DCS-BIOS stream. Stop to save — replay the file on any machine with no DCS.'
-          : side.canRecord.connection
+          : side.canRecord
             ? 'Capture a live session to replay later with no DCS running.'
             : 'Start the relay first to enable recording.'}
       </div>
