@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PsuView } from '@shared/config'
-import type { CockpitAttention, CockpitBand, NodeView, PsuLimits } from '@shared/nodes'
+import type { BoardOpens, CockpitAttention, CockpitBand, NodeView, PsuLimits } from '@shared/nodes'
 import { fmtPct, hhmm, voltsValue } from '@shared/format'
 import { Cog, useNav } from '../app/kit'
 import { BoardEvents } from '../events'
@@ -30,28 +30,50 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
   /** NODE_ID whose side panel is open: the node panel, or the PDU panel for a PDU. */
   const [open, setOpen] = useState<number | null>(null)
   const [adopting, setAdopting] = useState(false)
+  /** The Adopt dialog opened on this NODE_ID, else on the first in its queue. */
+  const [adoptAt, setAdoptAt] = useState<number>()
+  /**
+   * Every way into a board lands here — the plan, Attention, Powered by, Feeds and other tabs'
+   * requests — and goes where main says (D6, `opens`): its panel while it is in your cockpit, else
+   * the Adopt dialog on that NODE_ID. Read at the click, so it follows the latest push.
+   */
+  const openBoard = useCallback((nodeId: number) => {
+    const to = useNodesStore.getState().cockpit.opens[nodeId]
+    if (to === 'panel') return setOpen(nodeId)
+    if (to !== 'adopt') return
+    setOpen(null)
+    setAdoptAt(nodeId)
+    setAdopting(true)
+  }, [])
+  /** The Adopt dialog on the first board in its queue ("New on the bus", the Overview's notice). */
+  const adoptFirst = useCallback(() => {
+    setAdoptAt(undefined)
+    setAdopting(true)
+  }, [])
   /** A node another tab asked to open here (Connection's "›"). */
   const pendingOpen = useNav((s) => s.cockpitOpen)
   const set = useNav((s) => s.set)
   useEffect(() => {
     if (pendingOpen === undefined) return
-    setOpen(pendingOpen)
+    openBoard(pendingOpen)
     set({ cockpitOpen: undefined })
-  }, [pendingOpen, set])
+  }, [pendingOpen, set, openBoard])
   /** The Overview's new-devices notice asked for the Adopt dialog. */
   const pendingAdopt = useNav((s) => s.cockpitAdopt)
   useEffect(() => {
     if (!pendingAdopt) return
-    setAdopting(true)
+    adoptFirst()
     set({ cockpitAdopt: undefined })
-  }, [pendingAdopt, set])
+  }, [pendingAdopt, set, adoptFirst])
 
   const { views } = snap
   const layout = useMemo(() => planLayout(snap.plan), [snap.plan])
-  /** The Adopt dialog opened on this NODE_ID (a stray's cog), else on the first in its queue. */
-  const [adoptAt, setAdoptAt] = useState<number>()
-  const openView = open === null ? undefined : views.find((v) => v.entry.nodeId === open)
-  // A node can leave the model while its panel is open (hidden, forgotten): close it.
+  const openView =
+    open === null || snap.opens[open] !== 'panel'
+      ? undefined
+      : views.find((v) => v.entry.nodeId === open)
+  // A node can leave the model while its panel is open (hidden, forgotten), or leave your cockpit
+  // (D6: a board panel is only for a board in it): close it.
   useEffect(() => {
     if (open !== null && !openView) setOpen(null)
   }, [open, openView])
@@ -125,7 +147,7 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
             psuRating={limits.w}
             lit={(v) => tileMatches(v, query, issuesOnly)}
             focusPdu={focusPdu}
-            onOpen={setOpen}
+            onOpen={openBoard}
           />
         </div>
 
@@ -134,6 +156,7 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
             <Attention
               live={live}
               attention={snap.attention}
+              opens={snap.opens}
               onOpenGateway={() => set({ devicePopOpen: true })}
               onShowOutage={(pduId) => {
                 setQuery('')
@@ -141,11 +164,8 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
                 setFocusPdu(pduId)
               }}
               onShowAll={() => filter('', true)}
-              onOpen={setOpen}
-              onAdopt={(nodeId) => {
-                setAdoptAt(nodeId)
-                setAdopting(true)
-              }}
+              onOpen={openBoard}
+              onAdopt={adoptFirst}
             />
             <BoardEvents />
           </div>
@@ -168,7 +188,7 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
             panel={snap.panels[openView.entry.nodeId]!}
             views={views}
             live={live}
-            onOpen={setOpen}
+            onOpen={openBoard}
             onClose={() => setOpen(null)}
           />
         ) : (
@@ -179,7 +199,7 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
             views={views}
             zones={snap.zones}
             live={live}
-            onOpen={setOpen}
+            onOpen={openBoard}
             onClose={() => setOpen(null)}
           />
         ))}
@@ -532,12 +552,15 @@ function Attention(props: {
   live: boolean
   /** Main's Attention card; the Gateway's own problem is first, its cog the Device popover (#94). */
   attention: CockpitAttention
+  /** Where each board opens (main's, D6): a cog reads "Review" when it opens the Adopt dialog. */
+  opens: Record<number, BoardOpens>
   onOpenGateway: () => void
   onShowOutage: (pduId: number) => void
   onShowAll: () => void
+  /** Open a board: its panel, or Adopt on it, as main routes it. */
   onOpen: (nodeId: number) => void
-  /** Open the Adopt dialog, on this NODE_ID when given. */
-  onAdopt: (nodeId?: number) => void
+  /** Open the Adopt dialog on the first board in its queue. */
+  onAdopt: () => void
 }) {
   const { live } = props
   const { gateway, shown, count, more, newCount: fresh } = props.attention
@@ -586,33 +609,35 @@ function Attention(props: {
               </button>
             </li>
           )}
-          {shown.map((i) => (
-            <li key={i.key}>
-              <Dot state={i.state} />
-              <span className="att__t">
-                <b>{i.name}</b>
-                <br />
-                <span>
-                  {i.flag} · #{i.nodeId}
+          {shown.map((i) => {
+            const review = props.opens[i.nodeId] === 'adopt'
+            return (
+              <li key={i.key}>
+                <Dot state={i.state} />
+                <span className="att__t">
+                  <b>{i.name}</b>
+                  <br />
+                  <span>
+                    {i.flag} · #{i.nodeId}
+                  </span>
                 </span>
-              </span>
-              {/* The cog opens the board's panel. For a PDU outage it opens the PDU's, and the
-                  plan also outlines that PDU's group: the nodes that dropped with it. A board that
-                  can't be adopted has no panel: its cog opens the Adopt dialog on it. */}
-              <button
-                className="cog"
-                title={i.stray ? 'Review' : 'Details'}
-                aria-label={`${i.name} ${i.stray ? 'review' : 'details'}`}
-                onClick={() => {
-                  if (i.stray) return props.onAdopt(i.nodeId)
-                  if (i.outage) props.onShowOutage(i.nodeId)
-                  props.onOpen(i.nodeId)
-                }}
-              >
-                <Cog />
-              </button>
-            </li>
-          ))}
+                {/* The cog opens the board as main routes it (D6): its panel while it is in your
+                    cockpit — for a PDU outage the PDU's, and the plan also outlines that PDU's
+                    group: the nodes that dropped with it — else the Adopt dialog on it. */}
+                <button
+                  className="cog"
+                  title={review ? 'Review' : 'Details'}
+                  aria-label={`${i.name} ${review ? 'review' : 'details'}`}
+                  onClick={() => {
+                    if (i.outage) props.onShowOutage(i.nodeId)
+                    props.onOpen(i.nodeId)
+                  }}
+                >
+                  <Cog />
+                </button>
+              </li>
+            )
+          })}
         </ul>
       )}
       {live && more > 0 && (

@@ -294,7 +294,7 @@ export function NodePanel(props: {
   views: NodeView[]
   zones: ZoneChoices
   live: boolean
-  /** Switch to another board's panel (Powered by). */
+  /** Open another board (Powered by), where main routes it (D6). */
   onOpen: (nodeId: number) => void
   onClose: () => void
 }) {
@@ -438,7 +438,7 @@ export function PduPanel(props: {
   panel: BoardPanel
   views: NodeView[]
   live: boolean
-  /** Switch to another board's panel (Feeds). */
+  /** Open another board (Feeds), where main routes it (D6). */
   onOpen: (nodeId: number) => void
   onClose: () => void
 }) {

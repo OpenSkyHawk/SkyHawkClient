@@ -3,7 +3,10 @@
 // hiddenNodes) alike. Hidden only takes a board off the Cockpit until it reports again; it is still
 // in your cockpit, so a hidden PDU is never "(not added)" and a hidden adopted board is still one
 // Reset… can forget. Every surface that asks "is it in your cockpit?" reads this, never the views.
-import type { NodeKind, NodeModel } from '@shared/nodes'
+//
+// Where clicking a board goes is read from the same set (D6, boardOpens): a board panel is only for
+// a board in your cockpit; any other NODE_ID opens the Adopt dialog on it.
+import type { BoardOpens, NodeKind, NodeModel, NodeView } from '@shared/nodes'
 
 /** One board in your cockpit. */
 export interface Member {
@@ -48,4 +51,16 @@ export function cockpitMembers(model: NodeModel | undefined): Members {
   all.sort((a, b) => a.nodeId - b.nodeId)
   const byId = new Map(all.map((m) => [m.nodeId, m]))
   return { all, pdus: all.filter((m) => m.kind === 'pdu'), get: (id) => byId.get(id) }
+}
+
+/**
+ * Where each board opens (D6): a board in your cockpit (hidden ones included) → its panel; any
+ * other NODE_ID in the model — new, still identifying, or one that can't be adopted — → the Adopt
+ * dialog on it, which shows why when it can't be adopted. The renderer only follows this.
+ */
+export function boardOpens(views: NodeView[], members: Members): Record<number, BoardOpens> {
+  const opens: Record<number, BoardOpens> = {}
+  for (const v of views) opens[v.entry.nodeId] = members.get(v.entry.nodeId) ? 'panel' : 'adopt'
+  for (const m of members.all) opens[m.nodeId] = 'panel'
+  return opens
 }
