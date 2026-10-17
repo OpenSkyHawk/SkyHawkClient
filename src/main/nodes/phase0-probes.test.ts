@@ -109,14 +109,16 @@ describe('fix-track probes (today)', () => {
     expect(b.h.forget(4).ok).toBe(false)
   })
 
-  it('M3: a v2 bridge — END completes the roster, added boards read offline, Forget allowed', () => {
+  it('M3 / #132 (fixed): a reply whose rows were dropped completes nothing — unknown, Forget refused', () => {
+    // Was: the END completed the roster, so added boards read offline and Forget was allowed. The
+    // END says 2 rows and none arrived, so the reply is incomplete and reconciles nothing (#132).
     const a = hubWith(added())
     a.roster.beginBurst(0)
-    a.roster.applyMessage(NODE_MSG, '0101000000000000008000', 0) // v2 row (no kind) -> dropped
+    a.roster.applyMessage(NODE_MSG, '0101000000000000008000', 0) // malformed row -> dropped
     a.roster.applyMessage(NODE_END_MSG, '2', 0)
     const n1 = a.h.snapshot(0).model.nodes.find((n) => n.nodeId === 1)
-    expect(n1?.availability).toBe('offline')
-    expect(a.h.forget(1).ok).toBe(true)
+    expect(n1?.availability).toBe('unknown')
+    expect(a.h.forget(1).ok).toBe(false)
   })
 
   it('C4: a node identified only by PDU telemetry logs "new on the bus" only at its next status row', () => {
@@ -223,7 +225,14 @@ describe('fix-track probes (today)', () => {
       { name: 'Right_Navigation', console: 'Right', pduId: null, kind: 'pdu' },
       () => 'pdu'
     )
-    const m = buildNodeModel({ roster: [], seen: new Map(), telemetry: [], defaults, file: f })
+    const m = buildNodeModel({
+      roster: [],
+      seen: new Map(),
+      telemetry: [],
+      defaults,
+      file: f,
+      now: 0
+    })
     expect(m.nodes.find((x) => x.nodeId === 2)?.kind).toBe('pdu')
   })
 })

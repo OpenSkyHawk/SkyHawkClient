@@ -752,3 +752,142 @@ describe('one rule for the footer and main (M1/C3, S7)', () => {
     })
   }
 })
+
+describe('on the bus (X2 / S10) and a lost line inside a reply (#132)', () => {
+  const NOW = 50_000
+  const line = (id: number, present = true, kind = 1) =>
+    `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
+      .toString(16)
+      .padStart(2, '0')}`
+
+  /** A hub fed as the Gateway's line tap feeds it, with its debug log and event rows recorded. */
+  function tapped() {
+    const roster = new NodeRoster()
+    const logged: string[] = []
+    const events: string[] = []
+    const h = new NodeHub(
+      () => {},
+      roster,
+      (e) => events.push(...e.map((x) => `${x.nodeId ?? '-'} ${x.event}`)),
+      { log: (tag, data) => logged.push(`${tag} ${String(data)}`) }
+    )
+    const tap = (identifier: string, arg: string, t: number) =>
+      h.nodeLine(identifier, arg, `${identifier} ${arg}`, t)
+    /** One roster reply, node 0 first, END with PanelBridge's count; `lost` lines never arrive. */
+    const reply = (ids: number[], t: number, lost: number[] = []) => {
+      h.requestNodes()
+      for (const id of [0, ...ids])
+        if (!lost.includes(id)) tap(NODE_MSG, line(id, true, id ? 1 : 3), t)
+      tap(NODE_END_MSG, String(ids.length + 1), t)
+      h.flush(roster.takeDirty(), t)
+    }
+    const node = (id: number, t: number) => h.snapshot(t).model.nodes.find((n) => n.nodeId === id)
+    return { h, roster, logged, events, reply, node, tap }
+  }
+
+  it('a PDU in your cockpit sending fresh pages is online, and Hide and Forget agree', () => {
+    disk.file = added()
+    const { h, reply, node } = tapped()
+    reply([1], 0) // a whole roster without PDU_Right (#4)
+    expect(node(4, 0)?.availability).toBe('offline')
+    h.telemetry('040100E02E182EBC02', NOW) // its fresh 12 V page
+    expect(node(4, NOW)).toMatchObject({ availability: 'online', readings: 'live' })
+    expect(h.forget(4, NOW).ok).toBe(false)
+    expect(h.hide(4, true, NOW).ok).toBe(false)
+  })
+
+  it('a reply short of its count marks nobody offline, logs one debug line and no event row', () => {
+    disk.file = added()
+    const { reply, node, logged, events } = tapped()
+    reply([1, 2], 0)
+    const before = events.length
+    reply([1, 2], 5000, [2]) // board 2's line is lost
+    expect(node(2, 5000)?.availability).toBe('online')
+    expect(logged.filter((l) => /incomplete/.test(l))).toEqual([
+      'node roster reply incomplete: 2 of 3 rows; absences not reconciled'
+    ])
+    expect(events.slice(before)).toEqual([])
+    reply([1, 2], 10_000) // the next whole reply: still there
+    expect(node(2, 10_000)?.availability).toBe('online')
+    reply([1], 15_000) // board 2 really left: a whole reply says so, and the log has its row
+    expect(node(2, 15_000)?.availability).toBe('offline')
+    expect(events.slice(before)).toEqual(['2 offline'])
+    expect(logged.filter((l) => /incomplete/.test(l))).toHaveLength(1)
+  })
+})
+
+describe('a PDU’s pages against the roster: the newest evidence wins (X2, #132)', () => {
+  const PAGE = '040100E02E182EBC02' // PDU_Right's (#4) 12 V page
+  const row = (id: number, present = true, kind = 1) =>
+    `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
+      .toString(16)
+      .padStart(2, '0')}`
+
+  /**
+   * PDU_Right (#4) feeds Right_Navigation (#2); both and Center_Armament (#1) are on the bus, and
+   * the PDU sends a page every second until `pagesUntil`. At 13 s the bridge's heartbeat timeout
+   * reports #4 and #2 absent: the PDU lost power at 10 s.
+   */
+  function powerLoss(pagesUntil: number, now: number) {
+    disk.file = {
+      version: 4,
+      nodes: { 1: { added: true }, 2: { added: true, pduId: 4 }, 4: { added: true } }
+    }
+    const roster = new NodeRoster()
+    const h = new NodeHub(() => {}, roster)
+    const tap = (identifier: string, arg: string, t: number) =>
+      h.nodeLine(identifier, arg, `${identifier} ${arg}`, t)
+    tap(NODE_MSG, row(0, true, 3), 0)
+    for (const id of [1, 2, 4]) tap(NODE_MSG, row(id, true, id === 4 ? 2 : 1), 0)
+    tap(NODE_END_MSG, '4', 0)
+    h.flush(roster.takeDirty(), 0)
+    for (let t = 0; t <= Math.min(pagesUntil, now); t += 1000) h.telemetry(PAGE, t)
+    if (now >= 13_000) {
+      tap(NODE_MSG, row(4, false, 2), 13_000) // live deltas: the heartbeat timeout
+      tap(NODE_MSG, row(2, false), 13_000)
+    }
+    h.flush(roster.takeDirty(), now)
+    const { model, telemetry } = h.snapshot(now)
+    const { snapshot } = buildCockpitSnapshot({
+      model,
+      telemetry,
+      device: { state: 'connected' },
+      peakW: 0,
+      now,
+      rev: 0
+    })
+    return { h, model, snapshot }
+  }
+
+  it('a PDU that loses power is offline on the roster’s timing and folds into its outage', () => {
+    // 13.2 s: its last page (10 s) is still fresh for 6.8 s more, but the roster said absent after it.
+    const { h, model, snapshot } = powerLoss(10_000, 13_200)
+    expect(model.nodes.find((n) => n.nodeId === 4)).toMatchObject({
+      availability: 'offline',
+      offlineAt: 13_000
+    })
+    expect(model.outages).toEqual([
+      expect.objectContaining({ pduId: 4, nodeIds: [2], fedCount: 1, at: 13_000 })
+    ])
+    // Every surface reads the same: one outage item, and the footer offers what main allows.
+    expect(snapshot.attention.items.map((i) => [i.nodeId, i.flag])).toEqual([
+      [4, 'OFFLINE · 1 node affected']
+    ])
+    expect(snapshot.panels[4]!.actions.forget.disabled).toBe(false)
+    expect(h.hide(4, true, 13_200).ok).toBe(true)
+  })
+
+  it('pages arriving after the roster said absent bring it back online', () => {
+    const { h, model, snapshot } = powerLoss(14_000, 14_200) // a page at 14 s, after the 13 s absent
+    expect(model.nodes.find((n) => n.nodeId === 4)?.availability).toBe('online')
+    expect(model.outages).toEqual([])
+    expect(snapshot.panels[4]!.actions.forget.disabled).toBe(true)
+    expect(h.forget(4, 14_200).ok).toBe(false)
+    expect(h.hide(4, true, 14_200).ok).toBe(false)
+  })
+
+  it('before the roster says absent, a powered PDU is online by both', () => {
+    const { model } = powerLoss(10_000, 12_000)
+    expect(model.nodes.find((n) => n.nodeId === 4)?.availability).toBe('online')
+  })
+})

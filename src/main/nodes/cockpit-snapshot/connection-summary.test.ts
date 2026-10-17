@@ -44,7 +44,12 @@ const summary = (
   telemetry: NodeTelemSnapshot[] = []
 ) => {
   const m = model(nodes, outages)
-  return nodesSummary(nodeViews(m, telemetry), outages, boardZones(m.nodes, cockpitMembers(m).get))
+  return nodesSummary(
+    nodeViews(m, telemetry),
+    outages,
+    boardZones(m.nodes, cockpitMembers(m).get),
+    true
+  )
 }
 
 const T = 1_760_000_000_000
@@ -131,7 +136,7 @@ describe('nodesSummary rows', () => {
       ]
     }
     const meta = (mem: ReturnType<typeof cockpitMembers>) =>
-      nodesSummary(nodeViews(m, []), [], boardZones(m.nodes, mem.get)).rows.map((r) => r.meta)
+      nodesSummary(nodeViews(m, []), [], boardZones(m.nodes, mem.get), true).rows.map((r) => r.meta)
     expect(meta(cockpitMembers(m))).toEqual([
       `#13 · PDU_Left (hidden) · offline since ${fmtTime(T).slice(0, 8)}`
     ])

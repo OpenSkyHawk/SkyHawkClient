@@ -64,15 +64,17 @@ import {
   type ConfigChanged,
   type ConfigEdit
 } from '@shared/config'
-import type {
-  AircraftStatus,
-  RecordState,
-  StreamRow,
-  RelayFacts,
-  RelayState,
-  ReplayLoad,
-  StatsSnapshot,
-  TelemetryReadout
+import {
+  AIRCRAFT_NONE,
+  TELEMETRY_IDLE,
+  type AircraftStatus,
+  type RecordState,
+  type RelayFacts,
+  type RelayState,
+  type ReplayLoad,
+  type StatsSnapshot,
+  type StreamRow,
+  type TelemetryReadout
 } from '@shared/dcs'
 import type {
   CalCache,
@@ -98,7 +100,6 @@ import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-hos
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
 import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
 import { shownStatus } from '../../main/gateway/gateway-health'
-import { canRequestRoster } from '../../main/nodes/node-status-wire'
 import { captureView, relayFacts, replayView } from '../../main/dcs/relay-rules'
 import { savedEdit } from '../../main/config/settings-form'
 import { resolvePsu } from '../../main/nodes/psu-limits'
@@ -274,17 +275,15 @@ export function installSkyhawkMock(): SkyhawkMock {
       cockpit.rendererLoaded(state.model ?? EMPTY_MODEL, state.telemetry ?? [])
       // …and HidService hands it the report with its live axes (R3.3), in the same batch.
       push('hid:report', hidPush())
-      // …and what the old page held for itself starts over (GatewayConnection, SerialTrafficMonitor,
-      // DcsRelay).
-      linkDown.pageLoaded(device().state)
-      monitorShown = false
-      recordingShown = { on: false }
-      replayShown = undefined
-      factsKey = JSON.stringify(relayFactsNow())
+      // …and what main holds for the screen comes back in the bundle (N1): the last-known time and
+      // the monitor's flag (GatewayConnection, SerialTrafficMonitor), the recording and the capture
+      // (DcsRelay's facts), the aircraft and the gauges as last pushed (DcsRelay).
       return resolve({
         running: state.relay?.running ?? false,
         relay: state.relay ?? { running: false },
         relayFacts: relayFactsNow(),
+        aircraft: state.aircraft ?? AIRCRAFT_NONE,
+        telemetry: state.gauges ?? TELEMETRY_IDLE,
         device: devicePush(),
         cal: host.state()
       })
@@ -350,7 +349,6 @@ export function installSkyhawkMock(): SkyhawkMock {
         pushFacts()
       }
     ),
-    refreshNodes: vi.fn(() => resolve(undefined)),
     setNodeMapping: vi.fn(() => resolve(mapped())),
     adoptNode: vi.fn(() => resolve(mapped())),
     forgetNode: vi.fn(() => resolve(mapped())),
@@ -448,26 +446,16 @@ export function installSkyhawkMock(): SkyhawkMock {
 
   // ── the device link, as main's GatewayConnection pushes it (link-state.ts) ──
   const device = (): DeviceStatus => state.device ?? { state: 'no-device' }
-  /** The Cockpit's "last known" time and the serial monitor's flag: the page's, kept in main. */
+  /** The Cockpit's "last known" time and the serial monitor's flag, kept in main. */
   const linkDown = new LinkDownClock()
   let monitorShown = false
-  /**
-   * NodeHub's roster guard, for Refresh (R3.4a). A port is held from connect() until it is
-   * released — every state but `disconnected` (GatewayConnection.attached).
-   */
-  const canRefresh = (): boolean =>
-    canRequestRoster(device().state !== 'disconnected', device().state)
   /**
    * The status with what main concludes from it, as the last push carried it: the Gateway's
    * health only while the link is up (shownStatus, R3.4a).
    */
   const devicePush = (): DeviceStatusPush => ({
     ...shownStatus(device()),
-    ...linkFacts(
-      device(),
-      { linkDownAt: linkDown.value, serialMonitor: monitorShown },
-      canRefresh()
-    )
+    ...linkFacts(device(), { linkDownAt: linkDown.value, serialMonitor: monitorShown })
   })
   /** One `device:status` push, judged as GatewayConnection judges each. */
   const statusPush = (): DeviceStatusPush => {
@@ -495,7 +483,7 @@ export function installSkyhawkMock(): SkyhawkMock {
   }
 
   // ── the relay's facts, as main's DcsRelay pushes them (relay-rules.ts) ──
-  /** The recording and the capture as the page set them; a reloaded page starts over (N1). */
+  /** The recording and the capture as their intents last answered; a reload keeps them (N1). */
   let recordingShown: RelayFacts['recording'] = { on: false }
   let replayShown: RelayFacts['replay']
   let factsKey: string | undefined

@@ -47,9 +47,9 @@ describe('T9 Cockpit "New on the bus" CTA (B68, F12, X7)', () => {
     expect(adoptButton()).toBeNull()
   })
 
-  it('stays from the last model while the link is down (R5 today)', async () => {
-    // contract R5 / F12: the CTA should count only boards on the bus now (`onBusNow(live)`);
-    // today it keeps showing the last model's new boards after the link drops.
+  it('goes quiet while the link is down, and returns when it is back (R5, #132)', async () => {
+    // contract R5 / F12 (fixed, #132 X2): the CTA counts only boards on the bus now
+    // (`onBusNow(live)`), so the last model's new boards are not "on the bus" once the link drops.
     const { sky } = await renderScenario(<Cockpit />, {
       device: connected(),
       model: model([registryPanel()])
@@ -57,6 +57,9 @@ describe('T9 Cockpit "New on the bus" CTA (B68, F12, X7)', () => {
     expect(cta()).toHaveTextContent('New on the bus · 1')
     sky.emitScenario({ device: link('no-device') })
     expect(screen.getByText('No live node status — connect the Gateway.')).toBeInTheDocument()
+    expect(cta()).toBeNull()
+    expect(adoptButton()).toBeNull()
+    sky.emitScenario({ device: connected() })
     expect(cta()).toHaveTextContent('New on the bus · 1')
     expect(adoptButton()).toBeEnabled()
   })

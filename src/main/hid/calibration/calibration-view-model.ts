@@ -171,16 +171,20 @@ export function tabState(
   snapshot?.axes.forEach((a, i) => {
     if (a?.present) badges[i] = a.calibrated ? 'cal' : 'raw'
   })
+  // One link rule for every way into the dialog (N6): calibration needs the serial link, so the
+  // Calibrate button and the per-axis badges open it only while the link is up.
+  const opens = linkUp
   return {
     snapshot,
     badges,
+    badgeOpens: opens,
     uncalibrated,
     offer,
     showOffer: !!offer && linkUp && present.length > 0,
     offerAxis: offer?.axes[0],
     calibrate: {
       shown: present.length > 0 || !linkUp,
-      enabled: linkUp,
+      enabled: opens,
       axis: present.find((a) => !a.calibrated)?.idx ?? present[0]?.idx
     }
   }

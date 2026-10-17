@@ -259,12 +259,12 @@ describe('strayNew', () => {
 
   it('waits IDENTIFY_WAIT_MS for an unknown board, and says when the next one is due', () => {
     const views = at([fresh(41, { firstSeenAt: 0 }), fresh(43, { firstSeenAt: 3000 })])
-    expect(strayNew(views, 4000)).toEqual({ strays: [], nextAt: 5000 })
-    const r = strayNew(views, 5000)
+    expect(strayNew(views, 4000, true)).toEqual({ strays: [], nextAt: 5000 })
+    const r = strayNew(views, 5000, true)
     expect(ids(r)).toEqual([41])
     expect(r.nextAt).toBe(8000)
-    expect(strayNew(views, 8000).nextAt).toBeUndefined()
-    expect(ids(strayNew(views, 8000))).toEqual([41, 43])
+    expect(strayNew(views, 8000, true).nextAt).toBeUndefined()
+    expect(ids(strayNew(views, 8000, true))).toEqual([41, 43])
   })
 
   it('takes a bridge or an unknown type at once; never an adoptable or offline node', () => {
@@ -274,7 +274,7 @@ describe('strayNew', () => {
       fresh(41, { identified: 'panel', firstSeenAt: 0 }),
       fresh(46, { availability: 'offline', firstSeenAt: 0 })
     ])
-    expect(ids(strayNew(views, 1000))).toEqual([44, 45])
+    expect(ids(strayNew(views, 1000, true))).toEqual([44, 45])
   })
 })
 

@@ -30,7 +30,6 @@ const IPC_ORDER = [
   'device:connect',
   'device:disconnect',
   'hid:availability',
-  'nodes:refresh',
   'nodes:get',
   'node-mapping:set',
   'node-mapping:adopt',
@@ -116,7 +115,7 @@ export function registerIpc(ipcMain: IpcRegistrar, deps: IpcDeps): void {
     services.calibration.workflow.rendererLoaded()
     // …and the Cockpit snapshot starts over from what main holds, as the old page's store did (R3.2).
     services.nodes.rendererLoaded()
-    // …and what the old page's store held for itself goes with it (R3.3, N1).
+    // …and the HID report goes out; what main holds for the screen is kept for the bundle (N1).
     services.rendererLoaded()
     return services.status()
   })

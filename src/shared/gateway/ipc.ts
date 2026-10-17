@@ -91,19 +91,14 @@ export interface DeviceLinkFacts {
   /** The port would not open because another program holds it (from `detail`). */
   busy: boolean
   /**
-   * When the link last went down after being up: the Cockpit's "last known" time. Absent while up,
-   * and, as before, for a page that (re)loaded until the link next drops (N1).
+   * When the link last went down after being up: the Cockpit's "last known" time. Absent while up;
+   * a page that (re)loads is handed it too (N1).
    */
   linkDownAt?: number
-  /** The Serial tab's raw monitor is on, as this page last set it; off for a reloaded page (N1). */
+  /** The Serial tab's raw monitor is on, as it was last set; a reloaded page too (N1). */
   serialMonitor: boolean
   /** The device card's and the Device popover's button (R3.4a). */
   action: LinkAction
-  /**
-   * A roster request can go out, so Connection's Refresh is available: NodeHub's own guard on it
-   * (main/nodes/node-status-wire.ts canRequestRoster, R3.4a).
-   */
-  canRefresh: boolean
 }
 
 /** `device:status` as main pushes it: the link's status and what it concludes from it. */
@@ -119,8 +114,7 @@ export const DEVICE_IDLE: DeviceStatusPush = {
   boardPresent: false,
   busy: false,
   serialMonitor: false,
-  action: { offer: 'disconnect', intent: 'disconnect' },
-  canRefresh: false
+  action: { offer: 'disconnect', intent: 'disconnect' }
 }
 
 /** One raw serial chunk for the live serial monitor. */

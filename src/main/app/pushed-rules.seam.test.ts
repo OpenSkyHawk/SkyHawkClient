@@ -37,17 +37,18 @@ describe('device:status carries the link’s facts', () => {
     })
   })
 
-  it('the serial monitor’s flag comes back on device:status; a reloaded page starts over (N1)', () => {
+  it('the serial monitor’s flag comes back on device:status; a reloaded page keeps it (N1)', () => {
     const app = makeServices(monitor)
     app.serial.open()
     const n = app.pushesOf('device:status').length
     app.invoke(CTRL.serialMonitor, true)
     expect(app.pushesOf('device:status')).toHaveLength(n + 1)
     expect(app.lastPush('device:status')).toMatchObject({ state: 'connected', serialMonitor: true })
+    const at = app.clock.now()
     app.serial.close()
     const reloaded = app.invoke(CTRL.relayStatus)
-    expect(reloaded.device).toMatchObject({ serialMonitor: false })
-    expect(reloaded.device.linkDownAt, 'no last-known time for a reloaded page').toBeUndefined()
+    expect(reloaded.device).toMatchObject({ serialMonitor: true })
+    expect(reloaded.device.linkDownAt, 'the last-known time, as main holds it').toBe(at)
   })
 })
 
@@ -94,32 +95,29 @@ describe('relay:facts: what the relay’s surfaces show', () => {
 })
 
 describe('R3.4a: the last renderer decisions, pushed by their owners', () => {
-  it('device:status: the link’s action, and Refresh only while a roster request can go', () => {
+  it('device:status: the link’s action, and no Refresh fact (#132: the button is gone)', () => {
     const app = makeServices(monitor)
     expect(app.lastPush('device:status')).toMatchObject({
       state: 'scanning',
-      action: { offer: 'disconnect', intent: 'disconnect', disabled: true },
-      canRefresh: false
+      action: { offer: 'disconnect', intent: 'disconnect', disabled: true }
     })
     app.serial.open()
     expect(app.lastPush('device:status')).toMatchObject({
       state: 'connected',
-      action: { offer: 'disconnect', intent: 'disconnect' },
-      canRefresh: true
+      action: { offer: 'disconnect', intent: 'disconnect' }
     })
     app.serial.close()
     app.serial.fail('EIO')
     expect(app.lastPush('device:status')).toMatchObject({
       state: 'error',
-      action: { offer: 'retry', intent: 'connect' },
-      canRefresh: false
+      action: { offer: 'retry', intent: 'connect' }
     })
     app.invoke(CTRL.deviceDisconnect)
     expect(app.lastPush('device:status')).toMatchObject({
       state: 'disconnected',
-      action: { offer: 'connect', intent: 'connect' },
-      canRefresh: false
+      action: { offer: 'connect', intent: 'connect' }
     })
+    for (const push of app.pushesOf('device:status')) expect(push).not.toHaveProperty('canRefresh')
   })
 
   it('relay:facts: Record hidden and Capture shown in Replay, together; Settings’ row always', () => {

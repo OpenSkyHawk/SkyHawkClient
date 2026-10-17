@@ -893,7 +893,6 @@ export const NODES_PUSH = {
 
 /** Intent channel names (renderer -> main, invoke/response). */
 export const NODES_CTRL = {
-  nodesRefresh: 'nodes:refresh',
   nodesGet: 'nodes:get',
   nodeMappingSet: 'node-mapping:set',
   nodeMappingAdopt: 'node-mapping:adopt',

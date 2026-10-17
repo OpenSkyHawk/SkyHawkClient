@@ -143,7 +143,10 @@ main service ──emit──▶ push:batch ──▶ preload ──▶ ipc-adap
 
 When the renderer loads (or reloads in dev while main keeps running) the adapter also pulls the
 current picture: `relay:status`, `nodes:get`, `config:get`, `config:backups-get`, `events:get`,
-`hid:availability`.
+`hid:availability`. A reload loses nothing main holds: the `relay:status` bundle hands back the
+recording, the loaded capture, the serial monitor's flag, the aircraft, the gauges and the link's
+last-known time, and the Cockpit snapshot keeps the session's peak W. Only view state starts over:
+the tab, open dialogs, and a calibration dialog, which never resumes across a reload.
 
 ## `push:batch`: one frame per main turn
 

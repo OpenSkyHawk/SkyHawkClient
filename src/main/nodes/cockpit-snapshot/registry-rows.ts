@@ -5,13 +5,14 @@
 // Reset… reads your cockpit as every surface does (members.ts, X1): a hidden adopted board is still
 // one it can forget.
 //
-// Each keeps Settings' own answer where it differs from the Cockpit's (co-located, not unified):
-//   X2 on the bus  a CAN row reads the last model whatever the link; only the Gateway row follows
-//                  the link (registryOnBus)
+// "On the bus" is the one rule every surface reads (node-model.ts onBusNow, X2): with the link down
+// no CAN row says yes or offline. Settings keeps its own answer where it differs from the Cockpit's
+// (co-located, not unified):
 //   X8 wording     the bridge row is "Gateway", whatever NODE_IDS.md calls it (registryName)
 import { GATEWAY_NODE_ID } from '@shared/firmware'
 import { plural } from '@shared/format'
 import type { NodeModel, NodeRegistryInfo, OnBus, RegistryRow, SettingsNodes } from '@shared/nodes'
+import { onBusNow } from '../node-model'
 import { cockpitMembers } from './members'
 
 /**
@@ -35,7 +36,9 @@ export function registrySummary(r: NodeRegistryInfo): string {
 
 /**
  * Registry list "On the bus" column. PanelBridge is the serial link itself; a CAN node is what
- * the roster says — "—" before any roster, since that is no data rather than "absent".
+ * the one availability rule says while the link is up (onBusNow) — "—" before any roster, and
+ * while the link is down, since that is no data rather than "absent". Hidden is your cockpit's,
+ * not the bus's: it reads so whatever the link.
  */
 export function registryOnBus(
   nodeId: number,
@@ -46,8 +49,9 @@ export function registryOnBus(
     return linkUp ? { text: 'serial link', dot: 'on' } : { text: 'no device', dot: '' }
   if (model?.hidden.includes(nodeId)) return { text: 'hidden', dot: '' }
   const e = model?.nodes.find((n) => n.nodeId === nodeId)
-  if (e?.availability === 'online') return { text: 'yes', dot: 'on' }
-  if (e?.availability === 'offline') return { text: 'offline', dot: 'off' }
+  if (!e || !linkUp) return { text: '—', dot: '' }
+  if (onBusNow(e, linkUp)) return { text: 'yes', dot: 'on' }
+  if (e.availability === 'offline') return { text: 'offline', dot: 'off' }
   return { text: '—', dot: '' }
 }
 

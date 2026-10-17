@@ -16,8 +16,9 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { onTestFinished, vi } from 'vitest'
-import { CTRL, type PushChannel, type PushChannels } from '@shared/app'
+import { CTRL, type IpcListener, type PushChannel, type PushChannels } from '@shared/app'
 import type { AppConfig, ConfigEdit } from '@shared/config'
+import type { RecordState, ReplayLoad } from '@shared/dcs'
 import type { AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes'
 
 // ── the outside world, faked ─────────────────────────────────────────────────
@@ -31,7 +32,12 @@ const world = {
   serialOut: [] as Buffer[],
   /** Every byte sent to DCS, in order, across relay restarts. */
   dcsOut: [] as Buffer[],
-  transportConnectsOnStart: false
+  transportConnectsOnStart: false,
+  /** What the file dialogs answer: a file name in <userData>, or none (cancelled). */
+  dialogs: {
+    saveCapture: undefined as string | undefined,
+    openCapture: undefined as string | undefined
+  }
 }
 
 /** Stand-in for SerialBridge: one instance per port open, the latest is the board. */
@@ -136,6 +142,7 @@ vi.doMock('../dcs/transports', () => ({ createTransport: () => new FakeTransport
 vi.doMock('../hid/hid-reader', () => ({ HidReader: FakeHid }))
 
 const { AppServices } = await import('../app/app-services')
+const { registerDcsIpc } = await import('../dcs')
 const { storePaths } = await import('../app/user-data')
 const { PortNotFoundError } = await import('../gateway/serial-bridge')
 
@@ -196,7 +203,8 @@ function launch(opts: ServicesOptions) {
     serialNumber: opts.serial?.serialNumber ?? 'TESTSERIAL',
     serialOut: [],
     dcsOut: [],
-    transportConnectsOnStart: opts.transport?.connectOnStart ?? false
+    transportConnectsOnStart: opts.transport?.connectOnStart ?? false,
+    dialogs: { saveCapture: undefined, openCapture: undefined }
   })
   FakeSerial.last = undefined
   FakeTransport.last = undefined
@@ -209,6 +217,24 @@ function launch(opts: ServicesOptions) {
     pushes.push({ channel, payload } as Push)
   }, paths)
 
+  // dcs's capture intents, as dcs/ipc.ts registers them, over dialogs that answer from `world`.
+  const dcsIntents = new Map<string, IpcListener>()
+  const inUserData = (name?: string) => (name === undefined ? undefined : join(userData, name))
+  registerDcsIpc(
+    { handle: (channel, listener) => void dcsIntents.set(channel, listener) },
+    {
+      relay: services.relay,
+      recorder: services.recorder,
+      dialogs: {
+        saveLog: () => Promise.resolve(undefined),
+        saveCapture: () => Promise.resolve(inUserData(world.dialogs.saveCapture)),
+        openCapture: () => Promise.resolve(inUserData(world.dialogs.openCapture))
+      }
+    }
+  )
+  const dcsIntent = <T>(channel: string): Promise<T> =>
+    dcsIntents.get(channel)!(undefined) as Promise<T>
+
   // app/ipc.ts registerIpc() and the topics' ipc.ts: the renderer's requests main answers.
   const intents = {
     [CTRL.configGet]: () => services.settings.view(),
@@ -217,7 +243,10 @@ function launch(opts: ServicesOptions) {
     [CTRL.relayStart]: () => services.relay.start(),
     [CTRL.relayStop]: () => services.relay.stop(),
     [CTRL.relayToggle]: (relaying: boolean) => services.relay.toggle(relaying),
-    // A renderer's first pull on (re)load: what the old page held goes with it (app/ipc.ts).
+    [CTRL.captureToggle]: () => dcsIntent<RecordState>(CTRL.captureToggle),
+    [CTRL.replayOpen]: () => dcsIntent<ReplayLoad>(CTRL.replayOpen),
+    // A renderer's first pull on (re)load (app/ipc.ts): the old page's calibration view goes with
+    // it; what main holds for the screen comes back in the bundle (N1).
     [CTRL.relayStatus]: () => {
       services.calibration.workflow.rendererLoaded()
       services.nodes.rendererLoaded()
@@ -226,7 +255,6 @@ function launch(opts: ServicesOptions) {
     },
     [CTRL.deviceConnect]: () => services.connection.connect(),
     [CTRL.deviceDisconnect]: () => services.connection.disconnect(),
-    [CTRL.nodesRefresh]: () => services.nodes.requestNodes(),
     [CTRL.nodesGet]: () => services.nodes.snapshot(),
     [CTRL.nodeMappingSet]: (id: number, patch: MappingPatch) =>
       services.nodes.setMapping(id, patch),
@@ -368,6 +396,16 @@ function launch(opts: ServicesOptions) {
       json<T = unknown>(name: string): T | undefined {
         const t = this.text(name)
         return t === undefined ? undefined : (JSON.parse(t) as T)
+      }
+    },
+
+    /** The file dialogs: what the next save / open picks, as a file name in <userData>. */
+    dialogs: {
+      saveCapture(name: string | undefined): void {
+        world.dialogs.saveCapture = name
+      },
+      openCapture(name: string | undefined): void {
+        world.dialogs.openCapture = name
       }
     },
 

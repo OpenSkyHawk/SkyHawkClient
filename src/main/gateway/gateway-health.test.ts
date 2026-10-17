@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   GATEWAY_NO_ANSWER_MS,
+  GATEWAY_REASK_MS,
   GatewayWatch,
   gatewayEvents,
   gatewayStatus,
@@ -223,6 +224,57 @@ describe('GatewayWatch — not responding', () => {
     expect(w.status()).toBeUndefined()
     w.asked(60_000) // not armed again until it answers on the new port
     expect(w.tick(70_000)).toEqual([])
+  })
+})
+
+describe('GatewayWatch — the re-ask (G1)', () => {
+  const armed = (): GatewayWatch => {
+    const w = new GatewayWatch()
+    w.answered('_NODE_STATUS_END', 0)
+    return w
+  }
+
+  it('asks again once a request has gone unanswered for GATEWAY_REASK_MS, and after each re-ask', () => {
+    const w = armed()
+    w.asked(1000)
+    expect(w.reaskDue(1000 + GATEWAY_REASK_MS - 1)).toBe(false)
+    expect(w.reaskDue(1000 + GATEWAY_REASK_MS)).toBe(true)
+    w.asked(2000) // the re-ask
+    expect(w.reaskDue(2500)).toBe(false)
+    expect(w.reaskDue(3000)).toBe(true)
+    w.answered('_NODE_STATUS 00…', 3100)
+    expect(w.reaskDue(10_000), 'answered: nothing to ask again').toBe(false)
+  })
+
+  it('leaves room for four re-asks inside the not-responding window', () => {
+    // Five asks unanswered in a row before "not responding": one lost reply can never trip it.
+    expect(Math.floor((GATEWAY_NO_ANSWER_MS - 1) / GATEWAY_REASK_MS)).toBeGreaterThanOrEqual(4)
+  })
+
+  it('never for a Gateway that has not answered since the port opened, nor through a pause', () => {
+    const fresh = new GatewayWatch()
+    fresh.asked(0)
+    expect(fresh.reaskDue(60_000), 'left to the regular poll').toBe(false)
+    const w = armed()
+    w.asked(0)
+    w.tick(500, true) // a calibration exchange holds the link
+    expect(w.reaskDue(5000)).toBe(false)
+  })
+
+  it('one lost reply, re-asked and answered, never reads as "not responding"', () => {
+    const w = armed()
+    w.asked(5000) // the poll: its reply is lost
+    let t = 5000
+    const out: LogEventInput[] = []
+    for (; t < 5000 + GATEWAY_NO_ANSWER_MS * 2; t += 200) {
+      out.push(...w.tick(t))
+      if (w.reaskDue(t)) {
+        w.asked(t) // the re-ask: answered at once
+        out.push(...w.answered('_NODE_STATUS_END 1', t + 5))
+      }
+    }
+    expect(out).toEqual([])
+    expect(w.status()).toBeUndefined()
   })
 })
 

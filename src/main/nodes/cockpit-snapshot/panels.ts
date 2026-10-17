@@ -12,7 +12,6 @@ import {
   type FaultBox,
   type FedBoard,
   type NodeModelEntry,
-  type NodeTelemSnapshot,
   type NodeView,
   type PduOutage,
   type PduRailPage,
@@ -24,7 +23,7 @@ import {
 import { PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
 import { nodeFaultTag, pduAlertFlags, pduFlagMeanings } from '../faults'
 import { displayCurrentMa } from '../node-telem'
-import { canForget, canHide, pduTelemetryLive, type OfflineGate } from '../offline-actions'
+import { canForget, canHide, type OfflineGate } from '../offline-actions'
 import { fedBy, zoneLabel } from '../power-zone'
 import type { Members } from './members'
 
@@ -32,14 +31,14 @@ import type { Members } from './members'
 
 /**
  * Same rules for a panel group and a PDU (#93). Hide and Forget wait until the board is offline,
- * by the one rule main refuses them by (offline-actions.ts canHide / canForget), so the footer and
- * main always agree: `pduTelemetry` = fresh PDU pages from it now (pduTelemetryLive), which prove
- * it live whatever the roster says.
+ * by the one rule main refuses them by (offline-actions.ts canHide / canForget) over the one
+ * availability (node-model.ts availabilityOf: a PDU's pages weighed against the roster), so the
+ * footer and main always agree.
  * `fed` = boards in your cockpit this PDU feeds, hidden ones included (power-zone.ts fedBy, X7):
  * Forget unlinks them all; Hide keeps the links.
  */
-export function boardActions(e: NodeModelEntry, pduTelemetry: boolean, fed = 0): BoardActions {
-  const signals = { availability: e.availability, pduTelemetry }
+export function boardActions(e: NodeModelEntry, fed = 0): BoardActions {
+  const signals = { availability: e.availability }
   const off = (gate: OfflineGate, tip: string): BoardAction =>
     gate.ok ? { disabled: false, tip } : { disabled: true, tip: gate.note }
   const forget = canForget(signals)
@@ -372,7 +371,6 @@ function fedBoards(members: Members, views: NodeView[], pduId: number): FedBoard
 export function boardPanels(
   views: NodeView[],
   outages: PduOutage[],
-  telemetry: NodeTelemSnapshot[],
   members: Members,
   zones: ReadonlyMap<number, PowerZone>
 ): Record<number, BoardPanel> {
@@ -380,7 +378,6 @@ export function boardPanels(
   for (const v of views) {
     const e = v.entry
     if (!members.get(e.nodeId)) continue
-    const live = pduTelemetryLive(telemetry, e.nodeId)
     let p: BoardPanel
     if (e.kind === 'pdu') {
       const feeds = fedBoards(members, views, e.nodeId)
@@ -389,7 +386,7 @@ export function boardPanels(
           v,
           outages.some((o) => o.pduId === e.nodeId)
         ),
-        actions: boardActions(e, live, feeds.length),
+        actions: boardActions(e, feeds.length),
         rails: pduRailRows(v),
         board: pduBoardRows(v),
         feeds,
@@ -406,7 +403,7 @@ export function boardPanels(
     } else {
       p = {
         faults: nodeFaultBoxes(v),
-        actions: boardActions(e, live),
+        actions: boardActions(e),
         status: nodeStatusRows(v),
         zone: zones.get(e.nodeId) ?? { status: 'none' }
       }

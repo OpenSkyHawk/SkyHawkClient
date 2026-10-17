@@ -81,7 +81,6 @@ const api: SkyhawkApi = {
   toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<RecordState>,
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
   getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,
-  refreshNodes: () => ipcRenderer.invoke(CTRL.nodesRefresh) as Promise<void>,
   getNodes: () => ipcRenderer.invoke(CTRL.nodesGet) as Promise<NodeSnapshot>,
   setNodeMapping: (nodeId, patch) =>
     ipcRenderer.invoke(CTRL.nodeMappingSet, nodeId, patch) as Promise<NodeMappingResult>,

@@ -74,8 +74,7 @@ export class AppServices {
       log: debugLog,
       frames: this.calibration,
       health: () => this.nodes.gatewayHealth(),
-      serialMonitor: () => this.serialMonitor.shown,
-      canRefresh: () => this.nodes.canRefresh()
+      serialMonitor: () => this.serialMonitor.shown
     })
     this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,
@@ -106,7 +105,8 @@ export class AppServices {
     //                    `connected`: roster request → `opened`: calibration read, HID reopen
     //   port closes      `closing`: nodes' last seen → `closed`: calibration → reconnect/disconnect
     //   teardown         `release`: calibration → port stop → `released`: the Gateway's health
-    //   200 ms tick      `flush`: HID → (link up) `tick`: node pushes, Gateway health
+    //   200 ms tick      `flush`: HID → (link up) `tick`: node pushes, Gateway health, re-ask
+    //   Retry            `closing`: nodes' last seen → teardown → a fresh port (M7)
     //   shutdown         `closing`: nodes → timers cleared → teardown → `stop`: HID
     // The DCS side keeps its order from before the split too (R2.3a). None of its constructors has
     // a side effect.
@@ -195,26 +195,25 @@ export class AppServices {
   }
 
   /**
-   * A renderer (re)loaded (`relay:status`, its first pull): what the page held for itself starts
-   * over, as its store did (N1) — the link's "last known" time and the serial monitor's flag.
+   * A renderer (re)loaded (`relay:status`, its first pull): it has the HID report and its live
+   * axes now, as it has its catalogue from a pull. What main holds for the screen — the link's
+   * "last known" time, the serial monitor's flag, the recording, the capture, the aircraft and
+   * the gauges — is kept, and the bundle hands it over (N1).
    */
   rendererLoaded(): void {
-    this.connection.rendererLoaded()
-    this.serialMonitor.rendererLoaded()
-    // …and it has the HID report and its live axes now, as it had its catalogue from a pull.
     this.hid.rendererLoaded()
-    // …and the recording and the capture it shows.
-    this.relay.rendererLoaded()
   }
 
-  /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
+  /** Snapshot so a (re)loaded renderer can rehydrate what main holds for the screen (N1). */
   status(): RelayStatus {
     const device = this.connection.statusPush()
-    const { running, relay } = this.relay.status()
+    const { running, relay, aircraft, telemetry } = this.relay.status()
     return {
       running,
       relay,
       relayFacts: this.relay.facts(),
+      aircraft,
+      telemetry,
       device,
       cal: this.calibration.workflow.state()
     }

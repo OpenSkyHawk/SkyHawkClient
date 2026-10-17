@@ -211,9 +211,20 @@ interface TelemetryEmit {
   (channel: 'aircraft:changed', payload: AircraftStatus): void
 }
 
-/** The telemetry tick: the five readouts, then the aircraft if it changed since the last tick. */
-export function flushTelemetry(decoder: Decoder, emit: TelemetryEmit): void {
-  emit('telemetry:tick', decoder.telemetrySnapshot())
-  const ac = decoder.aircraft()
-  if (ac) emit('aircraft:changed', ac)
+/** What one telemetry tick pushed: the readouts, and the aircraft if it changed. */
+export interface TelemetryFlush {
+  telemetry: TelemetryReadout[]
+  aircraft: AircraftStatus | null
+}
+
+/**
+ * The telemetry tick: the five readouts, then the aircraft if it changed since the last tick.
+ * Answers what it pushed, which DcsRelay keeps for a renderer that (re)loads (N1).
+ */
+export function flushTelemetry(decoder: Decoder, emit: TelemetryEmit): TelemetryFlush {
+  const telemetry = decoder.telemetrySnapshot()
+  emit('telemetry:tick', telemetry)
+  const aircraft = decoder.aircraft()
+  if (aircraft) emit('aircraft:changed', aircraft)
+  return { telemetry, aircraft }
 }

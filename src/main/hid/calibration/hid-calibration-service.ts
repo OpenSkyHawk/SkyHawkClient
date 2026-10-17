@@ -25,7 +25,7 @@ import type { CalFrameFilter, LinkRider, LinkTimer } from '../../gateway'
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
 import { loadCalCache, saveCalCache, type CacheFileEvents, type CacheFileIO } from './cache-store'
 import { boardFor, dropAxis, regressedAxes, storeAxes } from './cache-rules'
-import { CAL_AXIS_NONE, nackReasonName } from './codec'
+import { CAL_AXIS_NONE, nackName } from './codec'
 import { CalibrationWorkflowHost } from './workflow-host'
 
 /** RAW batches (`cal:raw` before R3.1): the serial monitor's cadence, as before the split. */
@@ -215,7 +215,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
         return { ok: false, kind: 'timeout', message: err.message }
       }
       if (err instanceof CalNackError) {
-        const name = nackReasonName(err.reason)
+        const name = nackName(err.reason)
         return {
           ok: false,
           kind: 'nack',

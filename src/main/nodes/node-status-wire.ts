@@ -104,8 +104,8 @@ export function nodeRosterRequest(): Uint8Array {
 }
 
 /**
- * A roster request can go out — the poll, the seed on connect, and Refresh: a port is held and the
- * link is up. NodeHub's guard; `device:status` carries it as Refresh's availability (R3.4a).
+ * A roster request can go out — the poll, its re-ask, and the seed on connect: a port is held and
+ * the link is up. NodeHub's guard.
  */
 export function canRequestRoster(attached: boolean, state: DeviceState): boolean {
   return attached && isLinkUp(state)
@@ -117,33 +117,73 @@ export function canRequestRoster(attached: boolean, state: DeviceState): boolean
  */
 export const ROSTER_REPLY_MS = 1000
 
+/** A roster reply that ended short of its count: the rows it said, and the ones that arrived. */
+export interface IncompleteReply {
+  expected: number
+  received: number
+}
+
+/** The row count `_NODE_STATUS_END <count>` carries (decimal), or undefined when it has none. */
+export function endRowCount(arg: string): number | undefined {
+  const a = arg.trim()
+  return /^\d+$/.test(a) ? Number(a) : undefined
+}
+
 /**
  * Tracks every node seen since reset. Bare messages are live deltas; a request/boot
  * burst ends with `_NODE_STATUS_END`, after which nodes absent from the burst are
  * marked offline (present=false) — they STAY in the roster (shown red) rather than
  * being removed, so a panel that drops off is still visible.
+ *
+ * A request never cuts a reply short (M2). PanelBridge answers every request with one unbroken
+ * burst that starts with its own node-0 row (v3; that row is never a delta) and ends with
+ * `_NODE_STATUS_END`, in the order asked. So from a node-0 row to the next END a reply is
+ * arriving: a request then keeps the rows already in, and the END reconciles all of them. Only a
+ * request with no reply arriving isolates the next burst from prior deltas.
+ *
+ * A reply missing a line never reconciles (#132). `_NODE_STATUS_END <count>` carries how many rows
+ * PanelBridge sent in it, its own node-0 row included (PanelBridge.cpp emitAllNodes). When that is
+ * not how many different NODE_IDs the reply brought, a line was lost on the way: the boards it
+ * left out keep their state, the roster does not count as complete, and the next whole reply
+ * decides — one lost line never reads as a board going offline. An END with no count completes as
+ * before (nothing to check it against).
  */
 export class NodeRoster {
   private nodes = new Map<number, NodeStatus>()
   private seen = new Map<number, NodeSeen>()
   private burst: NodeStatus[] = []
-  /** When the pending roster request went out; cleared by its `_NODE_STATUS_END`. */
+  /** When the latest roster request went out; cleared by an `_NODE_STATUS_END`. */
   private burstAt?: number
+  /** A reply is arriving: its node-0 row is in, its `_NODE_STATUS_END` not yet (M2). */
+  private replying = false
+  /**
+   * A v2 (pre-#344) bridge was heard on this link (M3). Its rows are dropped, so its END would
+   * reconcile against nothing and mark every board offline while it is on the bus: ignored.
+   */
+  private legacy = false
   private completeAt?: number
   private dirty = false
+  /** The last reply that ended short of its count, until taken (takeIncompleteReply). */
+  private incomplete?: IncompleteReply
 
   reset(): void {
     this.nodes.clear()
     this.seen.clear()
     this.burst = []
     this.burstAt = undefined
+    this.replying = false
+    this.legacy = false
     this.completeAt = undefined
+    this.incomplete = undefined
     this.dirty = true
   }
 
-  /** Call when a roster request is sent, so the reply burst is isolated from prior deltas. */
+  /**
+   * Call when a roster request is sent. With no reply arriving, the reply burst is isolated from
+   * prior deltas; while one is arriving its rows are kept (M2): a request never discards them.
+   */
   beginBurst(now = Date.now()): void {
-    this.burst = []
+    if (!this.replying) this.burst = []
     this.burstAt = now
   }
 
@@ -162,7 +202,16 @@ export class NodeRoster {
   applyMessage(name: string, arg: string, now = Date.now()): void {
     if (name === NODE_MSG) {
       const ns = parseNodeStatus(arg.trim())
-      if (!ns) return
+      if (!ns) {
+        if (isLegacyNodeStatus(arg.trim())) this.legacy = true
+        return
+      }
+      if (ns.nodeId === BRIDGE_NODE_ID) {
+        // A reply starts with node 0: from here its rows are the reply — not the deltas before it,
+        // nor what an earlier reply that never ended brought — so its count can be checked.
+        this.burst = []
+        this.replying = true
+      }
       this.burst.push(ns)
       const wasPresent = this.nodes.get(ns.nodeId)?.present ?? true
       this.nodes.set(ns.nodeId, ns) // keep absent nodes too; present flag carries state
@@ -177,8 +226,17 @@ export class NodeRoster {
       }
       this.dirty = true
     } else if (name === NODE_END_MSG) {
-      // Nodes not in this burst went silent → mark offline, but keep them visible.
+      // A v2 bridge's END completes nothing: its rows never reached the roster (M3).
+      if (this.legacy) return
       const inBurst = new Set(this.burst.map((n) => n.nodeId))
+      const expected = endRowCount(arg)
+      if (expected !== undefined && expected !== inBurst.size) {
+        // A line of this reply was lost: reconcile nothing from it; the next whole reply decides.
+        this.incomplete = { expected, received: inBurst.size }
+        this.endReply()
+        return
+      }
+      // Nodes not in this burst went silent → mark offline, but keep them visible.
       for (const [id, node] of this.nodes) {
         if (!inBurst.has(id) && node.present) {
           this.nodes.set(id, { ...node, present: false })
@@ -186,11 +244,27 @@ export class NodeRoster {
           this.seen.set(id, { ...seen, offlineAt: now, offlineVia: 'roster' })
         }
       }
-      this.burst = []
-      this.burstAt = undefined
+      this.endReply()
       this.completeAt ??= now
       this.dirty = true
     }
+  }
+
+  /** A reply ended (whole or not): the next request starts a fresh one. */
+  private endReply(): void {
+    this.burst = []
+    this.burstAt = undefined
+    this.replying = false
+  }
+
+  /**
+   * The last reply that ended short of its `_NODE_STATUS_END` count since the last call, if any:
+   * how many rows it said and how many arrived. NodeHub logs it (a debug line, not an event).
+   */
+  takeIncompleteReply(): IncompleteReply | undefined {
+    const r = this.incomplete
+    this.incomplete = undefined
+    return r
   }
 
   snapshot(): NodeStatus[] {
@@ -200,6 +274,11 @@ export class NodeRoster {
   /** First-seen / offline timing per node, in memory only (cleared by reset). */
   seenInfo(): ReadonlyMap<number, NodeSeen> {
     return this.seen
+  }
+
+  /** A v2 (pre-#344) bridge was heard since reset: its rows are dropped, its END ignored (M3). */
+  legacyBridge(): boolean {
+    return this.legacy
   }
 
   /** When the first complete roster (first `_NODE_STATUS_END`) since reset arrived. */

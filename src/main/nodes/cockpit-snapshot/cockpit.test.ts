@@ -282,7 +282,8 @@ describe('newCount', () => {
           node(43, { source: 'new' }), // still identifying: not news yet
           node(44, { source: 'new', identified: 'bridge' }), // never adoptable
           node(45, { source: 'new', identified: 'pdu', availability: 'offline' }) // left the bus
-        ])
+        ]),
+        true
       )
     ).toBe(2)
   })

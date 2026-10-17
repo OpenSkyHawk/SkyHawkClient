@@ -20,7 +20,6 @@ export interface NodesState {
    */
   cockpit: CockpitSnapshot
 
-  refreshNodes: () => void
   /** `nodes:get`: the Settings sections' pull when they mount. */
   pullNodes: Ask<'getNodes'>
   getNodeRegistry: Ask<'getNodeRegistry'>
@@ -45,10 +44,6 @@ export function bindNodes(skyhawk: () => SkyhawkApi | undefined): void {
 
 export const useNodesStore = create<NodesState>(() => ({
   cockpit: COCKPIT_IDLE,
-
-  refreshNodes: () => {
-    void api()?.refreshNodes()
-  },
 
   pullNodes: () => api()?.getNodes(),
   getNodeRegistry: () => api()?.getNodeRegistry(),

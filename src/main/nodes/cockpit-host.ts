@@ -1,7 +1,8 @@
 // The Cockpit snapshot as the app runs it (R3.2): what the renderer kept and re-rendered on before
 // the move, mirrored here so `cockpit:snapshot` goes out at the same moments with the same inputs.
 //   - The renderer's store held the last pushed model and telemetry, and the session's peak W
-//     (setNodes: each push, and the renderer's first pull, raise it); a reload started it over.
+//     (setNodes: each push, and the renderer's first pull, raise it). Main keeps the peak for the
+//     session: a reload no longer starts it over (N1).
 //   - The Cockpit re-rendered on each of those pushes and on `device:status`, and its stray timer
 //     re-rendered it `nextAt` + 50 ms after a board still identifying was due. Its clock for the
 //     strays (its `now` state) moved only then: a push in between was judged at the old time.
@@ -90,13 +91,14 @@ export class CockpitSnapshotHost {
   }
 
   /**
-   * A renderer (re)loaded (`relay:status`, its first pull): its store starts over from what main
-   * holds now — the model and telemetry its `nodes:get` read — and its peak with them.
+   * A renderer (re)loaded (`relay:status`, its first pull): its snapshot starts from what main
+   * holds now — the model and telemetry its `nodes:get` read — and the session's peak W, which a
+   * reload keeps (N1).
    */
   rendererLoaded(model: NodeModel, telemetry: NodeTelemSnapshot[]): void {
     this.model = model
     this.telemetry = telemetry
-    this.peakW = sessionPeakW(0, model, telemetry)
+    this.peakW = sessionPeakW(this.peakW, model, telemetry)
     this.strayClock = this.now()
     this.publish()
   }

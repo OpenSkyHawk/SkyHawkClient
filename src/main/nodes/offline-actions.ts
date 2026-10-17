@@ -4,17 +4,15 @@
 //
 // Both only tidy the display, and a board that is active on the bus — its controls reach DCS, it
 // draws power, it affects bus health — always shows. So both wait until the board is offline by the
-// one availability rule (node-model.ts nodeAvailability). Fresh PDU pages prove a PDU is live
-// whatever the roster says, and "unknown" (no complete roster since the link opened, the seconds
-// after every reconnect) is not offline.
-import type { NodeAvailability, NodeTelemSnapshot } from '@shared/nodes'
-import { hasFreshPduPage } from './node-telem'
+// one availability rule (node-model.ts availabilityOf), which already weighs a PDU's pages against
+// the roster — the newest evidence wins (X2) — so this reads nothing else: the footer reads the
+// model's answer, NodeHub the same rule over the same signals. "unknown" (no complete roster since
+// the link opened, the seconds after every reconnect) is not offline.
+import type { NodeAvailability } from '@shared/nodes'
 
 export interface OfflineSignals {
-  /** The board's availability (node-model.ts nodeAvailability). */
+  /** The board's availability (node-model.ts availabilityOf), its PDU pages included. */
   availability: NodeAvailability
-  /** It is sending fresh PDU pages now (pduTelemetryLive). */
-  pduTelemetry: boolean
 }
 
 /** Why it can't be hidden or forgotten: it is live, or whether it is on the bus is not known. */
@@ -29,13 +27,8 @@ export const ONLINE_NOTE =
 export const NO_ROSTER_NOTE =
   'No roster yet — connect the Gateway. Forget and Hide work once the board shows offline.'
 
-/** Fresh PDU pages from this NODE_ID in the telemetry snapshot: it is live. */
-export function pduTelemetryLive(telemetry: readonly NodeTelemSnapshot[], nodeId: number): boolean {
-  return telemetry.some((t) => t.nodeId === nodeId && t.isPdu && hasFreshPduPage(t))
-}
-
 function offlineOnly(s: OfflineSignals): OfflineGate {
-  if (s.pduTelemetry || s.availability === 'online') {
+  if (s.availability === 'online') {
     return { ok: false, why: 'online', note: ONLINE_NOTE }
   }
   if (s.availability === 'unknown') return { ok: false, why: 'no-roster', note: NO_ROSTER_NOTE }

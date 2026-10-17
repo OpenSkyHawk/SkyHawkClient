@@ -20,13 +20,15 @@ import {
 import {
   DCS_CTRL,
   DCS_PUSH,
+  type AircraftStatus,
   type DcsPushChannels,
   type ExportResult,
   type RecordState,
   type RelayFacts,
   type RelayResult,
   type RelayState,
-  type ReplayLoad
+  type ReplayLoad,
+  type TelemetryReadout
 } from '../dcs/ipc'
 import { EVENTS_CTRL, EVENTS_PUSH, type EventsPushChannels, type LogEvent } from '../events/ipc'
 import {
@@ -61,9 +63,19 @@ import {
 export interface RelayStatus {
   running: boolean
   relay: RelayState
-  /** What the relay's surfaces show, as `relay:facts` carries it (R3.3). */
+  /**
+   * What the relay's surfaces show, as `relay:facts` carries it (R3.3): the recording and the
+   * loaded capture included, as main holds them (N1).
+   */
   relayFacts: RelayFacts
-  /** The link, with what main concludes from it, as `device:status` carries it (R3.3). */
+  /** The aircraft as `aircraft:changed` last carried it (N1); pushed only when it changes. */
+  aircraft: AircraftStatus
+  /** The gauges as the last `telemetry:tick` carried them, relaying or not (N1). */
+  telemetry: TelemetryReadout[]
+  /**
+   * The link, with what main concludes from it, as `device:status` carries it (R3.3): the
+   * serial monitor's flag and the last-known time included (N1).
+   */
   device: DeviceStatusPush
   /**
    * The calibration workflow's last `cal:workflow` push: the device's last report (if the link is
@@ -256,7 +268,6 @@ export interface SkyhawkApi {
   toggleCapture(): Promise<RecordState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
-  refreshNodes(): Promise<void>
 
   // ── node data layer (#61) ─────────────────────────────────────────────────
   // Every mapping change persists to node-mapping.json and also pushes `nodes:model`.

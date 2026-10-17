@@ -476,6 +476,40 @@ describe('device link is independent of the relay (#69)', () => {
     session.shutdown()
   })
 
+  it.each([
+    [
+      'Disconnect then Connect',
+      (s: InstanceType<typeof AppServices>) => {
+        s.connection.disconnect()
+        s.connection.connect()
+      }
+    ],
+    [
+      'an error then Retry',
+      (s: InstanceType<typeof AppServices>, orphan: FakeSerial) => {
+        orphan.errorCb(new Error('Access denied'))
+        s.connection.connect()
+      }
+    ]
+  ])('after %s, the released bridge no longer drives the link (M4)', (_, release) => {
+    const { session, serial: orphan, of } = launched()
+    release(session, orphan)
+    const current = FakeSerial.last!
+    expect(current, 'a fresh bridge').not.toBe(orphan)
+    const pushed = of('device:status').length
+    // The released bridge had an open in flight: it completes, then the port errors and closes.
+    orphan.openCb('/dev/fake')
+    orphan.dataCb(ascii('_NODE_STATUS_END\n'))
+    orphan.errorCb(new Error('Access denied'))
+    orphan.closeCb()
+    expect(session.status().device.state, 'still looking with the fresh bridge').toBe('scanning')
+    expect(of('device:status'), 'no status from the orphan').toHaveLength(pushed)
+    expect(orphan.written, 'no roster request through the orphan').toEqual([])
+    current.openCb('/dev/fake') // the current bridge still drives it
+    expect(session.status().device.state).toBe('connected')
+    session.shutdown()
+  })
+
   it('ignores connect while the link is already open or looking', () => {
     const { session, serial } = launched()
     session.connection.connect()

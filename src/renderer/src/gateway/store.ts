@@ -33,8 +33,6 @@ export interface GatewayState {
   deviceBusy: boolean
   /** The device card's and the popover's button, as main offers it (`device:status`, R3.4a). */
   deviceAction: LinkAction
-  /** A roster request can go out: Connection's Refresh (`device:status`, R3.4a). */
-  canRefresh: boolean
   /**
    * When the device link last went down after being up — "last known" time on the Cockpit. Main
    * stamps it (`device:status`, R3.3).
@@ -76,7 +74,6 @@ function linkState(
   | 'boardPresent'
   | 'deviceBusy'
   | 'deviceAction'
-  | 'canRefresh'
   | 'linkDownAt'
   | 'serialMonitor'
 > {
@@ -89,7 +86,6 @@ function linkState(
     boardPresent: d.boardPresent,
     deviceBusy: d.busy,
     deviceAction: d.action,
-    canRefresh: d.canRefresh,
     linkDownAt: d.linkDownAt,
     serialMonitor: d.serialMonitor
   }

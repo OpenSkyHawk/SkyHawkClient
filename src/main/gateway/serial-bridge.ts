@@ -136,7 +136,12 @@ export class SerialBridge implements SerialLink {
   private disposePort(): Promise<void> {
     const port = this.port
     this.port = undefined
-    if (!port) return Promise.resolve()
+    return port ? this.release(port) : Promise.resolve()
+  }
+
+  /** Release one port instance: its listeners unbound, closed if open, then destroyed. */
+  private release(port: SerialPort): Promise<void> {
+    if (this.port === port) this.port = undefined
     port.removeAllListeners()
     // Re-armed immediately: a late error from the dying handle would otherwise reach a stream with
     // no 'error' listener, which Node escalates to an uncaught exception.
@@ -170,9 +175,15 @@ export class SerialBridge implements SerialLink {
     }
   }
 
+  /**
+   * One attempt to find and open the board. `stopped` is checked again after every await (M4): a
+   * bridge stopped while its attempt was in flight goes no further — it opens nothing, reports
+   * nothing, and releases a port that finished opening after the stop.
+   */
   private async openOnce(): Promise<void> {
     try {
       const path = await findSimGatewayPort()
+      if (this.stopped) return
       if (!path) {
         if (!this.notFoundLogged) this.log('serial.notFound', { vid: VID_HEX, pid: PID_HEX })
         this.notFoundLogged = true
@@ -188,6 +199,7 @@ export class SerialBridge implements SerialLink {
       // blocking its own reopen. Measured against real hardware: 24 of 30 reopens failed with
       // "Access denied" without this await, 0 of 30 with it.
       await this.disposePort()
+      if (this.stopped) return
       const port = new SerialPort({ path, baudRate: BAUD, autoOpen: false })
       this.port = port
       port.on('data', (d: Buffer) => {
@@ -206,7 +218,11 @@ export class SerialBridge implements SerialLink {
       // Awaited so `opening` covers the open itself, not merely the call that starts it.
       await new Promise<void>((resolve) => {
         port.open((err) => {
-          if (err) {
+          if (this.stopped) {
+            // Stopped mid-open: stop() released `this.port`, but this handle may have opened
+            // after it. Release it here so the port is not held until quit.
+            if (!err) void this.release(port)
+          } else if (err) {
             this.log('serial.openError', err.message)
             this.errorCb(err)
             this.retry()
@@ -217,6 +233,7 @@ export class SerialBridge implements SerialLink {
         })
       })
     } catch (err) {
+      if (this.stopped) return
       this.errorCb(err as Error)
       this.retry()
     }

@@ -1,4 +1,4 @@
-// nodes' intents: the roster, the node data and the node mapping. app/ipc.ts registers them.
+// nodes' intents: the node data and the node mapping. app/ipc.ts registers them.
 import type { IpcRegistrar } from '@shared/app'
 import {
   NODES_CTRL,
@@ -15,7 +15,6 @@ export interface NodesIpcDeps {
 
 export function registerNodesIpc(ipc: IpcRegistrar, deps: NodesIpcDeps): void {
   const { nodes } = deps
-  ipc.handle(NODES_CTRL.nodesRefresh, () => nodes.requestNodes())
   ipc.handle(NODES_CTRL.nodesGet, () => nodes.snapshot())
   ipc.handle(NODES_CTRL.nodeMappingSet, (_e, id: number, patch: MappingPatch) =>
     nodes.setMapping(id, patch)

@@ -96,8 +96,8 @@ export interface RelayFacts {
   /** Each surface's own endpoint label (X9: they disagree). */
   endpoint: { pill: EndpointLabel; overview: EndpointLabel }
   /**
-   * The recording as this page started it: off for a page that (re)loaded, whatever main is
-   * doing (N1). `events`: how many the last stop saved.
+   * The recording, as the Record control last answered: a page that (re)loads is handed it too
+   * (N1). `events`: how many the last stop saved.
    */
   recording: { on: boolean; events?: number }
   /**
@@ -111,7 +111,7 @@ export interface RelayFacts {
    * in the same push and are never on screen together.
    */
   captureShown: boolean
-  /** The capture this page loaded for Replay; none for a page that (re)loaded (N1). */
+  /** The capture loaded for Replay; a page that (re)loads is handed it too (N1). */
   replay?: { file: string; events: number; durationMs: number }
 }
 

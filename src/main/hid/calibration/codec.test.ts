@@ -17,8 +17,10 @@ import {
   encodeCommit,
   encodeHello,
   encodeReset,
-  encodeSessionOpen
+  encodeSessionOpen,
+  nackName
 } from './codec'
+import { CAL_NACK_REASONS } from '@shared/firmware'
 
 const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)))
 const cat = (...parts: Uint8Array[]) => {
@@ -293,6 +295,25 @@ describe('decoders', () => {
 
   it('decodes NACK', () => {
     expect(decodeNack(hex('050503'))).toEqual({ type: CAL_TYPE.COMMIT, reason: 0x05, detail: 3 })
+  })
+
+  it('names every NACK reason the firmware table lists, and an unknown one by its byte (X11)', () => {
+    // One name for the refusal message and the failure's reasonName, from the synced table: the
+    // five reachable reasons and the three the framing layer stops alike.
+    const named = Object.keys(CAL_NACK_REASONS).map((k) => [Number(k), nackName(Number(k))])
+    expect(named).toEqual([
+      [0x1, 'BAD_CRC'],
+      [0x2, 'BAD_LENGTH'],
+      [0x3, 'BAD_TYPE'],
+      [0x4, 'BAD_INDEX'],
+      [0x5, 'BAD_ORDER'],
+      [0x6, 'NO_SESSION'],
+      [0x7, 'NO_STORAGE'],
+      [0x8, 'BAD_DEADZONE']
+    ])
+    expect(nackName(0x9)).toBe('reason 0x9')
+    expect(nackName(0x0)).toBe('reason 0x0')
+    expect(nackName(0xff)).toBe('reason 0xff')
   })
 
   it('decodes RAW, keeping raw and cal distinct — and both unsigned', () => {
