@@ -205,7 +205,7 @@ export function CalibrationDialog({
               ) : (
                 <span className="cd__ok">connected</span>
               )}{' '}
-              · signed ±32767
+              {`· signed ±${HID_REPORT_LAYOUT.axes.max}`}
             </div>
           </div>
           <span className="cd__pill">
@@ -331,7 +331,7 @@ export function CalibrationDialog({
             <div className="cd__scale">
               <span>−{AXIS_OFFSET}</span>
               <span>0</span>
-              <span>32767</span>
+              <span>{HID_REPORT_LAYOUT.axes.max}</span>
             </div>
 
             <div className="cd__cards">

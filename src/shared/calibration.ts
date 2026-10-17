@@ -12,7 +12,13 @@
 // that way throughout the client. The ±32767 seen on the HID tab comes from the HID report,
 // where the firmware applied the offset; nothing here re-derives it.
 
-import { CAL_NACK_REASONS, CAL_PAYLOAD_LEN, CAL_PROTO, CAL_TYPES } from './firmware'
+import {
+  CAL_NACK_REASONS,
+  CAL_PAYLOAD_LEN,
+  CAL_PROTO,
+  CAL_TYPES,
+  type CalNackName
+} from './firmware'
 
 /**
  * Constants from the generated firmware reference (shared/firmware, AxisCal.h), under the names
@@ -35,11 +41,16 @@ export const AXIS_CAL_SLOTS = CAL_PROTO.axisSlots
 /** Axis sentinel: "all" for RESET, "none" for SESSION_OPEN / STREAM_SELECT. */
 export const CAL_AXIS_NONE = CAL_PROTO.axisNone
 
-/** A generated code-keyed table, turned around: name -> wire code. */
-function byName(
-  table: Partial<Record<number, { name: string }>>
-): Readonly<Record<string, number>> {
-  return Object.fromEntries(Object.entries(table).map(([code, info]) => [info!.name, Number(code)]))
+/**
+ * A generated code-keyed table, turned around: name -> wire code. Keyed by the table's generated
+ * name union, so `CAL_TYPE.HELLO` type-checks and a misspelt name does not compile.
+ */
+function byName<N extends string>(
+  table: Partial<Record<number, { name: N }>>
+): Readonly<Record<N, number>> {
+  return Object.fromEntries(
+    Object.entries(table).map(([code, info]) => [info!.name, Number(code)])
+  ) as Record<N, number>
 }
 
 /** Message types, by name (CAL_TYPES). High bit set = device -> client. */
@@ -57,7 +68,7 @@ export const CAL_TYPE = byName(CAL_TYPES)
 export const CAL_NACK = byName(CAL_NACK_REASONS)
 
 /** The five NACK reasons that can actually reach a client (see CAL_NACK). */
-const REACHABLE_NACK: ReadonlySet<string> = new Set([
+const REACHABLE_NACK: ReadonlySet<CalNackName> = new Set<CalNackName>([
   'BAD_INDEX',
   'BAD_ORDER',
   'NO_SESSION',
@@ -91,7 +102,7 @@ export function nackReasonName(reason: number): string {
 export { CAL_PAYLOAD_LEN }
 
 /** Largest complete frame, and therefore the hard bound on CalDemux's carry. */
-export const CAL_MAX_FRAME = CAL_ENVELOPE_BYTES + CAL_MAX_PAYLOAD
+export const CAL_MAX_FRAME = CAL_PROTO.maxFrame
 
 // ── CRC ──────────────────────────────────────────────────────────────────────
 

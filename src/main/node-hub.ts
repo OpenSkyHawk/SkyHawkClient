@@ -34,7 +34,12 @@ import {
   type ResetPreview
 } from '@shared/node-mapping'
 import { buildNodeModel, type NodeModel } from '@shared/node-rules'
-import { NODE_FAULT_CODES, NODE_NAMES, NODE_REGISTRY_SOURCE } from '@shared/firmware'
+import {
+  NODE_FAULT_CODES,
+  NODE_NAMES,
+  NODE_REGISTRY_SOURCE,
+  type NodeFaultName
+} from '@shared/firmware'
 import {
   loadNodeMapping,
   MappingSaveError,
@@ -53,7 +58,7 @@ const NODE_TELEM_PUSH_MS = 1000
  * Client wording where the generated text reads like firmware notes (the label comes from the enum
  * name, the description from the header comment). Keyed by NODE_FAULT_CODES name.
  */
-const FAULT_TEXT: Partial<Record<string, { label: string; description: string }>> = {
+const FAULT_TEXT: Partial<Record<NodeFaultName, { label: string; description: string }>> = {
   DUPLICATE_NODE_ID: {
     label: 'Duplicate NODE_ID',
     description:

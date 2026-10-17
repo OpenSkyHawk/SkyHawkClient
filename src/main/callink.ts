@@ -26,12 +26,16 @@ import {
   type HelloAck,
   type RawSample
 } from '@shared/calibration'
+import { CAL_PROTO } from '@shared/firmware'
 import { debugLog } from './debug'
 
 /** Past the device's worst-case sector erase (~28 ms measured) by a wide margin. */
 const REPLY_TIMEOUT_MS = 2000
 
-/** The device closes an idle session after 30 s; a user reading a dialog step sends nothing. */
+/**
+ * The device closes an idle session after CAL_PROTO.sessionTimeoutMs (30 s); a user reading a
+ * dialog step sends nothing. The keepalive interval is client policy.
+ */
 const KEEPALIVE_MS = 10_000
 
 /** The device answered and refused. Distinct from a timeout, and needs different messaging. */
@@ -83,7 +87,7 @@ export class CalLink {
   /** Fallback timer that reopens the gate after a close we never got an answer to. */
   private expiry?: ReturnType<typeof setTimeout>
   /** The device's idle expiry, as it reported in SESSION_ACK. Default until it tells us. */
-  private deviceTimeoutMs = 30_000
+  private deviceTimeoutMs: number = CAL_PROTO.sessionTimeoutMs
 
   constructor(
     private readonly write: (data: Buffer) => void,

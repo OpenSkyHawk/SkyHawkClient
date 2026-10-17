@@ -2,10 +2,11 @@
 // the DCS-BIOS byte stream both ways — exactly like the socat relay did. The HID
 // interface is a separate device the OS claims; it is handled in M5, not here.
 import { SerialPort } from 'serialport'
+import { USB_IDENTITY } from '@shared/firmware'
 import { debugLog } from './debug'
 
-export const SIMGATEWAY_VID = 0x2e8a
-export const SIMGATEWAY_PID = 0x4134
+export const SIMGATEWAY_VID = USB_IDENTITY.vid
+export const SIMGATEWAY_PID = USB_IDENTITY.pid
 const VID_HEX = SIMGATEWAY_VID.toString(16).padStart(4, '0')
 const PID_HEX = SIMGATEWAY_PID.toString(16).padStart(4, '0')
 
@@ -17,7 +18,7 @@ export function listSerialPorts(): Promise<SerialPortInfo[]> {
 }
 
 /** USB-CDC ignores baud (virtual), but node-serialport requires a value. */
-const BAUD = 250000
+const BAUD = USB_IDENTITY.baud
 const RECONNECT_MS = 2000
 
 /**

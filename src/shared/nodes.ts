@@ -2,7 +2,7 @@
 // Wire contract: NodeStatus.h NODE_STATUS_* (generated into shared/firmware; reference.test
 // asserts the decoder's protoVersion matches).
 import { encodeExportFrame } from './dcsbios'
-import { NODE_HEALTH_FLAGS, NODE_KINDS, NODE_STATUS } from './firmware'
+import { MAX_NODE_ID, NODE_HEALTH_FLAGS, NODE_KINDS, NODE_STATUS } from './firmware'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_NODE_PROTO = 3
@@ -31,7 +31,7 @@ const HEX_LEN = 28 // nodeId(2) present(2) flags(2) uptime(4) rxCount(4) esr(4) 
 const V2_HEX_LEN = 26
 
 export interface NodeStatus {
-  nodeId: number // 0 = the bridge's own row (v3), 1..63 CAN nodes
+  nodeId: number // 0 = the bridge's own row (v3), 1..MAX_NODE_ID CAN nodes
   present: boolean
   boff: boolean // CAN bus-off
   epvf: boolean // CAN error-passive
@@ -64,7 +64,7 @@ export function parseNodeStatus(hex: string): NodeStatus | null {
   if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]{28}$/.test(hex)) return null
   const f = (i: number, n: number) => parseInt(hex.slice(i, i + n), 16)
   const nodeId = f(0, 2)
-  if (nodeId > 63) return null
+  if (nodeId > MAX_NODE_ID) return null
   const flags = f(4, 2)
   const esr = f(14, 4)
   const traw = f(18, 2) // int8 two's-complement; 0x80 = not-yet-seen sentinel

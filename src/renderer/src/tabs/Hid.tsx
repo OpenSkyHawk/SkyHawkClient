@@ -225,7 +225,7 @@ export function Hid() {
         <div className="card field hid__hats">
           <div className="panel-h">
             <span className="section-h">Hats</span>
-            <span className="meta">{HID_REPORT_LAYOUT.hats.centeredAtOrAbove}-way POV</span>
+            <span className="meta">{HID_REPORT_LAYOUT.hats.directions}-way POV</span>
           </div>
           <div className="hats">
             {s.hats.map((d, i) => (

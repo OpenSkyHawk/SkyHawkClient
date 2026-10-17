@@ -2,7 +2,7 @@
 // Wire contract: NodeStatus.h NODE_TELEM_* / TelemPage / PduRailFlag / PduStatusFlag (generated
 // into shared/firmware; reference.test asserts the decoder's protoVersion matches). Page layouts:
 // FirmwarePlan/02-can-protocol.md § Node Telemetry Payload — TELEM_n (#216).
-import { NODE_TELEM, PDU_RAIL_FLAGS, PDU_STATUS_FLAGS, TELEM_PAGES } from './firmware'
+import { MAX_NODE_ID, NODE_TELEM, PDU_RAIL_FLAGS, PDU_STATUS_FLAGS, TELEM_PAGES } from './firmware'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_TELEM_PROTO = 1
@@ -20,8 +20,10 @@ export const RAIL_FLAG = PDU_RAIL_FLAGS
 export const PDU_FLAG = PDU_STATUS_FLAGS
 
 /**
- * A page older than this is stale. Each PDU page refreshes every 3 s, so 10 s is three missed
- * periods — long enough that one dropped frame never flickers a reading to unknown.
+ * A page older than this is stale. Each PDU page refreshes every 3 s (one TELEM_n frame per
+ * TELEM_PERIOD_MS in shared/firmware, rotating through three pages), so 10 s is three missed
+ * periods — long enough that one dropped frame never flickers a reading to unknown. The window is
+ * client policy; reference.test pins the firmware period it was chosen against.
  */
 export const TELEM_STALE_MS = 10_000
 
@@ -85,7 +87,7 @@ export function displayCurrentMa(ma: number): number {
 export function parseNodeTelem(hex: string): NodeTelem | null {
   if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]{18}$/.test(hex)) return null
   const nodeId = parseInt(hex.slice(0, 2), 16)
-  if (nodeId < 1 || nodeId > 63) return null
+  if (nodeId < 1 || nodeId > MAX_NODE_ID) return null
   const b = (i: number) => parseInt(hex.slice(2 + i * 2, 4 + i * 2), 16) // frame byte i
   const u16 = (i: number) => b(i) | (b(i + 1) << 8) // little-endian
   const i16 = (i: number) => {

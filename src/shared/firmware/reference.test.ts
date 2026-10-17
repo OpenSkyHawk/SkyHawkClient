@@ -14,7 +14,15 @@ import {
   NODE_NAMES,
   CAL_PROTO,
   CAL_TYPES,
-  CAL_PAYLOAD_LEN
+  CAL_PAYLOAD_LEN,
+  MAX_NODE_ID,
+  TELEM_PERIOD_MS,
+  USB_IDENTITY,
+  PDU_RAIL_FLAGS,
+  PDU_RAIL_FLAG_INFO,
+  PDU_STATUS_FLAGS,
+  PDU_STATUS_FLAG_INFO,
+  type NodeFaultName
 } from '.'
 import { ACFT_NAME } from '../../main/reference/dcsbios-metadata'
 import { SUPPORTED_NODE_PROTO } from '@shared/nodes'
@@ -66,6 +74,36 @@ describe('hid-report-layout.generated', () => {
     expect(HID_REPORT_LAYOUT.axes.signed).toBe(true)
     expect(HID_REPORT_LAYOUT.axes.min).toBe(-32768)
   })
+
+  it('pins the axis maximum and the hat directions the UI text is built from', () => {
+    // "signed ±32767" (CalibrationDialog) and "8-way POV" (HID tab) read these.
+    expect(HID_REPORT_LAYOUT.axes.max).toBe(32767)
+    expect(HID_REPORT_LAYOUT.hats.directions).toBe(8)
+    expect(HID_REPORT_LAYOUT.hats.centeredAtOrAbove).toBe(8)
+  })
+})
+
+// The client finds the Gateway by vid/pid and shows its product name; a firmware change to any of
+// them must fail here rather than leave the client looking for a board that no longer enumerates.
+describe('usb-identity.generated', () => {
+  it('pins the SimGateway USB identity', () => {
+    expect(USB_IDENTITY.vid).toBe(0x2e8a)
+    expect(USB_IDENTITY.pid).toBe(0x4134)
+    expect(USB_IDENTITY.manufacturer).toBe('OpenSkyhawk')
+    expect(USB_IDENTITY.product).toBe('A-4E Skyhawk')
+    expect(USB_IDENTITY.cdcInterface).toBe('A-4E Skyhawk DCS-BIOS')
+    expect(USB_IDENTITY.baud).toBe(250000)
+  })
+})
+
+describe('node-bus.generated', () => {
+  it('pins the NODE_ID ceiling the status and telemetry decoders gate on', () => {
+    expect(MAX_NODE_ID).toBe(63)
+  })
+
+  it('pins the PDU telemetry period TELEM_STALE_MS was chosen against', () => {
+    expect(TELEM_PERIOD_MS).toBe(1000)
+  })
 })
 
 describe('node-names.generated', () => {
@@ -114,6 +152,26 @@ describe('node-status.generated', () => {
     expect(NODE_FAULT_CODES[0x99]).toBeUndefined()
   })
 
+  it('fault names are typed: a misspelt name does not compile', () => {
+    const known: NodeFaultName = 'HOST_LINK_LOST'
+    // @ts-expect-error -- not a NodeFaultCode name
+    const typo: NodeFaultName = 'HOST_LINK_LOSS'
+    expect([known, typo]).toHaveLength(2)
+  })
+
+  it('PDU flag info names every flag bit, keyed by the bit', () => {
+    for (const [flags, info] of [
+      [PDU_RAIL_FLAGS, PDU_RAIL_FLAG_INFO],
+      [PDU_STATUS_FLAGS, PDU_STATUS_FLAG_INFO]
+    ] as const) {
+      expect(Object.keys(info)).toHaveLength(Object.keys(flags).length)
+      for (const [name, bit] of Object.entries(flags)) {
+        expect(info[bit]?.name).toBe(name)
+        expect(info[bit]?.description.length).toBeGreaterThan(0)
+      }
+    }
+  })
+
   it('fault badge tags are unique (OVER_VOLTAGE and OVER_TEMPERATURE must not both read OVER)', () => {
     const tags = Object.values(NODE_FAULT_CODES).map((e) => e?.abbr)
     expect(new Set(tags).size).toBe(tags.length)
@@ -134,6 +192,22 @@ describe('node-telem contract', () => {
 describe('axis-cal.generated', () => {
   it('is the protocol version the codec is written for', () => {
     expect(CAL_PROTO.version).toBe(1)
+  })
+
+  it('pins the largest frame and the device session timeout', () => {
+    expect(CAL_PROTO.maxFrame).toBe(92)
+    expect(CAL_PROTO.maxFrame).toBe(CAL_PROTO.envelopeBytes + CAL_PROTO.maxPayload)
+    // KEEPALIVE_MS (main/callink.ts) is client policy chosen to land well inside this.
+    expect(CAL_PROTO.sessionTimeoutMs).toBe(30000)
+  })
+
+  it('name tables are typed by the generated names: a misspelt name does not compile', () => {
+    expect(cal.CAL_TYPE.HELLO).toBe(0x01)
+    expect(cal.CAL_NACK.NO_SESSION).toBeDefined()
+    // @ts-expect-error -- FOO is not a CalType name
+    expect(cal.CAL_TYPE.FOO).toBeUndefined()
+    // @ts-expect-error -- BAD_FOO is not a CalNackReason name
+    expect(cal.CAL_NACK.BAD_FOO).toBeUndefined()
   })
 
   it('marks device-originated types by the high bit', () => {
