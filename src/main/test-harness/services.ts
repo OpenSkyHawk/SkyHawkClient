@@ -1,6 +1,6 @@
 // Services harness for SESSION-seam tests (test-only: production code never imports this).
 //
-// `makeServices()` launches the main process the way app/index.ts does — settings loaded
+// `makeServices()` launches the main process the way app/bootstrap.ts does — settings loaded
 // from config.json, then the device link opened — with fakes standing in for the hardware and the
 // outside world: the SimGateway serial port, the DCS transport, HID, the clock and <userData>.
 //
@@ -114,7 +114,7 @@ class FakeHid {
 
 // Registered before main is imported (below), so main is built against the fakes. Paths are
 // relative to this file. The mapping, settings and calibration-cache stores are real: they write
-// <userData>, through the same store paths app/index.ts hands them. electron is still faked
+// <userData>, through the same store paths app/bootstrap.ts hands them. electron is still faked
 // for app's own use of it (debug.log, the version).
 vi.doMock('electron', () => ({
   app: {
@@ -201,7 +201,7 @@ function launch(opts: ServicesOptions) {
   FakeSerial.last = undefined
   FakeTransport.last = undefined
 
-  // app/index.ts: the <userData> files, handed to the stores.
+  // app/bootstrap.ts: the <userData> files, handed to the stores.
   const paths = storePaths(() => world.userData)
 
   const pushes: Push[] = []
@@ -209,7 +209,7 @@ function launch(opts: ServicesOptions) {
     pushes.push({ channel, payload } as Push)
   }, paths)
 
-  // app/index.ts registerIpc(): the renderer's requests main answers, by channel.
+  // app/ipc.ts registerIpc() and the topics' ipc.ts: the renderer's requests main answers.
   const intents = {
     [CTRL.configGet]: () => services.settings.get(),
     [CTRL.configSet]: (patch: Partial<AppConfig>) => services.settings.apply(patch),
@@ -235,7 +235,7 @@ function launch(opts: ServicesOptions) {
   }
   type Intents = typeof intents
 
-  // app/index.ts app.whenReady(): seed from persisted settings, then bring the device link up.
+  // app/bootstrap.ts app.whenReady(): seed from persisted settings, then bring the device link up.
   services.settings.load()
   services.open()
 

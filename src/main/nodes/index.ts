@@ -3,3 +3,4 @@
 export { NodeHub } from './node-hub'
 export type { MappingFileIO } from './mapping-store'
 export { NodeRoster } from './node-status-wire'
+export { registerNodesIpc } from './ipc'

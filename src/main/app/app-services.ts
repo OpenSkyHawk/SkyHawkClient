@@ -9,7 +9,7 @@
 // in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
 import type { DeviceStatus } from '@shared/gateway'
-import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
+import type { RelayStatus } from '@shared/app'
 import { app } from 'electron'
 import { DcsConnection, DcsRelay, SessionRecorder, Stats, StreamLog } from '../dcs'
 import { SettingsService } from '../config'
@@ -20,8 +20,7 @@ import { HidCalibrationService } from '../hid/calibration'
 import { NodeHub, NodeRoster } from '../nodes'
 import { debugLog, setDebugEnabled } from './debug-log'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
-
-type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
+import type { Emit } from './window'
 
 export class AppServices {
   /** The Gateway's USB serial port. Up independently of the relay. */
@@ -51,7 +50,7 @@ export class AppServices {
   private readonly stats = new Stats()
 
   /**
-   * `paths`: the <userData> files, from app/index.ts. The default resolves the same paths
+   * `paths`: the <userData> files, from app/bootstrap.ts. The default resolves the same paths
    * the same way, for callers that build an AppServices on its own.
    */
   constructor(emit: Emit, paths: StorePaths = storePaths(() => app.getPath('userData'))) {

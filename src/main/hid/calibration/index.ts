@@ -3,3 +3,4 @@
 export { HidCalibrationService } from './hid-calibration-service'
 export { loadCalCache, saveCalCache, type CacheFileIO } from './cache-store'
 export { mergeCalibration } from './cache-rules'
+export { registerCalibrationIpc } from './ipc'
