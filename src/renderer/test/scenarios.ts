@@ -5,9 +5,8 @@ import { emptyCache } from '../../main/hid/calibration/cache-rules'
 import {
   appSettings,
   buildConfigFile,
-  diffImport,
-  parseConfigFile,
-  withSectionNotes
+  buildImportPreview,
+  parseConfigFile
 } from '../../main/config/config-file'
 import { DEFAULT_CONFIG, type ConfigSnapshot, type ImportPreview } from '@shared/config'
 import { gatewayStatus } from '../../main/gateway/gateway-health'
@@ -183,29 +182,46 @@ export const configFileText = (
 ): string => JSON.stringify({ ...buildConfigFile(setup(), exportedAt, client), sections }, null, 2)
 
 /**
- * The preview main answers `openConfigImport` with for `text` against `current`, built the way
- * main's ConfigTransfer.preview builds it (parseConfigFile + diffImport + the section notes); the
- * token is fixed.
+ * The preview main answers `openConfigImport` with for `text` against `current`, built by main's
+ * own builder (parseConfigFile + buildImportPreview, as ConfigTransfer.preview does); the token is
+ * fixed. `online`: the boards on the bus now.
  */
 export function importPreview(
   text: string,
   current: ConfigSnapshot = setup(),
   defaults: Map<number, NodeDefaults> = new Map(),
-  fileName = 'skyhawk-config.json'
+  fileName = 'skyhawk-config.json',
+  online: number[] = []
 ): ImportPreview {
   const parsed = parseConfigFile(text)
   if (!parsed.ok) throw new Error(`importPreview: main would refuse this file: ${parsed.error}`)
-  const { config } = parsed
-  const sections = withSectionNotes(diffImport(defaults, current, config.sections))
-  return {
-    token: 'import-token-1',
-    fileName,
-    ...(config.exportedAt ? { exportedAt: config.exportedAt } : {}),
-    ...(config.client ? { client: config.client } : {}),
-    sections,
-    skipped: config.skipped,
-    identical: sections.every((s) => s.rows.length === 0)
-  }
+  return buildImportPreview(
+    parsed.config,
+    { defaults, current, online },
+    'import-token-1',
+    fileName
+  )
+}
+
+/**
+ * The preview main answers `openConfigBackup` with for the automatic backup `file` (its text, saved
+ * at `savedAt`) against `current`: the import review, as a restore (ConfigTransfer.previewBackup).
+ */
+export function restorePreview(
+  text: string,
+  file: string,
+  savedAt: string,
+  current: ConfigSnapshot = setup()
+): ImportPreview {
+  const parsed = parseConfigFile(text)
+  if (!parsed.ok) throw new Error(`restorePreview: main would refuse this file: ${parsed.error}`)
+  return buildImportPreview(
+    parsed.config,
+    { defaults: new Map(), current, online: [] },
+    'restore-token-1',
+    file,
+    { savedAt }
+  )
 }
 
 // ── node status rows, as main enriches them (`nodes:model` entry `status`) ─────────────────

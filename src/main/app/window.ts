@@ -13,6 +13,11 @@ let mainWindow: BrowserWindow | null = null
  */
 export const emit: Emit = batchPushes((batch) => mainWindow?.webContents.send(PUSH_BATCH, batch))
 
+/** The app's window, or `null` before it is created and after it is closed. */
+export function currentWindow(): BrowserWindow | null {
+  return mainWindow
+}
+
 export function createWindow(): void {
   const win = new BrowserWindow({
     width: 1280,

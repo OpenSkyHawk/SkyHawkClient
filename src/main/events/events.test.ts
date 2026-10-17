@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { clientErrorEvent, EventLog, EVENTS_TSV_HEADER, eventsToTsv } from './event-log'
+import { EventJournal } from './event-journal'
 import { relayEvents } from '../dcs/relay-events'
 import { deviceEvent } from '../gateway/link-events'
 import { NodeEventTracker, type NodeLookup } from '../nodes/node-events'
@@ -257,6 +258,65 @@ describe('client events', () => {
     expect(eventText(clientErrorEvent('DCS', 'connect ECONNREFUSED', 0))).toBe(
       'link error · connect ECONNREFUSED'
     )
+  })
+
+  it('a warn row (recovered, nothing lost) is labelled a warning, never an error', () => {
+    const msg = 'node-mapping.json is damaged. Loaded the backup, node-mapping.json.bak.'
+    const row = clientErrorEvent('node-mapping.json', msg, 5, 'warn')
+    expect(row).toEqual({
+      t: 5,
+      source: 'client',
+      name: 'node-mapping.json',
+      severity: 'warn',
+      event: 'warning',
+      detail: msg,
+      raw: `node-mapping.json Warning: ${msg}`
+    })
+    // What Log › Events prints, and the TSV export's severity / event / raw columns.
+    expect(eventText(row)).toBe(`warning · ${msg}`)
+    expect(
+      eventsToTsv([{ ...row, id: 1 }])
+        .split('\n')[1]!
+        .split('\t')
+        .slice(4)
+    ).toEqual(['warn', 'warning', msg, `node-mapping.json Warning: ${msg}`])
+    // A tag with its own error label still reads as a warning at warn.
+    expect(clientErrorEvent('SERIAL', 'x', 5, 'warn')).toMatchObject({
+      event: 'warning',
+      raw: 'SERIAL Warning: x'
+    })
+    // An error row is unchanged.
+    expect(clientErrorEvent('config.json', 'x', 5)).toMatchObject({
+      severity: 'error',
+      event: 'error',
+      raw: 'config.json Error: x'
+    })
+  })
+
+  it('EventJournal: warn and error rows share one dedupe per tag', () => {
+    const logged: string[] = []
+    const j = new EventJournal(
+      () => {},
+      (tag) => logged.push(tag)
+    )
+    j.warn('config.json', 'a')
+    j.warn('config.json', 'a') // a repeat: no row
+    j.error('config.json', 'a') // the same message at error: still a repeat
+    j.error('config.json', 'b')
+    j.forget('config.json')
+    j.warn('config.json', 'b') // forgotten: news again
+    expect(j.snapshot().map((e) => `${e.severity}:${e.event}:${e.detail}`)).toEqual([
+      'warn:warning:a',
+      'error:error:b',
+      'warn:warning:b'
+    ])
+    expect(logged).toEqual([
+      'warn.config.json',
+      'warn.config.json',
+      'error.config.json',
+      'error.config.json',
+      'warn.config.json'
+    ])
   })
 
   it('device: one row per reported state; scanning and resting no-device are skipped', () => {

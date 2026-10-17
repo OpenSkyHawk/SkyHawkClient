@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { DEFAULT_CONFIG, type ImportPreview } from '@shared/config'
 import { appSettings } from '../../main/config/config-file'
+import { registryDefaults } from '../../main/nodes/registry'
 import { Settings } from '../src/app/settings/Settings'
 import { renderScenario, settle } from './render'
 import { configFileText, importPreview, setup } from './scenarios'
@@ -35,7 +36,7 @@ async function openImport(preview: ImportPreview) {
   return { ...r, dlg, tick, diffRow }
 }
 
-describe('T13 Settings › Configuration › Import preview (B90, B94, F1)', () => {
+describe('T13 Settings › Configuration › Import preview (B90, B94, F1, C1, S4)', () => {
   it('lists each section’s changes as "key from → to", every changing section picked', async () => {
     const { dlg, tick, diffRow } = await openImport(importPreview(otherSetup()))
     expect(
@@ -89,26 +90,71 @@ describe('T13 Settings › Configuration › Import preview (B90, B94, F1)', () 
     expect(within(dlg).queryByRole('checkbox')).toBeNull()
   })
 
-  it('an empty "nodeMapping": {} previews as a normal section (F1 today)', async () => {
-    // contract F1: a structurally empty section should be refused and listed as skipped; today it
-    // reads as an empty mapping, so the review offers to take every adopted board out of your
-    // cockpit, picked by default.
+  it('nothing readable changes but a section was rejected: only the readable sections match', async () => {
+    const text = configFileText(
+      { app: appSettings(DEFAULT_CONFIG), nodeMapping: {}, powerSupply: DEFAULT_CONFIG.psu },
+      EXPORTED_AT
+    )
+    const { dlg } = await openImport(importPreview(text))
+    expect(
+      within(dlg).getByText('The readable sections match your current setup')
+    ).toBeInTheDocument()
+    expect(within(dlg).queryByText('This file matches your current setup')).toBeNull()
+    expect(within(dlg).getByText('Skipped — Node mapping: it has no version.')).toBeInTheDocument()
+    expect(within(dlg).getByText('Nothing to apply.')).toBeInTheDocument()
+    expect(within(dlg).queryByRole('button', { name: /^Apply/ })).toBeNull()
+  })
+
+  it('an empty "nodeMapping": {} is listed as skipped with its reason, and can’t be picked (F1, C1)', async () => {
+    // contract F1: a structurally empty section is refused and listed as skipped — never read as
+    // an empty mapping that would take every adopted board out of your cockpit.
     const current = setup({
       nodeMapping: {
         version: 3,
         nodes: { 12: { name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: null } }
       }
     })
-    const { dlg, tick, diffRow } = await openImport(
-      importPreview(configFileText({ nodeMapping: {} }, EXPORTED_AT), current)
+    const text = configFileText(
+      { nodeMapping: {}, app: appSettings({ ...DEFAULT_CONFIG, host: '10.0.0.2' }) },
+      EXPORTED_AT
     )
+    const { dlg } = await openImport(importPreview(text, current))
+    expect(within(dlg).getByText('Skipped — Node mapping: it has no version.')).toBeInTheDocument()
+    expect(within(dlg).queryByRole('checkbox', { name: 'Node mapping' })).toBeNull()
+    expect(within(dlg).queryByText('#12')).toBeNull()
+    expect(within(dlg).getByRole('button', { name: 'Apply 1 section' })).toBeEnabled()
+  })
+
+  it('boards that join and leave your cockpit are listed, as main reviews them (S4)', async () => {
+    const defaults = registryDefaults({
+      1: { name: 'Center_Armament', console: 'Center' },
+      2: { name: 'Right_Navigation', console: 'Right' }
+    })
+    const current = setup({
+      nodeMapping: {
+        version: 3,
+        nodes: {
+          1: { added: true },
+          12: { name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: null }
+        }
+      }
+    })
+    const text = configFileText(
+      { nodeMapping: { version: 3, nodes: { 2: { added: true } } } },
+      EXPORTED_AT
+    )
+    const { dlg, tick, diffRow } = await openImport(importPreview(text, current, defaults))
     expect(within(dlg).getByText('Node mapping').parentElement).toHaveTextContent(
-      'Node mapping1 node'
+      'Node mapping3 nodes · 1 joins · 2 leave'
+    )
+    expect(diffRow('Center_Armament')).toHaveTextContent(
+      'Center_ArmamentCenter_Armament · Center · —→not in your cockpit'
+    )
+    expect(diffRow('Right_Navigation')).toHaveTextContent(
+      'Right_Navigationnot in your cockpit→Right_Navigation · Right · —'
     )
     expect(diffRow('#12')).toHaveTextContent('#12Left_Lights · Left · —→not in your cockpit')
     expect(tick('Node mapping')).toHaveAttribute('aria-checked', 'true')
-    expect(within(dlg).queryByText(/^Skipped/)).toBeNull()
-    expect(within(dlg).getByRole('button', { name: 'Apply 1 section' })).toBeEnabled()
   })
 
   it('a section this client doesn’t know is listed as skipped', async () => {
@@ -161,7 +207,7 @@ describe('T13 Settings › Configuration › Import preview (B90, B94, F1)', () 
     )
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(
-      screen.getByText('Applied 2 sections · backup saved as skyhawk-config-backup-2026-10-16.json')
+      screen.getByText('Applied 2 sections · backup saved, listed under Automatic backups')
     ).toBeInTheDocument()
   })
 

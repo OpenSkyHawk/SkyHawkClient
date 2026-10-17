@@ -53,11 +53,25 @@
 // with their shapes unchanged — `LogRow` → `StreamRow` (`log:batch`) and the DCS `CaptureState` →
 // `RecordState` (`capture:toggle`); the frozen copies below pin both shapes under the old names.
 //
+// Fix track #136 (C1/S4, import safety): a type change only — no channel, intent or method was
+// added, removed or renamed. `ImportPreview` (`config:import-open`'s answer) gained `rejected`:
+// the known sections main left out as malformed or incomplete, each with its title and reason.
+//
+// Fix track #136 (automatic backups list): the push `config:backups` → `BackupList` (IPC
+// .configBackups) was added — the newest five backups in <userData>/backups, what each was saved
+// before and holds, and which file manager Show in … opens. Three intents were added:
+// `config:backups-get` (getConfigBackups → BackupList, the renderer's pull on load),
+// `config:backup-restore` (openConfigBackup(file) → ConfigImportOpen, the import review reading a
+// backup) and `config:backups-reveal` (revealConfigBackups, the folder in the file manager).
+// `ImportPreview` gained `backup` (set when the review is a restore) and `ConfigFile` gained the
+// optional `backup.before` record (type changes only).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
 import type {
   AppConfig,
+  BackupList,
   ConfigChanged,
   ConfigEdit,
   ConfigExportResult,
@@ -152,6 +166,7 @@ interface OldPushChannels {
   'cockpit:snapshot': CockpitSnapshot
   'config:changed': ConfigChanged
   'relay:facts': RelayFacts
+  'config:backups': BackupList
 }
 
 type OldPushChannel = keyof OldPushChannels
@@ -171,6 +186,7 @@ interface OldIPC {
   readonly cockpitSnapshot: 'cockpit:snapshot'
   readonly configChanged: 'config:changed'
   readonly relayFacts: 'relay:facts'
+  readonly configBackups: 'config:backups'
 }
 
 interface OldCTRL {
@@ -219,6 +235,9 @@ interface OldCTRL {
   readonly nodeMappingUnhide: 'node-mapping:unhide'
   readonly configEdit: 'config:edit'
   readonly relayToggle: 'relay:toggle'
+  readonly configBackupsGet: 'config:backups-get'
+  readonly configBackupRestore: 'config:backup-restore'
+  readonly configBackupsReveal: 'config:backups-reveal'
 }
 
 interface OldSkyhawkApi {
@@ -233,6 +252,9 @@ interface OldSkyhawkApi {
     sections: SectionId[],
     backup: boolean
   ): Promise<ConfigImportApplyResult>
+  getConfigBackups(): Promise<BackupList>
+  openConfigBackup(file: string): Promise<ConfigImportOpen>
+  revealConfigBackups(): Promise<void>
   startRelay(): Promise<RelayResult>
   stopRelay(): Promise<RelayResult>
   toggleRelay(relaying: boolean): Promise<RelayResult>

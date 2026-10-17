@@ -36,10 +36,22 @@ export class EventJournal {
 
   /** Push a client diagnostic into the event log + the debug log file. */
   error(tag: string, msg: string): void {
-    this.log(`error.${tag}`, msg) // always reaches debug.log when debug mode is on
+    this.client(tag, msg, 'error')
+  }
+
+  /**
+   * The same row at warn: a problem the client recovered from, nothing lost (a file loaded from
+   * its backup, #136). Same tag, same dedupe as `error`.
+   */
+  warn(tag: string, msg: string): void {
+    this.client(tag, msg, 'warn')
+  }
+
+  private client(tag: string, msg: string, severity: 'error' | 'warn'): void {
+    this.log(`${severity}.${tag}`, msg) // always reaches debug.log when debug mode is on
     if (this.lastErr.get(tag) === msg) return // dedupe the event log only
     this.lastErr.set(tag, msg)
-    this.events.add([clientErrorEvent(tag, msg, Date.now())])
+    this.events.add([clientErrorEvent(tag, msg, Date.now(), severity)])
   }
 
   /** Forget the tag's last error, so the next one is news. */

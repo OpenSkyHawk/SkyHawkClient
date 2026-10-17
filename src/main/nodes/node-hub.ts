@@ -30,7 +30,6 @@ import {
   clearReportedHidden,
   effectiveMapping,
   forgetNode,
-  importMapping,
   MappingError,
   markSeen,
   resetMapping,
@@ -61,7 +60,12 @@ import {
 } from './node-status-wire'
 import { NODE_TELEM_MSG, NodeTelemStore, parseNodeTelem } from './node-telem'
 import { registryDefaults } from './registry'
-import { MappingSaveError, MappingStore, type MappingFileIO } from './mapping-store'
+import {
+  MappingSaveError,
+  MappingStore,
+  type MappingFileEvents,
+  type MappingFileIO
+} from './mapping-store'
 import { CockpitSnapshotHost } from './cockpit-host'
 import { addAllInTurn, unhideInTurn } from './mapping-sequence'
 
@@ -90,9 +94,13 @@ const NO_LINK: NodeHubLink = {
   pushGatewayHealth: () => {}
 }
 
-/** What NodeHub needs from app: the node-mapping.json port, the log, and the Gateway link. */
+/**
+ * What NodeHub needs from app: the node-mapping.json port and where its load problems are
+ * reported, the log, and the Gateway link.
+ */
 export interface NodeHubDeps {
   mappingFile?: MappingFileIO
+  mappingEvents?: MappingFileEvents
   log?: Log
   link?: NodeHubLink
 }
@@ -171,6 +179,7 @@ export class NodeHub implements NodeLineSink {
     this.store = new MappingStore({
       file: deps.mappingFile,
       log: deps.log,
+      events: deps.mappingEvents,
       onCommit: () => {
         this.modelDirty = true
       }
@@ -431,12 +440,18 @@ export class NodeHub implements NodeLineSink {
   }
 
   /**
-   * Config import: the file's settings over the current mapping, keeping what this computer
-   * observed — each board's `added` and `lastSeen` — and never hiding a board on the bus (#93).
-   * Same save path and read-only guard as any edit.
+   * Config import (C2/M10): save this whole mapping — the import's staged result, which
+   * ConfigTransfer builds with importMapping over mappingFile() and onlineIds(), or, when a later
+   * section of the import fails, the mapping from before it (the rollback). Same save path and
+   * read-only guard as any edit: nothing is adopted in memory unless it reached the disk. A save
+   * that fails answers with its reason alone (`permission denied in <folder>`): the import names
+   * the section itself ("Node mapping could not be saved (…)").
    */
-  importMapping(file: NodeMappingFile): NodeMappingResult {
-    return this.update((cur) => importMapping(cur, file, this.onlineIds()))
+  replaceMapping(file: NodeMappingFile): NodeMappingResult {
+    return this.update(
+      () => file,
+      (err) => (err instanceof MappingSaveError ? err.reason : err.message)
+    )
   }
 
   /** NODE_IDs present in the roster now (the bridge's own row excluded). */
@@ -534,8 +549,14 @@ export class NodeHub implements NodeLineSink {
     )
   }
 
-  /** Apply one mapping change, persist it, and push the new model straight away. */
-  private update(fn: (f: NodeMappingFile) => NodeMappingFile): NodeMappingResult {
+  /**
+   * Apply one mapping change, persist it, and push the new model straight away. A refused change
+   * answers with `why` of its error: the message, ready to show, unless the caller words it.
+   */
+  private update(
+    fn: (f: NodeMappingFile) => NodeMappingFile,
+    why: (err: MappingError | MappingSaveError) => string = (err) => err.message
+  ): NodeMappingResult {
     const before = this.mapping()
     let next: NodeMappingFile
     try {
@@ -543,7 +564,7 @@ export class NodeHub implements NodeLineSink {
       this.store.save(next)
     } catch (err) {
       if (err instanceof MappingError || err instanceof MappingSaveError) {
-        return { ok: false, error: err.message }
+        return { ok: false, error: why(err) }
       }
       throw err
     }

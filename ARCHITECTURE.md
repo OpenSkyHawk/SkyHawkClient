@@ -118,7 +118,7 @@ same field of the same push.
 | `hid`             | `HidService`                                                                                                                                            | `hid:report`                                                                                  | `useHidStore`           |
 | `hid/calibration` | `HidCalibrationService` and the workflow it hosts                                                                                                       | `cal:workflow`                                                                                | `useCalibrationStore`   |
 | `events`          | `EventJournal`                                                                                                                                          | `events:batch`                                                                                | `useEventsStore`        |
-| `config`          | `SettingsService` (the settings), `ConfigTransfer` (export / import)                                                                                    | `config:changed`                                                                              | `useConfigStore`        |
+| `config`          | `SettingsService` (the settings), `ConfigTransfer` (export / import), `BackupFolder` (automatic backups)                                                | `config:changed`, `config:backups`                                                            | `useConfigStore`        |
 | `app`             | `AppServices` (builds and wires the services; no rules, no state)                                                                                       | —                                                                                             | `useNav` (in `app/kit`) |
 
 ## How a screen gets its data
@@ -142,7 +142,8 @@ main service ──emit──▶ push:batch ──▶ preload ──▶ ipc-adap
    new state. The renderer never edits its own copy of main's state to fake the result.
 
 When the renderer loads (or reloads in dev while main keeps running) the adapter also pulls the
-current picture: `relay:status`, `nodes:get`, `config:get`, `events:get`, `hid:availability`.
+current picture: `relay:status`, `nodes:get`, `config:get`, `config:backups-get`, `events:get`,
+`hid:availability`.
 
 ## `push:batch`: one frame per main turn
 

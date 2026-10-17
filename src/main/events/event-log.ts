@@ -6,16 +6,32 @@ import { fmtDateTime } from '@shared/format'
 
 // ── client events ───────────────────────────────────────────────────────────
 
-/** A client diagnostic — the `SERIAL` / `DCS` errors the Stream used to show as `! SYS`. */
-export function clientErrorEvent(tag: string, message: string, now: number): LogEventInput {
+/**
+ * A client diagnostic — the `SERIAL` / `DCS` errors the Stream used to show as `! SYS`. A warn row
+ * (a problem the client recovered from, nothing lost) is labelled as one: its event reads
+ * `warning` and its raw text `<tag> Warning: …`, so nothing on it says "error".
+ */
+export function clientErrorEvent(
+  tag: string,
+  message: string,
+  now: number,
+  severity: 'error' | 'warn' = 'error'
+): LogEventInput {
+  const warn = severity === 'warn'
   return {
     t: now,
     source: 'client',
     name: tag,
-    severity: 'error',
-    event: tag === 'SERIAL' ? 'serial port error' : tag === 'DCS' ? 'link error' : 'error',
+    severity,
+    event: warn
+      ? 'warning'
+      : tag === 'SERIAL'
+        ? 'serial port error'
+        : tag === 'DCS'
+          ? 'link error'
+          : 'error',
     detail: message,
-    raw: `${tag} Error: ${message}`
+    raw: `${tag} ${warn ? 'Warning' : 'Error'}: ${message}`
   }
 }
 

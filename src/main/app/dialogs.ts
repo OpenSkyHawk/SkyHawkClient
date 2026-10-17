@@ -1,7 +1,8 @@
 // The save and open dialogs the intents show, as one `Dialogs` port: each topic's ipc.ts declares
 // the dialogs it needs, and this answers them with electron's. Each resolves to the picked path,
-// or undefined when the dialog was canceled or came back without one.
-import { dialog } from 'electron'
+// or undefined when the dialog was canceled or came back without one. It also opens a folder in
+// the file manager (config's Show in Finder), as debug:reveal does with electron's `shell`.
+import { dialog, shell } from 'electron'
 import type { ConfigDialogs } from '../config'
 import type { DcsDialogs } from '../dcs'
 import type { EventsDialogs } from '../events'
@@ -16,6 +17,11 @@ const CAPTURE_FILTER = [{ name: 'DCS-BIOS capture', extensions: ['json'] }]
 
 export const dialogs: Dialogs = {
   configMaxBytes: CONFIG_MAX_BYTES,
+
+  async showFolder(path) {
+    // openPath answers why it could not open the folder, or '' — there is nothing to show it on.
+    await shell.openPath(path)
+  },
 
   async saveConfig(defaultPath) {
     const res = await dialog.showSaveDialog({

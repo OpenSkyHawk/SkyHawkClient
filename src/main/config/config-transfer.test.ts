@@ -1,12 +1,27 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG, type AppConfig, type ImportPreview } from '@shared/config'
+import {
+  DEFAULT_CONFIG,
+  type AppConfig,
+  type BackupList,
+  type ConfigFile,
+  type ImportPreview
+} from '@shared/config'
 import { registryDefaults } from '../nodes/registry'
 import type { NodeMappingFile } from '@shared/nodes'
 import type { CalCache } from '@shared/hid/calibration'
-import { ConfigTransfer } from './config-transfer'
+import { BackupFolder } from './backup-folder'
+import { ConfigTransfer, type ConfigTransferDeps } from './config-transfer'
 
 const defaults = registryDefaults({
   1: { name: 'Center_Armament', console: 'Center' },
@@ -21,27 +36,68 @@ const axis = (min: number, centre: number, max: number) => ({
 })
 
 let dir: string
+type Target = 'mapping' | 'calibration' | 'config'
 let state: {
   config: AppConfig
   mapping: NodeMappingFile
   cache: CalCache
   mappingRefuses?: string
+  /** Failure injection: the writes (1-based, per target) that fail, saying `<target> write <n>`. */
+  fail: Partial<Record<Target, number[]>>
+  /** Failure injection: the targets whose byte copy cannot be taken, or put back. */
+  copyFails?: Partial<Record<Target, 'snapshot' | 'restore'>>
+  writes: Record<Target, number>
   calls: string[]
 }
 
-function transfer() {
+/** Whether this write of `target` is one the test makes fail; why, if so. */
+function injected(target: Target): string | undefined {
+  const n = ++state.writes[target]
+  return state.fail[target]?.includes(n) ? `${target} write ${n} failed` : undefined
+}
+
+/**
+ * A target's file as the JSON store copies it: its "bytes" are the store's value, and putting
+ * them back sets the value (the real byte-for-byte copy is config-transfer.files.test.ts's).
+ */
+function fileCopy(target: Target, key: 'mapping' | 'cache' | 'config') {
+  return {
+    snapshot: () => {
+      if (state.copyFails?.[target] === 'snapshot') throw new Error(`${target} unreadable`)
+      return { file: Buffer.from(JSON.stringify(state[key])), bak: null }
+    },
+    restore: (copy: { file: Buffer | null }) => {
+      if (state.copyFails?.[target] === 'restore') {
+        const error = Object.assign(new Error('EROFS: read-only file system, open'), {
+          code: 'EROFS',
+          path: `/u/${target}.json.tmp`
+        })
+        return { error, note: `${target}.json could not be put back (the disk is read-only in /u)` }
+      }
+      state.calls.push(`restore ${target}`)
+      ;(state as Record<string, unknown>)[key] = JSON.parse(copy.file!.toString())
+      return undefined
+    }
+  }
+}
+
+function transfer(over: Partial<ConfigTransferDeps> = {}) {
   return new ConfigTransfer({
     getConfig: () => state.config,
-    setConfig: (c) => {
+    replaceConfig: (c) => {
+      const failed = injected('config')
+      if (failed) return { ok: false, error: failed }
       state.calls.push('config')
-      return (state.config = c)
+      return { ok: true, config: (state.config = c) }
     },
     nodes: {
       mappingFile: () => state.mapping,
       registryDefaults: () => defaults,
       onlineIds: () => [],
-      importMapping: (f) => {
+      replaceMapping: (f) => {
         if (state.mappingRefuses) return { ok: false, error: state.mappingRefuses }
+        const failed = injected('mapping')
+        if (failed) return { ok: false, error: failed }
         state.calls.push('mapping')
         state.mapping = f
         return { ok: true, model: {} as never }
@@ -49,12 +105,21 @@ function transfer() {
     },
     loadCalCache: () => state.cache,
     saveCalCache: (c) => {
+      const failed = injected('calibration')
+      if (failed) return failed
       state.calls.push('calibration')
       state.cache = c
+      return undefined
     },
-    backupDir: () => join(dir, 'backups'),
+    files: {
+      mapping: fileCopy('mapping', 'mapping'),
+      calibration: fileCopy('calibration', 'cache'),
+      config: fileCopy('config', 'config')
+    },
+    backups: new BackupFolder({ dir: () => join(dir, 'backups') }),
     clientVersion: () => '0.2.0',
-    now: () => new Date('2026-10-16T10:00:00Z')
+    now: () => new Date('2026-10-16T10:00:00Z'),
+    ...over
   })
 }
 
@@ -67,11 +132,20 @@ function otherSetupFile(): string {
       host: '10.0.0.2',
       psu: { mode: 'custom', preset: 'nx650', custom: { a12: 40 } }
     },
-    mapping: { version: 3, nodes: { 1: { name: 'Arm' }, 52: { hidden: true } } },
+    // 52: an adopted board, hidden (S4: only a board in your cockpit carries a hidden flag).
+    mapping: {
+      version: 3,
+      nodes: {
+        1: { name: 'Arm' },
+        52: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', hidden: true }
+      }
+    },
     cache: {
       version: 1,
       boards: { A7: { confirmedAt: '2026-10-12T00:00:00Z', axes: { 0: axis(1, 2, 3) } } }
     },
+    fail: {},
+    writes: { mapping: 0, calibration: 0, config: 0 },
     calls: []
   }
   const text = transfer().exportText()
@@ -94,6 +168,8 @@ describe('ConfigTransfer', () => {
         version: 1,
         boards: { A7: { confirmedAt: '2026-10-14T00:00:00Z', axes: { 2: axis(4, 5, 6) } } }
       },
+      fail: {},
+      writes: { mapping: 0, calibration: 0, config: 0 },
       calls: []
     }
   })
@@ -155,10 +231,13 @@ describe('ConfigTransfer', () => {
   it('a node mapping that cannot be saved stops the whole import', () => {
     const t = transfer()
     const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
-    state.mappingRefuses = 'Not saved: node-mapping.json was written by a newer client'
+    // NodeHub.replaceMapping answers with the reason alone (MappingSaveError.reason).
+    state.mappingRefuses = 'node-mapping.json was written by a newer client'
     expect(t.apply(p.token, ['app', 'nodeMapping', 'calibration'], false)).toEqual({
       ok: false,
-      error: 'Nothing was changed: Not saved: node-mapping.json was written by a newer client'
+      error:
+        'Nothing was changed — Node mapping could not be saved (node-mapping.json was written by ' +
+        'a newer client).'
     })
     expect(state.calls).toEqual([])
   })
@@ -176,5 +255,281 @@ describe('ConfigTransfer', () => {
     }
     expect(t.apply('other-token', ['app'], false)).toMatchObject({ ok: false })
     expect(state.calls).toEqual([])
+  })
+})
+
+describe('ConfigTransfer: one import transaction (C2/M10)', () => {
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'skyhawk-transfer-'))
+    state = {
+      config: DEFAULT_CONFIG,
+      mapping: { version: 3, nodes: { 1: { added: true, name: 'Armament' } } },
+      cache: {
+        version: 1,
+        boards: { A7: { confirmedAt: '2026-10-14T00:00:00Z', axes: { 2: axis(4, 5, 6) } } }
+      },
+      fail: {},
+      writes: { mapping: 0, calibration: 0, config: 0 },
+      calls: []
+    }
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  const ALL = ['app', 'nodeMapping', 'powerSupply', 'calibration']
+  /** The three stores as they stand, deep-copied. */
+  const stores = () => structuredClone({ c: state.config, m: state.mapping, k: state.cache })
+
+  const cases: { target: Target; error: string; calls: string[] }[] = [
+    {
+      target: 'mapping',
+      error: 'Nothing was changed — Node mapping could not be saved (mapping write 1 failed).',
+      calls: []
+    },
+    {
+      target: 'calibration',
+      error:
+        'Nothing was changed — Axis calibration could not be saved (calibration write 1 failed). ' +
+        'Node mapping was put back as before.',
+      calls: ['mapping', 'mapping', 'restore mapping']
+    },
+    {
+      target: 'config',
+      error:
+        'Nothing was changed — App settings and Power supply could not be saved (config write 1 ' +
+        'failed). Node mapping and Axis calibration were put back as before.',
+      calls: ['mapping', 'calibration', 'restore calibration', 'mapping', 'restore mapping']
+    }
+  ]
+  for (const c of cases) {
+    it(`${c.target} fails: every target is as before the import, and the answer says so`, () => {
+      const before = stores()
+      const imported: string[] = []
+      const tx = transfer({ imported: () => imported.push('imported') })
+      const p2 = ready(tx.preview(otherSetupFile(), '/x/a.json'))
+      state.fail[c.target] = [1]
+      const r = tx.apply(p2.token, ALL, false)
+      expect(r).toEqual({ ok: false, error: c.error })
+      expect(stores()).toEqual(before) // nothing half-applied
+      // Written, then put back newest first: the store's own write, then its bytes (and .bak).
+      expect(state.calls).toEqual(c.calls)
+      expect(imported).toEqual([]) // the renderer is not told of an import that did not land
+      // The file stays open: the same import can be tried again, and lands whole.
+      state.fail = {}
+      expect(tx.apply(p2.token, ALL, false)).toMatchObject({ ok: true, applied: ALL })
+      expect(state.config.host).toBe('10.0.0.2')
+      expect(state.mapping.nodes[52]).toMatchObject({ name: 'Trim' })
+      expect(Object.keys(state.cache.boards.A7!.axes)).toEqual(['0', '2'])
+      expect(imported).toEqual(['imported'])
+    })
+  }
+
+  it('the settings target names the sections it holds', () => {
+    const t = transfer()
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    state.fail.config = [1]
+    expect(t.apply(p.token, ['powerSupply', 'nodeMapping'], false)).toEqual({
+      ok: false,
+      error:
+        'Nothing was changed — Power supply could not be saved (config write 1 failed). Node ' +
+        'mapping was put back as before.'
+    })
+    expect(state.config).toEqual(DEFAULT_CONFIG)
+  })
+
+  it('a rollback that fails too: the answer says the import is only partly applied, and where', () => {
+    const t = transfer()
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    const before = stores()
+    state.fail = { config: [1], mapping: [2] } // config fails, then putting the mapping back does
+    const r = t.apply(p.token, ALL, true)
+    expect(r).toEqual({
+      ok: false,
+      error:
+        'The import is only partly applied — App settings and Power supply could not be saved ' +
+        '(config write 1 failed). Node mapping could not be put back (mapping write 2 failed), so ' +
+        'it keeps the imported settings. Axis calibration was put back as before. Your previous ' +
+        'setup is in skyhawk-config-2026-10-16T10-00-00-000Z.json.'
+    })
+    expect(state.mapping).not.toEqual(before.m) // honestly reported: still the file's
+    expect(state.cache).toEqual(before.k)
+    expect(state.config).toEqual(before.c)
+  })
+
+  it('a byte copy that cannot be put back: the answer says the import is only partly applied', () => {
+    const t = transfer()
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    state.fail = { config: [1] }
+    state.copyFails = { calibration: 'restore' }
+    expect(t.apply(p.token, ALL, false)).toEqual({
+      ok: false,
+      error:
+        'The import is only partly applied — App settings and Power supply could not be saved ' +
+        '(config write 1 failed). Axis calibration could not be put back (the disk is read-only ' +
+        'in /u), so it keeps the imported settings. Node mapping was put back as before.'
+    })
+  })
+
+  it('a target whose file cannot be copied for a rollback stops the import before any write', () => {
+    const t = transfer()
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    const before = stores()
+    state.copyFails = { config: 'snapshot' }
+    expect(t.apply(p.token, ALL, true)).toEqual({
+      ok: false,
+      error:
+        'Nothing was changed — App settings and Power supply could not be copied for a ' +
+        'rollback (config unreadable).'
+    })
+    expect(state.calls).toEqual([])
+    expect(stores()).toEqual(before)
+    expect(() => readdirSync(join(dir, 'backups'))).toThrow() // no backup written either
+  })
+
+  it('a backup that fails stops the import before anything is written', () => {
+    const t = transfer({ backups: new BackupFolder({ dir: () => join(dir, 'file') }) })
+    writeFileSync(join(dir, 'file'), 'not a folder')
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    expect(t.apply(p.token, ALL, true)).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/^Nothing was changed — the backup could not be saved \(.+\)\.$/)
+    })
+    expect(state.calls).toEqual([])
+  })
+})
+
+describe('ConfigTransfer: automatic backups and restore (#136)', () => {
+  const BACKUP = 'skyhawk-config-2026-10-16T10-00-00-000Z.json'
+  let pushes: BackupList[]
+  let clock: Date
+  /** ConfigTransfer over a backups folder that records its pushes, on a clock the test moves. */
+  const withBackups = () =>
+    transfer({
+      backups: new BackupFolder({
+        dir: () => join(dir, 'backups'),
+        emit: (_c, list) => void pushes.push(list),
+        platform: 'darwin'
+      }),
+      now: () => clock
+    })
+  const backupFile = (name: string) =>
+    JSON.parse(readFileSync(join(dir, 'backups', name), 'utf8')) as ConfigFile
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'skyhawk-transfer-'))
+    state = {
+      config: DEFAULT_CONFIG,
+      mapping: { version: 3, nodes: {} },
+      cache: { version: 1, boards: {} },
+      fail: {},
+      writes: { mapping: 0, calibration: 0, config: 0 },
+      calls: []
+    }
+    pushes = []
+    clock = new Date('2026-10-16T10:00:00Z')
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  it('a backup records the file it was taken before, and the list says so', () => {
+    const t = withBackups()
+    const p = ready(t.preview(otherSetupFile(), '/Users/me/cockpit-left-only.json'))
+    expect(t.apply(p.token, ['app'], true)).toMatchObject({ ok: true })
+    expect(backupFile(BACKUP).backup).toEqual({
+      before: { kind: 'import', fileName: 'cockpit-left-only.json' }
+    })
+    const listed = {
+      file: BACKUP,
+      savedAt: '2026-10-16T10:00:00.000Z',
+      before: { kind: 'import', fileName: 'cockpit-left-only.json' },
+      sections: ['App settings', 'Node mapping', 'Power supply', 'Axis calibration']
+    }
+    expect(pushes).toEqual([{ backups: [listed], keep: 5, fileManager: 'finder' }])
+    expect(t.backupList().backups).toEqual([listed])
+  })
+
+  it('no backup asked for: nothing written, nothing pushed', () => {
+    const t = withBackups()
+    const p = ready(t.preview(otherSetupFile(), '/x/a.json'))
+    expect(t.apply(p.token, ['app'], false)).toMatchObject({ ok: true })
+    expect(existsSync(join(dir, 'backups'))).toBe(false)
+    expect(pushes).toEqual([])
+  })
+
+  it('Restore… previews the backup as an import, titled from the backup', () => {
+    const t = withBackups()
+    const p = ready(t.preview(otherSetupFile(), '/x/cockpit.json'))
+    t.apply(p.token, ['app', 'powerSupply'], true) // the backup holds the setup before this
+
+    const r = ready(t.previewBackup(BACKUP))
+    expect(r).toMatchObject({
+      fileName: BACKUP,
+      backup: {
+        savedAt: '2026-10-16T10:00:00.000Z',
+        before: { kind: 'import', fileName: 'cockpit.json' }
+      },
+      identical: false
+    })
+    // What restoring it would change: the import, undone.
+    expect(r.sections.find((s) => s.id === 'app')!.rows).toEqual([
+      { k: 'DCS host', from: '10.0.0.2', to: '127.0.0.1' }
+    ])
+    expect(ready(t.preview(otherSetupFile(), '/x/a.json'))).not.toHaveProperty('backup')
+  })
+
+  it('an old backup without the record still previews, with nothing said about it', () => {
+    const t = withBackups()
+    mkdirSync(join(dir, 'backups'))
+    writeFileSync(join(dir, 'backups', BACKUP), otherSetupFile())
+    expect(t.backupList().backups[0]).not.toHaveProperty('before')
+    expect(ready(t.previewBackup(BACKUP)).backup).toEqual({ savedAt: '2026-10-16T10:00:00.000Z' })
+  })
+
+  it('a restore with the box ticked saves the current setup first, as before restoring it', () => {
+    const t = withBackups()
+    t.apply(ready(t.preview(otherSetupFile(), '/x/cockpit.json')).token, ['app'], true)
+    expect(state.config.host).toBe('10.0.0.2')
+
+    clock = new Date('2026-10-17T09:49:00Z')
+    const r = t.apply(ready(t.previewBackup(BACKUP)).token, ['app'], true)
+    expect(r).toMatchObject({ ok: true, applied: ['app'] })
+    expect(state.config.host).toBe('127.0.0.1') // restored
+    const second = 'skyhawk-config-2026-10-17T09-49-00-000Z.json'
+    expect(r.ok && r.backupPath).toBe(join(dir, 'backups', second))
+    // The new backup holds the setup the restore replaced, and says what it was saved before.
+    expect(backupFile(second).sections.app!.host).toBe('10.0.0.2')
+    expect(backupFile(second).backup).toEqual({
+      before: { kind: 'restore', savedAt: '2026-10-16T10:00:00.000Z' }
+    })
+    expect(pushes.at(-1)!.backups.map((b) => [b.file, b.before])).toEqual([
+      [second, { kind: 'restore', savedAt: '2026-10-16T10:00:00.000Z' }],
+      [BACKUP, { kind: 'import', fileName: 'cockpit.json' }]
+    ])
+  })
+
+  it('a restore with the box unticked writes no backup', () => {
+    const t = withBackups()
+    t.apply(ready(t.preview(otherSetupFile(), '/x/cockpit.json')).token, ['app'], true)
+    clock = new Date('2026-10-17T09:49:00Z')
+    expect(t.apply(ready(t.previewBackup(BACKUP)).token, ['app'], false)).toMatchObject({
+      ok: true
+    })
+    expect(readdirSync(join(dir, 'backups'))).toEqual([BACKUP])
+  })
+
+  it('a backup that is not one of ours, or is gone, is refused and leaves nothing to apply', () => {
+    const t = withBackups()
+    expect(t.previewBackup('../config.json')).toEqual({
+      status: 'error',
+      error: 'Invalid backup request'
+    })
+    expect(t.previewBackup(BACKUP)).toEqual({
+      status: 'error',
+      error: 'This backup is no longer in the backups folder.'
+    })
+  })
+
+  it('the backups folder is created for Show in Finder', () => {
+    const t = withBackups()
+    expect(t.backupFolder()).toBe(join(dir, 'backups'))
+    expect(existsSync(join(dir, 'backups'))).toBe(true)
   })
 })

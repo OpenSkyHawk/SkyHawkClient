@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import type { ConfigImportApplyResult, ImportPreview, SectionId } from '@shared/config'
 import { Dialog } from '../app/kit'
-import { importRowKey, importSubtitle } from './import-view'
+import { applyLabel, identicalText, importRowKey, reviewSubtitle, reviewTitle } from './import-view'
 import { useConfigStore } from './store'
 
 /**
  * Import configuration — review what the file changes, section by section, and apply the ones
- * ticked. Sections with no change are shown but cannot be picked; a file that changes nothing
- * says so and offers no Apply. `axisLabels` name the calibration rows.
+ * ticked. An automatic backup (`preview.backup`) is reviewed the same way, as Restore backup. Sections with no change are shown but cannot be picked; a file that changes nothing
+ * says so and offers no Apply. A section main rejected (malformed or incomplete) is listed as
+ * skipped with main's reason, and one from a newer client as skipped too. `axisLabels` name the
+ * calibration rows.
  */
 export function ImportDialog({
   preview,
@@ -43,11 +45,12 @@ export function ImportDialog({
   }
 
   const n = picked.size
+  const title = reviewTitle(preview)
   return (
     <Dialog
-      label="Import configuration"
-      title="Import configuration"
-      sub={importSubtitle(preview)}
+      label={title}
+      title={title}
+      sub={reviewSubtitle(preview)}
       width={720}
       onClose={onClose}
       footer={
@@ -81,7 +84,7 @@ export function ImportDialog({
               Cancel
             </button>
             <button className="browse" disabled={busy || n === 0} onClick={() => void apply()}>
-              Apply {n === 1 ? '1 section' : `${n} sections`}
+              {applyLabel(preview, n)}
             </button>
           </>
         )
@@ -90,7 +93,7 @@ export function ImportDialog({
       {preview.identical && (
         <div className="im__sec">
           <div className="im__body">
-            <div className="im__st">This file matches your current setup</div>
+            <div className="im__st">{identicalText(preview)}</div>
           </div>
         </div>
       )}
@@ -129,6 +132,11 @@ export function ImportDialog({
             </div>
           )
         })}
+      {preview.rejected.map((s) => (
+        <div className="im__note" style={{ margin: '12px 0' }} key={s.id}>
+          {`Skipped — ${s.title}: ${s.reason}.`}
+        </div>
+      ))}
       {preview.skipped.length > 0 && (
         <div className="im__note" style={{ margin: '12px 0' }}>
           Skipped — written by a newer client: {preview.skipped.join(', ')}. Update this client to

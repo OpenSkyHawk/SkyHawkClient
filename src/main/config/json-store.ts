@@ -1,123 +1,300 @@
 // The JSON store: the one set of read / parse / write mechanics behind main's three files under
-// <userData> (config.json, calibration-cache.json, node-mapping.json). What differs between them
-// is a per-file policy object, so each keeps exactly the behaviour it had when it carried its own
-// copy of this code (arch-phase0-v2 §1.2, X13).
+// <userData> (config.json, calibration-cache.json, node-mapping.json). Every file gets the same
+// rules (#136, D5 / M6 + X13):
 //
-// The store knows nothing about what a file means. It reports what it found; the owner decides
-// what that means — defaults, an empty mapping, a read-only mapping — through its own port
-// (nodes' MappingFileIO, hid/calibration's CacheFileIO), which a JsonFile satisfies.
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { stamp } from '@shared/format'
+//   write  the previous file, if it parses, is kept as `<file>.bak`; then `<file>.tmp` is
+//          written, fsynced and renamed over the file, and the folder is fsynced (skipped on
+//          Windows, where a folder cannot be opened; the "not supported" errors are ignored
+//          elsewhere). A crash at any point leaves a whole file behind, never half of one.
+//   read   a file that cannot be read or does not parse falls back to `<file>.bak`. A damaged
+//          file is moved aside to `<file>.bad-<stamp>` before anything can overwrite it, and a
+//          backup that was loaded is copied back in its place.
+//   copy   `snapshot` takes the file and its `.bak` byte for byte (or that they are missing);
+//          `restore` puts exactly that back, each by the same tmp + fsync + rename, so whatever
+//          was written since — the file and the `.bak` its writes rotated — is undone.
+//
+// The store knows nothing about what a file means. It reports what it found and what it did, in
+// words (`note`); the owner decides what that means — defaults, an empty mapping, a read-only
+// mapping, an event row — through its own port (nodes' MappingFileIO, hid/calibration's
+// CacheFileIO), which a JsonFile satisfies.
+import * as nodeFs from 'node:fs'
+import { basename, dirname } from 'node:path'
+import { errorText, fileErrorText, stamp } from '@shared/format'
 
-export interface JsonPolicy {
-  /**
-   * Write `<file>.tmp` and rename it over the file, removing the temp file if that fails, so a
-   * crash mid-write leaves the old file intact. false: write the file in place.
-   */
-  readonly atomic: boolean
-  /**
-   * A failed write is handed back to the owner as `{ error }` (node mapping turns it into
-   * MappingSaveError). The path is resolved outside that guard, so a path that cannot be resolved
-   * throws, as before. false: any failure, the path included, is swallowed.
-   */
-  readonly reportWriteErrors: boolean
-  /**
-   * A file that does not parse is renamed to `<file>.bad-<stamp>` before anything can overwrite
-   * it. false: it is left where it is.
-   */
-  readonly moveAsideDamaged: boolean
-}
+/** What was wrong with the file itself. */
+export type JsonDamage = { kind: 'unreadable'; error: unknown } | { kind: 'damaged' }
 
-/** Each file's policy: today's behaviour, per file. Changing one is a behaviour change (fix track). */
-export const JSON_POLICY = {
-  /** config.json: written in place, best effort — a read-only userData must not crash the app. */
-  config: { atomic: false, reportWriteErrors: false, moveAsideDamaged: false },
-  /** calibration-cache.json: deliberately the same as config.json (a recovery aid, never fatal). */
-  calibrationCache: { atomic: false, reportWriteErrors: false, moveAsideDamaged: false },
-  /** node-mapping.json: a lost write is user work gone, so atomic, reported, and kept if damaged. */
-  nodeMapping: { atomic: true, reportWriteErrors: true, moveAsideDamaged: true }
-} as const satisfies Record<string, JsonPolicy>
+/**
+ * Where the bad file is now: moved aside, stuck in place because the move failed, or left in place
+ * on purpose (a file that could not be read, with no backup to load, may only be busy: the next
+ * read tries it again).
+ */
+export type JsonAside =
+  | { kind: 'moved'; to: string }
+  | { kind: 'stuck'; error: unknown }
+  | { kind: 'left' }
 
-/** What a read found. A damaged file is reported by what happened to it, per the policy. */
-export type JsonRead<MoveAside extends boolean = boolean> =
+/** What a read found. `note` says, ready to show, what went wrong and what the store did. */
+export type JsonRead =
   | { kind: 'missing' }
   | { kind: 'read'; data: unknown }
-  | { kind: 'unreadable'; error: unknown }
-  | (MoveAside extends true
-      ? { kind: 'movedAside'; to: string } | { kind: 'stuck'; error: unknown }
-      : { kind: 'damaged' })
+  /** The file was bad and `<file>.bak` was loaded instead. */
+  | { kind: 'fallback'; data: unknown; damage: JsonDamage; aside: JsonAside; note: string }
+  /** The file was bad and so was its backup (or there is none): nothing was loaded. */
+  | {
+      kind: 'failed'
+      damage: JsonDamage
+      backup: 'missing' | JsonDamage
+      aside: JsonAside
+      note: string
+    }
 
-export interface JsonFile<P extends JsonPolicy> {
-  /** Resolves the path (a throw there propagates), then reads and parses the file. */
-  read(): JsonRead<P['moveAsideDamaged']>
-  /**
-   * Writes `JSON.stringify(value, null, 2)`, as the policy says. Returns `{ error }` when the
-   * write failed and the policy reports it; otherwise undefined.
-   */
-  write(value: unknown): { error: unknown } | undefined
+/**
+ * A write that did not reach the disk: the error, and a line saying so in plain words
+ * (`config.json could not be saved (permission denied in <folder>)`, fileErrorText).
+ */
+export interface JsonWriteError {
+  error: unknown
+  note: string
 }
 
+export interface JsonFile {
+  /** Resolves the path (a throw there propagates), then reads and parses the file. */
+  read(): JsonRead
+  /**
+   * Writes `JSON.stringify(value, null, 2)` by the rules above. Returns the failure when the file
+   * did not reach the disk (nothing was replaced then); otherwise undefined. The path is resolved
+   * outside that guard, so a path that cannot be resolved throws.
+   */
+  write(value: unknown): JsonWriteError | undefined
+  /**
+   * The file and its `.bak` as they are now, byte for byte. Throws when either exists but cannot
+   * be read (nothing could be put back exactly then).
+   */
+  snapshot(): JsonSnapshot
+  /**
+   * Put the file and its `.bak` back exactly as `snapshot` took them: rewritten byte for byte, or
+   * removed where they were missing. Returns the failure when that did not reach the disk.
+   */
+  restore(snapshot: JsonSnapshot): JsonWriteError | undefined
+}
+
+/** A file and its `.bak` as they were: their bytes, or null where there was none. Opaque. */
+export interface JsonSnapshot {
+  readonly file: Buffer | null
+  readonly bak: Buffer | null
+}
+
+/** The file-system calls the store makes: node:fs, or a fake in a test. */
+export type JsonFs = Pick<
+  typeof nodeFs,
+  | 'existsSync'
+  | 'readFileSync'
+  | 'writeFileSync'
+  | 'openSync'
+  | 'fsyncSync'
+  | 'closeSync'
+  | 'renameSync'
+  | 'rmSync'
+>
+
+export interface JsonFileOptions {
+  fs?: JsonFs
+  /** Where the folder fsync is skipped: `win32`. */
+  platform?: NodeJS.Platform
+}
+
+/** A folder fsync the platform or file system does not support: the rename stands. */
+const DIR_SYNC_UNSUPPORTED = new Set(['EPERM', 'EISDIR', 'EINVAL', 'ENOTSUP', 'EBADF'])
+
 /** One file under the store's mechanics. `path` is resolved at each use. */
-export function jsonFile<P extends JsonPolicy>(path: () => string, policy: P): JsonFile<P> {
+export function jsonFile(path: () => string, opts: JsonFileOptions = {}): JsonFile {
+  const io = new Mechanics(opts.fs ?? nodeFs, opts.platform ?? process.platform)
   return {
-    read: () => readJson(path(), policy) as JsonRead<P['moveAsideDamaged']>,
+    read: () => io.read(path()),
     write: (value) => {
-      if (policy.reportWriteErrors) {
-        const p = path()
-        try {
-          writeJson(p, value, policy.atomic)
-        } catch (error) {
-          return { error }
-        }
-        return undefined
-      }
+      const p = path()
       try {
-        writeJson(path(), value, policy.atomic)
-      } catch {
-        // best effort, by policy
+        io.write(p, JSON.stringify(value, null, 2))
+      } catch (error) {
+        return { error, note: `${basename(p)} could not be saved (${fileErrorText(error)})` }
+      }
+      return undefined
+    },
+    snapshot: () => {
+      const p = path()
+      return { file: io.bytes(p), bak: io.bytes(`${p}.bak`) }
+    },
+    restore: (snapshot) => {
+      const p = path()
+      try {
+        io.put(`${p}.bak`, snapshot.bak)
+        io.put(p, snapshot.file)
+      } catch (error) {
+        return { error, note: `${basename(p)} could not be put back (${fileErrorText(error)})` }
       }
       return undefined
     }
   }
 }
 
-function readJson(p: string, policy: JsonPolicy): JsonRead {
-  let text: string
-  try {
-    if (!existsSync(p)) return { kind: 'missing' }
-    text = readFileSync(p, 'utf8')
-  } catch (error) {
-    return { kind: 'unreadable', error }
+type Text = { kind: 'text'; text: string } | { kind: 'missing' } | JsonDamage
+
+class Mechanics {
+  constructor(
+    private readonly fs: JsonFs,
+    private readonly platform: NodeJS.Platform
+  ) {}
+
+  read(p: string): JsonRead {
+    const main = this.parse(this.text(p))
+    if (main.kind === 'missing') return main
+    if (main.kind === 'read') return { kind: 'read', data: main.data }
+    const damage = main
+    const name = basename(p)
+    const bak = this.parse(this.text(`${p}.bak`))
+    if (bak.kind === 'read') {
+      const aside = this.moveAside(p)
+      // Put the good copy back where it belongs, so the next read finds it (the calibration cache
+      // is read on every use). Best effort: `.bak` itself is untouched either way.
+      if (aside.kind === 'moved') {
+        try {
+          this.replace(p, bak.text)
+        } catch {
+          // the backup is loaded now; until the next save, a later read finds the file missing
+        }
+      }
+      return {
+        kind: 'fallback',
+        data: bak.data,
+        damage,
+        aside,
+        note: `${what(name, damage)}. Loaded the backup, ${name}.bak.${asideText(aside)}`
+      }
+    }
+    // Nothing to load. A file that does not parse is moved aside so the next save cannot destroy
+    // what it still holds; one that could not be read is left for the next read to try again.
+    const aside: JsonAside = damage.kind === 'damaged' ? this.moveAside(p) : { kind: 'left' }
+    const backup = bak.kind === 'missing' ? bak.kind : bak
+    return {
+      kind: 'failed',
+      damage,
+      backup,
+      aside,
+      note: `${what(name, damage)}, and ${backupText(backup)}.${asideText(aside)}`
+    }
   }
-  try {
-    return { kind: 'read', data: JSON.parse(text) }
-  } catch {
-    if (!policy.moveAsideDamaged) return { kind: 'damaged' }
+
+  write(p: string, text: string): void {
+    // Keep the file this write replaces, if it is a good one: `.bak` is always the last version
+    // that parsed. A failure here fails the write, so the file is never replaced without it.
+    const prev = this.parse(this.text(p))
+    if (prev.kind === 'read') this.replace(`${p}.bak`, prev.text)
+    this.replace(p, text)
+  }
+
+  /** A file's bytes, or null when there is none. Throws when it exists but cannot be read. */
+  bytes(p: string): Buffer | null {
+    return this.fs.existsSync(p) ? this.fs.readFileSync(p) : null
+  }
+
+  /** Put these exact bytes at `p` (durably, as a write does), or remove it for null. */
+  put(p: string, bytes: Buffer | null): void {
+    if (bytes === null) {
+      this.fs.rmSync(p, { force: true })
+      this.syncDir(dirname(p))
+    } else this.replace(p, bytes)
+  }
+
+  /** Write `<p>.tmp`, fsync it, rename it over `p`, then fsync the folder. */
+  private replace(p: string, text: string | Buffer): void {
+    const tmp = `${p}.tmp`
+    try {
+      const fd = this.fs.openSync(tmp, 'w')
+      try {
+        this.fs.writeFileSync(fd, text)
+        this.fs.fsyncSync(fd)
+      } finally {
+        this.fs.closeSync(fd)
+      }
+      this.fs.renameSync(tmp, p)
+    } catch (err) {
+      try {
+        this.fs.rmSync(tmp, { force: true })
+      } catch {
+        // the write already failed; a stray .tmp is harmless and overwritten next time
+      }
+      throw err
+    }
+    this.syncDir(dirname(p))
+  }
+
+  /** Make the rename itself durable. Windows cannot open a folder to fsync it. */
+  private syncDir(dir: string): void {
+    if (this.platform === 'win32') return
+    let fd: number
+    try {
+      fd = this.fs.openSync(dir, 'r')
+    } catch (err) {
+      if (unsupported(err)) return
+      throw err
+    }
+    try {
+      this.fs.fsyncSync(fd)
+    } catch (err) {
+      if (!unsupported(err)) throw err
+    } finally {
+      this.fs.closeSync(fd)
+    }
+  }
+
+  private moveAside(p: string): JsonAside {
     const to = `${p}.bad-${stamp(new Date())}`
     try {
-      renameSync(p, to)
-      return { kind: 'movedAside', to }
+      this.fs.renameSync(p, to)
+      return { kind: 'moved', to }
     } catch (error) {
       return { kind: 'stuck', error }
     }
   }
+
+  private text(p: string): Text {
+    try {
+      if (!this.fs.existsSync(p)) return { kind: 'missing' }
+      return { kind: 'text', text: this.fs.readFileSync(p, 'utf8') }
+    } catch (error) {
+      return { kind: 'unreadable', error }
+    }
+  }
+
+  private parse(
+    t: Text
+  ): { kind: 'read'; data: unknown; text: string } | Exclude<Text, { kind: 'text' }> {
+    if (t.kind !== 'text') return t
+    try {
+      return { kind: 'read', data: JSON.parse(t.text), text: t.text }
+    } catch {
+      return { kind: 'damaged' }
+    }
+  }
 }
 
-function writeJson(p: string, value: unknown, atomic: boolean): void {
-  if (!atomic) {
-    writeFileSync(p, JSON.stringify(value, null, 2))
-    return
-  }
-  const tmp = `${p}.tmp`
-  try {
-    writeFileSync(tmp, JSON.stringify(value, null, 2))
-    renameSync(tmp, p)
-  } catch (err) {
-    try {
-      rmSync(tmp, { force: true })
-    } catch {
-      // the write already failed; a stray .tmp is harmless and overwritten next time
-    }
-    throw err
-  }
-}
+const unsupported = (err: unknown): boolean =>
+  DIR_SYNC_UNSUPPORTED.has((err as NodeJS.ErrnoException | null)?.code ?? '')
+
+const what = (name: string, d: JsonDamage): string =>
+  d.kind === 'damaged' ? `${name} is damaged` : `${name} could not be read (${errorText(d.error)})`
+
+const backupText = (b: 'missing' | JsonDamage): string =>
+  b === 'missing'
+    ? 'there is no backup'
+    : b.kind === 'damaged'
+      ? 'its backup is damaged too'
+      : `its backup could not be read either (${errorText(b.error)})`
+
+const asideText = (a: JsonAside): string =>
+  a.kind === 'moved'
+    ? ` The bad copy was kept as ${basename(a.to)}.`
+    : a.kind === 'stuck'
+      ? ` The bad copy could not be moved aside (${errorText(a.error)}).`
+      : ''

@@ -51,7 +51,8 @@ describe('parseConfigFile', () => {
         exportedAt: '2026-10-12T21:02:00Z',
         client: '0.2.0',
         sections: current,
-        skipped: []
+        skipped: [],
+        rejected: []
       }
     })
   })
@@ -83,7 +84,7 @@ describe('parseConfigFile', () => {
         format: CONFIG_FORMAT,
         version: 3,
         sections: {
-          powerSupply: { mode: 'custom', custom: { a12: 40 } },
+          powerSupply: { mode: 'custom', preset: 'nx650', custom: { a12: 40 } },
           macros: { x: 1 },
           app: 'bad'
         }
@@ -94,30 +95,169 @@ describe('parseConfigFile', () => {
       config: {
         version: 3,
         sections: { powerSupply: { mode: 'custom', preset: 'nx650', custom: { a12: 40 } } },
-        skipped: ['macros', 'app']
+        skipped: ['macros'],
+        rejected: [{ id: 'app', reason: 'it is not a settings section' }] // C1: known, but broken
       }
     })
   })
+})
 
-  it('every section goes through its store’s own sanitizer', () => {
-    const r = parseConfigFile(
-      JSON.stringify({
-        format: CONFIG_FORMAT,
-        version: 1,
-        sections: {
-          app: { host: '', commandPort: 'x', psu: { mode: 'custom' }, debugMode: true },
-          nodeMapping: { nodes: { 99: { name: 'out of range' } }, ignored: [3, 'x'] },
-          calibration: {
-            version: 1,
-            boards: { A7: { confirmedAt: 'x', axes: { 1: axis(5, 4, 3) } } }
-          }
-        }
-      })
+describe('an automatic backup’s record of what it was saved before (#136)', () => {
+  const at = '2026-10-12T21:02:00Z'
+  const before = { kind: 'import', fileName: 'cockpit.json' } as const
+
+  it('is written inside the file, beside the sections, with the format version unchanged', () => {
+    const file = buildConfigFile(current, at, '0.2.0', before)
+    expect(file).toMatchObject({ format: CONFIG_FORMAT, version: 1, backup: { before } })
+    expect(buildConfigFile(current, at, '0.2.0')).not.toHaveProperty('backup') // an export
+  })
+
+  it('is read back, an import’s or a restore’s', () => {
+    const restore = { kind: 'restore', savedAt: '2026-10-10T08:40:00.000Z' } as const
+    for (const b of [before, restore]) {
+      const r = parseConfigFile(JSON.stringify(buildConfigFile(current, at, '0.2.0', b)))
+      expect(r.ok && r.config.backupBefore).toEqual(b)
+      expect(r.ok && r.config.sections).toEqual(current) // the sections it holds, as any file's
+    }
+  })
+
+  it('is optional and additive: without it, or with one not understood, the file reads the same', () => {
+    const plain = roundTrip(current)
+    expect(plain.ok && plain.config.backupBefore).toBeUndefined()
+    for (const backup of [
+      'yes',
+      { before: 'an import' },
+      { before: { kind: 'import' } },
+      { before: { kind: 'import', fileName: '' } },
+      { before: { kind: 'restore', savedAt: 'yesterday' } },
+      { before: { kind: 'export', fileName: 'a.json' } }
+    ]) {
+      expect(roundTrip(current, { backup })).toEqual(plain)
+    }
+  })
+})
+
+describe('parseConfigFile: strict import validation (C1)', () => {
+  /** Parse a file with `sections`; what each known section came to: its value or its reason. */
+  const read = (sections: Record<string, unknown>) => {
+    const r = parseConfigFile(JSON.stringify({ format: CONFIG_FORMAT, version: 1, sections }))
+    return r.ok ? { ...r.config.sections, rejected: r.config.rejected } : r
+  }
+  /** One section's verdict next to a readable powerSupply section (so the file is not refused). */
+  const verdict = (id: SectionId, value: unknown) => {
+    const r = read({
+      [id]: value,
+      ...(id === 'powerSupply' ? { app: DEFAULT_APP_SETTINGS } : { powerSupply: DEFAULT_PSU })
+    })
+    if ('ok' in r) throw new Error(r.error)
+    const rej = r.rejected.find((x) => x.id === id)
+    return rej ? rej.reason : r[id]
+  }
+
+  it('a known section that is not an object is rejected, never read as defaults', () => {
+    for (const id of ['app', 'nodeMapping', 'powerSupply', 'calibration'] as SectionId[]) {
+      for (const v of ['bad', null, [1, 2], 3]) {
+        expect(verdict(id, v)).toBe('it is not a settings section')
+      }
+    }
+  })
+
+  it('app: every setting must be present and valid; `{}` is not "reset to defaults"', () => {
+    expect(verdict('app', {})).toBe('it has no “Source mode” setting')
+    const { debugMode: _d, ...noDebug } = DEFAULT_APP_SETTINGS
+    expect(verdict('app', noDebug)).toBe('it has no “Debug logging” setting')
+    expect(verdict('app', { ...DEFAULT_APP_SETTINGS, sourceMode: 'nonsense' })).toBe(
+      'its “Source mode” setting is not valid'
     )
-    expect(r.ok && r.config.sections).toEqual({
-      app: { ...DEFAULT_APP_SETTINGS, debugMode: true }, // no psu inside the app section
-      nodeMapping: { version: 3, nodes: {} }, // a v1 ignore list is dropped (#93)
-      calibration: cal({}) // min < centre < max or nothing
+    expect(verdict('app', { ...DEFAULT_APP_SETTINGS, host: '' })).toBe(
+      'its “DCS host” setting is not valid'
+    )
+    expect(verdict('app', { ...DEFAULT_APP_SETTINGS, commandPort: 'x' })).toBe(
+      'its “Command port” setting is not valid'
+    )
+    // Complete: read as written. A key a newer client added, and a stray psu, are ignored.
+    const app = { ...DEFAULT_APP_SETTINGS, host: '10.0.0.2', debugMode: true }
+    expect(verdict('app', { ...app, futureSetting: 1, psu: { mode: 'custom' } })).toEqual(app)
+  })
+
+  it('nodeMapping: its markers are `version` and `nodes`; `{}` is not an empty cockpit', () => {
+    expect(verdict('nodeMapping', {})).toBe('it has no version')
+    expect(verdict('nodeMapping', { nodes: {} })).toBe('it has no version')
+    expect(verdict('nodeMapping', { version: 'x', nodes: {} })).toBe('it has no version')
+    expect(verdict('nodeMapping', { version: 3 })).toBe('it has no list of boards')
+    expect(verdict('nodeMapping', { version: 3, nodes: [] })).toBe('it has no list of boards')
+    expect(verdict('nodeMapping', { version: 4, nodes: {} })).toBe(
+      'it was written by a newer client'
+    )
+    // With both, an empty list is a real empty cockpit, and entries are read tolerantly.
+    expect(verdict('nodeMapping', { version: 3, nodes: {} })).toEqual({ version: 3, nodes: {} })
+    expect(
+      verdict('nodeMapping', {
+        version: 3,
+        nodes: { 99: { name: 'out of range' }, 2: { name: 'Nav', pduId: 'x' } }
+      })
+    ).toEqual({ version: 3, nodes: { 2: { name: 'Nav' } } })
+    // An older client's file (v1, with its ignore list) is upgraded as a local one is.
+    expect(
+      verdict('nodeMapping', { version: 1, nodes: { 2: { name: 'Nav' } }, ignored: [3] })
+    ).toEqual({ version: 3, nodes: { 2: { name: 'Nav', added: true } } })
+  })
+
+  it('powerSupply: `mode`, `preset` and `custom` must be there, and every limit valid', () => {
+    expect(verdict('powerSupply', {})).toBe(
+      'it does not say whether the supply is a preset or custom'
+    )
+    expect(verdict('powerSupply', { mode: 'custom', custom: {} })).toBe(
+      'its preset is not one this client knows'
+    )
+    expect(verdict('powerSupply', { mode: 'preset', preset: 'nx750', custom: {} })).toBe(
+      'its preset is not one this client knows'
+    )
+    expect(verdict('powerSupply', { mode: 'custom', preset: 'nx650' })).toBe(
+      'it has no custom limits'
+    )
+    expect(verdict('powerSupply', { mode: 'custom', preset: 'nx650', custom: { a5: 'x' } })).toBe(
+      'its custom 5 V rail limit is not valid'
+    )
+    expect(verdict('powerSupply', { mode: 'custom', preset: 'nx650', custom: { w: -1 } })).toBe(
+      'its custom total power is not valid'
+    )
+    expect(
+      verdict('powerSupply', { mode: 'custom', preset: 'nx650', custom: { a12: 40 } })
+    ).toEqual({ mode: 'custom', preset: 'nx650', custom: { a12: 40 } })
+  })
+
+  it('calibration: `version` and `boards`, and per board `confirmedAt` and `axes`', () => {
+    expect(verdict('calibration', {})).toBe('it has no version')
+    expect(verdict('calibration', { version: 2, boards: {} })).toBe(
+      'it was written by a newer client'
+    )
+    expect(verdict('calibration', { version: 1 })).toBe('it has no list of boards')
+    expect(verdict('calibration', { version: 1, boards: { A7: { confirmedAt: 'x' } } })).toBe(
+      'its entry for board A7 is incomplete'
+    )
+    expect(verdict('calibration', { version: 1, boards: { A7: { axes: {} } } })).toBe(
+      'its entry for board A7 is incomplete'
+    )
+    expect(verdict('calibration', { version: 1, boards: { A7: 3 } })).toBe(
+      'its entry for board A7 is incomplete'
+    )
+    // Complete: an axis the device would refuse is dropped, never imported, as from a local file.
+    expect(
+      verdict('calibration', {
+        version: 1,
+        boards: { A7: { confirmedAt: 'x', axes: { 0: axis(1, 2, 3), 1: axis(5, 4, 3) } } }
+      })
+    ).toEqual(cal({ A7: { confirmedAt: 'x', axes: { 0: axis(1, 2, 3) } } }))
+    expect(verdict('calibration', { version: 1, boards: {} })).toEqual(cal({}))
+  })
+
+  it('a file whose only known sections are rejected is refused, and says why', () => {
+    expect(read({ nodeMapping: {}, app: {} })).toEqual({
+      ok: false,
+      error:
+        'This file has no settings this client can read. Node mapping: it has no version. ' +
+        'App settings: it has no “Source mode” setting.'
     })
   })
 })
@@ -128,35 +268,72 @@ describe('diffImport', () => {
       ...current,
       nodeMapping: { version: 3, nodes: { 2: { added: true } } }
     }
-    const next = { nodeMapping: { version: 3 as const, nodes: { 2: { hidden: true } } } }
+    const next = {
+      nodeMapping: { version: 3 as const, nodes: { 2: { added: true, hidden: true } } }
+    }
     expect(diffImport(defaults, cur, next, [2])[0]!.rows).toEqual([])
     expect(diffImport(defaults, cur, next, [])[0]!.rows).toEqual([
       { k: 'Right_Navigation · hidden', from: 'no', to: 'yes' }
     ])
   })
 
-  it('an import keeps each board’s observed state: nothing to review for it (#93)', () => {
+  it('membership as written: the boards that join and leave your cockpit are listed (D3, S4)', () => {
     const seen = '2026-10-14T21:14:00.000Z'
     const cur: ConfigSnapshot = {
       ...current,
-      nodeMapping: { version: 3, nodes: { 2: { added: true, lastSeen: seen } } }
-    }
-    // An older export without the marker or last-seen: applying it keeps 2 in your cockpit.
-    const diff = diffImport(defaults, cur, { nodeMapping: { version: 3, nodes: {} } })
-    expect(diff).toEqual([
-      { id: 'nodeMapping', title: 'Node mapping', summary: '0 nodes', rows: [] }
-    ])
-    // An adopted board leaving your cockpit is listed.
-    const withTrim: ConfigSnapshot = {
-      ...cur,
       nodeMapping: {
         version: 3,
-        nodes: { 41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen } }
+        nodes: {
+          1: { added: true, lastSeen: seen },
+          2: { added: true, lastSeen: seen },
+          41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen }
+        }
       }
     }
-    expect(
-      diffImport(defaults, withTrim, { nodeMapping: { version: 3, nodes: {} } })[0]!.rows
-    ).toEqual([{ k: '#41', from: 'Trim · Left · —', to: 'not in your cockpit' }])
+    // The file has 2 (with another computer's last seen) and 4, not 1 or 41.
+    const file: NodeMappingFile = {
+      version: 3,
+      nodes: { 2: { added: true, lastSeen: '2020-01-01T00:00:00.000Z' }, 4: { added: true } }
+    }
+    expect(diffImport(defaults, cur, { nodeMapping: file })).toEqual([
+      {
+        id: 'nodeMapping',
+        title: 'Node mapping',
+        summary: '3 nodes · 1 joins · 2 leave',
+        rows: [
+          {
+            k: 'Center_Armament',
+            from: 'Center_Armament · Center · PDU_Center',
+            to: 'not in your cockpit'
+          },
+          { k: 'PDU_Right', from: 'not in your cockpit', to: 'PDU_Right · Right · —' },
+          { k: '#41', from: 'Trim · Left · —', to: 'not in your cockpit' }
+        ]
+      }
+    ])
+    // Last seen is this computer's, never a row; the same membership reviews as no change.
+    const same: NodeMappingFile = {
+      version: 3,
+      nodes: {
+        1: { added: true },
+        2: { added: true, lastSeen: '2020-01-01T00:00:00.000Z' },
+        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+      }
+    }
+    expect(diffImport(defaults, cur, { nodeMapping: same })[0]).toEqual({
+      id: 'nodeMapping',
+      title: 'Node mapping',
+      summary: '0 nodes',
+      rows: []
+    })
+  })
+
+  it('a hidden flag on a board outside your cockpit is not imported, so not reviewed (S4)', () => {
+    const file: NodeMappingFile = {
+      version: 3,
+      nodes: { 2: { hidden: true }, 52: { hidden: true } }
+    }
+    expect(diffImport(defaults, current, { nodeMapping: file })[0]!.rows).toEqual([])
   })
 
   it('lists each change as key  from → to, per section', () => {
@@ -198,7 +375,7 @@ describe('diffImport', () => {
       {
         id: 'nodeMapping',
         title: 'Node mapping',
-        summary: '3 nodes',
+        summary: '3 nodes · 1 joins', // S4: #41 joins your cockpit
         rows: [
           { k: 'Center_Armament · power zone', from: 'PDU_Center', to: 'PDU_Left' },
           { k: 'Right_Navigation · name', from: 'Right_Navigation', to: 'Right_TACAN' },

@@ -1,5 +1,6 @@
-// config's intents: the settings (config:get / config:set) and the configuration file's export and
-// import. app/ipc.ts registers them, in its order.
+// config's intents: the settings (config:get / config:set), the configuration file's export and
+// import, and the automatic backups (list, restore, Show in Finder). app/ipc.ts registers them, in
+// its order.
 import { readFileSync, statSync } from 'node:fs'
 import type { IpcRegistrar } from '@shared/app'
 import {
@@ -18,6 +19,8 @@ export interface ConfigDialogs {
   openConfig(): Promise<string | undefined>
   /** The largest file an import reads. */
   readonly configMaxBytes: number
+  /** Open a folder in the file manager (Finder, Explorer, …): Show in Finder. */
+  showFolder(path: string): Promise<void>
 }
 
 export interface ConfigIpcDeps {
@@ -56,4 +59,7 @@ export function registerConfigIpc(ipc: IpcRegistrar, deps: ConfigIpcDeps): void 
     (_e, token: string, sections: unknown, backup: unknown) =>
       transfer.apply(token, sections, backup)
   )
+  ipc.handle(CONFIG_CTRL.configBackupsGet, () => transfer.backupList())
+  ipc.handle(CONFIG_CTRL.configBackupRestore, (_e, file: unknown) => transfer.previewBackup(file))
+  ipc.handle(CONFIG_CTRL.configBackupsReveal, () => dialogs.showFolder(transfer.backupFolder()))
 }
