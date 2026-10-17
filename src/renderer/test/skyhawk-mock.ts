@@ -8,8 +8,9 @@
 //   - it keeps the scenario as main's current state, so the pulls a (re)loaded renderer makes
 //     (`getStatus`, `getNodes`, `getConfig`, `getEvents`, `getNodeRegistry`) answer from it, and
 //   - it pushes each part on today's channel: `device:status`, `relay:state`, `nodes:model`,
-//     `nodes:telemetry`, `events:batch`, `cal:data`, `hid:report`, `aircraft:changed`, and the
-//     stream batches `log:batch`, `serial:traffic` and `cal:raw`.
+//     `nodes:telemetry`, `events:batch`, `cal:data`, `hid:report`, `aircraft:changed`, the relay's
+//     ticks `telemetry:tick` and `stats:tick`, and the stream batches `log:batch`,
+//     `serial:traffic` and `cal:raw`.
 // Tests never set renderer store fields and never push channels by hand, so they assert what the
 // user sees for a given main-side situation — not how the renderer stores it.
 //
@@ -34,7 +35,13 @@
 import { act } from '@testing-library/react'
 import { vi, type Mock } from 'vitest'
 import { DEFAULT_CONFIG, type AppConfig } from '@shared/config'
-import type { AircraftStatus, LogRow, RelayState } from '@shared/dcs'
+import type {
+  AircraftStatus,
+  LogRow,
+  RelayState,
+  StatsSnapshot,
+  TelemetryReadout
+} from '@shared/dcs'
 import type {
   CalCache,
   CalFailure,
@@ -76,6 +83,10 @@ export interface Scenario {
   hid?: HidSnapshot
   /** The aircraft DCS reports (`aircraft:changed`). */
   aircraft?: AircraftStatus
+  /** The five sim-telemetry readouts of the last telemetry tick (`telemetry:tick`). */
+  gauges?: TelemetryReadout[]
+  /** The relay's last stats tick (`stats:tick`). */
+  stats?: StatsSnapshot
   /** The bundled NODE_IDS.md (`getNodeRegistry`; never pushed). */
   registry?: NodeRegistryInfo
   /** What HIDControls.h catalogues (`getHidAvailability`; never pushed). */
@@ -139,6 +150,8 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel } = {
   device: 'device:status',
   relay: 'relay:state',
   aircraft: 'aircraft:changed',
+  gauges: 'telemetry:tick',
+  stats: 'stats:tick',
   model: 'nodes:model',
   telemetry: 'nodes:telemetry',
   events: 'events:batch',

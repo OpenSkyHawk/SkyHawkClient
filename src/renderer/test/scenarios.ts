@@ -13,22 +13,26 @@ import { gatewayStatus } from '../../main/gateway/gateway-health'
 import type { DeviceState, DeviceStatus, GatewayStatus } from '@shared/gateway'
 import type {
   NodeDefaults,
+  NodeMappingFile,
   NodeModel,
   NodeModelEntry,
   NodeStatus,
   NodeTelemSnapshot,
   PduOutage,
   PduRailPage,
-  PduStatusPage
+  PduStatusPage,
+  NodeRegistryInfo,
+  ResetPreview
 } from '@shared/nodes'
 import type { LogEvent } from '@shared/events'
-import type { LogRow } from '@shared/dcs'
+import type { LogRow, StatsSnapshot, TelemetryReadout } from '@shared/dcs'
 import type { SerialFrame } from '@shared/gateway'
 import type { CalCache, CalHello, CalRawSample, CalSnapshot } from '@shared/hid/calibration'
-import { CAL_PROTO, TELEM_PAGES } from '@shared/firmware'
-import { NODE_KIND } from '../../main/nodes/node-status-wire'
+import { A4EC_OUTPUTS, CAL_PROTO, TELEM_PAGES } from '@shared/firmware'
+import { Decoder } from '../../main/dcs/sim-telemetry-decoder'
+import { NODE_KIND, NodeRoster } from '../../main/nodes/node-status-wire'
 import { NodeTelemStore } from '../../main/nodes/node-telem'
-import { withFaultInfo } from '../../main/nodes/node-hub'
+import { NodeHub, withFaultInfo } from '../../main/nodes/node-hub'
 import { modelNode, nodeModel, nodeStatus } from '../../test-fixtures/nodes'
 import type { CalDevice } from './skyhawk-mock'
 
@@ -139,6 +143,26 @@ export const model = (
   over: Partial<NodeModel> = {}
 ): NodeModel => ({ ...nodeModel(nodes, outages), ...over })
 
+// ── main's node hub over a mapping file: the bundled registry and the reset review ─────────
+
+/** Main's NodeHub over node-mapping.json holding `file`, with no device link. */
+const hubOver = (file: NodeMappingFile = { version: 3, nodes: {} }) =>
+  new NodeHub(
+    () => {},
+    new NodeRoster(),
+    () => {},
+    { mappingFile: { read: () => ({ kind: 'read', data: file }), write: () => undefined } }
+  )
+
+/** The bundled NODE_IDS.md as main answers `getNodeRegistry` (NodeHub.registry). */
+export const bundledRegistry = (): NodeRegistryInfo => hubOver().registry()
+
+/**
+ * The review main answers `previewNodeReset` with while node-mapping.json holds `file`
+ * (NodeHub.previewReset over the bundled registry).
+ */
+export const resetPreview = (file: NodeMappingFile): ResetPreview => hubOver(file).previewReset()
+
 // ── config import (`openConfigImport`'s answer) ─────────────────────────────
 
 /** This computer's setup as main snapshots it: the default config, no mapping, no calibration. */
@@ -229,6 +253,36 @@ export function pduTelemetry(nodeId: number, pages: PduPages, ageMs = 0): NodeTe
   }
   return store.snapshot(ageMs)[0]!
 }
+
+// ── the relay's ticks: sim telemetry (`telemetry:tick`) and stream stats (`stats:tick`) ─────
+
+/**
+ * What main's telemetry tick pushes once DCS has exported `fill` (0 … 1 of each output's range)
+ * for the given A-4E-C output ids: the five readouts, from main's own decoder. An output DCS
+ * hasn't exported reads NaN ("—").
+ */
+export function simTelemetry(fill: Record<string, number> = {}): TelemetryReadout[] {
+  const decoder = new Decoder()
+  for (const [id, f] of Object.entries(fill)) {
+    const o = A4EC_OUTPUTS.find((x) => x.id === id)
+    if (!o) throw new Error(`simTelemetry: no A-4E-C output ${id}`)
+    decoder.handle(o.address, (Math.round(f * o.max) << o.shift) & o.mask, 0)
+  }
+  return decoder.telemetrySnapshot()
+}
+
+/** One stats tick: an idle stream (all zero, no command yet) plus `over`. */
+export const streamStats = (over: Partial<StatsSnapshot> = {}): StatsSnapshot => ({
+  bytesInPerSec: 0,
+  bytesOutPerSec: 0,
+  framesPerSec: 0,
+  commandsPerSec: 0,
+  commandsTotal: 0,
+  errors: 0,
+  uptimeSec: 0,
+  reconnects: 0,
+  ...over
+})
 
 // ── the session's event log (`events:batch`) ────────────────────────────────
 
