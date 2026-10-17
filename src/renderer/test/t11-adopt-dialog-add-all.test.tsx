@@ -65,7 +65,32 @@ describe('T11 Adopt dialog: Add all, PDU choices, power-cycle (B74, F15, F24, X3
     await addAll(2)
     expect(sky.adoptNode).toHaveBeenCalledTimes(2)
     expect(sky.adoptNode.mock.calls.map(([id]) => id)).toEqual([2, 7])
-    expect(options().map((o) => o.textContent)).toEqual(['NODE_ID 6PDUPDU_Center · in NODE_IDS.md'])
+    expect(options().map((o) => o.textContent)).toEqual([
+      'NODE_ID 6PDUPDU_Center · from NODE_IDS.md'
+    ])
+  })
+
+  it('a double click on Add all runs it once; the dialog is busy until it lands (R6)', async () => {
+    const { dlg, sky, user } = await openAdopt(model([PDU_LEFT, PDU_RIGHT, NAV, TACAN, PDU_CENTER]))
+    // Main answers each board a turn later, so the first run is still going on the second click.
+    const answers: (() => void)[] = []
+    sky.adoptNode.mockImplementation(
+      () => new Promise((r) => answers.push(() => r({ ok: true, model: sky.scenario.model! })))
+    )
+    const addAll = within(dlg).getByRole('button', {
+      name: 'Add all 2 panel groups from NODE_IDS.md'
+    })
+    await user.dblClick(addAll)
+    // One run in flight: the whole dialog is busy.
+    expect(addAll).toBeDisabled()
+    expect(within(dlg).getByRole('button', { name: 'Later' })).toBeDisabled()
+    expect(within(dlg).getByRole('button', { name: 'Add to cockpit' })).toBeDisabled()
+    while (answers.length) {
+      answers.shift()!()
+      await settle()
+    }
+    expect(sky.addAllNodes).toHaveBeenCalledTimes(1)
+    expect(sky.adoptNode.mock.calls.map(([id]) => id)).toEqual([2, 7])
   })
 
   it('an untouched form keeps its default PDU only when that PDU is in your cockpit, else None', async () => {

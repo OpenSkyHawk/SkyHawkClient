@@ -88,27 +88,32 @@ describe('T1 Cockpit › Attention: strays (B66, B65, X1, F26)', () => {
     ).toHaveTextContent('NODE_ID 8')
   })
 
-  it('the 5 s grace counts from firstSeenAt, not from when it came online (F26 today)', async () => {
-    // contract F26 says the grace should count from `onlineSince` (reset on each offline → online);
-    // today the UI counts from `firstSeenAt`, which an absent roster row also sets — so a board
-    // first listed absent a minute ago that has just come online is a stray at once.
+  it('the 5 s grace counts from when it came online, not from first sighting (F26 / S6, #133)', async () => {
+    // First listed (absent) a minute ago, online only now: still identifying, a stray 5 s later.
     vi.useFakeTimers({ now: T0 })
     await renderScenario(<Cockpit />, {
       device: connected(),
-      model: model([newBoard(9, T0 - 60_000, { reportedAt: T0 })])
+      model: model([newBoard(9, T0 - 60_000, { onlineSince: T0, reportedAt: T0 })])
+    })
+    expect(attentionRows()).toEqual([])
+    expect(screen.getByText('Nothing needs attention.')).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(5100)
     })
     expect(attentionRows()).toEqual(['!NODE_ID 9UNIDENTIFIED · can’t be adopted · #9'])
   })
 
-  it('the Overview does not count the same stray (X1 today)', async () => {
-    // contract D1 says strays show on every tab; today only the Cockpit shows them.
+  it('the Overview counts the same stray (D1 / X3, #133)', async () => {
+    // One rule for every tab: the stray is one board up and a warning, as on the Cockpit.
     vi.useFakeTimers({ now: T0 })
     await renderScenario(<Overview />, {
       device: connected(),
       model: model([newBoard(9, T0 - 60_000, { identified: 'bridge' })])
     })
-    expect(screen.getByText('no nodes known')).toBeInTheDocument()
-    expect(screen.queryByText(/need.? attention/)).toBeNull()
+    expect(screen.queryByText('no nodes known')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 node needs attention — 1 warning (NODE_ID 9)'
+    )
   })
 
   it('a healthy board in your cockpit is not a stray', async () => {

@@ -3,9 +3,8 @@
 // Attention banner and new-devices notice, and Connection › Connected nodes. The client adds no
 // thresholds of its own.
 //
-// Each keeps its own answer where it differs from the Cockpit's (co-located, not unified):
-//   X3 strays   neither counts a new board that can't be adopted: the band is healthBand(views)
-//               with no strays, the items attentionItems(views, outages) with none
+// Both count what the Cockpit counts (X3): its views and its strays — the new boards that can't be
+// adopted (node-model.ts newState), each one a board up and a warning, and an Attention item.
 // What is on the bus is one rule (node-model.ts onBusNow, X2): while the link is down the tile says
 // "no live node status", and the banner, the notice and Connected nodes say nothing.
 // A Connected nodes row names its board's resolved power zone (D7, the same one the Cockpit reads):
@@ -24,6 +23,7 @@ import {
   type OverviewSummary,
   type PduOutage,
   type PowerZone,
+  type StrayItem,
   type SummaryRow
 } from '@shared/nodes'
 import { isAdoptableKind } from '../node-kind'
@@ -120,18 +120,19 @@ export function newDevices(views: NodeView[], live: boolean): NewDevices | null 
 }
 
 /**
- * The Overview's tile, banner and notice, as the Overview tab computed them: the band and the items
- * without strays (X3), the banner and the notice only while the link is up.
+ * The Overview's tile, banner and notice: the band and the items with the Cockpit's strays (X3),
+ * the banner and the notice only while the link is up.
  */
 export function overviewSummary(
   views: NodeView[],
   outages: PduOutage[],
+  strays: StrayItem[],
   live: boolean
 ): OverviewSummary {
-  const band = healthBand(views)
+  const band = healthBand(views, strays.length)
   return {
     tile: cockpitTile(band, live),
-    banner: live ? attentionSummary(band, attentionItems(views, outages)) : null,
+    banner: live ? attentionSummary(band, attentionItems(views, outages, strays)) : null,
     newDevices: newDevices(views, live)
   }
 }
@@ -139,27 +140,29 @@ export function overviewSummary(
 // ── Connection › Connected nodes ────────────────────────────────────────────
 
 /**
- * Connected nodes: the counts and the rows that need attention. Quiet while the link is down — it
+ * Connected nodes: the counts and the rows that need attention, the Cockpit's strays included (X3:
+ * each one a board up and a warning, with its Attention row). Quiet while the link is down — it
  * says nothing about the bus then (X2), and its tab shows the link's hint instead.
  */
 export function nodesSummary(
   views: NodeView[],
   outages: PduOutage[],
+  strays: StrayItem[],
   zones: ReadonlyMap<number, PowerZone>,
   live: boolean
 ): NodesSummary {
   if (!live) return COCKPIT_IDLE.nodesCard
-  const band = healthBand(views)
+  const band = healthBand(views, strays.length)
   const known = views.filter((v) => v.entry.source !== 'new')
   const byId = new Map(views.map((v) => [v.entry.nodeId, v.entry]))
-  const items = attentionItems(views, outages)
+  const items = attentionItems(views, outages, strays)
   const healthy = band.online - band.warn
 
   const rows = items.slice(0, ATTENTION_SHOWN).map((i): SummaryRow => {
     const e = byId.get(i.nodeId)!
     const meta = [`#${i.nodeId}`]
     if (i.outage) meta.push(affected(i.outage.nodeIds.length))
-    else if (e.kind !== 'pdu') {
+    else if (e.kind !== 'pdu' && !i.stray) {
       const zone = zones.get(e.nodeId)
       meta.push(zone && zone.status !== 'none' ? zone.label : 'no power zone')
     }
@@ -189,7 +192,8 @@ export function nodesSummary(
     .join(' · ')
 
   return {
-    known: known.length,
+    // The strays are boards on the bus too: counted like the Cockpit's band (its total).
+    known: band.total,
     healthy,
     warn: band.warn,
     off: band.off,

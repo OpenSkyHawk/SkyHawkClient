@@ -30,7 +30,7 @@ const session = () => [
     name: 'Left_Oxygen',
     severity: 'new',
     event: 'new on the bus',
-    detail: 'in NODE_IDS.md'
+    detail: 'from NODE_IDS.md'
   }),
   logEvent(5, {
     source: 'client',
@@ -64,7 +64,7 @@ describe('T22 Log › Events (B78, B55)', () => {
     const { user, button } = await openEvents()
     expect(rows()).toEqual([
       '12:00:05.000✕Client · Relaystart refused · no board',
-      '12:00:04.000+Left_Oxygennew on the bus · in NODE_IDS.md',
+      '12:00:04.000+Left_Oxygennew on the bus · from NODE_IDS.md',
       '12:00:03.000!PDU_Right5V UNDER-V raised · 4.71 V',
       '12:00:02.000●Client · SERIALconnected · /dev/cu.usbmodem1',
       '12:00:01.000✕Center_Armamentoffline · no heartbeat'
@@ -73,7 +73,7 @@ describe('T22 Log › Events (B78, B55)', () => {
 
     await user.click(button('Nodes'))
     expect(rows()).toEqual([
-      '12:00:04.000+Left_Oxygennew on the bus · in NODE_IDS.md',
+      '12:00:04.000+Left_Oxygennew on the bus · from NODE_IDS.md',
       '12:00:03.000!PDU_Right5V UNDER-V raised · 4.71 V',
       '12:00:01.000✕Center_Armamentoffline · no heartbeat'
     ])

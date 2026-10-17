@@ -33,6 +33,11 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
   /** The Adopt dialog opened on this NODE_ID, else on the first in its queue. */
   const [adoptAt, setAdoptAt] = useState<number>()
   /**
+   * Each request to open the Adopt dialog (R10): a new one starts it over on the board asked for, as
+   * the latest push has it, instead of keeping a dialog already open on another board.
+   */
+  const [adoptOpen, setAdoptOpen] = useState(0)
+  /**
    * Every way into a board lands here — the plan, Attention, Powered by, Feeds and other tabs'
    * requests — and goes where main says (D6, `opens`): its panel while it is in your cockpit, else
    * the Adopt dialog on that NODE_ID. Read at the click, so it follows the latest push.
@@ -43,11 +48,13 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
     if (to !== 'adopt') return
     setOpen(null)
     setAdoptAt(nodeId)
+    setAdoptOpen((n) => n + 1)
     setAdopting(true)
   }, [])
   /** The Adopt dialog on the first board in its queue ("New on the bus", the Overview's notice). */
   const adoptFirst = useCallback(() => {
     setAdoptAt(undefined)
+    setAdoptOpen((n) => n + 1)
     setAdopting(true)
   }, [])
   /** A node another tab asked to open here (Connection's "›"). */
@@ -174,8 +181,10 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
 
       {adopting && (
         <AdoptDialog
+          key={adoptOpen}
           rows={snap.adopt}
           zones={snap.zones}
+          count={snap.attention.newCount}
           initial={adoptAt}
           onClose={() => setAdopting(false)}
         />

@@ -178,6 +178,7 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
     if (st) e.status = st
     if (seen?.reportedAt !== undefined) e.reportedAt = seen.reportedAt
     if (source === 'new' && seen) e.firstSeenAt = seen.firstSeenAt
+    if (source === 'new' && seen?.onlineSince !== undefined) e.onlineSince = seen.onlineSince
     if (source === 'new' && mapped) {
       // Its default PDU only while that PDU is in your cockpit (effectiveMapping, D7).
       e.registry = { name: mapped.name, console: mapped.console, pduId: mapped.pduId }
@@ -200,10 +201,65 @@ export function buildNodeModel(i: NodeModelInput): NodeModel {
 }
 
 /**
- * A new device worth telling the user about: not in your cockpit, on the bus now (onBusNow), and
- * identified as something that can be adopted. Until then it is not news — not on the Cockpit
- * count or the Overview notice. One predicate for every tab (node 0 is never in the model).
+ * How long an unidentified new board has to report its kind once it comes online (S6: counted from
+ * `onlineSince`, not from when it was first seen). A normal board reports it ~1 s after it appears,
+ * so until this has passed it is simply still identifying — not an issue, it never flashes a warning.
+ */
+export const IDENTIFY_WAIT_MS = 5000
+
+/**
+ * What a board outside your cockpit is to the user right now (X3 / D1) — the one rule every tab and
+ * the event log read:
+ * - `news`: identified as a PDU or a panel group, so it can be adopted — the Cockpit's "New on the
+ *   bus", the Overview's notice, and the log's one "new on the bus" row;
+ * - `identifying`: not identified yet, inside its IDENTIFY_WAIT_MS since it came online; `strayAt`
+ *   is when it becomes a stray;
+ * - `stray`: can't be adopted — it identified as a kind that can't be (a second Gateway, a type this
+ *   client doesn't know), or is still unidentified IDENTIFY_WAIT_MS after it came online. A board on
+ *   the bus is active, so it is a warning on every tab (Cockpit, Overview, Connection).
+ * undefined: in your cockpit, or not on the bus now (onBusNow).
+ */
+export type NewState =
+  | { state: 'news' }
+  | { state: 'identifying'; strayAt: number }
+  | { state: 'stray' }
+
+export function newState(e: NodeModelEntry, now: number, live: boolean): NewState | undefined {
+  if (e.source !== 'new' || !onBusNow(e, live)) return undefined
+  if (isAdoptableKind(e.identified)) return { state: 'news' }
+  if (e.identified) return { state: 'stray' }
+  const strayAt = (e.onlineSince ?? 0) + IDENTIFY_WAIT_MS
+  return strayAt <= now ? { state: 'stray' } : { state: 'identifying', strayAt }
+}
+
+/**
+ * A new device worth telling the user about: newState's `news` (that answer never reads the time).
+ * One predicate for every tab and the event log (node 0 is never in the model).
  */
 export function isReportableNew(e: NodeModelEntry, live: boolean): boolean {
-  return e.source === 'new' && onBusNow(e, live) && isAdoptableKind(e.identified)
+  return newState(e, 0, live)?.state === 'news'
+}
+
+/** What a stray is, for its Attention line and its log row (X3): never inferred from its NODE_ID. */
+export function strayKind(e: Pick<NodeModelEntry, 'identified'>): string {
+  if (e.identified === 'bridge') return 'second Gateway'
+  return e.identified ? 'unknown board type' : 'unidentified'
+}
+
+/**
+ * Where a board outside your cockpit comes from (X8 / C6), worded once for main's surfaces — the
+ * board's flag and fault box and the log's "new on the bus" row — as the Overview's notice words
+ * it: a registry board waiting to be added is `from NODE_IDS.md`; any other NODE_ID is
+ * `not in NODE_IDS.md`.
+ */
+export function newReason(e: Pick<NodeModelEntry, 'registry'>): string {
+  return e.registry ? 'from NODE_IDS.md' : 'not in NODE_IDS.md'
+}
+
+/**
+ * Online by its PDU pages alone: the one availability rule's `telemetry` evidence (nodeAvailability:
+ * a present roster row is the roster's evidence; anything else online is the pages').
+ */
+export function onlineByPages(e: Pick<NodeModelEntry, 'availability' | 'status'>): boolean {
+  return e.availability === 'online' && !e.status?.present
 }

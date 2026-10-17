@@ -1,7 +1,8 @@
 // T10 — the Adopt dialog: its queue, the badges, and the form for each kind of new board.
 import { describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { act, screen, within } from '@testing-library/react'
 import { Cockpit } from '../src/app/cockpit/Cockpit'
+import { useNav } from '../src/app/kit'
 import { renderScenario, settle } from './render'
 import { connected, model, newBoard, pdu } from './scenarios'
 
@@ -50,18 +51,34 @@ describe('T10 Adopt dialog: queue and form (B74, B21, B22)', () => {
   it('lists every new board, oldest first seen first, then by NODE_ID, with its badge', async () => {
     const { dlg, options } = await openAdopt()
     expect(options()).toEqual([
-      'NODE_ID 8PANEL GROUPLeft_Oxygen · in NODE_IDS.md',
+      'NODE_ID 8PANEL GROUPLeft_Oxygen · from NODE_IDS.md',
       'NODE_ID 12PANEL GROUPfirst seen 1 min ago',
       'NODE_ID 41PDUfirst seen 1 min ago',
       'NODE_ID 9IDENTIFYINGfirst seen just now',
       'NODE_ID 10BRIDGEfirst seen just now',
       'NODE_ID 13UNKNOWN TYPEfirst seen just now'
     ])
+    // R10 (#133): the count is the "New on the bus · N" button's (the boards that can be added),
+    // not every row listed — it was 6 here, against the button's 3.
+    expect(screen.getByText('New on the bus · 3')).toBeInTheDocument()
     expect(
       within(dlg).getByText(
-        /^6 boards this computer hasn’t added yet\. Boards in NODE_IDS\.md come pre-filled/
+        /^3 boards this computer hasn’t added yet\. Boards in NODE_IDS\.md come pre-filled/
       )
     ).toBeInTheDocument()
+  })
+
+  it('a request to open another board while the dialog is open lands on that board (R10)', async () => {
+    const { pick, selected } = await openAdopt()
+    await pick(12)
+    expect(selected()).toHaveTextContent('NODE_ID 12')
+    // Another way into a board (Connection's "›", a cog) asks for #41: the dialog starts over on
+    // it, as the latest push has it, rather than staying on the board it was showing.
+    act(() => useNav.getState().openInCockpit(41))
+    const [dlg] = screen.getAllByRole('dialog', { name: 'Adopt new devices' })
+    expect(screen.getAllByRole('dialog', { name: 'Adopt new devices' })).toHaveLength(1)
+    const queue = within(dlg!).getByRole('listbox', { name: 'New NODE_IDs' })
+    expect(within(queue).getByRole('option', { selected: true })).toHaveTextContent('NODE_ID 41')
   })
 
   it('a registry board comes pre-filled from NODE_IDS.md and is one click to add', async () => {

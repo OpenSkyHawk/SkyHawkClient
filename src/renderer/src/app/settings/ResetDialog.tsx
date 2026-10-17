@@ -1,23 +1,33 @@
 import { useEffect, useState } from 'react'
-import type { NodeModel, ResetPreview } from '@shared/nodes'
+import type { ResetPreview } from '@shared/nodes'
 import { useNodesStore } from '../../nodes'
 import { Dialog } from '../kit'
 import { resetButtonLabel } from './settings-view'
 
 /**
  * Reset node mapping — a review, never a one-click reset. Lists every field the reset changes,
- * and offers to forget adopted nodes too (off by default). `model` re-fetches the preview when
- * the mapping changes underneath.
+ * and offers to forget adopted nodes too (off by default). `inputs` (settings-view
+ * resetPreviewKey) re-fetches the preview when the mapping changes underneath, and only then (R9);
+ * an answer that a newer fetch superseded is dropped.
  */
-export function ResetDialog({ model, onClose }: { model?: NodeModel; onClose: () => void }) {
+export function ResetDialog({ inputs, onClose }: { inputs: string; onClose: () => void }) {
   const [preview, setPreview] = useState<ResetPreview>()
   const [forget, setForget] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
 
   useEffect(() => {
-    void useNodesStore.getState().previewNodeReset()?.then(setPreview)
-  }, [model])
+    let current = true
+    void useNodesStore
+      .getState()
+      .previewNodeReset()
+      ?.then((p) => {
+        if (current) setPreview(p)
+      })
+    return () => {
+      current = false
+    }
+  }, [inputs])
 
   const nodes = preview?.nodeCount ?? 0
   const adopted = preview?.adopted ?? []

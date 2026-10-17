@@ -13,8 +13,7 @@ import type {
 } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
 import { shownHealth } from '../../gateway'
-import { isReportableNew, onBusNow } from '../node-model'
-import { adoptability } from './adopt'
+import { isReportableNew, newState, strayKind } from '../node-model'
 
 /** "1 node affected" / "3 nodes affected" — a PDU outage, wherever it is shown. */
 export function affected(n: number): string {
@@ -80,18 +79,15 @@ export function newCount(model: NodeModel, live: boolean): number {
   return model.nodes.filter((e) => isReportableNew(e, live)).length
 }
 
-/**
- * A normal board reports its kind ~1 s after it appears. Until this has passed, an unidentified
- * new board is simply still identifying — not an issue — so it never flashes a warning.
- */
-export const IDENTIFY_WAIT_MS = 5000
+/** The identify grace (node-model.ts newState), re-exported where the strays are built. */
+export { IDENTIFY_WAIT_MS } from '../node-model'
 
 /**
- * New boards on the bus now (onBusNow) that can't be adopted (#93): a kind that can't be adopted (a
- * second SimGateway, a type this client doesn't know), or still unidentified after
- * IDENTIFY_WAIT_MS. A board on the bus is active, so it can't be hidden — it shows in Attention as
- * a warning instead. None while the link is down. `nextAt` = when one still identifying will cross
- * the line.
+ * The strays (#93, X3): the boards newState calls `stray` — new, on the bus now, and can't be
+ * adopted (a kind that can't be, or still unidentified IDENTIFY_WAIT_MS after it came online). One
+ * list for every tab: the Cockpit's band and Attention, the Overview's tile and banner, Connection ›
+ * Connected nodes. A board on the bus is active, so it can't be hidden — it is a warning instead.
+ * None while the link is down. `nextAt` = when one still identifying will cross the line.
  */
 export function strayNew(
   views: NodeView[],
@@ -101,24 +97,16 @@ export function strayNew(
   const strays: NodeView[] = []
   let nextAt: number | undefined
   for (const v of views) {
-    const e = v.entry
-    if (e.source !== 'new' || !onBusNow(e, live) || adoptability(e).kind) continue
-    const due = (e.firstSeenAt ?? 0) + IDENTIFY_WAIT_MS
-    if (e.identified || due <= now) strays.push(v)
-    else nextAt = Math.min(nextAt ?? due, due)
+    const s = newState(v.entry, now, live)
+    if (s?.state === 'stray') strays.push(v)
+    else if (s?.state === 'identifying') nextAt = Math.min(nextAt ?? s.strayAt, s.strayAt)
   }
   return nextAt === undefined ? { strays } : { strays, nextAt }
 }
 
-/** A stray's Attention line: what it is, and that it can't be adopted. */
+/** A stray's Attention line: what it is (node-model.ts strayKind), and that it can't be adopted. */
 export function strayFlag(e: NodeModelEntry): string {
-  const what =
-    e.identified === 'bridge'
-      ? 'SECOND GATEWAY'
-      : e.identified
-        ? 'UNKNOWN BOARD TYPE'
-        : 'UNIDENTIFIED'
-  return `${what} · can’t be adopted`
+  return `${strayKind(e).toUpperCase()} · can’t be adopted`
 }
 
 /**
