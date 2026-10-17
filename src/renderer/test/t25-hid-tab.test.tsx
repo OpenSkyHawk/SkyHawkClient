@@ -100,6 +100,27 @@ describe('T25 HID tab (B80)', () => {
     expect(axis('Roll')).toBe('Roll1200')
   })
 
+  it('with the link down a badge shows its state but does not open calibration (N6)', async () => {
+    // The device's report lands after the link went down: its badges show, greyed out like
+    // Calibrate, since calibration needs the serial link.
+    const { user, sky } = await renderScenario(<Hid />, {
+      device: link('no-device'),
+      hidAvailability: catalogue,
+      hid: report(),
+      cal: calSnapshot([{ idx: 0, calibrated: true }, { idx: 1 }])
+    })
+    expect(screen.getByRole('button', { name: 'Calibrate' })).toBeDisabled()
+    const cal = screen.getByRole('button', { name: 'CAL' })
+    const raw = screen.getByRole('button', { name: 'RAW' })
+    expect(cal).toBeDisabled()
+    expect(raw).toBeDisabled()
+    expect(cal).toHaveAttribute('title', 'Calibrated — endpoints stored on the device')
+    expect(raw).toHaveAttribute('title', 'Uncalibrated — values pass through untransformed')
+    await user.click(raw)
+    expect(sky.calOpen).not.toHaveBeenCalled()
+    expect(screen.queryByText(/^Axis Calibration/)).toBeNull()
+  })
+
   it('offers "Review & restore" when the device lost an axis this client holds a confirmed copy of', async () => {
     const { user } = await renderScenario(<Hid />, {
       device: connected(),

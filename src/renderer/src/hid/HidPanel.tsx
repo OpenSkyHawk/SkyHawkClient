@@ -217,7 +217,7 @@ export function HidPanel({
             raw={v}
             avail={axisLive(i)}
             cal={calState(i)}
-            onCalibrate={calState(i) ? () => onCalibrate(i) : undefined}
+            onCalibrate={calState(i) && cal.badgeOpens ? () => onCalibrate(i) : undefined}
           />
         ))}
       </div>
