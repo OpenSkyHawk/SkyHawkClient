@@ -76,7 +76,7 @@ import {
   type MappingFileIO
 } from './mapping-store'
 import { CockpitSnapshotHost } from './cockpit-host'
-import { addAllInTurn, unhideInTurn } from './mapping-sequence'
+import { MappingSequences } from './mapping-sequence'
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
@@ -160,6 +160,8 @@ export class NodeHub implements NodeLineSink {
   private readonly defaults = registryDefaults(NODE_NAMES)
   private telemPushedAt = 0
   private modelDirty = true
+  /** Rises with every `nodes:model` push; every model main hands out carries it (C5). */
+  private modelRev = 0
   /** Present NODE_IDs at the last roster change, to tell "came back" from "still listed". */
   private wasPresent = new Set<number>()
   /** Node changes for the event log (#64), named by the mapping. */
@@ -177,6 +179,8 @@ export class NodeHub implements NodeLineSink {
   private mappedCache = new Map<number, MappedNode>()
   /** The node mapping and its file. */
   private readonly store: MappingStore
+  /** Add all / Un-hide all, each one at a time (R6): a call while it runs is ignored. */
+  private readonly sequences = new MappingSequences()
   /** The Cockpit tab's picture (R3.2), pushed on `cockpit:snapshot` with each node push. */
   private readonly cockpit: CockpitSnapshotHost
 
@@ -440,15 +444,19 @@ export class NodeHub implements NodeLineSink {
 
   /**
    * "Add all" (R3.2b, the Adopt dialog's loop until then): adopt each board in turn, as one adopt
-   * each — every one pushes the model as it lands — stopping at the first refusal.
+   * each — every one pushes the model as it lands — stopping at the first refusal. A second call
+   * while one runs is ignored (R6).
    */
   addAll(bulk: AdoptRequest[]): Promise<NodeBatchResult> {
-    return addAllInTurn(bulk, (nodeId, spec) => this.adopt(nodeId, spec))
+    return this.sequences.addAll(bulk, (nodeId, spec) => this.adopt(nodeId, spec))
   }
 
-  /** "Un-hide" / "Un-hide all" (R3.2b, Settings' loop until then): the same, one un-hide each. */
+  /**
+   * "Un-hide" / "Un-hide all" (R3.2b, Settings' loop until then): one un-hide each, every board
+   * tried, the ones refused listed (N4). A second call while one runs is ignored (R6).
+   */
   unhide(ids: number[]): Promise<NodeBatchResult> {
-    return unhideInTurn(ids, (nodeId, on) => this.hide(nodeId, on))
+    return this.sequences.unhide(ids, (nodeId, on) => this.hide(nodeId, on))
   }
 
   /** One registry board back to its NODE_IDS.md defaults. */
@@ -559,8 +567,9 @@ export class NodeHub implements NodeLineSink {
     return this.update((f) => setHidden(f, this.defaults, nodeId, on))
   }
 
+  /** The model as it stands, stamped with the rev of the last push (a newer push has a higher one). */
   private model(now: number): NodeModel {
-    return buildNodeModel({
+    const model = buildNodeModel({
       roster: this.roster.snapshot().map(withFaultInfo),
       seen: this.roster.seenInfo(),
       rosterCompleteAt: this.roster.rosterCompleteAt(),
@@ -569,9 +578,11 @@ export class NodeHub implements NodeLineSink {
       file: this.mapping(),
       now
     })
+    return { ...model, rev: this.modelRev }
   }
 
   private pushModel(now = Date.now()): NodeModel {
+    this.modelRev++
     const model = this.model(now)
     this.modelDirty = false
     this.cockpit.modelPushed(model) // just ahead of the push it mirrors

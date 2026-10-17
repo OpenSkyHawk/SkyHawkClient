@@ -9,7 +9,7 @@ import type {
   NodeView,
   PduReadings
 } from '@shared/nodes'
-import { nodeFaultTag, pduAlertFlags } from '../faults'
+import { nodeFlagChips, pduAlertFlags } from '../faults'
 
 /** A PDU's pages that are fresh right now. A stale page is not a reading. */
 function freshReadings(t: NodeTelemSnapshot | undefined): PduReadings {
@@ -28,10 +28,7 @@ export function nodeHealth(e: NodeModelEntry, r: PduReadings = {}): NodeHealth {
   if (e.availability === 'offline') return { state: 'off', flag: 'OFFLINE' }
   const st = e.status
   if (st?.boff) return { state: 'off', flag: 'BUS-OFF' }
-  const flags: string[] = []
-  if (st?.degraded) flags.push(nodeFaultTag(st))
-  if (st?.overheat) flags.push('OVERHEAT')
-  if (st?.epvf) flags.push('ERR-PASSIVE')
+  const flags = st ? nodeFlagChips(st) : []
   if (e.kind === 'pdu') flags.push(...pduAlertFlags(r))
   return flags.length ? { state: 'warn', flag: flags.join(' · ') } : { state: 'on' }
 }

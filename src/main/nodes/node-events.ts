@@ -3,8 +3,8 @@
 // threshold, so every alert here is a flag a board raised itself.
 import type { EventSeverity, LogEventInput } from '@shared/events'
 import type { NodeStatus, NodeTelem } from '@shared/nodes'
-import { faultLabel, STATUS_FLAGS } from '../events'
-import { PDU_STATUS_FLAGS, RAIL_FLAGS, railReading, TEMP_FLAGS } from './faults'
+import { faultLabel } from '../events'
+import { NODE_FLAGS, PDU_STATUS_FLAGS, RAIL_FLAGS, railReading, TEMP_FLAGS } from './faults'
 import { BRIDGE_NODE_ID, NODE_END_MSG, ROSTER_REPLY_MS } from './node-status-wire'
 import { TELEM_PAGE } from './node-telem'
 
@@ -173,7 +173,8 @@ export class NodeEventTracker {
     out: LogEventInput[]
   ): LogEventInput[] {
     if (!n.present) return out
-    for (const f of STATUS_FLAGS) {
+    // In the Cockpit's order (faults.ts NODE_FLAG_ORDER), so the Log names them as it does.
+    for (const f of NODE_FLAGS) {
       const before = was?.[f.key] ?? false
       const on = n[f.key]
       if (f.key === 'degraded' && on && before && was!.faultId !== n.faultId) {

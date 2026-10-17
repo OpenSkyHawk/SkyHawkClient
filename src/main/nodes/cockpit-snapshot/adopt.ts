@@ -13,7 +13,7 @@ import {
   type NodeView
 } from '@shared/nodes'
 import { amps, fmtUptime, volts } from '@shared/format'
-import { nodeFaultTag } from '../faults'
+import { nodeFlagWords } from '../faults'
 import { isAdoptableKind, reportedIdentity } from '../node-kind'
 import { displayCurrentMa } from '../node-telem'
 import { resolveZone } from '../power-zone'
@@ -110,12 +110,7 @@ export function adoptEvidence(v: NodeView): Evidence {
     const reporting = e.kind === 'pdu' ? 'telemetry: board status' : 'not reporting right now'
     return { detected, reporting, registry }
   }
-  const faults = [
-    st.boff && 'bus-off',
-    st.degraded && nodeFaultTag(st),
-    st.overheat && 'overheat',
-    st.epvf && 'error-passive'
-  ].filter((f): f is string => !!f)
+  const faults = nodeFlagWords(st)
   return {
     detected,
     reporting: `status only · up ${fmtUptime(st.uptimeSec)} · ${faults.length ? faults.join(', ') : 'healthy'}`,

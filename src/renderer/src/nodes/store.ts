@@ -58,14 +58,25 @@ export const useNodesStore = create<NodesState>(() => ({
   resetNodeMapping: (opts) => api()?.resetNodeMapping(opts)
 }))
 
+/**
+ * An older model or snapshot never wins (C5): main's revs only rise, so one that arrives behind
+ * what the store holds (a pull's answer landing after a newer push) is dropped. A model without a
+ * rev (not from main) counts as 0.
+ */
+const olderModel = (m: NodeModel | undefined, held: NodeModel | undefined): boolean =>
+  !!m && !!held && (m.rev ?? 0) < (held.rev ?? 0)
+
 /** What main sends this slice; the IPC adapter calls each as its push or pull lands. */
 export const nodesFromMain = {
   /** `nodes:get`: node pushes only fire on change, so a reloaded renderer asks for the current picture. */
-  nodes: (model: NodeModel | undefined): void => useNodesStore.setState({ nodeModel: model }),
+  nodes: (model: NodeModel | undefined): void =>
+    useNodesStore.setState((s) => (olderModel(model, s.nodeModel) ? s : { nodeModel: model })),
 
   /** `nodes:model`. */
-  model: (m: NodeModel): void => useNodesStore.setState({ nodeModel: m }),
+  model: (m: NodeModel): void =>
+    useNodesStore.setState((s) => (olderModel(m, s.nodeModel) ? s : { nodeModel: m })),
 
   /** `cockpit:snapshot`. */
-  cockpit: (c: CockpitSnapshot): void => useNodesStore.setState({ cockpit: c })
+  cockpit: (c: CockpitSnapshot): void =>
+    useNodesStore.setState((s) => (c.rev < s.cockpit.rev ? s : { cockpit: c }))
 }

@@ -90,7 +90,9 @@ describe('NodeEventTracker — changes', () => {
     ])
   })
 
-  it('raises and clears bus-off, error-passive (with TEC), overheat', () => {
+  // X6/R8 (#133): in the Cockpit's order — bus-off, fault, overheat, error-passive (was bus-off,
+  // error-passive, overheat).
+  it('raises and clears bus-off, overheat, error-passive (with TEC)', () => {
     const t = live([st(2)])
     expect(
       short(
@@ -98,13 +100,13 @@ describe('NodeEventTracker — changes', () => {
       )
     ).toEqual([
       'Right_Navigation: bus-off [error]',
-      'Right_Navigation: error-passive · TEC 131 [warn]',
-      'Right_Navigation: overheat [warn]'
+      'Right_Navigation: overheat [warn]',
+      'Right_Navigation: error-passive · TEC 131 [warn]'
     ])
     expect(short(t.status([st(2)], NODE_MSG, '', 30))).toEqual([
       'Right_Navigation: bus-off cleared [info]',
-      'Right_Navigation: error-passive cleared [info]',
-      'Right_Navigation: overheat cleared [info]'
+      'Right_Navigation: overheat cleared [info]',
+      'Right_Navigation: error-passive cleared [info]'
     ])
   })
 

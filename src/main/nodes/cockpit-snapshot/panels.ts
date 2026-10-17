@@ -12,6 +12,7 @@ import {
   type FaultBox,
   type FedBoard,
   type NodeModelEntry,
+  type NodeStatus,
   type NodeView,
   type PduOutage,
   type PduRailPage,
@@ -21,7 +22,8 @@ import {
   type ZoneChoices
 } from '@shared/nodes'
 import { PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
-import { nodeFaultTag, pduAlertFlags, pduFlagMeanings } from '../faults'
+import type { StatusFlag } from '../../events'
+import { nodeFaultTag, pduAlertFlags, pduFlagMeanings, raisedNodeFlags } from '../faults'
 import { displayCurrentMa } from '../node-telem'
 import { canForget, canHide, type OfflineGate } from '../offline-actions'
 import { fedBy, zoneLabel } from '../power-zone'
@@ -100,7 +102,7 @@ function notSeenBox(e: NodeModelEntry): FaultBox {
  * The boxes at the top of the node panel's Status tab, stacked; empty when there is nothing to
  * explain. New, no-status-yet and offline each stand alone. Otherwise every flag the node raised
  * gets its own box — bus-off, then degraded (the fault table's label), overheat, error-passive,
- * the order the tile and Attention name them in — so a second fault never hides behind the first.
+ * the one order (faults.ts NODE_FLAG_ORDER) — so a second fault never hides behind the first.
  */
 export function nodeFaultBoxes(v: NodeView): FaultBox[] {
   const e = v.entry
@@ -134,32 +136,31 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
     ]
   }
   if (!st) return []
-  const out: FaultBox[] = []
-  if (st.boff) {
-    out.push({
-      tone: 'err',
-      title: 'Bus-off',
-      text: 'its CAN controller stopped transmitting after too many errors. Reported by the node.'
-    })
-  }
-  if (st.degraded) {
-    out.push({
-      tone: 'warn',
-      title: st.faultLabel ?? nodeFaultTag(st),
-      text: st.faultDesc || 'reported by the node; this client has no description for this code.'
-    })
-  }
-  if (st.overheat) {
-    out.push({ tone: 'warn', title: 'Overheat', text: 'the node raised its own temperature trip.' })
-  }
-  if (st.epvf) {
-    out.push({
-      tone: 'warn',
-      title: 'Error-passive',
-      text: 'its CAN error counters are high; it still communicates but can only signal errors passively.'
-    })
-  }
-  return out
+  return raisedNodeFlags(st).map((k) => FLAG_BOX[k](st))
+}
+
+/** Each flag's box, as nodeFaultBoxes stacks them (in faults.ts NODE_FLAG_ORDER). */
+const FLAG_BOX: Record<StatusFlag, (st: NodeStatus) => FaultBox> = {
+  boff: () => ({
+    tone: 'err',
+    title: 'Bus-off',
+    text: 'its CAN controller stopped transmitting after too many errors. Reported by the node.'
+  }),
+  degraded: (st) => ({
+    tone: 'warn',
+    title: st.faultLabel ?? nodeFaultTag(st),
+    text: st.faultDesc || 'reported by the node; this client has no description for this code.'
+  }),
+  overheat: () => ({
+    tone: 'warn',
+    title: 'Overheat',
+    text: 'the node raised its own temperature trip.'
+  }),
+  epvf: () => ({
+    tone: 'warn',
+    title: 'Error-passive',
+    text: 'its CAN error counters are high; it still communicates but can only signal errors passively.'
+  })
 }
 
 /**
