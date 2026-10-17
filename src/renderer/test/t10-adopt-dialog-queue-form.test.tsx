@@ -51,7 +51,7 @@ describe('T10 Adopt dialog: queue and form (B74, B21, B22)', () => {
   it('lists every new board, oldest first seen first, then by NODE_ID, with its badge', async () => {
     const { dlg, options } = await openAdopt()
     expect(options()).toEqual([
-      'NODE_ID 8PANEL GROUPLeft_Oxygen · in NODE_IDS.md',
+      'NODE_ID 8PANEL GROUPLeft_Oxygen · from NODE_IDS.md',
       'NODE_ID 12PANEL GROUPfirst seen 1 min ago',
       'NODE_ID 41PDUfirst seen 1 min ago',
       'NODE_ID 9IDENTIFYINGfirst seen just now',
