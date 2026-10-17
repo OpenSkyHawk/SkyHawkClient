@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ReplaySource } from './replay-source'
-import type { CaptureFile } from '@shared/capture'
+import type { CaptureFile } from './capture-file'
 
 const file: CaptureFile = {
   format: 'skyhawk-capture/1',

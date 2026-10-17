@@ -1,7 +1,7 @@
 // T6 — the title-bar Device indicator and its popover: link states and the Gateway's Health.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import type { DeviceState } from '@shared/gateway/ipc'
+import type { DeviceState } from '@shared/gateway'
 import { DevicePopover } from '../src/DevicePopover'
 import { App } from '../src/App'
 import { renderScenario } from './render'

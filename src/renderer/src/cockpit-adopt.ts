@@ -2,10 +2,8 @@
 // pure decisions behind it — queue order, what each new NODE_ID is seen doing, the registry
 // pre-fill, when the form is complete, the identify row and where the selection goes next.
 import { amps, fmtUptime, volts } from '@shared/format'
-import type { AdoptSpec, NodeKind, NodeModelEntry } from '@shared/nodes/ipc'
-import { reportedIdentity } from '@shared/node-kind'
-import { displayCurrentMa } from '@shared/node-telem'
-import { nodeFaultTag } from '@shared/nodes'
+import type { AdoptSpec, NodeKind, NodeModelEntry } from '@shared/nodes'
+import { displayCurrentMa, nodeFaultTag, reportedIdentity } from '@shared/nodes/legacy-rules'
 import type { NodeView } from './cockpit'
 import { consoleLabel, powerZoneOptions } from './cockpit-panels'
 

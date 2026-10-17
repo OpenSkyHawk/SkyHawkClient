@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { NodeMappingFile } from '@shared/nodes/ipc'
-import { NODE_END_MSG, NODE_MSG, NodeRoster } from '@shared/nodes'
+import type { NodeMappingFile } from '@shared/nodes'
+import { NODE_END_MSG, NODE_MSG, NodeRoster } from './node-status-wire'
 
 const disk: {
   file: NodeMappingFile

@@ -5,9 +5,9 @@ import {
   holdProgress,
   holdRemainingMs,
   sweepsRemaining
-} from '@shared/axis-capture'
+} from '@shared/hid/calibration/legacy-rules'
 import { CAL_PROTO, HID_REPORT_LAYOUT } from '@shared/firmware'
-import type { CalSnapshot } from '@shared/hid/calibration/ipc'
+import type { CalSnapshot } from '@shared/hid/calibration'
 import { CalibrationController, type CalibrationState } from './calibration-controller'
 import { AXIS_LABELS, useStore } from './store'
 

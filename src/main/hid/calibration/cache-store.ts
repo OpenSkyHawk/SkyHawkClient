@@ -5,8 +5,8 @@
 // is a recovery aid, so failing to keep one leaves the user exactly where they were, whereas
 // throwing would break the write that had already succeeded on the device.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { emptyCache, sanitizeCache } from '@shared/cal-cache'
-import type { CalCache } from '@shared/hid/calibration/ipc'
+import { emptyCache, sanitizeCache } from './cache-rules'
+import type { CalCache } from '@shared/hid/calibration'
 
 /** Port: where calibration-cache.json lives. app hands it in (this module never asks electron). */
 export interface CachePaths {

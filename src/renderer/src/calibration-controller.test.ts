@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_CAPTURE_CONFIG, midpoint } from '@shared/axis-capture'
+import { DEFAULT_CAPTURE_CONFIG, midpoint } from '@shared/hid/calibration/legacy-rules'
 import type {
   CachedBoard,
   CalCacheEntry,
   CalRawSample,
   CalResult,
   CalSnapshot
-} from '@shared/hid/calibration/ipc'
+} from '@shared/hid/calibration'
 import { CalibrationController, type CalibrationApi } from './calibration-controller'
 
 const C = DEFAULT_CAPTURE_CONFIG

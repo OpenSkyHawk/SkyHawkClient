@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { isLinkUp } from '@shared/gateway/ipc'
+import { isLinkUp } from '@shared/gateway'
 import { useStore } from './store'
 import { deviceView } from './device-view'
 import { gatewayView } from './gateway-view'

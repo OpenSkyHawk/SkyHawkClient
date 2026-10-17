@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { DASH, voltsValue } from '@shared/format'
-import type { NodeMappingResult, NodeModelEntry, NodeRegistryInfo } from '@shared/nodes/ipc'
+import type { NodeMappingResult, NodeModelEntry, NodeRegistryInfo } from '@shared/nodes'
 import type { NodeView } from '../../cockpit'
 import {
   boardActions,

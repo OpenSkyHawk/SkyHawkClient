@@ -1,7 +1,7 @@
 // Where the Gateway's status lands in the UI (#94): the title-bar pill, the Device popover, the
 // Overview alert and the Cockpit's Attention item. Presentation only: severity, label, note and
-// alert all come from shared/gateway.ts (gatewayStatus), computed once in main.
-import type { GatewayStatus } from '@shared/gateway/ipc'
+// alert all come from gatewayStatus (main/gateway/gateway-health.ts), computed once in main.
+import type { GatewayStatus } from '@shared/gateway'
 
 export interface GatewayView {
   /** Pill modifier while it reports a problem (replaces `devind--on`); with the "!" symbol. */

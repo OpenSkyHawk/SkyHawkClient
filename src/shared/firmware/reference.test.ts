@@ -47,10 +47,10 @@ import {
   PDU_STATUS_FLAG_INFO,
   type NodeFaultName
 } from '.'
-import { ACFT_NAME } from '../../main/dcs/dcsbios-metadata'
-import { SUPPORTED_NODE_PROTO } from '@shared/nodes'
-import { SUPPORTED_TELEM_PROTO } from '@shared/node-telem'
-import * as cal from '@shared/calibration'
+import { ACFT_NAME } from '../../main/dcs/bios-protocol'
+import { SUPPORTED_NODE_PROTO } from '../../main/nodes/node-status-wire'
+import { SUPPORTED_TELEM_PROTO } from '../../main/nodes/node-telem'
+import * as cal from '../../main/hid/calibration/codec'
 
 describe('a4ec-controls.generated', () => {
   it('has outputs, each with a numeric address', () => {
@@ -200,8 +200,8 @@ describe('node-status.generated', () => {
     expect(new Set(tags).size).toBe(tags.length)
   })
 
-  // shared/nodes.ts decodes the row by these names (#346). Pinned at the values the decoder was
-  // proven against, so a firmware relayout fails here before it mis-decodes a node.
+  // nodes/node-status-wire.ts decodes the row by these names (#346). Pinned at the values the
+  // decoder was proven against, so a firmware relayout fails here before it mis-decodes a node.
   it('pins the _NODE_STATUS row layout the decoder reads', () => {
     expect(GATEWAY_NODE_ID).toBe(0)
     expect(NODE_STATUS_ROW_BYTES).toBe(14)
@@ -230,7 +230,7 @@ describe('node-status.generated', () => {
   })
 })
 
-// shared/node-telem.ts imports its page ids and flag bits from here; only the decoder's protocol
+// nodes/node-telem.ts imports its page ids and flag bits from here; only the decoder's protocol
 // version is its own, so a firmware bump fails here rather than mis-decoding.
 describe('node-telem contract', () => {
   it('matches the shared decoder (fails loudly on a firmware bump)', () => {
@@ -248,7 +248,7 @@ describe('node-telem contract', () => {
   })
 })
 
-// shared/calibration.ts imports these from here. The codec's framing and payload decoders are
+// hid/calibration/codec.ts imports these from here. The codec's framing and payload decoders are
 // written for one protocol version, so a firmware bump to another has to fail here, not surface as
 // a mis-framed packet on the wire.
 describe('axis-cal.generated', () => {

@@ -1,19 +1,18 @@
 // Scenario builders for component tests: main-side state at today's push level (skyhawk-mock.ts).
 // One place for them, on top of the shared node fixtures, so every component test describes the
 // world the same way. Each builder states its defaults; a test passes whatever differs.
-import { emptyCache } from '@shared/cal-cache'
-import { appSettings, buildConfigFile, diffImport, parseConfigFile } from '@shared/config-file'
-import { DEFAULT_CONFIG, type ConfigSnapshot, type ImportPreview } from '@shared/config/ipc'
-import { gatewayStatus } from '@shared/gateway'
-import type { DeviceState, DeviceStatus, GatewayStatus } from '@shared/gateway/ipc'
-import type {
-  NodeDefaults,
-  NodeModel,
-  NodeModelEntry,
-  NodeStatus,
-  PduOutage
-} from '@shared/nodes/ipc'
-import { NODE_KIND } from '@shared/nodes'
+import { emptyCache } from '../../main/hid/calibration/cache-rules'
+import {
+  appSettings,
+  buildConfigFile,
+  diffImport,
+  parseConfigFile
+} from '../../main/config/config-file'
+import { DEFAULT_CONFIG, type ConfigSnapshot, type ImportPreview } from '@shared/config'
+import { gatewayStatus } from '../../main/gateway/gateway-health'
+import type { DeviceState, DeviceStatus, GatewayStatus } from '@shared/gateway'
+import type { NodeDefaults, NodeModel, NodeModelEntry, NodeStatus, PduOutage } from '@shared/nodes'
+import { NODE_KIND } from '../../main/nodes/node-status-wire'
 import { modelNode, nodeModel, nodeStatus } from '../../test-fixtures/nodes'
 
 export { modelNode, nodeModel, nodeStatus }
@@ -35,7 +34,7 @@ export const connected = (gateway?: GatewayStatus): DeviceStatus =>
 // ── the Gateway's own health (`device:status.gateway`), from main's own builder ─────────────
 
 /**
- * What main computes from the Gateway's node-0 status row (shared/gateway.ts gatewayStatus): its
+ * What main computes from the Gateway's node-0 status row (gateway-health.ts gatewayStatus): its
  * health frame has arrived (kind 03), 42 °C, plus `row` (e.g. `{ boff: true }`).
  */
 export function gateway(row: Partial<NodeStatus> = {}): GatewayStatus {

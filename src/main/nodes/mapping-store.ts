@@ -1,12 +1,12 @@
-// Persist the node mapping to <userData>/node-mapping.json (shape and rules: shared/node-mapping.ts).
+// Persist the node mapping to <userData>/node-mapping.json (shape and rules: mapping-rules.ts).
 // Where that file lives is handed in by app (MappingPaths): this module never asks electron.
 //
 // Unlike config.json, a lost write here is user work gone (names, adopted boards, hidden boards), so
 // failures are reported rather than swallowed, writes are atomic, and a file this build cannot
 // safely overwrite — unreadable, or from a newer client — is loaded read-only.
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from '@shared/node-mapping'
-import type { NodeMappingFile } from '@shared/nodes/ipc'
+import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from './mapping-rules'
+import type { NodeMappingFile } from '@shared/nodes'
 import { errorText, stamp } from '@shared/format'
 
 /** A save that did not reach the disk. The message is ready to show. */

@@ -12,8 +12,8 @@ import {
   HID_BUTTON_COUNT,
   HID_HAT_COUNT,
   HID_REPORT_SIZE
-} from '@shared/hid'
-import type { HidSnapshot } from '@shared/hid/ipc'
+} from './hid-report'
+import type { HidSnapshot } from '@shared/hid'
 import { USB_IDENTITY } from '@shared/firmware'
 
 /** Matches the serial link's reconnect cadence — the same cable, coming back at the same time. */

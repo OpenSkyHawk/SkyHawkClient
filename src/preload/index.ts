@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { LogEvent } from '@shared/events/ipc'
+import type { LogEvent } from '@shared/events'
 import {
   CTRL,
   type DebugDumpResult,
@@ -7,13 +7,13 @@ import {
   type PushChannels,
   type RelayStatus,
   type SkyhawkApi
-} from '@shared/app/ipc'
+} from '@shared/app'
 import type {
   AppConfig,
   ConfigExportResult,
   ConfigImportApplyResult,
   ConfigImportOpen
-} from '@shared/config/ipc'
+} from '@shared/config'
 import type {
   CachedBoard,
   CalCacheEntry,
@@ -21,15 +21,10 @@ import type {
   CalHello,
   CalResult,
   CalSnapshot
-} from '@shared/hid/calibration/ipc'
-import type { CaptureState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs/ipc'
-import type { HidAvailability } from '@shared/hid/ipc'
-import type {
-  NodeMappingResult,
-  NodeRegistryInfo,
-  NodeSnapshot,
-  ResetPreview
-} from '@shared/nodes/ipc'
+} from '@shared/hid/calibration'
+import type { CaptureState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs'
+import type { HidAvailability } from '@shared/hid'
+import type { NodeMappingResult, NodeRegistryInfo, NodeSnapshot, ResetPreview } from '@shared/nodes'
 
 // Typed bridge: main -> renderer push subscriptions + renderer -> main control.
 const api: SkyhawkApi = {

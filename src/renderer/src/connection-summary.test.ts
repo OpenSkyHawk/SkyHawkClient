@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { NodeModelEntry, NodeTelemSnapshot, PduOutage } from '@shared/nodes/ipc'
+import type { NodeModelEntry, NodeTelemSnapshot, PduOutage } from '@shared/nodes'
 import {
   modelNode as node,
   nodeModel as model,
   nodeStatus as status
 } from '../../test-fixtures/nodes'
-import { TELEM_PAGE } from '@shared/node-telem'
+import { TELEM_PAGE } from '../../main/nodes/node-telem'
 import { fmtTime, lastSeenLabel } from '@shared/format'
 import { STATE_SYMBOL, attentionItems, nodeViews } from './cockpit'
 import { nodesSummary } from './connection-summary'

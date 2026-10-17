@@ -2,9 +2,9 @@
 // as the outside world sees it — fake serial port and DCS socket in, renderer pushes, IPC replies
 // and <userData> files out — through the services harness. Nothing here reaches inside main.
 import { describe, expect, it } from 'vitest'
-import { CTRL } from '@shared/app/ipc'
+import { CTRL } from '@shared/app'
 import { eventText } from '@shared/format'
-import type { NodeMappingFile } from '@shared/nodes/ipc'
+import type { NodeMappingFile } from '@shared/nodes'
 import { statusLine } from '../../test-fixtures/nodes'
 import { makeServices, type Services } from '../test-harness/services'
 

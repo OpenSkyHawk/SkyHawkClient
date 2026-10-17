@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { NodeMappingFile } from '@shared/nodes/ipc'
+import type { NodeMappingFile } from '@shared/nodes'
 import { storePaths } from '../app/user-data'
 
 const userData = vi.hoisted(() => ({ dir: '' }))

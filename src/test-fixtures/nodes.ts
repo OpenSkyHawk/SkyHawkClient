@@ -3,7 +3,7 @@
 // One set of builders for the node status rows and node models that test files used to redefine
 // with their own defaults. A test that needs different defaults passes those fields explicitly,
 // so what each test feeds in stays visible at the call site.
-import type { NodeModel, NodeModelEntry, NodeStatus, PduOutage } from '@shared/nodes/ipc'
+import type { NodeModel, NodeModelEntry, NodeStatus, PduOutage } from '@shared/nodes'
 
 /** A parsed `_NODE_STATUS` row: present, healthy, kind not reported (0), 30 °C, 100 s up. */
 export const nodeStatus = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus => ({

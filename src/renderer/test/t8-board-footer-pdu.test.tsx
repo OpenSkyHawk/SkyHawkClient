@@ -1,7 +1,7 @@
 // T8 — the board panel footer, for a PDU: what Forget and Hide do to the boards it feeds.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import type { NodeModel } from '@shared/nodes/ipc'
+import type { NodeModel } from '@shared/nodes'
 import { Cockpit } from '../src/tabs/Cockpit'
 import { renderScenario } from './render'
 import { connected, model, offline, panel, pdu } from './scenarios'

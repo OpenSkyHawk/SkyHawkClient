@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { fmtBytes, fmtUptime } from '@shared/format'
 import { useStore, type TabId } from '../store'
-import { isLinkUp, type DeviceState } from '@shared/gateway/ipc'
+import { isLinkUp, type DeviceState } from '@shared/gateway'
 import { attentionItems, healthBand, nodeViews } from '../cockpit'
 import { attentionSummary, cockpitTile, newDevices, newDevicesText } from '../overview'
 import { gatewayView } from '../gateway-view'

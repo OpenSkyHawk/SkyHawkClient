@@ -6,21 +6,8 @@
 // and device traffic comes back through onBytes() / onLine(). That split is the point. Bundled
 // together, there was no node status, PDU telemetry, HID or calibration unless DCS was being
 // relayed, and stopping the relay tore the port down with it.
-import { LineAssembler, parseCommand } from '@shared/dcsbios'
-import {
-  BRIDGE_NODE_ID,
-  NODE_END_MSG,
-  NODE_MSG,
-  NodeRoster,
-  cleanNodeLine,
-  isLegacyNodeStatus,
-  nodeRosterRequest,
-  parseNodeStatus
-} from '@shared/nodes'
-import { GatewayWatch } from '@shared/gateway'
-import { NODE_TELEM_MSG } from '@shared/node-telem'
-import type { LogEventInput } from '@shared/events/ipc'
-import { isLinkUp, type DeviceStatus, type SerialFrame } from '@shared/gateway/ipc'
+import type { LogEventInput } from '@shared/events'
+import { isLinkUp, type DeviceStatus, type SerialFrame } from '@shared/gateway'
 import type {
   CachedAxis,
   CachedBoard,
@@ -30,16 +17,20 @@ import type {
   CalRawSample,
   CalResult,
   CalSnapshot
-} from '@shared/hid/calibration/ipc'
-import type { PushChannel, PushChannels } from '@shared/app/ipc'
-import { CAL_AXIS_NONE, nackReasonName } from '@shared/calibration'
-import { boardFor, dropAxis, regressedAxes, storeAxes } from '@shared/cal-cache'
+} from '@shared/hid/calibration'
+import type { PushChannel, PushChannels } from '@shared/app'
 import {
+  boardFor,
+  CAL_AXIS_NONE,
   CalLink,
   CalNackError,
   CalTimeoutError,
+  dropAxis,
   loadCalCache,
-  saveCalCache
+  nackReasonName,
+  regressedAxes,
+  saveCalCache,
+  storeAxes
 } from '../hid/calibration'
 import {
   findSimGatewayPort,
@@ -50,8 +41,22 @@ import {
   SIMGATEWAY_VID,
   type Log
 } from './serial-bridge'
+import { GatewayWatch } from './gateway-health'
+import { LineAssembler, parseCommand } from './link-framing'
 import { HidReader } from '../hid'
-import { NodeHub, withFaultInfo } from '../nodes'
+import {
+  BRIDGE_NODE_ID,
+  NODE_END_MSG,
+  NODE_MSG,
+  NODE_TELEM_MSG,
+  NodeHub,
+  NodeRoster,
+  cleanNodeLine,
+  isLegacyNodeStatus,
+  nodeRosterRequest,
+  parseNodeStatus,
+  withFaultInfo
+} from '../nodes'
 
 type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => void
 
@@ -425,7 +430,7 @@ export class DeviceLink {
 
   /**
    * Any node-status line answers the roster request; the Gateway's own row (node 0) is its health.
-   * That row stays out of the cockpit model (node-rules); this is where it is shown instead (#94).
+   * That row stays out of the cockpit model (node-model); this is where it is shown instead (#94).
    */
   private gatewayLine(identifier: string, arg: string, raw: string, t: number): void {
     this.report(this.gateway.answered(raw, t))

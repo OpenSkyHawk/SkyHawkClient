@@ -1,5 +1,5 @@
-import type { DeviceState } from '@shared/gateway/ipc'
-import type { StreamState } from '@shared/dcs/ipc'
+import type { DeviceState } from '@shared/gateway'
+import type { StreamState } from '@shared/dcs'
 import type { SourceMode } from './store'
 
 /**
