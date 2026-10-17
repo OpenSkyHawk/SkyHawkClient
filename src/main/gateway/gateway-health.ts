@@ -31,8 +31,8 @@ export const GATEWAY_REASK_MS = 1000
 
 const SECS = GATEWAY_NO_ANSWER_MS / 1000
 
-type Flag = (typeof STATUS_FLAGS)[number]
-const flag = (key: StatusFlag): Flag => STATUS_FLAGS.find((f) => f.key === key)!
+type Flag = (typeof STATUS_FLAGS)[StatusFlag]
+const flag = (key: StatusFlag): Flag => STATUS_FLAGS[key]
 
 /**
  * Client wording for the faults a Gateway reports about itself, keyed by NODE_FAULT_CODES name.
