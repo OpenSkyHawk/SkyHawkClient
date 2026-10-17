@@ -2,7 +2,18 @@
 // Wire contract: NodeStatus.h NODE_TELEM_* / TelemPage / PduRailFlag / PduStatusFlag (generated
 // into shared/firmware; reference.test asserts the decoder's protoVersion matches). Page layouts:
 // FirmwarePlan/02-can-protocol.md § Node Telemetry Payload — TELEM_n (#216).
-import { MAX_NODE_ID, NODE_TELEM, PDU_RAIL_FLAGS, PDU_STATUS_FLAGS, TELEM_PAGES } from './firmware'
+import {
+  MAX_NODE_ID,
+  NODE_TELEM,
+  NODE_TELEM_FIELD,
+  NODE_TELEM_ROW_BYTES,
+  NTC_TEMP_UNAVAILABLE,
+  PDU_RAIL_FIELD,
+  PDU_RAIL_FLAGS,
+  PDU_STATUS_FIELD,
+  PDU_STATUS_FLAGS,
+  TELEM_PAGES
+} from './firmware'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_TELEM_PROTO = 1
@@ -27,8 +38,8 @@ export const PDU_FLAG = PDU_STATUS_FLAGS
  */
 export const TELEM_STALE_MS = 10_000
 
-const HEX_LEN = 18 // nodeId(2) + 8 frame bytes (16), frame bytes in wire order
-const NTC_UNAVAILABLE = -0x8000 // INT16_MIN
+// NODE_TELEM_ROW_BYTES (9) as hex, 18 chars: nodeId + the 8 frame bytes in wire order.
+const HEX_LEN = NODE_TELEM_ROW_BYTES * 2
 
 /**
  * PDU_RAIL_12V / PDU_RAIL_5V. Averages and the minimum cover the window since this page's
@@ -85,10 +96,12 @@ export function displayCurrentMa(ma: number): number {
 
 /** Decode the 18-hex `_NODE_TELEM` argument; null if malformed, nodeId out of range or page 0. */
 export function parseNodeTelem(hex: string): NodeTelem | null {
-  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]{18}$/.test(hex)) return null
-  const nodeId = parseInt(hex.slice(0, 2), 16)
+  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]+$/.test(hex)) return null
+  // Row byte `at` (NODE_TELEM_FIELD offset): hex index 2 × at.
+  const row = (at: number) => parseInt(hex.slice(at * 2, at * 2 + 2), 16)
+  const nodeId = row(NODE_TELEM_FIELD.ID)
   if (nodeId < 1 || nodeId > MAX_NODE_ID) return null
-  const b = (i: number) => parseInt(hex.slice(2 + i * 2, 4 + i * 2), 16) // frame byte i
+  const b = (i: number) => row(NODE_TELEM_FIELD.FRAME + i) // frame byte i; byte 0 is the page
   const u16 = (i: number) => b(i) | (b(i + 1) << 8) // little-endian
   const i16 = (i: number) => {
     const v = u16(i)
@@ -101,25 +114,31 @@ export function parseNodeTelem(hex: string): NodeTelem | null {
       nodeId,
       kind: 'rail',
       page,
-      flags: b(1),
-      vAvgMv: u16(2),
-      vMinMv: u16(4),
-      iAvgMa: i16(6)
+      flags: b(PDU_RAIL_FIELD.FLAGS),
+      vAvgMv: u16(PDU_RAIL_FIELD.V_AVG_MV),
+      vMinMv: u16(PDU_RAIL_FIELD.V_MIN_MV),
+      iAvgMa: i16(PDU_RAIL_FIELD.I_AVG_MA)
     }
   }
   if (page === TELEM_PAGE.PDU_STATUS) {
-    const t = i16(2)
+    const t = i16(PDU_STATUS_FIELD.NTC_TEMP_DC)
     return {
       nodeId,
       kind: 'status',
       page,
-      flags: b(1),
-      ntcTempC: t === NTC_UNAVAILABLE ? null : t / 10,
-      i12PeakMa: u16(4),
-      i5PeakMa: u16(6)
+      flags: b(PDU_STATUS_FIELD.FLAGS),
+      ntcTempC: t === NTC_TEMP_UNAVAILABLE ? null : t / 10, // the int16 sentinel, 0x8000 on the wire
+      i12PeakMa: u16(PDU_STATUS_FIELD.I12_PEAK_MA),
+      i5PeakMa: u16(PDU_STATUS_FIELD.I5_PEAK_MA)
     }
   }
-  return { nodeId, kind: 'unknown', page, body: hex.slice(4).toLowerCase() }
+  // Frame bytes 1–7: everything after the page byte.
+  return {
+    nodeId,
+    kind: 'unknown',
+    page,
+    body: hex.slice((NODE_TELEM_FIELD.FRAME + 1) * 2).toLowerCase()
+  }
 }
 
 /**

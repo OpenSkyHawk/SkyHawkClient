@@ -1,4 +1,5 @@
 // Settings text decisions (#67), pure so they are unit-tested: what each Cockpit / About row says.
+import { GATEWAY_NODE_ID } from '@shared/firmware'
 import type { NodeRegistryInfo } from '@shared/ipc'
 import type { HiddenNode, NodeModel } from '@shared/node-rules'
 import { consoleLabel } from '../../cockpit-panels'
@@ -80,7 +81,7 @@ export function registryOnBus(
   model: NodeModel | undefined,
   linkUp: boolean
 ): OnBus {
-  if (nodeId === 0)
+  if (nodeId === GATEWAY_NODE_ID)
     return linkUp ? { text: 'serial link', dot: 'on' } : { text: 'no device', dot: '' }
   if (model?.hidden.includes(nodeId)) return { text: 'hidden', dot: '' }
   const e = model?.nodes.find((n) => n.nodeId === nodeId)
