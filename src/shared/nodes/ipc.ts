@@ -616,10 +616,8 @@ export interface FedBoard {
   hidden: boolean
 }
 
-/** One board's side panel: what it says and offers. */
+/** One board's side panel: what it says and offers. Only a board in your cockpit has one (D6). */
 export interface BoardPanel {
-  /** In your cockpit (not new): Powered by, Placement and the footer show. */
-  placed: boolean
   /** The boxes at the top of the Status tab, stacked. */
   faults: FaultBox[]
   actions: BoardActions
@@ -645,6 +643,13 @@ export interface BoardPanel {
 export interface ZoneChoices {
   options: Record<string, Record<string, { value: number; label: string }[]>>
 }
+
+/**
+ * Where clicking a board goes (D6), decided in main from the one membership: its side panel while
+ * it is in your cockpit (hidden ones included), else the Adopt dialog on that NODE_ID — a board
+ * outside your cockpit never gets a board panel.
+ */
+export type BoardOpens = 'panel' | 'adopt'
 
 /** What the Adopt dialog can say about a new NODE_ID: only what it has reported. */
 export interface Evidence {
@@ -794,8 +799,17 @@ export interface CockpitSnapshot {
   plan: PlanConsole[]
   band: CockpitBand
   attention: CockpitAttention
-  /** Each board's side panel, by NODE_ID. */
+  /**
+   * The side panel of each board in your cockpit on the plan, by NODE_ID. A board outside your
+   * cockpit has none: it opens the Adopt dialog instead (D6, `opens`).
+   */
   panels: Record<number, BoardPanel>
+  /**
+   * Where each board opens, by NODE_ID (D6): every board in your cockpit → its panel, every other
+   * NODE_ID in the model → Adopt on it. Every way into a board (the plan, Attention, Powered by,
+   * Feeds, Connection's "›") follows this; an id not listed opens nothing.
+   */
+  opens: Record<number, BoardOpens>
   zones: ZoneChoices
   /** The Adopt dialog's queue: new NODE_IDs, oldest first seen first. */
   adopt: AdoptRow[]
@@ -838,6 +852,7 @@ export const COCKPIT_IDLE: CockpitSnapshot = {
   },
   attention: { items: [], shown: [], count: 0, more: 0, newCount: 0 },
   panels: {},
+  opens: {},
   zones: {
     options: { '': { '': [] }, Left: { '': [] }, Center: { '': [] }, Right: { '': [] } }
   },

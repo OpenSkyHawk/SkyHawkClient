@@ -24,6 +24,8 @@
 //   X8 registry wording     NOT IN REGISTRY / "Not in registry" for a new board (views.ts,
 //                           panels.ts)
 // Hide and Forget (X5) are offered by the one rule main refuses them by (offline-actions.ts).
+// Where clicking a board goes is that membership too (D6, members.ts boardOpens): its panel while
+// it is in your cockpit, else the Adopt dialog on its NODE_ID.
 //
 // The Overview, Connection and Settings read their own sections (R3.2b), each with its own answer
 // where it differs from the Cockpit's — the same option a, co-located:
@@ -47,7 +49,7 @@ import { adoptRows } from './adopt'
 import { cockpitAttention, strayFlag, strayNew } from './attention'
 import { cockpitBand, totalWatts } from './band'
 import { boardZones } from '../power-zone'
-import { cockpitMembers } from './members'
+import { boardOpens, cockpitMembers } from './members'
 import { boardPanels, zoneChoices } from './panels'
 import { planZones } from './plan-zones'
 import { settingsNodes } from './registry-rows'
@@ -96,6 +98,7 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     band: cockpitBand(views, strays.length, i.peakW),
     attention: cockpitAttention(i.model, views, outages, strays, live, i.device.gateway),
     panels: boardPanels(views, outages, i.telemetry, members, zones),
+    opens: boardOpens(views, members),
     zones: zoneChoices(views, members),
     adopt: adoptRows(views, members),
     overview: overviewSummary(views, outages, live),
