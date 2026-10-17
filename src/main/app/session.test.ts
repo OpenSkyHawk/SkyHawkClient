@@ -350,7 +350,7 @@ describe('device link is independent of the relay (#69)', () => {
     const { session, serial } = launched({ autoConnect: false })
     expect(serial).toBeUndefined()
     expect(session.status().device.state).toBe('disconnected')
-    session.link.connect() // the explicit Connect still works
+    session.connection.connect() // the explicit Connect still works
     expect(FakeSerial.last).toBeDefined()
     session.shutdown()
   })
@@ -457,7 +457,7 @@ describe('device link is independent of the relay (#69)', () => {
       portPath: '/dev/fake',
       detail: 'Access denied'
     })
-    session.link.connect() // Retry
+    session.connection.connect() // Retry
     expect(serial.stopped, 'the failed port is released').toBe(true)
     expect(FakeSerial.last).not.toBe(serial)
     expect(session.status().device.state).toBe('scanning')
@@ -466,10 +466,10 @@ describe('device link is independent of the relay (#69)', () => {
 
   it('ignores connect while the link is already open or looking', () => {
     const { session, serial } = launched()
-    session.link.connect()
+    session.connection.connect()
     expect(FakeSerial.last).toBe(serial)
     serial.openCb('/dev/fake')
-    session.link.connect()
+    session.connection.connect()
     expect(FakeSerial.last).toBe(serial)
     expect(serial.stopped).toBe(false)
     session.shutdown()
@@ -512,13 +512,13 @@ describe('device link is independent of the relay (#69)', () => {
   it('disconnect releases the serial port until connect, and leaves HID running', async () => {
     const { session, serial } = launched()
     serial.openCb('/dev/fake')
-    session.link.disconnect()
+    session.connection.disconnect()
     expect(serial.stopped).toBe(true)
     expect((await HID()).stopped, 'HID is shared with DCS and stays up').toBe(false)
     const cal = await session.calibration.calHello()
     expect(cal.ok ? 'ok' : cal.kind, 'calibration rides on serial').toBe('offline')
     expect(session.status().device.state).toBe('disconnected')
-    session.link.connect()
+    session.connection.connect()
     expect(FakeSerial.last).not.toBe(serial)
     expect(session.status().device.state).toBe('scanning')
     session.shutdown()
@@ -537,7 +537,7 @@ describe('device link is independent of the relay (#69)', () => {
   it('does not reconnect a released link on Start', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
     serial.openCb('/dev/fake')
-    session.link.disconnect()
+    session.connection.disconnect()
     expect(session.start().ok).toBe(false)
     expect(FakeSerial.last, 'Start leaves the link alone').toBe(serial)
     expect(session.status().device.state).toBe('disconnected')
@@ -886,8 +886,8 @@ describe('event log (#64)', () => {
     const { session, serial } = launched()
     serial.errorCb(new Error('Cannot lock port'))
     serial.errorCb(new Error('Cannot lock port')) // the port's own retry loop
-    session.link.disconnect()
-    session.link.connect()
+    session.connection.disconnect()
+    session.connection.connect()
     FakeSerial.last!.errorCb(new Error('Cannot lock port'))
     expect(rows(session)).toEqual([
       'client:SERIAL: serial port error · Cannot lock port',

@@ -81,7 +81,7 @@ function applyConfig(patch: Partial<AppConfig>): AppConfig {
 const transfer = new ConfigTransfer({
   getConfig: () => session.getConfig(),
   setConfig: (config) => applyConfig(config),
-  nodes: session.link.nodes,
+  nodes: session.nodes,
   loadCalCache: () => loadCalCache(cacheFile),
   saveCalCache: (cache) => saveCalCache(cache, cacheFile),
   backupDir: () => join(app.getPath('userData'), 'backups'),
@@ -137,28 +137,26 @@ function registerIpc(): void {
   ipcMain.handle(CTRL.relayStart, () => session.start())
   ipcMain.handle(CTRL.relayStop, () => session.stop())
   ipcMain.handle(CTRL.relayStatus, () => session.status())
-  ipcMain.handle(CTRL.deviceConnect, () => session.link.connect())
-  ipcMain.handle(CTRL.deviceDisconnect, () => session.link.disconnect())
+  ipcMain.handle(CTRL.deviceConnect, () => session.connection.connect())
+  ipcMain.handle(CTRL.deviceDisconnect, () => session.connection.disconnect())
   ipcMain.handle(CTRL.hidAvailability, () => hidAvailability())
-  ipcMain.handle(CTRL.nodesRefresh, () => session.link.requestNodes())
-  ipcMain.handle(CTRL.nodesGet, () => session.link.nodes.snapshot())
+  ipcMain.handle(CTRL.nodesRefresh, () => session.nodes.requestNodes())
+  ipcMain.handle(CTRL.nodesGet, () => session.nodes.snapshot())
   ipcMain.handle(CTRL.nodeMappingSet, (_e, id: number, patch: MappingPatch) =>
-    session.link.nodes.setMapping(id, patch)
+    session.nodes.setMapping(id, patch)
   )
   ipcMain.handle(CTRL.nodeMappingAdopt, (_e, id: number, spec: AdoptSpec) =>
-    session.link.nodes.adopt(id, spec)
+    session.nodes.adopt(id, spec)
   )
-  ipcMain.handle(CTRL.nodeMappingForget, (_e, id: number) => session.link.nodes.forget(id))
-  ipcMain.handle(CTRL.nodeMappingResetNode, (_e, id: number) => session.link.nodes.resetBoard(id))
-  ipcMain.handle(CTRL.nodeMappingReset, (_e, opts?: ResetOptions) =>
-    session.link.nodes.resetAll(opts)
+  ipcMain.handle(CTRL.nodeMappingForget, (_e, id: number) => session.nodes.forget(id))
+  ipcMain.handle(CTRL.nodeMappingResetNode, (_e, id: number) => session.nodes.resetBoard(id))
+  ipcMain.handle(CTRL.nodeMappingReset, (_e, opts?: ResetOptions) => session.nodes.resetAll(opts))
+  ipcMain.handle(CTRL.nodeMappingResetPreview, () => session.nodes.previewReset())
+  ipcMain.handle(CTRL.nodeRegistry, () => session.nodes.registry())
+  ipcMain.handle(CTRL.nodeMappingHide, (_e, id: number, on: boolean) => session.nodes.hide(id, on))
+  ipcMain.handle(CTRL.serialMonitor, (_e, on: boolean) =>
+    session.serialMonitor.setSerialMonitor(on)
   )
-  ipcMain.handle(CTRL.nodeMappingResetPreview, () => session.link.nodes.previewReset())
-  ipcMain.handle(CTRL.nodeRegistry, () => session.link.nodes.registry())
-  ipcMain.handle(CTRL.nodeMappingHide, (_e, id: number, on: boolean) =>
-    session.link.nodes.hide(id, on)
-  )
-  ipcMain.handle(CTRL.serialMonitor, (_e, on: boolean) => session.link.setSerialMonitor(on))
 
   // Axis calibration (#46). Every one returns a discriminated CalResult rather than throwing:
   // an ipcRenderer.invoke rejection flattens to a plain Error, which would lose the

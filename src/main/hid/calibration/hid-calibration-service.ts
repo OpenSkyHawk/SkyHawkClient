@@ -3,9 +3,9 @@
 // cal* commands as discriminated CalResults, the restore cache, `cal:raw` batching, the
 // last-confirmed snapshot and the export gate.
 //
-// It rides on the device link (gateway LinkRider) for the port's moments, and is the link's
-// calibration frame filter (CalFrameFilter): DeviceLink runs it on every incoming chunk, and the
-// codec's CalDemux inside CalLink takes the frames out.
+// It rides on the Gateway connection (gateway LinkRider) for the port's moments, and is the link's
+// calibration frame filter (CalFrameFilter): GatewayConnection runs it on every incoming chunk, and
+// the codec's CalDemux inside CalLink takes the frames out.
 import type {
   CachedAxis,
   CachedBoard,
@@ -17,13 +17,7 @@ import type {
   CalSnapshot
 } from '@shared/hid/calibration'
 import type { PushChannel, PushChannels } from '@shared/app'
-import {
-  findSimGatewayPort,
-  listSerialPorts,
-  type CalFrameFilter,
-  type LinkRider,
-  type LinkTimer
-} from '../../gateway'
+import type { CalFrameFilter, LinkRider, LinkTimer } from '../../gateway'
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
 import { loadCalCache, saveCalCache, type CacheFileIO } from './cache-store'
 import { boardFor, dropAxis, regressedAxes, storeAxes } from './cache-rules'
@@ -35,11 +29,13 @@ type Emit = <C extends PushChannel>(channel: C, payload: PushChannels[C]) => voi
 const CAL_RAW_FLUSH_MS = 50
 
 /**
- * What the service needs from app: the write to the device (DeviceLink.write), the
- * calibration-cache.json port, and the debug log.
+ * What the service needs from app: the write to the device and the board's USB serial
+ * (GatewayConnection.write / usbSerialNumber), the calibration-cache.json port, and the debug log.
  */
 export interface HidCalibrationDeps {
   write: (data: Buffer) => void
+  /** USB serial of the attached gateway, the key of the restore cache (#46). */
+  serialNumber: () => Promise<string | undefined>
   cacheFile: CacheFileIO
   log: Log
 }
@@ -145,7 +141,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
    * relay is unaffected either way.
    */
   private async readCalibrationState(): Promise<void> {
-    this.calSerialNumber = await this.gatewaySerialNumber()
+    this.calSerialNumber = await this.deps.serialNumber()
     const hello = await this.calHello()
     if (!hello.ok) {
       this.deps.log('cal.absent', `no calibration channel: ${hello.message}`)
@@ -169,26 +165,6 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
       present: read.value.presentMask.toString(2).padStart(8, '0'),
       calibrated: read.value.calibratedMask.toString(2).padStart(8, '0')
     })
-  }
-
-  /**
-   * USB serial of the attached gateway, for keying the restore cache in #46.
-   *
-   * From SerialPort.list(), not node-hid: node-hid is an optional dependency that may be absent
-   * entirely, and HidReader opens by VID/PID without exposing a serial. Confirmed on hardware —
-   * the board reports 50031327805E871C. Absent or empty means no restore may be offered, since
-   * guessing which board a cached calibration belongs to is the failure the key exists to stop.
-   */
-  private async gatewaySerialNumber(): Promise<string | undefined> {
-    try {
-      const path = await findSimGatewayPort()
-      if (!path) return undefined
-      const ports = await listSerialPorts()
-      const hit = ports.find((p) => p.path === path)
-      return hit?.serialNumber || undefined
-    } catch {
-      return undefined
-    }
   }
 
   /** Convert a CalLink rejection into the discriminated result the renderer can branch on. */

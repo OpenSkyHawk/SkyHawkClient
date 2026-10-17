@@ -4,8 +4,8 @@
 // capture); recording can tap any live mode.
 //
 // The device link is not started or stopped here. It is up whenever the board is plugged in
-// (gateway/device-link.ts); a source mode only chooses where the stream comes from and whether it
-// reaches the device.
+// (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
+// whether it reaches the device.
 import {
   EXPORT_MULTICAST_ADDR,
   EXPORT_PORT,
@@ -30,9 +30,10 @@ import {
   type Transport
 } from '../dcs'
 import { clientErrorEvent, EventJournal, EventLog } from '../events'
-import { deviceEvent, DeviceLink } from '../gateway'
+import { deviceEvent, DeviceLineTap, GatewayConnection, SerialTrafficMonitor } from '../gateway'
 import { HidService } from '../hid'
 import { HidCalibrationService } from '../hid/calibration'
+import { NodeHub, NodeRoster } from '../nodes'
 import { debugLog } from './debug-log'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
 
@@ -87,9 +88,15 @@ export function relayContext(cfg: AppConfig): RelayContext {
 }
 
 export class Session {
-  /** The device link: serial and nodes. Up independently of the relay. */
-  readonly link: DeviceLink
-  /** Axis calibration (#46), riding on the device link's port. */
+  /** The Gateway's USB serial port. Up independently of the relay. */
+  readonly connection: GatewayConnection
+  /** The port's text lines, read: node lines to NodeHub, panel commands to the log. */
+  readonly lines: DeviceLineTap
+  /** The Serial tab's raw view of the port. */
+  readonly serialMonitor: SerialTrafficMonitor
+  /** The node roster, node data and mapping, and the Gateway's health (UD-C). */
+  readonly nodes: NodeHub
+  /** Axis calibration (#46), riding on the Gateway port. */
   readonly calibration: HidCalibrationService
   /** The HID joystick, up for as long as the app is. */
   readonly hid: HidService
@@ -126,35 +133,60 @@ export class Session {
     this.parser = new DcsBiosProtocol((addr, val) => this.onWrite(addr, val))
     const { mappingFile, cacheFile } = storeFiles(paths)
     this.calibration = new HidCalibrationService(emit, {
-      write: (data) => this.link.write(data),
+      write: (data) => this.connection.write(data),
+      serialNumber: () => this.connection.usbSerialNumber(),
       cacheFile,
       log: debugLog
     })
     this.hid = new HidService(emit, debugLog)
-    this.link = new DeviceLink(emit, {
+    this.connection = new GatewayConnection(emit, {
+      log: debugLog,
+      frames: this.calibration,
+      health: () => this.nodes.gatewayHealth()
+    })
+    this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,
       log: debugLog,
-      report: (events) => this.journal.report(events),
-      frames: this.calibration
+      link: this.connection
     })
-    // The order is load-bearing: at each of the link's moments its riders run in the order added,
-    // and where both handle one (start's timers, a port opening) calibration's part came first
-    // inside DeviceLink before the split (R2.2a). See LinkRider.
-    this.link.ride(this.calibration)
-    this.link.ride(this.hid)
-    this.link.onBytes((bytes) => this.fromDevice(bytes))
-    this.link.onLine((l) => {
+    this.serialMonitor = new SerialTrafficMonitor(emit)
+    this.lines = new DeviceLineTap(this.nodes)
+    // The wiring order is load-bearing (R2.2b): it is the order DeviceLink ran these in before the
+    // split. At each of the connection's moments its riders run in the order added:
+    //   start's timers   link tick (200, its own) → serial flush (50) → cal:raw (50) →
+    //                    HID rate (1000) → roster poll (5000); then the HID reader
+    //   port opens       `opening`: node resets, then the line assembler → connected status →
+    //                    `connected`: roster request → `opened`: calibration read, HID reopen
+    //   port closes      `closing`: nodes' last seen → `closed`: calibration → reconnect/disconnect
+    //   teardown         `release`: calibration → port stop → `released`: the Gateway's health
+    //   200 ms tick      `flush`: HID → (link up) `tick`: node pushes, Gateway health
+    //   shutdown         `closing`: nodes → timers cleared → teardown → `stop`: HID
+    this.connection.ride(this.serialMonitor)
+    this.connection.ride(this.calibration)
+    this.connection.ride(this.hid)
+    this.connection.ride(this.nodes.rider)
+    this.connection.ride(this.lines)
+    // Port traffic: the serial monitor taps it raw, above the frame filter.
+    this.connection.onTraffic((dir, chunk) => this.serialMonitor.onSerialTraffic(dir, chunk))
+    // Bytes below the frame filter: the relay to DCS first, then the line tap — the order
+    // DeviceLink handed them on in.
+    this.connection.onBytes((bytes) => this.fromDevice(bytes))
+    this.connection.onBytes((bytes) => this.lines.push(bytes))
+    this.lines.onLine((l) => {
       if (l.kind !== 'command') return
       // Logged relaying or not: watching panel commands with no DCS is how a panel gets tested.
       this.stats.command(l.line)
       this.logBuf.push({ t: l.t, dir: 'out', address: 0, name: l.identifier, value: l.arg })
     })
-    this.link.onError((tag, message) => {
+    // Link faults and the v2-Gateway warning: one path, as when DeviceLink raised both.
+    const onError = (tag: string, message: string): void => {
       this.stats.error()
       this.logError(tag, message)
-    })
+    }
+    this.connection.onError(onError)
+    this.nodes.onError(onError)
     this.journal.onEvents((events) => this.events.add(events))
-    this.link.onStatus((s) => {
+    this.connection.onStatus((s) => {
       if (s.state === 'reconnecting') this.stats.reconnect()
       // The port's own retry loop stays in `error`; any other state (an explicit Connect or Retry
       // goes through `scanning`) ends that loop, so the next failure is news again.
@@ -169,13 +201,13 @@ export class Session {
   open(): void {
     if (this.logTimer) return
     this.logTimer = setInterval(() => this.flushLog(), LOG_FLUSH_MS)
-    this.link.start(this.config.autoConnect)
+    this.connection.start(this.config.autoConnect)
   }
 
   /** App quit. */
   shutdown(): void {
     this.stop()
-    this.link.shutdown()
+    this.connection.shutdown()
     if (this.logTimer) clearInterval(this.logTimer)
     this.logTimer = undefined
   }
@@ -188,7 +220,7 @@ export class Session {
     const prev = this.config
     this.config = { ...prev, ...patch }
     if (prev.autoConnect !== this.config.autoConnect) {
-      this.link.setAutoConnect(this.config.autoConnect)
+      this.connection.setAutoConnect(this.config.autoConnect)
     }
     if (this.running && relayConfigChanged(prev, this.config)) {
       // A rebuild of a relay already running, not a new Start: it is not gated on the device,
@@ -207,7 +239,7 @@ export class Session {
    * resumes when the link returns.
    */
   start(): RelayResult {
-    if (exportToDevice(this.config) && !isLinkUp(this.link.deviceStatus().state)) {
+    if (exportToDevice(this.config) && !isLinkUp(this.connection.deviceStatus().state)) {
       return { ok: false, error: 'Gateway is not connected' }
     }
     return this.run()
@@ -315,7 +347,7 @@ export class Session {
     this.recorder?.record('in', chunk)
     // Forward byte-for-byte to the SimGateway — unless a calibration exchange is in flight.
     // Parsing for our own UI continues; only the forward pauses.
-    if (exportToDevice(this.config) && !this.calibration.exportGated) this.link.write(chunk)
+    if (exportToDevice(this.config) && !this.calibration.exportGated) this.connection.write(chunk)
   }
 
   /** Device traffic, calibration frames already removed by the link: relay to DCS:7778. */
@@ -358,7 +390,7 @@ export class Session {
 
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */
   status(): RelayStatus {
-    const device: DeviceStatus = this.link.deviceStatus()
+    const device: DeviceStatus = this.connection.deviceStatus()
     return { running: this.running, relay: this.relay, device, cal: this.calibration.calSnapshot() }
   }
 
