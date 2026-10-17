@@ -226,7 +226,6 @@ function launch(opts: ServicesOptions) {
     },
     [CTRL.deviceConnect]: () => services.connection.connect(),
     [CTRL.deviceDisconnect]: () => services.connection.disconnect(),
-    [CTRL.nodesRefresh]: () => services.nodes.requestNodes(),
     [CTRL.nodesGet]: () => services.nodes.snapshot(),
     [CTRL.nodeMappingSet]: (id: number, patch: MappingPatch) =>
       services.nodes.setMapping(id, patch),

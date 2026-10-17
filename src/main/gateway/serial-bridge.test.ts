@@ -147,3 +147,54 @@ describe('SerialBridge port lifetime', () => {
     })
   })
 })
+
+describe('SerialBridge stopped mid-attempt (M4)', () => {
+  beforeEach(() => {
+    FakePort.built = []
+    FakePort.present = true
+  })
+
+  it('stopped while looking for the board: builds no port and reports nothing', async () => {
+    const s = new SerialBridge(true)
+    const calls: string[] = []
+    s.onOpen(() => calls.push('open'))
+    s.onError((e) => calls.push(`error ${e.message}`))
+    s.start() // the port enumeration is in flight
+    s.stop()
+    await flush()
+    expect(FakePort.built, 'no port built after the stop').toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  it('stopped while the port is opening: the open that completes is released, not reported', async () => {
+    const s = new SerialBridge(true)
+    const opened: string[] = []
+    s.onOpen((p) => opened.push(p))
+    s.start()
+    await flush()
+    const port = FakePort.built[0]!
+    s.stop() // Disconnect or Retry, with the open still in flight
+    port.settle() // the driver completes the open after the stop
+    expect(opened, 'the link is never told').toEqual([])
+    expect(port.isOpen, 'and the port is closed again, not held until quit').toBe(false)
+    await flush()
+    expect(port.destroyed).toBe(true)
+  })
+
+  it('stopped while the port is opening: a failed open schedules no retry', async () => {
+    vi.useFakeTimers()
+    try {
+      const s = new SerialBridge(true)
+      const errors: string[] = []
+      s.onError((e) => errors.push(e.message))
+      s.start()
+      await vi.advanceTimersByTimeAsync(0)
+      s.stop()
+      FakePort.built[0]!.settle(new Error('access denied'))
+      expect(errors).toEqual([])
+      expect(vi.getTimerCount(), 'no reconnect pending').toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

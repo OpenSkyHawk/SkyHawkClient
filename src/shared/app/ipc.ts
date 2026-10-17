@@ -256,7 +256,6 @@ export interface SkyhawkApi {
   toggleCapture(): Promise<RecordState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
-  refreshNodes(): Promise<void>
 
   // ── node data layer (#61) ─────────────────────────────────────────────────
   // Every mapping change persists to node-mapping.json and also pushes `nodes:model`.

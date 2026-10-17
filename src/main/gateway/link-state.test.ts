@@ -86,12 +86,11 @@ describe('the link’s action (R3.4a: the renderer’s deviceView table before)'
     })
   })
 
-  it('every push carries it, and Refresh’s availability as the node layer hands it in', () => {
+  it('every push carries it, and nothing for Refresh (#132: the button is gone)', () => {
     const up = { state: 'connected' as const }
-    expect(linkFacts(up, { serialMonitor: false }, true)).toMatchObject({
-      action: { offer: 'disconnect', intent: 'disconnect' },
-      canRefresh: true
+    expect(linkFacts(up, { serialMonitor: false })).toMatchObject({
+      action: { offer: 'disconnect', intent: 'disconnect' }
     })
-    expect(linkFacts(up, { serialMonitor: false }).canRefresh, 'no node layer').toBe(false)
+    expect(linkFacts(up, { serialMonitor: false })).not.toHaveProperty('canRefresh')
   })
 })
