@@ -2,7 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { LogEvent } from '@shared/events'
 import {
   CTRL,
+  deliverPushes,
+  PUSH_BATCH,
   type DebugDumpResult,
+  type PushBatch,
   type PushChannel,
   type PushChannels,
   type RelayStatus,
@@ -25,13 +28,26 @@ import type {
   ResetPreview
 } from '@shared/nodes'
 
+// Each push channel's subscribers, in the order they subscribed.
+const subscribers = new Map<PushChannel, Set<(data: never) => void>>()
+
+// Main sends every push of one turn as one `push:batch` message (R3.4c). Its pushes reach their
+// channels' subscribers in main's order, all inside this one IPC event, so the renderer applies
+// them in one task and React commits them as one frame.
+ipcRenderer.on(PUSH_BATCH, (_e: unknown, batch: PushBatch) =>
+  deliverPushes(batch, (channel) => subscribers.get(channel))
+)
+
 // Typed bridge: main -> renderer push subscriptions + renderer -> main control.
 const api: SkyhawkApi = {
   on<C extends PushChannel>(channel: C, cb: (data: PushChannels[C]) => void): () => void {
-    const listener = (_e: unknown, data: PushChannels[C]): void => cb(data)
-    ipcRenderer.on(channel, listener)
+    // A wrapper per subscription, as ipcRenderer.on made one: the same callback twice is two.
+    const listener = (data: PushChannels[C]): void => cb(data)
+    const set = subscribers.get(channel) ?? new Set()
+    set.add(listener as (data: never) => void)
+    subscribers.set(channel, set)
     return () => {
-      ipcRenderer.removeListener(channel, listener)
+      set.delete(listener as (data: never) => void)
     }
   },
   getConfig: () => ipcRenderer.invoke(CTRL.configGet) as Promise<ConfigView>,

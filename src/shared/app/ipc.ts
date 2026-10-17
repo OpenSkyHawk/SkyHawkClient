@@ -103,6 +103,47 @@ export interface PushChannels
 
 export type PushChannel = keyof PushChannels
 
+/** One push, as it travels inside a `push:batch` message: its channel and that channel's payload. */
+export type PushItem = {
+  [C in PushChannel]: { channel: C; payload: PushChannels[C] }
+}[PushChannel]
+
+/**
+ * Every push main made in one turn of its event loop, in the order it made them (R3.4c). A link
+ * change fans out `device:status`, `cal:workflow`, `cockpit:snapshot` and `relay:facts` from one
+ * handler; sent as one message, the renderer applies them in one task and draws them as one frame.
+ */
+export type PushBatch = PushItem[]
+
+/**
+ * The one wire channel main → renderer pushes travel on since R3.4c: each message is a PushBatch.
+ * The push channels above stay the names the renderer subscribes to and routes by.
+ */
+export const PUSH_BATCH = 'push:batch'
+
+/**
+ * Hand each push of a batch to its channel's subscribers, in the batch's order: the preload's
+ * dispatch of one `push:batch` message (and the renderer test mock's). One call, one task.
+ *
+ * A subscriber that throws costs only its own push, as when each push was its own message: the
+ * pushes after it are still delivered, and the error is rethrown once the batch is through.
+ */
+export function deliverPushes(
+  batch: PushBatch,
+  subscribers: (channel: PushChannel) => Iterable<(payload: never) => void> | undefined
+): void {
+  const errors: unknown[] = []
+  for (const { channel, payload } of batch) {
+    try {
+      for (const cb of subscribers(channel) ?? []) (cb as (p: typeof payload) => void)(payload)
+    } catch (e) {
+      errors.push(e)
+    }
+  }
+  if (errors.length === 1) throw errors[0]
+  if (errors.length > 1) throw new AggregateError(errors, 'push subscribers threw')
+}
+
 /**
  * A main → renderer push, as AppServices hands it to each service. `Emit<C>` narrows it to some
  * channels (EventJournal pushes only `events:batch`); the full `Emit` is assignable to any of them.

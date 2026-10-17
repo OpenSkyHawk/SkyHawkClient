@@ -4,6 +4,11 @@
 // current picture and subscribes the push channels — the old single store's initBridge, with each
 // pull and push handed to the slice it sets, in the same order.
 //
+// Each subscription below is a route: main sends every push of one turn as one `push:batch`
+// message (R3.4c), and the preload hands that message's pushes to these routes in main's order, in
+// one task. Each slice's handler runs as it did per message — the later push wins — and React
+// commits the whole turn as one frame.
+//
 // Two places reach across slices, both as they did in the single store:
 //   - the rehydrate bundle (`relay:status`) sets the relay (dcs), the link (gateway) and the
 //     calibration (hid/calibration) — three updates, one after another in the same callback, where
