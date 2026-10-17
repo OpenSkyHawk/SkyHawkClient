@@ -86,6 +86,17 @@ describe('T10 Adopt dialog: queue and form (B74, B21, B22)', () => {
     })
   })
 
+  it('changing the console clears Powered by: you pick the PDU (N9, as the Settings tab does)', async () => {
+    const { dlg, user, button } = await openAdopt()
+    const zone = within(dlg).getByLabelText('Powered by')
+    expect(zone).toHaveDisplayValue('PDU_Left')
+    await user.selectOptions(within(dlg).getByLabelText('Console'), 'Right')
+    expect(zone).toHaveDisplayValue('Choose…')
+    expect(button('Add to cockpit')).toBeDisabled()
+    await user.selectOptions(within(dlg).getByLabelText('Console'), 'Left')
+    expect(zone).toHaveDisplayValue('Choose…') // not back to the pre-fill: still yours to pick
+  })
+
   it('after an add the selection moves to the next board, and the added one leaves the queue', async () => {
     const { user, options, selected, button } = await openAdopt()
     await user.click(button('Add to cockpit'))

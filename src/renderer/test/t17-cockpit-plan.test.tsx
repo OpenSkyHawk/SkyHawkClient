@@ -63,7 +63,9 @@ describe('T17 Cockpit plan (B64, B10, X2)', () => {
       device: connected(),
       model: model([fed], [], {
         hidden: [4],
-        hiddenNodes: [{ nodeId: 4, name: 'PDU_Right', console: 'Right' }]
+        hiddenNodes: [
+          { nodeId: 4, name: 'PDU_Right', console: 'Right', kind: 'pdu', source: 'registry' }
+        ]
       })
     })
     expect(plan()).toEqual(['No power zone', '  Navigation'])

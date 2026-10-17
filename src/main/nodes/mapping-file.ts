@@ -8,7 +8,7 @@
 // this build cannot safely overwrite — unreadable, stuck in place, or from a newer client — is
 // loaded read-only. A newer client's file is valid, not damaged: it is never replaced by `.bak`.
 import { EMPTY_MAPPING, NODE_MAPPING_VERSION, sanitizeNodeMapping } from './mapping-rules'
-import type { NodeMappingFile } from '@shared/nodes'
+import type { NodeDefaults, NodeMappingFile } from '@shared/nodes'
 import { fileErrorText } from '@shared/format'
 
 /**
@@ -71,9 +71,13 @@ const STUCK = (error: unknown) =>
   `node-mapping.json is damaged and could not be moved aside: ${fileErrorText(error)}`
 const NOT_SAVED = ' Cockpit changes are not saved until it can be loaded.'
 
-/** A file that parsed: as written, or read-only when a newer client wrote it. */
-function fromData(data: unknown): LoadedMapping {
-  const file = sanitizeNodeMapping(data)
+/**
+ * A file that parsed: as written, or read-only when a newer client wrote it. An older file is
+ * upgraded against the registry (`defaults`): its links to PDUs outside your cockpit become No power
+ * zone (D7, sanitizeNodeMapping).
+ */
+function fromData(data: unknown, defaults?: Map<number, NodeDefaults>): LoadedMapping {
+  const file = sanitizeNodeMapping(data, defaults)
   const version = (data as { version?: unknown } | null)?.version
   if (typeof version === 'number' && version > NODE_MAPPING_VERSION) {
     return { file, readOnly: 'node-mapping.json was written by a newer client' }
@@ -91,25 +95,28 @@ function stuckReason(damage: Damage, aside: Aside): string | undefined {
   return undefined
 }
 
-export function loadNodeMapping(io: MappingFileIO): LoadedMapping {
+export function loadNodeMapping(
+  io: MappingFileIO,
+  defaults?: Map<number, NodeDefaults>
+): LoadedMapping {
   const r = io.read()
   switch (r.kind) {
     case 'missing':
       return { file: empty() }
     case 'read':
-      return fromData(r.data)
+      return fromData(r.data, defaults)
     case 'fallback': {
       // The backup is loaded. If the bad file could not be moved aside, a save would overwrite it.
       const readOnly = stuckReason(r.damage, r.aside)
       if (readOnly) {
         return {
-          file: sanitizeNodeMapping(r.data),
+          file: sanitizeNodeMapping(r.data, defaults),
           readOnly,
           retry: true,
           notice: { severity: 'error', text: r.note + NOT_SAVED }
         }
       }
-      return { ...fromData(r.data), notice: { severity: 'warn', text: r.note } }
+      return { ...fromData(r.data, defaults), notice: { severity: 'warn', text: r.note } }
     }
     case 'failed': {
       const readOnly = stuckReason(r.damage, r.aside)

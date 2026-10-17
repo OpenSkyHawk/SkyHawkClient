@@ -66,6 +66,26 @@
 // `ImportPreview` gained `backup` (set when the review is a restore) and `ConfigFile` gained the
 // optional `backup.before` record (type changes only).
 //
+// Fix track #131 (X1, cockpit membership): a type change only — no channel, intent or method was
+// added, removed or renamed. `HiddenNode` (`nodes:model`'s `hiddenNodes`) gained `kind` and
+// `source`: a hidden board is still in your cockpit, so the snapshot counts a hidden PDU as one a
+// board can be powered by and a hidden adopted board as one Reset… can forget.
+//
+// Fix track #131 (D7/R1/X4, X7, N9, power zones): a type change only — no channel, intent or
+// method was added, removed or renamed. A zone only ever names a PDU in your cockpit, resolved once
+// in main: `BoardPanel.poweredBy` became `zone` (`PowerZone`: active / hidden / none, with its
+// label), and `BoardPanel.feeds` rows became `FedBoard` (name, detail, hidden) since Feeds lists
+// hidden boards too. `HiddenNode` gained an optional `pduId`. Removed: `AdoptRow.pending` (the
+// "(not added)" choice), `NodeModelEntry.registry.pduName` (its only reader), and
+// `ZoneChoices.first` (a console change clears the zone, N9).
+//
+// Fix track #131 (D6/R3, adopt routing): a type change only — no channel, intent or method was
+// added, removed or renamed. `CockpitSnapshot` gained `opens` (NODE_ID → `BoardOpens`, 'panel' |
+// 'adopt'): where clicking a board goes, decided in main from the one membership, so a board
+// outside your cockpit always opens the Adopt dialog on its NODE_ID and never a board panel. So
+// `CockpitSnapshot.panels` holds only boards in your cockpit, and `BoardPanel.placed` (always true
+// for those) was removed.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator

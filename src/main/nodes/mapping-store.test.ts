@@ -48,22 +48,22 @@ function eventLog() {
   return { rows, events }
 }
 const sample: NodeMappingFile = {
-  version: 3,
+  version: 4,
   nodes: {
     1: { name: 'Armament', lastSeen: '2026-10-14T21:14:00.000Z', added: true },
-    41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
+    41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel', added: true }
   }
 }
 
 describe('node-mapping.json', () => {
   // #93 re-review E: a fresh computer imports a config — nothing is in its cockpit — then restarts.
-  it('a v3 file is read as written: an import never adds boards on the next load', () => {
+  it('a v4 file is read as written: an import never adds boards on the next load', () => {
     const imported: NodeMappingFile = {
-      version: 3,
+      version: 4,
       // No `added`: not in this cockpit. (A pre-v3 file would read both as added.)
       nodes: { 1: { name: 'Armament' }, 2: { console: 'Left' } }
     }
-    saveNodeMapping(importMapping(EMPTY_MAPPING, imported))
+    saveNodeMapping(importMapping(EMPTY_MAPPING, new Map(), imported))
     expect(loadNodeMapping().file).toEqual(imported) // after the restart: still not added
   })
 
@@ -76,7 +76,7 @@ describe('node-mapping.json', () => {
   })
 
   it('a missing file loads as an empty, writable mapping', () => {
-    expect(loadNodeMapping()).toEqual({ file: { version: 3, nodes: {} } })
+    expect(loadNodeMapping()).toEqual({ file: { version: 4, nodes: {} } })
   })
 
   it('round-trips, writing atomically (no temp file left behind)', () => {
@@ -93,7 +93,7 @@ describe('node-mapping.json', () => {
     expect(readFileSync(join(userData.dir, bad[0]!), 'utf8')).toContain('"Arm')
     // No backup to load: an empty, writable cockpit, and a notice for the event log.
     expect(loaded).toEqual({
-      file: { version: 3, nodes: {} },
+      file: { version: 4, nodes: {} },
       notice: {
         severity: 'error',
         text:
@@ -125,7 +125,7 @@ describe('node-mapping.json', () => {
     writeFileSync(file(), '{"version":3,"nodes":{"1":{"name":"Arm')
     writeFileSync(bak(), '{"version":3,"no')
     expect(loadNodeMapping()).toEqual({
-      file: { version: 3, nodes: {} },
+      file: { version: 4, nodes: {} },
       notice: {
         severity: 'error',
         text:
@@ -138,7 +138,7 @@ describe('node-mapping.json', () => {
   it('an unreadable file with no backup is read-only and left in place, to be tried again', () => {
     mkdirSync(file()) // a folder: EISDIR
     const loaded = loadNodeMapping()
-    expect(loaded.file).toEqual({ version: 3, nodes: {} })
+    expect(loaded.file).toEqual({ version: 4, nodes: {} })
     expect(loaded.readOnly).toMatch(/^node-mapping\.json could not be read: EISDIR: /)
     expect(loaded.retry).toBe(true)
     expect(loaded.notice?.severity).toBe('error')
@@ -149,7 +149,7 @@ describe('node-mapping.json', () => {
   })
 
   it("a newer client's file is never replaced by the backup: valid, not damaged", () => {
-    writeFileSync(file(), JSON.stringify({ ...sample, version: 4 }))
+    writeFileSync(file(), JSON.stringify({ ...sample, version: 5 }))
     writeFileSync(bak(), JSON.stringify({ version: 3, nodes: {} }))
     const before = readFileSync(file(), 'utf8')
     expect(loadNodeMapping()).toEqual({
@@ -165,8 +165,8 @@ describe('node-mapping.json', () => {
     expect(loadNodeMapping()).toEqual({ file: sample })
   })
 
-  it("loads a newer client's file read-only, so it is never rewritten as v3", () => {
-    writeFileSync(file(), JSON.stringify({ ...sample, version: 4 }))
+  it("loads a newer client's file read-only, so it is never rewritten as v4", () => {
+    writeFileSync(file(), JSON.stringify({ ...sample, version: 5 }))
     expect(loadNodeMapping()).toEqual({
       file: sample,
       readOnly: 'node-mapping.json was written by a newer client'
@@ -205,7 +205,7 @@ describe('MappingStore: a load that failed is tried again on the next access (M1
     const log = eventLog()
     let commits = 0
     const ms = new MappingStore({ file: io, events: log.events, onCommit: () => commits++ })
-    expect(ms.mapping()).toEqual({ version: 3, nodes: {} })
+    expect(ms.mapping()).toEqual({ version: 4, nodes: {} })
     expect(() => ms.save(sample)).toThrow(
       /^Not saved: node-mapping\.json could not be read: EISDIR/
     )
@@ -251,7 +251,7 @@ describe('MappingStore: a load that failed is tried again on the next access (M1
     }
     const log = eventLog()
     const ms = new MappingStore({ file: fake, events: log.events })
-    expect(ms.mapping()).toEqual({ version: 3, nodes: {} }) // first load: fails (n1)
+    expect(ms.mapping()).toEqual({ version: 4, nodes: {} }) // first load: fails (n1)
     expect(() => ms.save(sample)).toThrow(
       'Not saved: node-mapping.json could not be read: EBUSY: two'
     )
@@ -297,7 +297,7 @@ describe('MappingStore: a load that failed is tried again on the next access (M1
   })
 
   it("a newer client's file stays read-only and is not read again", () => {
-    writeFileSync(file(), JSON.stringify({ ...sample, version: 4 }))
+    writeFileSync(file(), JSON.stringify({ ...sample, version: 5 }))
     let reads = 0
     const counting: MappingFileIO = {
       read: () => {

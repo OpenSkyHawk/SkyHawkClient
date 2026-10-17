@@ -8,7 +8,8 @@ import type {
   PduReadings,
   PlanConsole,
   PlanGroupHead,
-  PlanZone
+  PlanZone,
+  PowerZone
 } from '@shared/nodes'
 
 /** NODE_IDS.md consoles are `Left` / `Center` / `Right`; anything else lands on the panel. */
@@ -44,14 +45,23 @@ function groupHead(p: NodeView): PlanGroupHead {
 
 /**
  * One group per PDU on the PDU's console, then the console's nodes without a power zone. A panel
- * sits under the PDU that feeds it, wherever its own console is; new nodes are not placed (they
- * wait in "New on the bus"). X4 co-located: a panel whose zone is a PDU not on the plan (none, or
- * not in your cockpit) is in its own console's No power zone.
+ * sits under the PDU that feeds it, wherever its own console is, while its resolved zone is
+ * `active` (D7, `zones`); new nodes are not placed (they wait in "New on the bus"). A panel whose
+ * zone is a hidden PDU keeps the link but sits in its own console's No power zone (B10).
  */
-export function planZones(views: NodeView[], outages: PduOutage[]): PlanConsole[] {
+export function planZones(
+  views: NodeView[],
+  outages: PduOutage[],
+  zones: ReadonlyMap<number, PowerZone>
+): PlanConsole[] {
   const pdus = views.filter((v) => v.entry.kind === 'pdu' && v.entry.source !== 'new')
   const pduIds = new Set(pdus.map((p) => p.entry.nodeId))
   const panels = views.filter((v) => v.entry.kind === 'panel' && v.entry.source !== 'new')
+  /** The PDU on the plan it sits under, if any. */
+  const under = (v: NodeView): number | undefined => {
+    const z = zones.get(v.entry.nodeId)
+    return z?.status === 'active' && pduIds.has(z.pduId) ? z.pduId : undefined
+  }
   return (['L', 'C', 'R'] as const).map((key) => {
     const zones: PlanZone[] = []
     const place = (pdu: NodeView | null, members: NodeView[]) => {
@@ -65,13 +75,11 @@ export function planZones(views: NodeView[], outages: PduOutage[]): PlanConsole[
     for (const pdu of on) {
       place(
         pdu,
-        panels.filter((p) => p.entry.pduId === pdu.entry.nodeId)
+        panels.filter((p) => under(p) === pdu.entry.nodeId)
       )
     }
     const loose = panels.filter(
-      (p) =>
-        consoleKey(p.entry.console) === key &&
-        (p.entry.pduId === null || !pduIds.has(p.entry.pduId))
+      (p) => consoleKey(p.entry.console) === key && under(p) === undefined
     )
     if (loose.length) place(null, loose)
     // One feed line per PDU, gold while it raises a rail flag.

@@ -26,7 +26,7 @@ const cal = (boards: CalCache['boards']): CalCache => ({ version: 1, boards })
 
 const current: ConfigSnapshot = {
   app: DEFAULT_APP_SETTINGS,
-  nodeMapping: { version: 3, nodes: {} },
+  nodeMapping: { version: 4, nodes: {} },
   powerSupply: DEFAULT_PSU,
   calibration: cal({
     A7: { confirmedAt: '2026-10-01T00:00:00Z', axes: { 2: axis(120, 2000, 3980) } }
@@ -186,21 +186,21 @@ describe('parseConfigFile: strict import validation (C1)', () => {
     expect(verdict('nodeMapping', { version: 'x', nodes: {} })).toBe('it has no version')
     expect(verdict('nodeMapping', { version: 3 })).toBe('it has no list of boards')
     expect(verdict('nodeMapping', { version: 3, nodes: [] })).toBe('it has no list of boards')
-    expect(verdict('nodeMapping', { version: 4, nodes: {} })).toBe(
+    expect(verdict('nodeMapping', { version: 5, nodes: {} })).toBe(
       'it was written by a newer client'
     )
     // With both, an empty list is a real empty cockpit, and entries are read tolerantly.
-    expect(verdict('nodeMapping', { version: 3, nodes: {} })).toEqual({ version: 3, nodes: {} })
+    expect(verdict('nodeMapping', { version: 3, nodes: {} })).toEqual({ version: 4, nodes: {} })
     expect(
       verdict('nodeMapping', {
         version: 3,
         nodes: { 99: { name: 'out of range' }, 2: { name: 'Nav', pduId: 'x' } }
       })
-    ).toEqual({ version: 3, nodes: { 2: { name: 'Nav' } } })
+    ).toEqual({ version: 4, nodes: { 2: { name: 'Nav' } } })
     // An older client's file (v1, with its ignore list) is upgraded as a local one is.
     expect(
       verdict('nodeMapping', { version: 1, nodes: { 2: { name: 'Nav' } }, ignored: [3] })
-    ).toEqual({ version: 3, nodes: { 2: { name: 'Nav', added: true } } })
+    ).toEqual({ version: 4, nodes: { 2: { name: 'Nav', added: true } } })
   })
 
   it('powerSupply: `mode`, `preset` and `custom` must be there, and every limit valid', () => {
@@ -266,10 +266,10 @@ describe('diffImport', () => {
   it('the review matches the apply: no "hidden" row for a board on the bus (#93 re-review K)', () => {
     const cur: ConfigSnapshot = {
       ...current,
-      nodeMapping: { version: 3, nodes: { 2: { added: true } } }
+      nodeMapping: { version: 4, nodes: { 2: { added: true } } }
     }
     const next = {
-      nodeMapping: { version: 3 as const, nodes: { 2: { added: true, hidden: true } } }
+      nodeMapping: { version: 4 as const, nodes: { 2: { added: true, hidden: true } } }
     }
     expect(diffImport(defaults, cur, next, [2])[0]!.rows).toEqual([])
     expect(diffImport(defaults, cur, next, [])[0]!.rows).toEqual([
@@ -282,30 +282,40 @@ describe('diffImport', () => {
     const cur: ConfigSnapshot = {
       ...current,
       nodeMapping: {
-        version: 3,
+        version: 4,
         nodes: {
           1: { added: true, lastSeen: seen },
           2: { added: true, lastSeen: seen },
-          41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel', lastSeen: seen }
+          41: {
+            added: true,
+            name: 'Trim',
+            console: 'Left',
+            pduId: null,
+            kind: 'panel',
+            lastSeen: seen
+          }
         }
       }
     }
     // The file has 2 (with another computer's last seen) and 4, not 1 or 41.
     const file: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: { 2: { added: true, lastSeen: '2020-01-01T00:00:00.000Z' }, 4: { added: true } }
     }
+    // D7 (#131): a zone is only a PDU in your cockpit — PDU_Center isn't here, so Center_Armament
+    // has none; PDU_Right joins, so Right_Navigation's NODE_IDS.md zone holds after the import.
     expect(diffImport(defaults, cur, { nodeMapping: file })).toEqual([
       {
         id: 'nodeMapping',
         title: 'Node mapping',
-        summary: '3 nodes · 1 joins · 2 leave',
+        summary: '4 nodes · 1 joins · 2 leave',
         rows: [
           {
             k: 'Center_Armament',
-            from: 'Center_Armament · Center · PDU_Center',
+            from: 'Center_Armament · Center · —',
             to: 'not in your cockpit'
           },
+          { k: 'Right_Navigation · power zone', from: '—', to: 'PDU_Right' },
           { k: 'PDU_Right', from: 'not in your cockpit', to: 'PDU_Right · Right · —' },
           { k: '#41', from: 'Trim · Left · —', to: 'not in your cockpit' }
         ]
@@ -313,11 +323,11 @@ describe('diffImport', () => {
     ])
     // Last seen is this computer's, never a row; the same membership reviews as no change.
     const same: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: {
         1: { added: true },
         2: { added: true, lastSeen: '2020-01-01T00:00:00.000Z' },
-        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+        41: { added: true, name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
       }
     }
     expect(diffImport(defaults, cur, { nodeMapping: same })[0]).toEqual({
@@ -330,7 +340,7 @@ describe('diffImport', () => {
 
   it('a hidden flag on a board outside your cockpit is not imported, so not reviewed (S4)', () => {
     const file: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: { 2: { hidden: true }, 52: { hidden: true } }
     }
     expect(diffImport(defaults, current, { nodeMapping: file })[0]!.rows).toEqual([])
@@ -338,11 +348,11 @@ describe('diffImport', () => {
 
   it('lists each change as key  from → to, per section', () => {
     const mapping: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: {
         1: { pduId: 3 },
         2: { name: 'Right_TACAN' },
-        41: { name: 'Right_Oxygen', console: 'Right', pduId: 4, kind: 'panel' }
+        41: { added: true, name: 'Right_Oxygen', console: 'Right', pduId: 4, kind: 'panel' }
       }
     }
     const diff = diffImport(defaults, current, {
@@ -375,11 +385,17 @@ describe('diffImport', () => {
       {
         id: 'nodeMapping',
         title: 'Node mapping',
-        summary: '3 nodes · 1 joins', // S4: #41 joins your cockpit
+        // S4: #41 joins your cockpit. D7 (#131): its PDU_Right is not in it, so No power zone, listed;
+        // Center_Armament's zones (PDU_Center → PDU_Left) are outside both cockpits: none either way.
+        summary: '2 nodes · 1 joins',
         rows: [
-          { k: 'Center_Armament · power zone', from: 'PDU_Center', to: 'PDU_Left' },
           { k: 'Right_Navigation · name', from: 'Right_Navigation', to: 'Right_TACAN' },
-          { k: '#41', from: 'not in your cockpit', to: 'Right_Oxygen · Right · PDU_Right' }
+          { k: '#41', from: 'not in your cockpit', to: 'Right_Oxygen · Right · —' },
+          {
+            k: '#41 · power zone',
+            from: 'PDU_Right',
+            to: 'No power zone (not in your cockpit)'
+          }
         ]
       },
       {
@@ -400,6 +416,40 @@ describe('diffImport', () => {
         ]
       }
     ])
+  })
+
+  it('D7 (#131): a link to a PDU the import leaves outside your cockpit is listed as No power zone', () => {
+    const OUTSIDE = 'No power zone (not in your cockpit)'
+    // Here: Right_Navigation under PDU_Right (its NODE_IDS.md zone). The file has no PDU_Right.
+    const cur: ConfigSnapshot = {
+      ...current,
+      nodeMapping: { version: 4, nodes: { 2: { added: true }, 4: { added: true } } }
+    }
+    const file: NodeMappingFile = {
+      version: 4,
+      nodes: {
+        2: { added: true },
+        41: { added: true, name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
+      }
+    }
+    expect(diffImport(defaults, cur, { nodeMapping: file })[0]).toEqual({
+      id: 'nodeMapping',
+      title: 'Node mapping',
+      summary: '3 nodes · 1 joins · 1 leaves',
+      rows: [
+        { k: 'Right_Navigation · power zone', from: 'PDU_Right', to: OUTSIDE },
+        { k: 'PDU_Right', from: 'PDU_Right · Right · —', to: 'not in your cockpit' },
+        { k: '#41', from: 'not in your cockpit', to: 'Trim · Left · —' },
+        { k: '#41 · power zone', from: 'PDU_Left', to: OUTSIDE }
+      ]
+    })
+    // A NODE_IDS.md default to a PDU neither cockpit has was No power zone already: no row.
+    const none: ConfigSnapshot = {
+      ...current,
+      nodeMapping: { version: 4, nodes: { 2: { added: true } } }
+    }
+    const same: NodeMappingFile = { version: 4, nodes: { 2: { added: true } } }
+    expect(diffImport(defaults, none, { nodeMapping: same })[0]!.rows).toEqual([])
   })
 
   it('a file identical to the current setup changes nothing', () => {

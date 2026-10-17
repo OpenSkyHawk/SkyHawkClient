@@ -7,11 +7,18 @@ import { modelNode as node, nodeModel as model } from '../../../test-fixtures/no
 import { PDU_RAIL_FLAGS as RAIL_FLAG } from '@shared/firmware'
 import { TELEM_PAGE } from '../../../main/nodes/node-telem'
 import { planZones } from '../../../main/nodes/cockpit-snapshot/plan-zones'
+import { cockpitMembers } from '../../../main/nodes/cockpit-snapshot/members'
+import { boardZones } from '../../../main/nodes/power-zone'
 import { nodeViews } from '../../../main/nodes/cockpit-snapshot/views'
 import { outageHint, planLayout, shortName, tileWidth } from './plan-layout'
 
 /** Main's zones for these views, laid out. */
-const layout = (views: NodeView[], outages: PduOutage[]) => planLayout(planZones(views, outages))
+/** Main's plan for these views: their zones resolved against the boards they are (D7). */
+const layout = (views: NodeView[], outages: PduOutage[]) => {
+  const entries = views.map((v) => v.entry)
+  const zones = boardZones(entries, cockpitMembers(model(entries)).get)
+  return planLayout(planZones(views, outages, zones))
+}
 
 const pdu = (nodeId: number, console: string, over: Partial<NodeModelEntry> = {}) =>
   node(nodeId, { name: `PDU_${console}`, console, kind: 'pdu', readings: 'live', ...over })

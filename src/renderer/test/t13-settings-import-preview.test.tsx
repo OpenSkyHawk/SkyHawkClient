@@ -110,8 +110,10 @@ describe('T13 Settings › Configuration › Import preview (B90, B94, F1, C1, S
     // an empty mapping that would take every adopted board out of your cockpit.
     const current = setup({
       nodeMapping: {
-        version: 3,
-        nodes: { 12: { name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: null } }
+        version: 4,
+        nodes: {
+          12: { added: true, name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: null }
+        }
       }
     })
     const text = configFileText(
@@ -132,10 +134,10 @@ describe('T13 Settings › Configuration › Import preview (B90, B94, F1, C1, S
     })
     const current = setup({
       nodeMapping: {
-        version: 3,
+        version: 4,
         nodes: {
           1: { added: true },
-          12: { name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: null }
+          12: { added: true, name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: null }
         }
       }
     })

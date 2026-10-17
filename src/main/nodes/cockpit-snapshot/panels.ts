@@ -10,10 +10,13 @@ import {
   type BoardActions,
   type BoardPanel,
   type FaultBox,
+  type FedBoard,
   type NodeModelEntry,
+  type NodeTelemSnapshot,
   type NodeView,
   type PduOutage,
   type PduRailPage,
+  type PowerZone,
   type RailRow,
   type Row,
   type ZoneChoices
@@ -21,41 +24,39 @@ import {
 import { PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
 import { nodeFaultTag, pduAlertFlags, pduFlagMeanings } from '../faults'
 import { displayCurrentMa } from '../node-telem'
+import { canForget, canHide, pduTelemetryLive, type OfflineGate } from '../offline-actions'
+import { fedBy, zoneLabel } from '../power-zone'
+import type { Members } from './members'
 
 // ── board actions ───────────────────────────────────────────────────────────
 
-const ONLINE_NOTE =
-  'Online — it’s active on the bus, so it can’t be removed. Forget and Hide work once it’s offline.'
-/** No complete roster yet: whether it is on the bus is not known — not "online" (#93 review). */
-const NO_ROSTER_NOTE =
-  'No roster yet — connect the Gateway. Forget and Hide work once the board shows offline.'
-
 /**
- * Same rules for a panel group and a PDU (#93). Hide and Forget only tidy the display, and a board
- * that is online is active on the bus, so both wait until it is offline (main refuses them too —
- * X5 co-located: this offers them only once the model says offline; NodeHub.onlineRefusal refuses
- * only while the roster lists the board present).
- * `fed` = boards in your cockpit this PDU feeds (Forget unlinks them; Hide keeps the links).
+ * Same rules for a panel group and a PDU (#93). Hide and Forget wait until the board is offline,
+ * by the one rule main refuses them by (offline-actions.ts canHide / canForget), so the footer and
+ * main always agree: `pduTelemetry` = fresh PDU pages from it now (pduTelemetryLive), which prove
+ * it live whatever the roster says.
+ * `fed` = boards in your cockpit this PDU feeds, hidden ones included (power-zone.ts fedBy, X7):
+ * Forget unlinks them all; Hide keeps the links.
  */
-export function boardActions(e: NodeModelEntry, fed = 0): BoardActions {
-  const offline = e.availability === 'offline'
-  const why = e.availability === 'unknown' ? NO_ROSTER_NOTE : ONLINE_NOTE
-  const off = (tip: string): BoardAction => ({
-    disabled: !offline,
-    tip: offline ? tip : why
-  })
+export function boardActions(e: NodeModelEntry, pduTelemetry: boolean, fed = 0): BoardActions {
+  const signals = { availability: e.availability, pduTelemetry }
+  const off = (gate: OfflineGate, tip: string): BoardAction =>
+    gate.ok ? { disabled: false, tip } : { disabled: true, tip: gate.note }
+  const forget = canForget(signals)
   const a: BoardActions = {
     forget: off(
+      forget,
       e.kind === 'pdu'
         ? 'Remove it from your cockpit; its boards lose the link'
         : 'Remove it from your cockpit and the saved mapping'
     ),
     hide: off(
+      canHide(signals),
       e.kind === 'pdu'
         ? 'Hide until it reports again; its boards keep the link'
         : 'Hide until it reports again'
     ),
-    note: why
+    note: forget.ok ? '' : forget.note
   }
   if (e.source === 'registry') {
     a.reset = e.differs
@@ -68,7 +69,7 @@ export function boardActions(e: NodeModelEntry, fed = 0): BoardActions {
         }
       : { disabled: true, tip: 'Already at the NODE_IDS.md defaults' }
   }
-  if (!offline) return a
+  if (!forget.ok) return a
   if (e.kind === 'pdu') {
     const boards = fed
       ? `Its ${fed} board${fed === 1 ? '' : 's'} move to No power zone and keep no link to it, even if it comes back. `
@@ -290,58 +291,46 @@ export function pduBoardRows(v: NodeView): Row[] {
 // ── power zones ─────────────────────────────────────────────────────────────
 
 /**
- * The PDUs a panel on `console` can be fed by: the placed PDUs on that console (a PDU on the left
- * console cannot power the instrument panel). None is always offered by the caller. A stored zone
- * on another console (set before this rule, or the PDU moved) stays listed, marked, until changed.
+ * The PDUs a panel on `console` can be fed by: the PDUs in your cockpit on that console, hidden ones
+ * included and labelled so (D7: only a PDU in your cockpit can be a zone) — a PDU on the left
+ * console cannot power the instrument panel. None is always offered by the caller. A stored zone on
+ * another console (set before this rule, or the PDU moved) stays listed, marked, until changed.
  */
 export function powerZoneOptions(
-  views: NodeView[],
+  members: Members,
   console: string,
   current: number | null
 ): { value: number; label: string }[] {
-  const pdus = views.filter((v) => v.entry.kind === 'pdu' && v.entry.source !== 'new')
-  const out = pdus
-    .filter((v) => v.entry.console === console)
-    .map((v) => ({ value: v.entry.nodeId, label: v.entry.name }))
-  const stray = current === null ? undefined : pdus.find((v) => v.entry.nodeId === current)
-  if (stray && stray.entry.console !== console) {
-    out.push({ value: stray.entry.nodeId, label: `${stray.entry.name} (other console)` })
+  const out = members.pdus
+    .filter((p) => p.console === console)
+    .map((p) => ({ value: p.nodeId, label: zoneLabel(p.name, p.hidden) }))
+  const stray = current === null ? undefined : members.pdus.find((p) => p.nodeId === current)
+  if (stray && stray.console !== console) {
+    out.push({ value: stray.nodeId, label: zoneLabel(stray.name, stray.hidden, true) })
   }
   return out
 }
 
-/** Picking a console picks its first PDU (none when it has no PDU), as the board does. */
-export function firstPduOn(views: NodeView[], console: string): number | null {
-  const pdu = views.find(
-    (v) => v.entry.kind === 'pdu' && v.entry.source !== 'new' && v.entry.console === console
-  )
-  return pdu ? pdu.entry.nodeId : null
-}
-
 /**
- * Every Power zone list the forms can ask for (X4 co-located: the panel's Settings tab and the
- * Adopt form both read these, through `powerZoneOptions` and `firstPduOn`): for each console a
- * form can hold — the three NODE_IDS.md consoles, none yet, and any console a board or its
- * NODE_IDS.md row names — with no zone (or one not in your cockpit), and with each PDU in your
- * cockpit as the stored zone.
+ * Every Power zone list the forms can ask for — the panel's Settings tab and the Adopt form both
+ * read these: for each console a form can hold (the three NODE_IDS.md consoles, none yet, and any
+ * console a board or its NODE_IDS.md row names) with no zone, and with each PDU in your cockpit
+ * (hidden ones included) as the stored zone. Changing the console clears the zone in both (N9).
  */
-export function zoneChoices(views: NodeView[]): ZoneChoices {
+export function zoneChoices(views: NodeView[], members: Members): ZoneChoices {
   const consoles = new Set<string>(['', ...CONSOLE_OPTIONS.map((c) => c.value)])
   for (const v of views) {
     if (v.entry.console !== null) consoles.add(v.entry.console)
     if (v.entry.registry) consoles.add(v.entry.registry.console)
   }
-  const placed = views
-    .filter((v) => v.entry.kind === 'pdu' && v.entry.source !== 'new')
-    .map((v) => v.entry.nodeId)
-  const out: ZoneChoices = { options: {}, first: {} }
+  for (const m of members.all) if (m.hidden) consoles.add(m.console)
+  const out: ZoneChoices = { options: {} }
   for (const c of consoles) {
     const byZone: Record<string, { value: number; label: string }[]> = {
-      '': powerZoneOptions(views, c, null)
+      '': powerZoneOptions(members, c, null)
     }
-    for (const id of placed) byZone[id] = powerZoneOptions(views, c, id)
+    for (const p of members.pdus) byZone[p.nodeId] = powerZoneOptions(members, c, p.nodeId)
     out.options[c] = byZone
-    out.first[c] = firstPduOn(views, c)
   }
   return out
 }
@@ -357,31 +346,53 @@ function feedState(v: NodeView): string {
 }
 
 /**
- * Every board's side panel. A panel group is powered by the PDU its zone names, placed or not (X4
- * co-located: the plan puts it under that PDU only once the PDU is placed). A PDU feeds the panel
- * groups in your cockpit whose zone it is; that count is what Forget says it unlinks (X7
- * co-located: an outage counts the fed boards seen this session, pduOutages).
+ * The boards a PDU feeds, as its Feeds tab lists them: every board in your cockpit whose zone it is
+ * (power-zone.ts fedBy), hidden ones included — what Forget unlinks (X7).
  */
-export function boardPanels(views: NodeView[], outages: PduOutage[]): Record<number, BoardPanel> {
+function fedBoards(members: Members, views: NodeView[], pduId: number): FedBoard[] {
+  const byId = new Map(views.map((v) => [v.entry.nodeId, v]))
+  return fedBy(members.all, pduId).map((m) => {
+    const v = byId.get(m.nodeId)
+    return {
+      nodeId: m.nodeId,
+      name: m.name,
+      detail: m.hidden || !v ? 'hidden until it reports again' : feedState(v),
+      hidden: m.hidden
+    }
+  })
+}
+
+/**
+ * The side panel of every board in your cockpit on the plan. A board outside your cockpit has none:
+ * clicking it opens the Adopt dialog (D6, members.ts boardOpens — the same membership). A panel
+ * group shows its resolved power zone (D7: `zones`, one per board). A PDU feeds the boards in your
+ * cockpit whose zone it is, hidden ones included; that count is what Forget says it unlinks (X7: an
+ * outage counts only the ones that could have dropped with it, pduOutages).
+ */
+export function boardPanels(
+  views: NodeView[],
+  outages: PduOutage[],
+  telemetry: NodeTelemSnapshot[],
+  members: Members,
+  zones: ReadonlyMap<number, PowerZone>
+): Record<number, BoardPanel> {
   const out: Record<number, BoardPanel> = {}
   for (const v of views) {
     const e = v.entry
-    const placed = e.source !== 'new'
+    if (!members.get(e.nodeId)) continue
+    const live = pduTelemetryLive(telemetry, e.nodeId)
     let p: BoardPanel
     if (e.kind === 'pdu') {
-      const feeds = views.filter(
-        (n) => n.entry.kind === 'panel' && n.entry.source !== 'new' && n.entry.pduId === e.nodeId
-      )
+      const feeds = fedBoards(members, views, e.nodeId)
       p = {
-        placed,
         faults: pduFaultBoxes(
           v,
           outages.some((o) => o.pduId === e.nodeId)
         ),
-        actions: boardActions(e, feeds.length),
+        actions: boardActions(e, live, feeds.length),
         rails: pduRailRows(v),
         board: pduBoardRows(v),
-        feeds: feeds.map((n) => ({ nodeId: n.entry.nodeId, detail: feedState(n) })),
+        feeds,
         sharedWith: views
           .filter(
             (o) =>
@@ -393,14 +404,12 @@ export function boardPanels(views: NodeView[], outages: PduOutage[]): Record<num
           .map((o) => o.entry.name)
       }
     } else {
-      const pdu = views.find((o) => o.entry.kind === 'pdu' && o.entry.nodeId === e.pduId)
       p = {
-        placed,
         faults: nodeFaultBoxes(v),
-        actions: boardActions(e),
-        status: nodeStatusRows(v)
+        actions: boardActions(e, live),
+        status: nodeStatusRows(v),
+        zone: zones.get(e.nodeId) ?? { status: 'none' }
       }
-      if (pdu) p.poweredBy = pdu.entry.nodeId
     }
     out[e.nodeId] = p
   }

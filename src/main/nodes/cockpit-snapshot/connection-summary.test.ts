@@ -10,6 +10,8 @@ import {
 } from '../../../test-fixtures/nodes'
 import { TELEM_PAGE } from '../node-telem'
 import { fmtTime, lastSeenLabel } from '@shared/format'
+import { boardZones } from '../power-zone'
+import { cockpitMembers } from './members'
 import { nodesSummary } from './summaries'
 import { nodeViews } from './views'
 
@@ -40,7 +42,10 @@ const summary = (
   nodes: NodeModelEntry[],
   outages: PduOutage[] = [],
   telemetry: NodeTelemSnapshot[] = []
-) => nodesSummary(nodeViews(model(nodes, outages), telemetry), outages)
+) => {
+  const m = model(nodes, outages)
+  return nodesSummary(nodeViews(m, telemetry), outages, boardZones(m.nodes, cockpitMembers(m).get))
+}
 
 const T = 1_760_000_000_000
 
@@ -112,6 +117,27 @@ describe('nodesSummary rows', () => {
     expect(s.rows.map((r) => r.meta)).toEqual([
       `#13 · PDU_Left · offline since ${fmtTime(T).slice(0, 8)}`,
       '#14 · no power zone'
+    ])
+  })
+
+  it('names a hidden feeding PDU: it is still in your cockpit (X1), marked "(hidden)"', () => {
+    const m = {
+      ...model([
+        node(13, { name: 'Left_Oxygen', pduId: 3, availability: 'offline', offlineAt: T })
+      ]),
+      hidden: [3],
+      hiddenNodes: [
+        { nodeId: 3, name: 'PDU_Left', console: 'Left', kind: 'pdu', source: 'registry' } as const
+      ]
+    }
+    const meta = (mem: ReturnType<typeof cockpitMembers>) =>
+      nodesSummary(nodeViews(m, []), [], boardZones(m.nodes, mem.get)).rows.map((r) => r.meta)
+    expect(meta(cockpitMembers(m))).toEqual([
+      `#13 · PDU_Left (hidden) · offline since ${fmtTime(T).slice(0, 8)}`
+    ])
+    // Read from the plan's boards alone it would be "no power zone": the test can fail.
+    expect(meta(cockpitMembers(model([])))).toEqual([
+      `#13 · no power zone · offline since ${fmtTime(T).slice(0, 8)}`
     ])
   })
 

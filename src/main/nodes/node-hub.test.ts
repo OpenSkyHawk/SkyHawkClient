@@ -9,7 +9,7 @@ const disk: {
   readOnly?: string
   fail?: boolean
 } = {
-  file: { version: 3, nodes: {} },
+  file: { version: 4, nodes: {} },
   saves: 0
 }
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } })) // debug log path
@@ -37,11 +37,13 @@ vi.mock('./mapping-file', () => {
 })
 
 const { NodeHub } = await import('./node-hub')
+const { buildCockpitSnapshot } = await import('./cockpit-snapshot')
+const { requireAdoptable } = await import('./node-kind')
 
 const T0 = '1970-01-01T00:00:00.000Z'
 /** The registry boards added to your cockpit (#93): the setup most tests assume. */
 const added = (): NodeMappingFile => ({
-  version: 3,
+  version: 4,
   nodes: {
     1: { added: true },
     2: { added: true },
@@ -58,6 +60,16 @@ function hub() {
   return { h, roster, pushes }
 }
 
+/**
+ * A hub whose roster has come back empty: every board in your cockpit is offline, so Hide and
+ * Forget are allowed (offline-actions.ts) — before any roster they are refused (M1/C3).
+ */
+function offlineHub() {
+  const r = hub()
+  r.roster.applyMessage(NODE_END_MSG, '0', 0)
+  return r
+}
+
 describe('NodeHub', () => {
   beforeEach(() => {
     disk.file = added()
@@ -67,7 +79,7 @@ describe('NodeHub', () => {
   })
 
   it('a failed save is reported, and the change is not applied', () => {
-    disk.file = { version: 3, nodes: { 1: { added: true, lastSeen: T0 } } }
+    disk.file = { version: 4, nodes: { 1: { added: true, lastSeen: T0 } } }
     const { h, pushes } = hub()
     disk.fail = true
     expect(h.setMapping(1, { name: 'Armament' })).toEqual({
@@ -80,7 +92,7 @@ describe('NodeHub', () => {
 
   it('a read-only mapping (newer client, unreadable) refuses every save', () => {
     disk.readOnly = 'node-mapping.json was written by a newer client'
-    const { h } = hub()
+    const { h } = offlineHub()
     expect(h.hide(2, true)).toEqual({
       ok: false,
       error: 'Not saved: node-mapping.json was written by a newer client'
@@ -89,7 +101,7 @@ describe('NodeHub', () => {
   })
 
   it('a reporting board is un-hidden even when that save fails', () => {
-    disk.file = { version: 3, nodes: { 2: { hidden: true, added: true } } }
+    disk.file = { version: 4, nodes: { 2: { hidden: true, added: true } } }
     disk.fail = true
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '0201000000000000008000000000', 0)
@@ -99,7 +111,7 @@ describe('NodeHub', () => {
   })
 
   it('clears "hidden until it reports again" once the node reports, and saves it', () => {
-    disk.file = { version: 3, nodes: { 1: { added: true }, 2: { hidden: true, added: true } } }
+    disk.file = { version: 4, nodes: { 1: { added: true }, 2: { hidden: true, added: true } } }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '0101000000000000008000000000', 0) // node 1 present
     roster.applyMessage(NODE_END_MSG, '1', 0)
@@ -144,7 +156,7 @@ describe('NodeHub', () => {
   })
 
   it('a board not in your cockpit is never written until added or adopted (#93)', () => {
-    disk.file = { version: 3, nodes: {} }
+    disk.file = { version: 4, nodes: {} }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 0) // node 41
     roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // registry board 1
@@ -154,9 +166,11 @@ describe('NodeHub', () => {
       [1, 'new'],
       [41, 'new']
     ])
-    const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
+    // PDU_Center is not in your cockpit, so the pre-fill — and the request — has No power zone (D7).
+    const spec = { name: 'Center_Armament', console: 'Center', pduId: null, kind: 'panel' } as const
     expect(h.adopt(1, spec).ok).toBe(true) // Add to cockpit
-    expect(disk.file.nodes[1]).toEqual({ added: true })
+    // the kind it reported (S1)
+    expect(disk.file.nodes[1]).toEqual({ added: true, kind: 'panel', pduId: null })
     expect(h.snapshot(0).model.nodes[0]).toMatchObject({ nodeId: 1, source: 'registry' })
   })
 
@@ -268,7 +282,7 @@ describe('NodeHub', () => {
 
   it('Un-hide all (R3.2b) un-hides each board in turn, each pushed as it lands', async () => {
     disk.file = {
-      version: 3,
+      version: 4,
       nodes: { 1: { added: true, hidden: true }, 2: { added: true, hidden: true } }
     }
     const { h, pushes } = hub()
@@ -280,7 +294,7 @@ describe('NodeHub', () => {
       'cockpit:snapshot',
       'nodes:model'
     ])
-    disk.file = { version: 3, nodes: { 1: { added: true, hidden: true } } }
+    disk.file = { version: 4, nodes: { 1: { added: true, hidden: true } } }
     disk.readOnly = 'node-mapping.json was written by a newer client'
     const ro = hub().h
     expect(await ro.unhide([1, 2])).toEqual({
@@ -292,7 +306,7 @@ describe('NodeHub', () => {
   })
 
   it('hiding a new node is refused and writes nothing', () => {
-    const { h } = hub()
+    const { h } = offlineHub()
     expect(h.hide(41, true)).toEqual({
       ok: false,
       error: 'Only a board in your cockpit can be hidden'
@@ -301,20 +315,21 @@ describe('NodeHub', () => {
     expect(h.hide(2, true).ok).toBe(true)
   })
 
-  it('forgetting an offline PDU (#93) unlinks the boards it fed; resetBoard restores a default', () => {
+  it('forgetting an offline PDU (#93) unlinks the boards it fed; resetBoard never relinks it (S1)', () => {
     disk.file = {
-      version: 3,
+      version: 4,
       nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' }, 4: { added: true, lastSeen: T0 } }
     }
-    const { h } = hub()
+    const { h } = offlineHub()
     expect(h.forget(4).ok).toBe(true)
     expect(disk.file.nodes).toEqual({ 2: { added: true, lastSeen: T0, name: 'Nav', pduId: null } })
     expect(h.resetBoard(2).ok).toBe(true)
-    expect(disk.file.nodes).toEqual({ 2: { added: true, lastSeen: T0 } }) // still in your cockpit
+    // Still in your cockpit, its name back to the registry's — but not linked to the PDU you forgot.
+    expect(disk.file.nodes).toEqual({ 2: { added: true, lastSeen: T0, pduId: null } })
   })
 
   it('a non-boolean on/off is refused; a no-op change writes and pushes nothing', () => {
-    const { h, pushes } = hub()
+    const { h, pushes } = offlineHub()
     expect(h.hide(5, 'no' as never)).toEqual({ ok: false, error: 'Invalid on/off value' })
     expect(h.forget(NaN)).toEqual({ ok: false, error: 'Not a NODE_ID: NaN' })
     const forgot = h.forget(41) // nothing mapped
@@ -351,28 +366,32 @@ describe('NodeHub', () => {
     expect(h.onlineIds()).toEqual([1])
     // ConfigTransfer stages the import over the hub's mapping and online boards, then saves it.
     const file: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: { 1: { added: true, hidden: true }, 2: { added: true, hidden: true } }
     }
-    expect(h.replaceMapping(importMapping(h.mappingFile(), file, h.onlineIds())).ok).toBe(true)
+    expect(
+      h.replaceMapping(importMapping(h.mappingFile(), h.registryDefaults(), file, h.onlineIds())).ok
+    ).toBe(true)
     expect(disk.file.nodes[1]?.hidden).toBeUndefined()
     expect(disk.file.nodes[2]?.hidden).toBe(true)
   })
 
   it('a config import brings membership as written; this computer keeps only its last seen (D3)', () => {
     disk.file = {
-      version: 3,
+      version: 4,
       nodes: { 2: { added: true, lastSeen: T0, name: 'Nav' }, 3: { added: true, lastSeen: T0 } }
     }
     const { h } = hub()
     const file: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: {
         2: { added: true, name: 'Nav_2', lastSeen: '2020-01-01T00:00:00.000Z' },
         4: { added: true }
       }
     }
-    expect(h.replaceMapping(importMapping(h.mappingFile(), file)).ok).toBe(true)
+    expect(h.replaceMapping(importMapping(h.mappingFile(), h.registryDefaults(), file)).ok).toBe(
+      true
+    )
     // 3 left (the file does not have it), 4 joined; 2 kept this computer's last seen.
     expect(disk.file.nodes).toEqual({
       2: { name: 'Nav_2', added: true, lastSeen: T0 },
@@ -385,14 +404,14 @@ describe('NodeHub', () => {
     const before = h.mappingFile()
     disk.fail = true
     // The reason alone: the import names the section itself ("Node mapping could not be saved").
-    expect(h.replaceMapping({ version: 3, nodes: {} })).toEqual({
+    expect(h.replaceMapping({ version: 4, nodes: {} })).toEqual({
       ok: false,
       error: 'the disk is read-only in /u'
     })
     expect(h.mappingFile()).toBe(before)
     disk.fail = false
     disk.readOnly = 'node-mapping.json was written by a newer client'
-    expect(hub().h.replaceMapping({ version: 3, nodes: {} })).toEqual({
+    expect(hub().h.replaceMapping({ version: 4, nodes: {} })).toEqual({
       ok: false,
       error: 'node-mapping.json was written by a newer client'
     })
@@ -457,8 +476,11 @@ describe('board kind (#344)', () => {
   it('a board that reports PDU is one, whatever was stored: no power zone, and a zone for others', () => {
     // Adopted earlier as a panel group fed by PDU 3.
     disk.file = {
-      version: 3,
-      nodes: { 1: { added: true }, 41: { name: 'Aft', console: 'Left', kind: 'panel', pduId: 3 } }
+      version: 4,
+      nodes: {
+        1: { added: true },
+        41: { added: true, name: 'Aft', console: 'Left', kind: 'panel', pduId: 3 }
+      }
     }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(41, 0x02), 0)
@@ -468,11 +490,53 @@ describe('board kind (#344)', () => {
   })
 
   it('a registry panel ID that reports PDU is a PDU; a registry PDU that says nothing stays one', () => {
-    disk.file = { version: 3, nodes: { 3: { added: true, lastSeen: T0 } } }
+    disk.file = { version: 4, nodes: { 3: { added: true, lastSeen: T0 } } }
     const { h, roster } = hub()
     roster.applyMessage(NODE_MSG, row(2, 0x02), 0) // Right_Navigation's ID, on a PDU
     expect(node(h, 2)).toMatchObject({ kind: 'pdu', identified: 'pdu' })
     expect(node(h, 3)).toMatchObject({ kind: 'pdu', identified: 'pdu' }) // PDU_Left, no report
+  })
+
+  it('bug 3 (S1): a registry panel ID added as a PDU still reads PDU offline, after a restart', () => {
+    disk.file = { version: 4, nodes: {} }
+    const first = hub()
+    first.roster.applyMessage(NODE_MSG, row(2, 0x02), 0) // Right_Navigation's ID, on a PDU
+    const spec = { name: 'PDU_Nav', console: 'Right', pduId: null, kind: 'pdu' } as const
+    expect(first.h.adopt(2, spec).ok).toBe(true)
+    expect(disk.file.nodes[2]).toEqual({ added: true, name: 'PDU_Nav', kind: 'pdu' })
+    const { h } = hub() // the next launch: nothing on the bus yet
+    expect(node(h, 2)).toMatchObject({ kind: 'pdu', availability: 'unknown' })
+  })
+
+  it('the kind a board in your cockpit reports is stored, once (S1)', () => {
+    // A v3 file never stored a registry board's kind: it is stored the next time the board reports.
+    disk.file = { version: 4, nodes: { 1: { added: true }, 2: { added: true } } }
+    const { h, roster } = hub()
+    roster.applyMessage(NODE_MSG, row(1, 0x02), 0) // reports PDU
+    roster.applyMessage(NODE_MSG, row(41, 0x01), 0) // not in your cockpit
+    h.flush(roster.takeDirty(), 0)
+    expect(disk.file.nodes[1]).toMatchObject({ added: true, kind: 'pdu' })
+    expect(disk.file.nodes[2]).toEqual({ added: true }) // said nothing yet
+    expect(disk.file.nodes[41]).toBeUndefined()
+    const saves = disk.saves
+    roster.applyMessage(NODE_MSG, row(1, 0x02), 5000) // the same report again: no write
+    h.flush(true, 5000)
+    expect(disk.saves).toBe(saves)
+    // PDU pages are a report too.
+    h.telemetry('020100E02E182EBC02', 6000)
+    h.flush(false, 6000)
+    expect(disk.file.nodes[2]).toEqual({ added: true, kind: 'pdu' })
+  })
+
+  it('Forget of a PDU that has not reported this session unlinks its boards (S1)', () => {
+    // Right_Navigation's ID reported PDU last session; Center_Armament is fed by it.
+    disk.file = {
+      version: 4,
+      nodes: { 1: { added: true, pduId: 2 }, 2: { added: true, kind: 'pdu', lastSeen: T0 } }
+    }
+    const { h } = offlineHub() // nothing on the bus
+    expect(h.forget(2).ok).toBe(true)
+    expect(disk.file.nodes).toEqual({ 1: { added: true, pduId: null } })
   })
 
   it('a bridge is never adoptable, and on the bus it can’t be hidden either (#93)', () => {
@@ -486,9 +550,10 @@ describe('board kind (#344)', () => {
   })
 
   it('a registry board is added only once it says it is a PDU or a panel group (#93 re-review C, G)', () => {
-    disk.file = { version: 3, nodes: {} }
+    disk.file = { version: 4, nodes: {} }
     const { h, roster } = hub()
-    const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
+    // PDU_Center is not in your cockpit, so the pre-fill has No power zone (D7).
+    const spec = { name: 'Center_Armament', console: 'Center', pduId: null, kind: 'panel' } as const
     roster.applyMessage(NODE_MSG, row(1, 0x00), 0) // kind not reported yet
     expect(node(h, 1)?.identified).toBeUndefined()
     expect(h.adopt(1, spec)).toEqual({ ok: false, error: 'Its board type is not known yet' })
@@ -496,7 +561,8 @@ describe('board kind (#344)', () => {
     expect(h.adopt(1, spec)).toEqual({ ok: false, error: 'This board cannot be adopted' })
     roster.applyMessage(NODE_MSG, row(1, 0x01), 20) // a panel group
     expect(h.adopt(1, spec).ok).toBe(true)
-    expect(disk.file.nodes[1]).toEqual({ added: true })
+    // the kind it reported (S1)
+    expect(disk.file.nodes[1]).toEqual({ added: true, kind: 'panel', pduId: null })
   })
 
   it('a kind this client does not know is not adoptable either', () => {
@@ -556,4 +622,133 @@ describe('bench capture, v3 firmware (2026-10-16)', () => {
       status: { degraded: true, faultId: 1, faultLabel: 'I2C peripheral', nodeKind: 1 }
     })
   })
+})
+
+describe('one rule for the footer and main (M1/C3, S7)', () => {
+  beforeEach(() => {
+    disk.file = added()
+    disk.saves = 0
+    disk.readOnly = undefined
+    disk.fail = false
+  })
+
+  const row = (id: number, kind: number, present = true) =>
+    `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
+      .toString(16)
+      .padStart(2, '0')}`.toUpperCase()
+  const NOW = 10_000
+  /** PDU_Right's (#4) 12 V page, as `_NODE_TELEM` carries it. */
+  const PDU4_PAGE = '040100E02E182EBC02'
+
+  /** A hub where board `id` is `state` by the roster, and maybe sending fresh PDU pages. */
+  function scene(
+    id: number,
+    kind: number,
+    state: 'online' | 'offline' | 'unknown',
+    pages: boolean
+  ) {
+    disk.file = added() // each scene starts from the same mapping
+    const { h, roster } = hub()
+    if (state !== 'unknown') {
+      roster.applyMessage(NODE_MSG, row(id, kind, state === 'online'), 0)
+      roster.applyMessage(NODE_END_MSG, '1', 0)
+    }
+    if (pages) h.telemetry(PDU4_PAGE, NOW)
+    h.flush(roster.takeDirty(), NOW)
+    return h
+  }
+
+  /** What the Cockpit footer offers, built from the hub's own push as the snapshot host does. */
+  function footer(h: InstanceType<typeof NodeHub>, id: number) {
+    const { model, telemetry } = h.snapshot(NOW)
+    const { snapshot } = buildCockpitSnapshot({
+      model,
+      telemetry,
+      device: { state: 'connected' },
+      peakW: 0,
+      now: NOW,
+      rev: 0
+    })
+    return snapshot.panels[id]!.actions
+  }
+
+  const cases = [
+    { id: 2, kind: 1, pages: false }, // a panel group
+    { id: 4, kind: 2, pages: false }, // a PDU, no pages
+    { id: 4, kind: 2, pages: true } // a PDU sending fresh pages
+  ]
+  for (const c of cases) {
+    for (const state of ['online', 'offline', 'unknown'] as const) {
+      it(`#${c.id}${c.pages ? ' with fresh pages' : ''}, ${state}: Forget and Hide agree`, () => {
+        const offered = footer(scene(c.id, c.kind, state, c.pages), c.id)
+        const forgot = scene(c.id, c.kind, state, c.pages).forget(c.id, NOW)
+        const hid = scene(c.id, c.kind, state, c.pages).hide(c.id, true, NOW)
+        expect(forgot.ok).toBe(!offered.forget.disabled)
+        expect(hid.ok).toBe(!offered.hide.disabled)
+        // Allowed exactly when it is offline by the roster and sends no fresh pages.
+        expect(forgot.ok).toBe(state === 'offline' && !c.pages)
+        if (state === 'unknown' && !c.pages) {
+          // The reason main refuses with is the footer's own line.
+          expect(forgot).toEqual({ ok: false, error: offered.note })
+        }
+      })
+    }
+  }
+
+  // S7: every adopt path goes through requireAdoptable — main's mutators (an unregistered NODE_ID
+  // and a registry board), NodeHub.adopt and Add all, and the Adopt dialog's form (its row kind).
+  const said = [
+    { byte: 0, identity: undefined },
+    { byte: 1, identity: 'panel' },
+    { byte: 2, identity: 'pdu' },
+    { byte: 3, identity: 'bridge' },
+    { byte: 9, identity: 'other' }
+  ] as const
+  for (const { byte, identity } of said) {
+    it(`a board that reports ${identity ?? 'nothing'}: every adopt path answers as requireAdoptable`, async () => {
+      disk.file = { version: 4, nodes: {} }
+      const gate = (as?: 'pdu' | 'panel') => {
+        try {
+          return { ok: true, kind: requireAdoptable(identity, as) }
+        } catch (err) {
+          return { ok: false, error: (err as Error).message }
+        }
+      }
+      const { h, roster } = hub()
+      roster.applyMessage(NODE_MSG, row(41, byte), 0) // unregistered
+      roster.applyMessage(NODE_MSG, row(2, byte), 0) // Right_Navigation, not added yet
+      h.flush(roster.takeDirty(), 0)
+      const spec = (name: string) =>
+        ({ name, console: 'Right', pduId: null, kind: 'panel' }) as const
+      const answer = (r: { ok: boolean; error?: string }) =>
+        r.ok ? { ok: true } : { ok: false, error: r.error }
+      const asked = gate('panel')
+      expect(answer(h.adopt(41, spec('Aux')))).toEqual(
+        asked.ok ? { ok: true } : { ok: false, error: asked.error }
+      )
+      const reg = gate()
+      expect(answer(h.adopt(2, spec('Right_Navigation')))).toEqual(
+        reg.ok ? { ok: true } : { ok: false, error: reg.error }
+      )
+      // Add all is one adopt each: the same answer for the next board that reports the same.
+      roster.applyMessage(NODE_MSG, row(42, byte), 0)
+      h.flush(roster.takeDirty(), 0)
+      const all = await h.addAll([{ nodeId: 42, spec: spec('Aux2') }])
+      expect(all.ok).toBe(asked.ok)
+      // The dialog offers a form only for what the gate lets through, as that kind.
+      disk.file = { version: 4, nodes: {} }
+      const fresh = hub()
+      fresh.roster.applyMessage(NODE_MSG, row(43, byte), 0)
+      fresh.h.flush(fresh.roster.takeDirty(), 0)
+      const { snapshot } = buildCockpitSnapshot({
+        ...fresh.h.snapshot(0),
+        device: { state: 'connected' },
+        peakW: 0,
+        now: 0,
+        rev: 0
+      })
+      const r = snapshot.adopt.find((x) => x.view.entry.nodeId === 43)!
+      expect(r.kind).toBe(gate().ok ? identity : undefined)
+    })
+  }
 })

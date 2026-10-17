@@ -84,3 +84,37 @@ describe('#136 a damaged file comes back from its backup, and the event log says
     }
   )
 })
+
+describe('#131 D7 an older node-mapping.json is upgraded: zones only to PDUs in your cockpit', () => {
+  it('links to a PDU outside your cockpit read as No power zone, and the next save says so', () => {
+    const app = makeServices({
+      paths: {
+        files: {
+          'node-mapping.json': {
+            version: 3,
+            nodes: {
+              1: { added: true }, // Center_Armament → PDU_Center (5), in your cockpit
+              2: { added: true }, // Right_Navigation → PDU_Right (4), never added
+              5: { added: true },
+              41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' } // PDU_Left: never added
+            }
+          }
+        }
+      }
+    })
+    const zone = (id: number) =>
+      app.invoke(CTRL.nodesGet).model.nodes.find((n) => n.nodeId === id)?.pduId
+    expect([1, 2, 41].map(zone)).toEqual([5, null, null])
+    // The next save writes the upgrade: the outside links as an explicit none.
+    expect(app.invoke(CTRL.nodeMappingSet, 1, { name: 'Arm' })).toMatchObject({ ok: true })
+    expect(app.files.json('node-mapping.json')).toEqual({
+      version: 4,
+      nodes: {
+        1: { added: true, name: 'Arm' },
+        2: { added: true, pduId: null },
+        5: { added: true },
+        41: { added: true, name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+      }
+    })
+  })
+})

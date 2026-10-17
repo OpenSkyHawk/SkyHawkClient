@@ -40,6 +40,7 @@ import {
   checkImportedMapping,
   checkImportedPsu,
   effectiveMapping,
+  importedOutsideLinks,
   importMapping,
   inCockpit,
   isPlainObject,
@@ -234,6 +235,9 @@ function diffPsu(cur: PsuSetting, next: PsuSetting): DiffRow[] {
   return rows
 }
 
+/** An imported power zone naming a PDU the import leaves outside your cockpit becomes this (D7). */
+export const OUTSIDE_ZONE = 'No power zone (not in your cockpit)'
+
 /** "· 1 joins · 2 leave": the heading's count of boards entering and leaving your cockpit (S4). */
 function membershipSummary(joins: number, leaves: number): string {
   let out = ''
@@ -249,11 +253,17 @@ function diffNodes(
   online: number[]
 ): { rows: DiffRow[]; summary: string } {
   // What applying it would leave — the same importMapping the apply stages: membership as written
-  // (D3), this computer's last-seen kept, and no hidden flag on a board on the bus or outside your
-  // cockpit.
-  const after = importMapping(cur, next, online)
+  // (D3), this computer's last-seen kept, no hidden flag on a board on the bus or outside your
+  // cockpit, and no power zone naming a PDU outside it (D7) — each of those listed as a change.
+  const after = importMapping(cur, defaults, next, online)
   const a = effectiveMapping(defaults, cur)
   const b = effectiveMapping(defaults, after)
+  const outside = new Map(
+    importedOutsideLinks(cur, defaults, next, online).map((l) => [l.nodeId, l.pduId])
+  )
+  /** The PDU an imported link names, though it is not in your cockpit after the import. */
+  const pduName = (pduId: number) =>
+    b.get(pduId)?.name ?? next.nodes[pduId]?.name ?? `Node ${pduId}`
   const zone = (map: Map<number, MappedNode>, pduId: number | null) =>
     pduId === null ? '—' : (map.get(pduId)?.name ?? defaults.get(pduId)?.name ?? `Node ${pduId}`)
   const where = (map: Map<number, MappedNode>, m: MappedNode) =>
@@ -283,23 +293,37 @@ function diffNodes(
     const d = defaults.get(id)
     // Joining or leaving your cockpit, by the one membership rule (nodes/membership.ts): one row
     // with the whole placement, for a registry board or an adopted one alike.
-    const wasIn = inCockpit(cur.nodes[id])
-    const isIn = inCockpit(after.nodes[id])
+    const wasIn = inCockpit(defaults, id, cur.nodes[id])
+    const isIn = inCockpit(defaults, id, after.nodes[id])
+    // The file links it to a PDU it doesn't bring into your cockpit: No power zone (D7). Listed
+    // when the file names that PDU itself, or the board had a zone here: a NODE_IDS.md default to a
+    // PDU neither cockpit has was No power zone already, so it changes nothing.
+    const dropped = outside.get(id)
+    const unlinked = () => {
+      if (dropped === undefined) return
+      const named = next.nodes[id]?.pduId === dropped
+      if (!named && (!x || !wasIn || x.pduId === null)) return
+      const board = d ? d.name : `#${id}`
+      push(`${board} · power zone`, pduName(dropped), OUTSIDE_ZONE)
+    }
     if (wasIn !== isIn) {
       push(d ? d.name : `#${id}`, wasIn ? place(a, x) : OUT, isIn ? place(b, y) : OUT)
       if (isIn) joins++
       else leaves++
+      unlinked()
       continue
     }
     if (!d) {
       // An adopted board staying in your cockpit: name, console and power zone together.
       if (wasIn && place(a, x) !== place(b, y)) push(`#${id}`, place(a, x), place(b, y))
+      unlinked()
       continue
     }
     if (!x || !y) continue
     if (x.name !== y.name) push(`${d.name} · name`, x.name, y.name)
     if (x.console !== y.console) push(`${d.name} · console`, x.console, y.console)
-    if (zone(a, x.pduId) !== zone(b, y.pduId))
+    if (dropped !== undefined) unlinked()
+    else if (zone(a, x.pduId) !== zone(b, y.pduId))
       push(`${d.name} · power zone`, zone(a, x.pduId), zone(b, y.pduId))
     if (x.hidden !== y.hidden)
       push(`${d.name} · hidden`, x.hidden ? 'yes' : 'no', y.hidden ? 'yes' : 'no')

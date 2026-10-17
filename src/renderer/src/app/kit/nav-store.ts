@@ -14,7 +14,10 @@ export interface NavState {
   /** Log tab sub-tab (#64): the DCS-BIOS stream, or the event log. */
   logView: LogView
   eventSource: EventSourceFilter
-  /** NODE_ID whose Cockpit side panel opens when the Cockpit tab next mounts (#66). */
+  /**
+   * NODE_ID the Cockpit opens when its tab next mounts (#66): its side panel, or the Adopt dialog on
+   * it — the Cockpit routes it by main's pushed `opens` (D6), never by its own reading.
+   */
   cockpitOpen?: number
   /** The Cockpit's Adopt dialog opens when the Cockpit tab next mounts (#77). */
   cockpitAdopt?: boolean
@@ -24,7 +27,7 @@ export interface NavState {
   set: (patch: Partial<NavState>) => void
   /** Log › Events, with a source filter — the Cockpit's "View all in Log →". */
   showEvents: (source: EventSourceFilter) => void
-  /** The Cockpit tab with this node's side panel open — Connection's "›". */
+  /** The Cockpit tab with this node open, as main routes it — Connection's "›". */
   openInCockpit: (nodeId: number) => void
   /** The Cockpit tab with the Adopt dialog open — the Overview's new-devices notice. */
   openAdopt: () => void

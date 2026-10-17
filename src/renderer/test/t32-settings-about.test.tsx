@@ -14,7 +14,9 @@ import { bundledRegistry, connected, link, model, offline, panel, pdu } from './
 const bus = () =>
   model([panel(1, 'Center_Armament'), pdu(3, 'PDU_Left'), pdu(4, 'PDU_Right', offline())], [], {
     hidden: [5],
-    hiddenNodes: [{ nodeId: 5, name: 'PDU_Center', console: 'Center' }]
+    hiddenNodes: [
+      { nodeId: 5, name: 'PDU_Center', console: 'Center', kind: 'pdu', source: 'registry' }
+    ]
   })
 
 /** A settings row's value, by the row's label. */

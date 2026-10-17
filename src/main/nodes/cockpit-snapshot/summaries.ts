@@ -9,8 +9,8 @@
 //   X2 link     the banner and the notice only while the link is up (the tile says "no live node
 //               status"); Connected nodes reads the last model whatever the link (its tab shows
 //               the link's hint instead while it is down)
-//   X4 zone     a Connected nodes row names the PDU its zone says, wherever that PDU is, else "no
-//               power zone"
+// A Connected nodes row names its board's resolved power zone (D7, the same one the Cockpit reads):
+// `PDU_Right`, `PDU_Right (hidden)`, else "no power zone".
 import { hhmmss, lastSeenLabel, plural } from '@shared/format'
 import type {
   AttentionItem,
@@ -23,6 +23,7 @@ import type {
   NodeView,
   OverviewSummary,
   PduOutage,
+  PowerZone,
   SummaryRow
 } from '@shared/nodes'
 import { isAdoptableKind } from '../node-kind'
@@ -95,7 +96,7 @@ export function attentionSummary(
 // ── Overview › new devices ──────────────────────────────────────────────────
 
 /**
- * The adoptable kind a node has identified as (node-kind.ts resolveKind: its own announcement, PDU
+ * The adoptable kind a node has identified as (node-kind.ts identityOf: its own announcement, PDU
  * telemetry, then what was stored). Never inferred from its NODE_ID. null = not identified yet, or a
  * kind that can't be adopted (a bridge, or one this client doesn't know).
  */
@@ -137,7 +138,11 @@ export function overviewSummary(
 
 // ── Connection › Connected nodes ────────────────────────────────────────────
 
-export function nodesSummary(views: NodeView[], outages: PduOutage[]): NodesSummary {
+export function nodesSummary(
+  views: NodeView[],
+  outages: PduOutage[],
+  zones: ReadonlyMap<number, PowerZone>
+): NodesSummary {
   const band = healthBand(views)
   const known = views.filter((v) => v.entry.source !== 'new')
   const byId = new Map(views.map((v) => [v.entry.nodeId, v.entry]))
@@ -149,8 +154,8 @@ export function nodesSummary(views: NodeView[], outages: PduOutage[]): NodesSumm
     const meta = [`#${i.nodeId}`]
     if (i.outage) meta.push(affected(i.outage.nodeIds.length))
     else if (e.kind !== 'pdu') {
-      const feed = e.pduId === null ? undefined : byId.get(e.pduId)
-      meta.push(feed ? feed.name : 'no power zone')
+      const zone = zones.get(e.nodeId)
+      meta.push(zone && zone.status !== 'none' ? zone.label : 'no power zone')
     }
     if (e.notSeen) {
       meta.push('not seen this session')

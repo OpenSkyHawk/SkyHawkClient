@@ -14,9 +14,10 @@ import {
 } from '@shared/nodes'
 import { amps, fmtUptime, volts } from '@shared/format'
 import { nodeFaultTag } from '../faults'
-import { reportedIdentity } from '../node-kind'
+import { isAdoptableKind, reportedIdentity } from '../node-kind'
 import { displayCurrentMa } from '../node-telem'
-import { powerZoneOptions } from './panels'
+import { resolveZone } from '../power-zone'
+import type { Members } from './members'
 
 /**
  * New NODE_IDs, oldest first seen first, then by NODE_ID. Not-yet-seen times sort last. Every new
@@ -30,27 +31,6 @@ export function adoptQueue(views: NodeView[]): NodeView[] {
     .sort((a, b) => at(a) - at(b) || a.entry.nodeId - b.entry.nodeId)
 }
 
-/**
- * The Adopt form's Powered by list (#93): the console's PDUs in your cockpit; the chosen one if it is
- * in your cockpit on another console, marked "(other console)"; and — only when the chosen PDU is
- * not in your cockpit at all — that PDU as `pending`, which the form marks "(not added)".
- */
-export function adoptPduChoices(
-  views: NodeView[],
-  console: string,
-  pduId: number | null | '',
-  e: NodeModelEntry
-): { zones: { value: number; label: string }[]; pending?: string } {
-  const chosen = typeof pduId === 'number' ? pduId : null
-  const zones = powerZoneOptions(views, console, chosen)
-  if (chosen === null || zones.some((z) => z.value === chosen)) return { zones }
-  const waiting = views.find((v) => v.entry.nodeId === chosen)
-  const name =
-    waiting?.entry.name ??
-    ((e.registry?.pduId === chosen && e.registry.pduName) || `PDU #${chosen}`)
-  return { zones, pending: name }
-}
-
 export interface Adoptability {
   /** Set only when it can be adopted: what it identified as. */
   kind?: NodeKind
@@ -61,15 +41,14 @@ export interface Adoptability {
 
 /**
  * Whether a new node can be adopted, by what it has identified as (entry.identified, the shared
- * resolver). A whitelist: a PDU or a panel group can; still identifying, a bridge, or a kind this
- * client doesn't know can't (it shows in Attention while it's on the bus, #93).
+ * resolver) and the one adopt gate's whitelist (node-kind.ts isAdoptableKind, under
+ * requireAdoptable): a PDU or a panel group can; still identifying, a bridge, or a kind this client
+ * doesn't know can't (it shows in Attention while it's on the bus, #93).
  */
 export function adoptability(e: NodeModelEntry): Adoptability {
-  switch (e.identified) {
-    case 'pdu':
-      return { kind: 'pdu', badge: 'PDU' }
-    case 'panel':
-      return { kind: 'panel', badge: 'PANEL GROUP' }
+  const k = e.identified
+  if (isAdoptableKind(k)) return { kind: k, badge: k === 'pdu' ? 'PDU' : 'PANEL GROUP' }
+  switch (k) {
     case 'bridge':
       return {
         badge: 'BRIDGE',
@@ -141,31 +120,31 @@ export function adoptEvidence(v: NodeView): Evidence {
 
 /**
  * Where the form starts (#93): a registry board pre-filled from NODE_IDS.md — name, console and its
- * default PDU — so adding it is one click; a NODE_ID the registry does not know starts blank.
+ * default PDU — so adding it is one click; a NODE_ID the registry does not know starts blank. The
+ * default PDU only if it is in your cockpit, hidden ones included (D7: its resolved zone is not
+ * `none`); otherwise None — a zone is never a PDU you have not added.
  */
-export function prefill(e: NodeModelEntry, kind: NodeKind): AdoptForm {
+export function prefill(e: NodeModelEntry, kind: NodeKind, members: Members): AdoptForm {
   const r = e.registry
   if (!r) return { name: '', console: '', pduId: '' }
-  return { name: r.name, console: r.console, pduId: kind === 'pdu' ? null : r.pduId }
+  if (kind === 'pdu') return { name: r.name, console: r.console, pduId: null }
+  const zone = resolveZone(members.get, r.pduId)
+  return { name: r.name, console: r.console, pduId: zone.status === 'none' ? null : zone.pduId }
 }
 
 /**
  * "Add all N panel groups from NODE_IDS.md" (#93): an untouched registry panel group is added with
- * its defaults, keeping its default PDU only if that PDU is already in your cockpit (`views`), else
- * None — the PDU choice stays explicit (X4 co-located: D7 today, a hidden PDU is not "in your
- * cockpit" here). undefined = not one Add all takes (a PDU, or not in NODE_IDS.md).
+ * its pre-fill — its default PDU only if that PDU is in your cockpit, else None (D7). undefined =
+ * not one Add all takes (a PDU, or not in NODE_IDS.md).
  */
-function addAllPduId(row: NodeView, views: NodeView[]): number | null | undefined {
-  const inCockpit = (id: number | null) =>
-    id !== null &&
-    views.some((v) => v.entry.nodeId === id && v.entry.kind === 'pdu' && v.entry.source !== 'new')
+function addAllPduId(row: NodeView, members: Members): number | null | undefined {
   if (!row.entry.registry || adoptability(row.entry).kind !== 'panel') return undefined
-  const form = prefill(row.entry, 'panel')
-  return typeof form.pduId === 'number' && inCockpit(form.pduId) ? form.pduId : null
+  const { pduId } = prefill(row.entry, 'panel', members)
+  return pduId === '' ? null : pduId
 }
 
 /** The dialog's queue, each row with what the dialog shows for it. */
-export function adoptRows(views: NodeView[]): AdoptRow[] {
+export function adoptRows(views: NodeView[], members: Members): AdoptRow[] {
   return adoptQueue(views).map((view) => {
     const e = view.entry
     const able = adoptability(e)
@@ -176,16 +155,13 @@ export function adoptRows(views: NodeView[]): AdoptRow[] {
       // keptQueue's offline copy of a row that left the model, as the dialog shows it.
       goneEvidence: adoptEvidence({ ...view, entry: { ...e, availability: 'offline' } }),
       // Only a node identified as a PDU or a panel group gets the form; anything else is shown as-is.
-      prefill: able.kind ? prefill(e, able.kind) : prefill({ ...e, registry: undefined }, 'panel')
+      prefill: able.kind
+        ? prefill(e, able.kind, members)
+        : prefill({ ...e, registry: undefined }, 'panel', members)
     }
     if (able.kind) row.kind = able.kind
     if (able.note !== undefined) row.note = able.note
-    const r = e.registry
-    if (r && r.pduId !== null) {
-      const { pending } = adoptPduChoices(views, r.console, r.pduId, e)
-      if (pending !== undefined) row.pending = { pduId: r.pduId, name: pending }
-    }
-    const bulk = addAllPduId(view, views)
+    const bulk = addAllPduId(view, members)
     if (bulk !== undefined) row.addAllPduId = bulk
     return row
   })

@@ -6,6 +6,7 @@ import {
   type BoardActions,
   type BoardPanel,
   type FaultBox,
+  type FedBoard,
   type NodeMappingResult,
   type NodeModelEntry,
   type NodeRegistryInfo,
@@ -14,7 +15,7 @@ import {
 } from '@shared/nodes'
 import { Chevron, Sheet } from '../app/kit'
 import { useNodesStore } from './store'
-import { firstZone, mappingPatch, reportAge, zoneOptions } from './panel-view'
+import { mappingPatch, reportAge, zoneOptions } from './panel-view'
 import { Dot } from './Dot'
 
 function Fault({ box }: { box: FaultBox }) {
@@ -122,6 +123,25 @@ function Tabs<T extends string>(props: {
   )
 }
 
+/**
+ * A board a PDU feeds that is hidden until it reports again: listed (Forget unlinks it too, X7), but
+ * it has no panel to open.
+ */
+function HiddenFeed({ f }: { f: FedBoard }) {
+  return (
+    <li>
+      <span className="node__dot" aria-hidden="true" />
+      <span className="att__t">
+        <b>{f.name}</b>
+        <br />
+        <span>
+          {f.detail} · #{f.nodeId}
+        </span>
+      </span>
+    </li>
+  )
+}
+
 /** One board as a row — the PDU's Feeds, a panel group's Powered by: opening it switches panel. */
 function BoardLink(props: { v: NodeView; detail: string; onOpen: (nodeId: number) => void }) {
   const e = props.v.entry
@@ -156,12 +176,11 @@ function NameField(props: {
   extra?: string
 }) {
   const reg = useRegistryEntry(props.e.nodeId)
+  // A board panel is only for a board in your cockpit (D6): from NODE_IDS.md, or adopted here.
   const from =
     props.e.source === 'registry'
       ? `Registry: ${reg ? `${reg.name}, ${consoleLabel(reg.console)}` : '…'} (NODE_IDS.md).`
-      : props.e.source === 'adopted'
-        ? 'Adopted on this computer — not in NODE_IDS.md.'
-        : 'Not in NODE_IDS.md.'
+      : 'Adopted on this computer — not in NODE_IDS.md.'
   return (
     <div className="sh__sec">
       <label className="input-label" htmlFor={props.id}>
@@ -274,29 +293,26 @@ export function NodePanel(props: {
   views: NodeView[]
   zones: ZoneChoices
   live: boolean
-  /** Switch to another board's panel (Powered by). */
+  /** Open another board (Powered by), where main routes it (D6). */
   onOpen: (nodeId: number) => void
   onClose: () => void
 }) {
   const { view: v, views, panel, zones } = props
   const e = v.entry
   const [tab, setTab] = useState<'status' | 'settings'>('status')
+  // Its power zone as main resolved it (D7): an active one is a PDU on the plan, opened from here.
+  const zone = panel.zone ?? { status: 'none' }
   const pdu =
-    panel.poweredBy === undefined
-      ? undefined
-      : views.find((p) => p.entry.nodeId === panel.poweredBy)
+    zone.status === 'active' ? views.find((p) => p.entry.nodeId === zone.pduId) : undefined
   // The form starts from the mapping when the panel opens; pushes while editing don't reset it.
   const [name, setName] = useState(e.name)
   const [con, setCon] = useState(e.console ?? '')
   const [pduId, setPduId] = useState<number | null>(e.pduId)
   const call = useMappingCall(props.onClose)
-  const placed = panel.placed
   const now = useNow(props.live && tab === 'status')
   const age = props.live ? reportAge(e, now) : 'last known'
 
-  const where = placed
-    ? `${consoleLabel(e.console)} · ${pdu ? pdu.entry.name : 'no power zone'}`
-    : 'not placed yet'
+  const where = `${consoleLabel(e.console)} · ${zone.status === 'none' ? 'no power zone' : zone.label}`
   const rails = pdu?.readings
 
   const save = () => {
@@ -336,69 +352,70 @@ export function NodePanel(props: {
             </div>
             <Rows rows={panel.status ?? []} />
           </div>
-          {placed && (
-            <div className="sh__sec">
-              <div className="section-h">Powered by</div>
-              {pdu ? (
-                <ul className="evt att">
-                  <BoardLink
-                    v={pdu}
-                    detail={`12 V ${pv(props.live, rails?.rail12V?.vAvgMv)} · 5 V ${pv(props.live, rails?.rail5V?.vAvgMv)}`}
-                    onOpen={props.onOpen}
-                  />
-                </ul>
-              ) : (
-                <div className="hint">No power zone. Pick one in the Settings tab.</div>
-              )}
-            </div>
-          )}
+          <div className="sh__sec">
+            <div className="section-h">Powered by</div>
+            {pdu ? (
+              <ul className="evt att">
+                <BoardLink
+                  v={pdu}
+                  detail={`12 V ${pv(props.live, rails?.rail12V?.vAvgMv)} · 5 V ${pv(props.live, rails?.rail5V?.vAvgMv)}`}
+                  onOpen={props.onOpen}
+                />
+              </ul>
+            ) : zone.status === 'hidden' ? (
+              <div className="hint">
+                {zone.label} — hidden until it reports again; this board keeps the link.
+              </div>
+            ) : (
+              <div className="hint">No power zone. Pick one in the Settings tab.</div>
+            )}
+          </div>
         </>
       ) : (
         <>
           <NameField id="np-name" e={e} value={name} onChange={setName} />
-          {placed && (
-            <div className="sh__sec">
-              <div className="section-h">Placement · this computer</div>
-              <div className="sh__row">
-                <div>
-                  <label className="input-label" htmlFor="np-console">
-                    Console
-                  </label>
-                  <ConsoleSelect
-                    id="np-console"
-                    value={con}
-                    onChange={(c) => {
-                      setCon(c)
-                      setPduId(firstZone(zones, c))
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="input-label" htmlFor="np-zone">
-                    Power zone
-                  </label>
-                  <select
-                    id="np-zone"
-                    className="input"
-                    value={pduId ?? ''}
-                    onChange={(ev) => setPduId(ev.target.value ? Number(ev.target.value) : null)}
-                  >
-                    <option value="">None</option>
-                    {zoneOptions(zones, con, pduId).map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+          <div className="sh__sec">
+            <div className="section-h">Placement · this computer</div>
+            <div className="sh__row">
+              <div>
+                <label className="input-label" htmlFor="np-console">
+                  Console
+                </label>
+                <ConsoleSelect
+                  id="np-console"
+                  value={con}
+                  onChange={(c) => {
+                    // A new console clears the zone (N9): pick its PDU yourself.
+                    setCon(c)
+                    setPduId(null)
+                  }}
+                />
               </div>
-              <div className="hint">
-                Defaults come from NODE_IDS.md. Changing the power zone moves the tile to that PDU
-                on the plan; picking a console picks its first PDU.
+              <div>
+                <label className="input-label" htmlFor="np-zone">
+                  Power zone
+                </label>
+                <select
+                  id="np-zone"
+                  className="input"
+                  value={pduId ?? ''}
+                  onChange={(ev) => setPduId(ev.target.value ? Number(ev.target.value) : null)}
+                >
+                  <option value="">None</option>
+                  {zoneOptions(zones, con, pduId).map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-          )}
-          {placed && <BoardFooter e={e} actions={panel.actions} call={call} onSave={save} />}
+            <div className="hint">
+              Defaults come from NODE_IDS.md. Changing the power zone moves the tile to that PDU on
+              the plan; picking a console clears it, so you pick its PDU.
+            </div>
+          </div>
+          <BoardFooter e={e} actions={panel.actions} call={call} onSave={save} />
         </>
       )}
     </Sheet>
@@ -413,7 +430,7 @@ export function PduPanel(props: {
   panel: BoardPanel
   views: NodeView[]
   live: boolean
-  /** Switch to another board's panel (Feeds). */
+  /** Open another board (Feeds), where main routes it (D6). */
   onOpen: (nodeId: number) => void
   onClose: () => void
 }) {
@@ -424,15 +441,15 @@ export function PduPanel(props: {
   const [con, setCon] = useState(e.console ?? '')
   const call = useMappingCall(props.onClose)
   const others = panel.sharedWith ?? []
-  const feeds = (panel.feeds ?? []).flatMap((f) => {
-    const n = views.find((o) => o.entry.nodeId === f.nodeId)
-    return n ? [{ view: n, detail: f.detail }] : []
-  })
+  // Main's list, hidden boards included (X7); a hidden one has no view on the plan.
+  const feeds = (panel.feeds ?? []).map((f) => ({
+    f,
+    view: f.hidden ? undefined : views.find((o) => o.entry.nodeId === f.nodeId)
+  }))
   const rails = panel.rails ?? []
   const watts = rails.every((r) => r.watts)
     ? ` Power (W) is computed here: ${rails.map((r) => `${r.watts} W`).join(' + ')}.`
     : ''
-  const placed = panel.placed
 
   const save = () => {
     const patch = mappingPatch(e, { name, console: con, pduId: e.pduId })
@@ -507,14 +524,13 @@ export function PduPanel(props: {
           <div className="section-h">Boards on this PDU</div>
           {feeds.length ? (
             <ul className="evt att sh__list">
-              {feeds.map((f) => (
-                <BoardLink
-                  key={f.view.entry.nodeId}
-                  v={f.view}
-                  detail={f.detail}
-                  onOpen={props.onOpen}
-                />
-              ))}
+              {feeds.map(({ f, view }) =>
+                view ? (
+                  <BoardLink key={f.nodeId} v={view} detail={f.detail} onOpen={props.onOpen} />
+                ) : (
+                  <HiddenFeed key={f.nodeId} f={f} />
+                )
+              )}
             </ul>
           ) : (
             <div className="hint">No board has this PDU as its power zone.</div>
@@ -535,24 +551,22 @@ export function PduPanel(props: {
             onChange={setName}
             extra="Also the group header on the plan."
           />
-          {placed && (
-            <div className="sh__sec">
-              <div className="section-h">Placement · this computer</div>
-              <div className="sh__row">
-                <div>
-                  <label className="input-label" htmlFor="pp-console">
-                    Console
-                  </label>
-                  <ConsoleSelect id="pp-console" value={con} onChange={setCon} />
-                </div>
-              </div>
-              <div className="hint">
-                A PDU has no power zone. Moving it to another console moves its group, and the
-                boards it powers, with it on the plan.
+          <div className="sh__sec">
+            <div className="section-h">Placement · this computer</div>
+            <div className="sh__row">
+              <div>
+                <label className="input-label" htmlFor="pp-console">
+                  Console
+                </label>
+                <ConsoleSelect id="pp-console" value={con} onChange={setCon} />
               </div>
             </div>
-          )}
-          {placed && <BoardFooter e={e} actions={panel.actions} call={call} onSave={save} />}
+            <div className="hint">
+              A PDU has no power zone. Moving it to another console moves its group, and the boards
+              it powers, with it on the plan.
+            </div>
+          </div>
+          <BoardFooter e={e} actions={panel.actions} call={call} onSave={save} />
         </>
       )}
     </Sheet>

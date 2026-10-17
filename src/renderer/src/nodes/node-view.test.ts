@@ -9,6 +9,8 @@ import {
 } from '../../../test-fixtures/nodes'
 import { attentionItems } from '../../../main/nodes/cockpit-snapshot/attention'
 import { nodesSummary } from '../../../main/nodes/cockpit-snapshot/summaries'
+import { cockpitMembers } from '../../../main/nodes/cockpit-snapshot/members'
+import { boardZones } from '../../../main/nodes/power-zone'
 import { nodeViews } from '../../../main/nodes/cockpit-snapshot/views'
 import { STATE_SYMBOL, tileMatches } from './node-view'
 
@@ -44,7 +46,10 @@ const summary = (
   nodes: NodeModelEntry[],
   outages: PduOutage[] = [],
   telemetry: NodeTelemSnapshot[] = []
-) => nodesSummary(nodeViews(model(nodes, outages), telemetry), outages)
+) => {
+  const m = model(nodes, outages)
+  return nodesSummary(nodeViews(m, telemetry), outages, boardZones(m.nodes, cockpitMembers(m).get))
+}
 
 const T = 1_760_000_000_000
 

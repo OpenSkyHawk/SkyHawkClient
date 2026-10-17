@@ -11,6 +11,7 @@ import type {
   MappingPatch,
   NodeDefaults,
   NodeIdentity,
+  NodeKind,
   NodeBatchResult,
   NodeMappingFile,
   NodeMappingResult,
@@ -32,6 +33,7 @@ import {
   forgetNode,
   MappingError,
   markSeen,
+  recordKinds,
   resetMapping,
   resetNode,
   resetPreview,
@@ -44,9 +46,17 @@ import {
   NODE_REGISTRY_SOURCE,
   type NodeFaultName
 } from '@shared/firmware'
-import { buildNodeModel } from './node-model'
+import { buildNodeModel, nodeAvailability } from './node-model'
 import { NodeEventTracker } from './node-events'
-import { isAdoptableKind, resolveKind } from './node-kind'
+import { boardIdentity, identityOf, isAdoptableKind } from './node-kind'
+import {
+  canForget,
+  canHide,
+  offlineRefusal,
+  pduTelemetryLive,
+  type OfflineGate,
+  type OfflineSignals
+} from './offline-actions'
 import {
   BRIDGE_NODE_ID,
   canRequestRoster,
@@ -178,6 +188,7 @@ export class NodeHub implements NodeLineSink {
     this.log = deps.log ?? (() => {})
     this.store = new MappingStore({
       file: deps.mappingFile,
+      defaults: this.defaults,
       log: deps.log,
       events: deps.mappingEvents,
       onCommit: () => {
@@ -366,7 +377,27 @@ export class NodeHub implements NodeLineSink {
       changed = true
     }
     if (rosterChanged) this.rosterTransitions(now)
-    if (changed) this.pushModel(now)
+    if (changed) {
+      this.recordReportedKinds(now)
+      this.pushModel(now)
+    }
+  }
+
+  /**
+   * What each board said it is (its NODE_KIND, or PDU pages) is stored on its entry when it is in
+   * your cockpit, so it still reads as that while offline (S1 bug 3). Writes only on a change.
+   */
+  private recordReportedKinds(now: number): void {
+    const rows = new Map(this.roster.snapshot().map((n) => [n.nodeId, n.nodeKind]))
+    const pages = this.telem.snapshot(now).filter((t) => t.isPdu)
+    const ids = new Set([...rows.keys(), ...pages.map((t) => t.nodeId)])
+    const reported: [number, NodeKind][] = []
+    for (const id of ids) {
+      const pduTelemetry = pages.some((t) => t.nodeId === id)
+      const k = identityOf({ reported: rows.get(id), pduTelemetry })
+      if (isAdoptableKind(k)) reported.push([id, k])
+    }
+    if (reported.length) this.store.persist(recordKinds(this.mapping(), this.defaults, reported))
   }
 
   /**
@@ -412,22 +443,30 @@ export class NodeHub implements NodeLineSink {
     return this.update((f) => resetNode(f, this.defaults, nodeId))
   }
 
-  /** Remove a board from your cockpit (#93). Offline only: a board on the bus is active. */
-  forget(nodeId: number): NodeMappingResult {
-    const online = this.onlineRefusal(nodeId, 'forgotten')
-    if (online) return online
+  /**
+   * Remove a board from your cockpit (#93). Offline only (offline-actions.ts canForget): refused
+   * while it is online, sends fresh PDU pages, or before the roster says whether it is on the bus.
+   */
+  forget(nodeId: number, now = Date.now()): NodeMappingResult {
+    const refused = this.refusal(canForget(this.offlineSignals(nodeId, now)), 'forgotten')
+    if (refused) return refused
     return this.update((f) => forgetNode(f, this.defaults, nodeId, this.kindOf))
   }
 
   /**
-   * Hide and Forget only tidy the display, and a board that is online is active on the bus — its
-   * controls reach DCS, it draws power, it affects bus health — so it always shows (#93).
+   * What the offline-only rule reads for a board, as the footer reads it from the snapshot: its
+   * availability by the model's one rule, and whether fresh PDU pages say it is live.
    */
-  private onlineRefusal(nodeId: number, what: string): NodeMappingResult | undefined {
-    const online = this.roster.snapshot().some((n) => n.nodeId === nodeId && n.present)
-    return online
-      ? { ok: false, error: `It is online — a board on the bus can’t be ${what}` }
-      : undefined
+  private offlineSignals(nodeId: number, now: number): OfflineSignals {
+    const st = this.roster.snapshot().find((n) => n.nodeId === nodeId)
+    return {
+      availability: nodeAvailability(st, this.roster.rosterCompleteAt() !== undefined),
+      pduTelemetry: pduTelemetryLive(this.telem.snapshot(now), nodeId)
+    }
+  }
+
+  private refusal(gate: OfflineGate, what: 'hidden' | 'forgotten'): NodeMappingResult | undefined {
+    return gate.ok ? undefined : { ok: false, error: offlineRefusal(gate.why, what) }
   }
 
   /** The stored mapping and the registry defaults it applies to — for config export / import. */
@@ -472,17 +511,15 @@ export class NodeHub implements NodeLineSink {
   }
 
   /**
-   * What a node is, by the one resolver the model uses (node-kind.ts): its own announcement, then
-   * PDU telemetry, then the registry or an adoption. undefined = nothing solid yet — the model's
-   * 'panel' for a new node is a display default, never knowledge.
+   * What a node is, by the one resolver the model uses (node-kind.ts boardIdentity): its own
+   * announcement, then PDU telemetry, then what is stored for a board in your cockpit (the kind it
+   * reported before, else the registry's). undefined = nothing solid yet — the model's 'panel' for
+   * a new node is a display default, never knowledge.
    */
   private readonly kindOf = (nodeId: number, now = Date.now()): NodeIdentity | undefined =>
-    resolveKind({
+    boardIdentity(this.mapped(), nodeId, {
       reported: this.roster.snapshot().find((n) => n.nodeId === nodeId)?.nodeKind,
-      pduTelemetry: this.telem.snapshot(now).some((t) => t.nodeId === nodeId && t.isPdu),
-      // Only a board in your cockpit has a stored kind; a new one (registry included) is what it
-      // reports, never what its NODE_ID suggests (#93).
-      stored: this.mapped().get(nodeId)?.known ? this.mapped().get(nodeId)?.kind : undefined
+      pduTelemetry: this.telem.snapshot(now).some((t) => t.nodeId === nodeId && t.isPdu)
     })
 
   /** The bundled NODE_IDS registry, PanelBridge included, and where it came from. */
@@ -497,10 +534,11 @@ export class NodeHub implements NodeLineSink {
     return { ...NODE_REGISTRY_SOURCE, nodes }
   }
 
-  hide(nodeId: number, on: boolean): NodeMappingResult {
-    if (on) {
-      const online = this.onlineRefusal(nodeId, 'hidden')
-      if (online) return online
+  /** Hide until it reports again: offline only, like Forget (canHide). Un-hiding always works. */
+  hide(nodeId: number, on: boolean, now = Date.now()): NodeMappingResult {
+    if (on === true) {
+      const refused = this.refusal(canHide(this.offlineSignals(nodeId, now)), 'hidden')
+      if (refused) return refused
     }
     return this.update((f) => setHidden(f, this.defaults, nodeId, on))
   }

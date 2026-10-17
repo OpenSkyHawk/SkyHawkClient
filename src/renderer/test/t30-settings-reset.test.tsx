@@ -11,11 +11,11 @@ import { connected, model, modelNode, panel, pdu, resetPreview } from './scenari
  * (#41) adopted onto the Left console under PDU_Left.
  */
 const FILE: NodeMappingFile = {
-  version: 3,
+  version: 4,
   nodes: {
     2: { added: true, name: 'Nav', pduId: 3 },
     3: { added: true },
-    41: { name: 'Left_Trim', console: 'Left', kind: 'panel', pduId: 3 }
+    41: { added: true, name: 'Left_Trim', console: 'Left', kind: 'panel', pduId: 3 }
   }
 }
 const adoptedTrim = () =>
@@ -76,16 +76,18 @@ describe('T30 Settings › Cockpit › Reset… (B89, B24)', () => {
     expect(resetBtn()).toBeEnabled()
   })
 
-  it('the only adopted board is hidden: greyed out (X3 today)', async () => {
-    // contract X3: main counts a hidden board as in your cockpit, so Reset would offer to forget
-    // it; today the UI looks only at the boards it shows, and Reset… stays greyed out.
+  it('the only adopted board is hidden: enabled (X1, R4: still in your cockpit)', async () => {
+    // contract X3: main counts a hidden board as in your cockpit, so Reset offers to forget it,
+    // and Reset… is enabled for it like for any adopted board.
     const { resetBtn } = await openCockpit(
       model([panel(1, 'Center_Armament')], [], {
         hidden: [41],
-        hiddenNodes: [{ nodeId: 41, name: 'Left_Trim', console: 'Left' }]
+        hiddenNodes: [
+          { nodeId: 41, name: 'Left_Trim', console: 'Left', kind: 'panel', source: 'adopted' }
+        ]
       })
     )
-    expect(resetBtn()).toBeDisabled()
+    expect(resetBtn()).toBeEnabled()
   })
 
   it('the review lists each field old → new, from main’s preview', async () => {
@@ -93,9 +95,10 @@ describe('T30 Settings › Cockpit › Reset… (B89, B24)', () => {
     const dlg = await openReview()
     expect(sky.previewNodeReset).toHaveBeenCalled()
     expect(within(dlg).getByText('2 changes')).toBeInTheDocument()
+    // D7 (#131): its NODE_IDS.md PDU, PDU_Right, is not in your cockpit, so Reset gives it none.
     expect(changes(dlg)).toEqual([
       'Right_Navigation · nameNav→Right_Navigation',
-      'Right_Navigation · power zonePDU_Left→PDU_Right',
+      'Right_Navigation · power zonePDU_Left→—',
       '#41 Left_TrimLeft · PDU_Left→New on the bus'
     ])
     expect(within(dlg).getByText('1 node · not in the registry')).toBeInTheDocument()
@@ -130,7 +133,7 @@ describe('T30 Settings › Cockpit › Reset… (B89, B24)', () => {
   })
 
   it('only an adopted board: nothing to reset until "Also forget" is ticked', async () => {
-    const file: NodeMappingFile = { version: 3, nodes: { 41: FILE.nodes[41]! } }
+    const file: NodeMappingFile = { version: 4, nodes: { 41: FILE.nodes[41]! } }
     const { sky, user, openReview } = await openCockpit(
       model([panel(1, 'Center_Armament'), adoptedTrim()]),
       file
