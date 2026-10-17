@@ -9,7 +9,6 @@ import { TELEM_PAGE } from '../node-telem'
 import { lastSeenLabel } from '@shared/format'
 import {
   boardActions,
-  firstPduOn,
   nodeFaultBoxes,
   nodeStatusRows,
   pduBoardRows,
@@ -402,10 +401,5 @@ describe('placement', () => {
       { value: 6, label: 'PDU_Center' },
       { value: 3, label: 'PDU_Left (other console)' }
     ])
-  })
-
-  it('a console picks its first PDU, none when it has none', () => {
-    expect(firstPduOn(members, 'Center')).toBe(5)
-    expect(firstPduOn(members, 'Right')).toBeNull()
   })
 })

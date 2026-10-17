@@ -9,9 +9,8 @@
 //   X2 link     the banner and the notice only while the link is up (the tile says "no live node
 //               status"); Connected nodes reads the last model whatever the link (its tab shows
 //               the link's hint instead while it is down)
-//   X4 zone     a Connected nodes row names the PDU its zone says, wherever that PDU is — on the
-//               plan, new on the bus, or hidden (still in your cockpit, X1: members.ts) — else
-//               "no power zone"
+// A Connected nodes row names its board's resolved power zone (D7, the same one the Cockpit reads):
+// `PDU_Right`, `PDU_Right (hidden)`, else "no power zone".
 import { hhmmss, lastSeenLabel, plural } from '@shared/format'
 import type {
   AttentionItem,
@@ -24,13 +23,13 @@ import type {
   NodeView,
   OverviewSummary,
   PduOutage,
+  PowerZone,
   SummaryRow
 } from '@shared/nodes'
 import { isAdoptableKind } from '../node-kind'
 import { isReportableNew } from '../node-model'
 import { affected, ATTENTION_SHOWN, attentionItems } from './attention'
 import { healthBand } from './band'
-import type { Members } from './members'
 
 // ── Overview › Cockpit tile ─────────────────────────────────────────────────
 
@@ -142,7 +141,7 @@ export function overviewSummary(
 export function nodesSummary(
   views: NodeView[],
   outages: PduOutage[],
-  members: Members
+  zones: ReadonlyMap<number, PowerZone>
 ): NodesSummary {
   const band = healthBand(views)
   const known = views.filter((v) => v.entry.source !== 'new')
@@ -155,8 +154,8 @@ export function nodesSummary(
     const meta = [`#${i.nodeId}`]
     if (i.outage) meta.push(affected(i.outage.nodeIds.length))
     else if (e.kind !== 'pdu') {
-      const feed = e.pduId === null ? undefined : (byId.get(e.pduId) ?? members.get(e.pduId))
-      meta.push(feed ? feed.name : 'no power zone')
+      const zone = zones.get(e.nodeId)
+      meta.push(zone && zone.status !== 'none' ? zone.label : 'no power zone')
     }
     if (e.notSeen) {
       meta.push('not seen this session')

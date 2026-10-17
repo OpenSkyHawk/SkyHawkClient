@@ -166,9 +166,11 @@ describe('NodeHub', () => {
       [1, 'new'],
       [41, 'new']
     ])
-    const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
+    // PDU_Center is not in your cockpit, so the pre-fill — and the request — has No power zone (D7).
+    const spec = { name: 'Center_Armament', console: 'Center', pduId: null, kind: 'panel' } as const
     expect(h.adopt(1, spec).ok).toBe(true) // Add to cockpit
-    expect(disk.file.nodes[1]).toEqual({ added: true, kind: 'panel' }) // the kind it reported (S1)
+    // the kind it reported (S1)
+    expect(disk.file.nodes[1]).toEqual({ added: true, kind: 'panel', pduId: null })
     expect(h.snapshot(0).model.nodes[0]).toMatchObject({ nodeId: 1, source: 'registry' })
   })
 
@@ -550,7 +552,8 @@ describe('board kind (#344)', () => {
   it('a registry board is added only once it says it is a PDU or a panel group (#93 re-review C, G)', () => {
     disk.file = { version: 4, nodes: {} }
     const { h, roster } = hub()
-    const spec = { name: 'Center_Armament', console: 'Center', pduId: 5, kind: 'panel' } as const
+    // PDU_Center is not in your cockpit, so the pre-fill has No power zone (D7).
+    const spec = { name: 'Center_Armament', console: 'Center', pduId: null, kind: 'panel' } as const
     roster.applyMessage(NODE_MSG, row(1, 0x00), 0) // kind not reported yet
     expect(node(h, 1)?.identified).toBeUndefined()
     expect(h.adopt(1, spec)).toEqual({ ok: false, error: 'Its board type is not known yet' })
@@ -558,7 +561,8 @@ describe('board kind (#344)', () => {
     expect(h.adopt(1, spec)).toEqual({ ok: false, error: 'This board cannot be adopted' })
     roster.applyMessage(NODE_MSG, row(1, 0x01), 20) // a panel group
     expect(h.adopt(1, spec).ok).toBe(true)
-    expect(disk.file.nodes[1]).toEqual({ added: true, kind: 'panel' }) // the kind it reported (S1)
+    // the kind it reported (S1)
+    expect(disk.file.nodes[1]).toEqual({ added: true, kind: 'panel', pduId: null })
   })
 
   it('a kind this client does not know is not adoptable either', () => {

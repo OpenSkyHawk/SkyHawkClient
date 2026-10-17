@@ -302,17 +302,20 @@ describe('diffImport', () => {
       version: 4,
       nodes: { 2: { added: true, lastSeen: '2020-01-01T00:00:00.000Z' }, 4: { added: true } }
     }
+    // D7 (#131): a zone is only a PDU in your cockpit — PDU_Center isn't here, so Center_Armament
+    // has none; PDU_Right joins, so Right_Navigation's NODE_IDS.md zone holds after the import.
     expect(diffImport(defaults, cur, { nodeMapping: file })).toEqual([
       {
         id: 'nodeMapping',
         title: 'Node mapping',
-        summary: '3 nodes · 1 joins · 2 leave',
+        summary: '4 nodes · 1 joins · 2 leave',
         rows: [
           {
             k: 'Center_Armament',
-            from: 'Center_Armament · Center · PDU_Center',
+            from: 'Center_Armament · Center · —',
             to: 'not in your cockpit'
           },
+          { k: 'Right_Navigation · power zone', from: '—', to: 'PDU_Right' },
           { k: 'PDU_Right', from: 'not in your cockpit', to: 'PDU_Right · Right · —' },
           { k: '#41', from: 'Trim · Left · —', to: 'not in your cockpit' }
         ]
@@ -382,11 +385,17 @@ describe('diffImport', () => {
       {
         id: 'nodeMapping',
         title: 'Node mapping',
-        summary: '3 nodes · 1 joins', // S4: #41 joins your cockpit
+        // S4: #41 joins your cockpit. D7 (#131): its PDU_Right is not in it, so No power zone, listed;
+        // Center_Armament's zones (PDU_Center → PDU_Left) are outside both cockpits: none either way.
+        summary: '2 nodes · 1 joins',
         rows: [
-          { k: 'Center_Armament · power zone', from: 'PDU_Center', to: 'PDU_Left' },
           { k: 'Right_Navigation · name', from: 'Right_Navigation', to: 'Right_TACAN' },
-          { k: '#41', from: 'not in your cockpit', to: 'Right_Oxygen · Right · PDU_Right' }
+          { k: '#41', from: 'not in your cockpit', to: 'Right_Oxygen · Right · —' },
+          {
+            k: '#41 · power zone',
+            from: 'PDU_Right',
+            to: 'No power zone (not in your cockpit)'
+          }
         ]
       },
       {
@@ -407,6 +416,40 @@ describe('diffImport', () => {
         ]
       }
     ])
+  })
+
+  it('D7 (#131): a link to a PDU the import leaves outside your cockpit is listed as No power zone', () => {
+    const OUTSIDE = 'No power zone (not in your cockpit)'
+    // Here: Right_Navigation under PDU_Right (its NODE_IDS.md zone). The file has no PDU_Right.
+    const cur: ConfigSnapshot = {
+      ...current,
+      nodeMapping: { version: 4, nodes: { 2: { added: true }, 4: { added: true } } }
+    }
+    const file: NodeMappingFile = {
+      version: 4,
+      nodes: {
+        2: { added: true },
+        41: { added: true, name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
+      }
+    }
+    expect(diffImport(defaults, cur, { nodeMapping: file })[0]).toEqual({
+      id: 'nodeMapping',
+      title: 'Node mapping',
+      summary: '3 nodes · 1 joins · 1 leaves',
+      rows: [
+        { k: 'Right_Navigation · power zone', from: 'PDU_Right', to: OUTSIDE },
+        { k: 'PDU_Right', from: 'PDU_Right · Right · —', to: 'not in your cockpit' },
+        { k: '#41', from: 'not in your cockpit', to: 'Trim · Left · —' },
+        { k: '#41 · power zone', from: 'PDU_Left', to: OUTSIDE }
+      ]
+    })
+    // A NODE_IDS.md default to a PDU neither cockpit has was No power zone already: no row.
+    const none: ConfigSnapshot = {
+      ...current,
+      nodeMapping: { version: 4, nodes: { 2: { added: true } } }
+    }
+    const same: NodeMappingFile = { version: 4, nodes: { 2: { added: true } } }
+    expect(diffImport(defaults, none, { nodeMapping: same })[0]!.rows).toEqual([])
   })
 
   it('a file identical to the current setup changes nothing', () => {

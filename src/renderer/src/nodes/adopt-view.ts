@@ -2,15 +2,7 @@
 // keeps while it is open, the identify dot and where the selection goes next. What each row is and
 // what it starts as are main's (cockpit:snapshot adopt); "Add all" is sequenced by main
 // (node-mapping:add-all, R3.2b) over the set this picks.
-import type {
-  AdoptForm,
-  AdoptRequest,
-  AdoptRow,
-  AdoptSpec,
-  NodeKind,
-  ZoneChoices
-} from '@shared/nodes'
-import { zoneOptions } from './panel-view'
+import type { AdoptForm, AdoptRequest, AdoptRow, AdoptSpec, NodeKind } from '@shared/nodes'
 
 /**
  * The queue while the dialog is open (#93 re-review): what is waiting now, plus every row it has
@@ -38,26 +30,6 @@ export function keptQueue(
   return [...live.filter((r) => !done.has(r.view.entry.nodeId)), ...gone].sort(
     (a, b) => at(a) - at(b) || a.view.entry.nodeId - b.view.entry.nodeId
   )
-}
-
-/**
- * The Adopt form's Powered by list (#93), as main pushed it for the form's console and choice; and
- * — only when the chosen PDU is not in your cockpit at all — that PDU as `pending`, which the form
- * marks "(not added)".
- */
-export function adoptPduChoices(
-  zones: ZoneChoices,
-  row: AdoptRow,
-  console: string,
-  pduId: number | null | ''
-): { zones: { value: number; label: string }[]; pending?: string } {
-  const chosen = typeof pduId === 'number' ? pduId : null
-  const options = zoneOptions(zones, console, chosen)
-  if (chosen === null || options.some((z) => z.value === chosen)) return { zones: options }
-  return {
-    zones: options,
-    pending: row.pending?.pduId === chosen ? row.pending.name : `PDU #${chosen}`
-  }
 }
 
 /**

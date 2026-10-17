@@ -16,8 +16,8 @@ export function reportAge(e: NodeModelEntry, now: number): string {
 }
 
 /**
- * The Power zone list main pushed for a panel on `console` whose zone is `current`. A zone that is
- * not a PDU in your cockpit reads as none (main lists those with no zone).
+ * The Power zone list main pushed for a panel on `console` whose zone is `current`: only PDUs in
+ * your cockpit, a hidden one labelled so (D7). Changing the console clears the zone (N9).
  */
 export function zoneOptions(
   zones: ZoneChoices,
@@ -26,11 +26,6 @@ export function zoneOptions(
 ): { value: number; label: string }[] {
   const byZone = zones.options[console]
   return (current === null ? undefined : byZone?.[current]) ?? byZone?.[''] ?? []
-}
-
-/** The zone picking `console` picks: its first PDU, none when it has none (main's firstPduOn). */
-export function firstZone(zones: ZoneChoices, console: string): number | null {
-  return zones.first[console] ?? null
 }
 
 export interface PlacementForm {

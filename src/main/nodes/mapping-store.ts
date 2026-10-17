@@ -3,7 +3,7 @@
 // saved before it is adopted in memory, and refused while the file is read-only. A load that
 // failed is tried again on the next access (M11): no timer, and the reason a save is refused is
 // the latest one. What went wrong loading the file is an event row (MappingFileEvents).
-import type { NodeMappingFile } from '@shared/nodes'
+import type { NodeDefaults, NodeMappingFile } from '@shared/nodes'
 import {
   loadNodeMapping,
   MappingSaveError,
@@ -46,6 +46,8 @@ const NO_FILE: MappingFileIO = {
 
 export interface MappingStoreDeps {
   file?: MappingFileIO
+  /** The registry an older file is upgraded against (NodeHub's defaults). */
+  defaults?: Map<number, NodeDefaults>
   log?: Log
   /** Where loading the file's problems are reported (the event log). */
   events?: MappingFileEvents
@@ -56,6 +58,7 @@ export interface MappingStoreDeps {
 export class MappingStore {
   private loaded?: LoadedMapping
   private readonly io: MappingFileIO
+  private readonly defaults?: Map<number, NodeDefaults>
   private readonly log: Log
   private readonly events: MappingFileEvents
   private readonly onCommit: () => void
@@ -64,6 +67,7 @@ export class MappingStore {
 
   constructor(deps: MappingStoreDeps = {}) {
     this.io = deps.file ?? NO_FILE
+    this.defaults = deps.defaults
     this.log = deps.log ?? (() => {})
     this.events = deps.events ?? NO_EVENTS
     this.onCommit = deps.onCommit ?? (() => {})
@@ -75,7 +79,7 @@ export class MappingStore {
    */
   private store(): LoadedMapping {
     if (this.loaded && !this.loaded.retry) return this.loaded
-    const next = loadNodeMapping(this.io)
+    const next = loadNodeMapping(this.io, this.defaults)
     this.report(next.notice)
     if (!this.loaded) return (this.loaded = next)
     if (next.retry) {

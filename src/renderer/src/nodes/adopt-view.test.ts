@@ -127,7 +127,7 @@ describe('registry onboarding (#93)', () => {
     fresh(id, {
       name: 'Center_Armament',
       identified: 'panel',
-      registry: { name: 'Center_Armament', console: 'Center', pduId: 5, pduName: 'PDU_Center' },
+      registry: { name: 'Center_Armament', console: 'Center', pduId: 5 },
       ...over
     })
 
@@ -140,7 +140,7 @@ describe('registry onboarding (#93)', () => {
     })
     const nav = reg(2, {
       name: 'Right_Navigation',
-      registry: { name: 'Right_Navigation', console: 'Right', pduId: 4, pduName: 'PDU_Right' }
+      registry: { name: 'Right_Navigation', console: 'Right', pduId: 4 }
     })
     const newPdu = reg(3, {
       kind: 'pdu',

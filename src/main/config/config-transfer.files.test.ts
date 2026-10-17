@@ -137,7 +137,8 @@ describe.skipIf(process.getuid?.() === 0)('an import is one transaction, on real
     const p = ready(transfer.preview(FILE, '/x/a.json'))
     expect(transfer.apply(p.token, ALL, false)).toMatchObject({ ok: true, applied: ALL })
     expect(settings.get().host).toBe('10.0.0.2')
-    expect(nodes.mappingFile().nodes).toEqual({ 2: { added: true, name: 'Nav' } })
+    // D7 (#131): its NODE_IDS.md PDU is not in the imported cockpit, so No power zone.
+    expect(nodes.mappingFile().nodes).toEqual({ 2: { added: true, name: 'Nav', pduId: null } })
     expect(Object.keys(JSON.parse(readFileSync(files().cache, 'utf8')).boards.A7.axes)).toEqual([
       '0',
       '2'

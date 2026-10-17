@@ -27,9 +27,7 @@ const waiting = (
 const PDU_LEFT = pdu(3, 'PDU_Left', { console: 'Left' })
 const PDU_RIGHT = pdu(4, 'PDU_Right', { console: 'Right' })
 const NAV = waiting(2, 'Right_Navigation', 'Right', 4)
-const TACAN = waiting(7, 'Right_TACAN', 'Right', 5, {
-  registry: { name: 'Right_TACAN', console: 'Right', pduId: 5, pduName: 'PDU_Right_Aft' }
-})
+const TACAN = waiting(7, 'Right_TACAN', 'Right', 5)
 const PDU_CENTER = waiting(6, 'PDU_Center', 'Center', null, { kind: 'pdu', identified: 'pdu' })
 
 /** The Cockpit, the Adopt dialog open from "New on the bus · N". */
@@ -100,9 +98,9 @@ describe('T11 Adopt dialog: Add all, PDU choices, power-cycle (B74, F15, F24, X3
     })
   })
 
-  it('an edited form keeps a PDU that isn’t in your cockpit (D7 today)', async () => {
-    // contract D7 / F24: zones go only to PDUs in your cockpit, so an out-of-cockpit default should
-    // become None; today an edited form keeps the "(not added)" PDU and Add all sends it as is.
+  it('an edited form never holds a PDU outside your cockpit: Add all sends None (D7)', async () => {
+    // contract D7 / F24 (fixed, #131): zones go only to PDUs in your cockpit, so the out-of-cockpit
+    // default (PDU_Right_Aft) is None from the start, and an edited form keeps that None.
     const { dlg, sky, user, pick, addAll } = await openAdopt(
       model([PDU_LEFT, PDU_RIGHT, NAV, TACAN])
     )
@@ -114,14 +112,14 @@ describe('T11 Adopt dialog: Add all, PDU choices, power-cycle (B74, F15, F24, X3
     expect(sky.adoptNode).toHaveBeenCalledWith(7, {
       name: 'Right_TACAN_2',
       console: 'Right',
-      pduId: 5,
+      pduId: null,
       kind: 'panel'
     })
   })
 
-  it('Powered by: the console’s PDUs, "(other console)" and "(not added)" (D7 today)', async () => {
-    // contract D7: only PDUs in your cockpit are offered; today a default PDU that isn't added yet
-    // is offered as "(not added)", and the form says the board moves under it once it's added.
+  it('Powered by: the console’s PDUs and "(other console)" — never a PDU not added (D7)', async () => {
+    // contract D7 (fixed, #131): only PDUs in your cockpit are offered; a default PDU that isn't
+    // added yet pre-fills None, with no "(not added)" choice.
     const RADAR = waiting(8, 'Right_Radar', 'Right', 3)
     const { dlg, pick, zoneChoices } = await openAdopt(
       model([PDU_LEFT, PDU_RIGHT, NAV, TACAN, RADAR])
@@ -131,24 +129,17 @@ describe('T11 Adopt dialog: Add all, PDU choices, power-cycle (B74, F15, F24, X3
     expect(zoneChoices()).toEqual(['Choose…', 'None', 'PDU_Right', 'PDU_Left (other console)'])
 
     await pick(7)
-    expect(within(dlg).getByLabelText('Powered by')).toHaveDisplayValue('PDU_Right_Aft (not added)')
-    expect(zoneChoices()).toEqual(['Choose…', 'None', 'PDU_Right', 'PDU_Right_Aft (not added)'])
-    expect(
-      within(dlg).getByText(
-        'PDU_Right_Aft isn’t in your cockpit yet. Keep it and this board moves under it once it’s added, or pick None.'
-      )
-    ).toBeInTheDocument()
+    expect(within(dlg).getByLabelText('Powered by')).toHaveDisplayValue('None')
+    expect(zoneChoices()).toEqual(['Choose…', 'None', 'PDU_Right'])
+    expect(within(dlg).queryByText(/not added|isn’t in your cockpit yet/)).toBeNull()
   })
 
   it('a hidden PDU in your cockpit is offered as one, and Add all keeps its link (#95 bug 2, X1)', async () => {
     // contract X3 / F15: a hidden board is still in your cockpit, so its boards keep the link: the
-    // Powered by list offers the hidden PDU like any PDU in your cockpit, never "(not added)".
-    const nav = waiting(2, 'Right_Navigation', 'Right', 4, {
-      registry: { name: 'Right_Navigation', console: 'Right', pduId: 4, pduName: 'PDU_Right' }
-    })
-    const radio = waiting(9, 'Right_Radio', 'Right', 4, {
-      registry: { name: 'Right_Radio', console: 'Right', pduId: 4, pduName: 'PDU_Right' }
-    })
+    // Powered by list offers the hidden PDU like any PDU in your cockpit, marked "(hidden)"
+    // (#131), never "(not added)".
+    const nav = waiting(2, 'Right_Navigation', 'Right', 4)
+    const radio = waiting(9, 'Right_Radio', 'Right', 4)
     const { dlg, sky, zoneChoices, addAll } = await openAdopt(
       model([PDU_LEFT, nav, radio], [], {
         hidden: [4],
@@ -157,8 +148,8 @@ describe('T11 Adopt dialog: Add all, PDU choices, power-cycle (B74, F15, F24, X3
         ]
       })
     )
-    expect(within(dlg).getByLabelText('Powered by')).toHaveDisplayValue('PDU_Right')
-    expect(zoneChoices()).toEqual(['Choose…', 'None', 'PDU_Right'])
+    expect(within(dlg).getByLabelText('Powered by')).toHaveDisplayValue('PDU_Right (hidden)')
+    expect(zoneChoices()).toEqual(['Choose…', 'None', 'PDU_Right (hidden)'])
     expect(within(dlg).queryByText(/isn’t in your cockpit yet/)).toBeNull()
     await addAll(2)
     expect(sky.adoptNode).toHaveBeenCalledWith(2, {

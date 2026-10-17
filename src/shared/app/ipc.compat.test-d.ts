@@ -71,6 +71,14 @@
 // `source`: a hidden board is still in your cockpit, so the snapshot counts a hidden PDU as one a
 // board can be powered by and a hidden adopted board as one Reset… can forget.
 //
+// Fix track #131 (D7/R1/X4, X7, N9, power zones): a type change only — no channel, intent or
+// method was added, removed or renamed. A zone only ever names a PDU in your cockpit, resolved once
+// in main: `BoardPanel.poweredBy` became `zone` (`PowerZone`: active / hidden / none, with its
+// label), and `BoardPanel.feeds` rows became `FedBoard` (name, detail, hidden) since Feeds lists
+// hidden boards too. `HiddenNode` gained an optional `pduId`. Removed: `AdoptRow.pending` (the
+// "(not added)" choice), `NodeModelEntry.registry.pduName` (its only reader), and
+// `ZoneChoices.first` (a console change clears the zone, N9).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator

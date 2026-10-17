@@ -129,9 +129,24 @@ describe('availability', () => {
     }
     const m = buildNodeModel(input({ file, rosterCompleteAt: 0 }))
     expect(m.hidden).toEqual([2, 41])
+    // X7: each carries its power zone too, so a PDU's Feeds and Forget count hidden boards.
     expect(m.hiddenNodes).toEqual([
-      { nodeId: 2, name: 'Nav_Repeater', console: 'Left', kind: 'panel', source: 'registry' },
-      { nodeId: 41, name: 'Left_Lights', console: 'Left', kind: 'panel', source: 'adopted' }
+      {
+        nodeId: 2,
+        name: 'Nav_Repeater',
+        console: 'Left',
+        kind: 'panel',
+        source: 'registry',
+        pduId: 4
+      },
+      {
+        nodeId: 41,
+        name: 'Left_Lights',
+        console: 'Left',
+        kind: 'panel',
+        source: 'adopted',
+        pduId: 3
+      }
     ])
   })
 
@@ -145,7 +160,14 @@ describe('availability', () => {
   it('a hidden registry node with no overrides keeps its registry name', () => {
     const file: NodeMappingFile = { version: 4, nodes: { 2: { hidden: true } } }
     expect(buildNodeModel(input({ file })).hiddenNodes).toEqual([
-      { nodeId: 2, name: 'Right_Navigation', console: 'Right', kind: 'panel', source: 'registry' }
+      {
+        nodeId: 2,
+        name: 'Right_Navigation',
+        console: 'Right',
+        kind: 'panel',
+        source: 'registry',
+        pduId: 4 // X7: its zone, PDU_Right, in your cockpit
+      }
     ])
   })
 })
@@ -306,6 +328,29 @@ describe('PDU-offline grouping', () => {
     expect(m.outages[0]).toMatchObject({ pduId: 3, nodeIds: [41, 42, 43] })
   })
 
+  it('a hidden board it feeds counts for neither side of an outage (X7)', () => {
+    // 43 is hidden (offline, off the plan): still fed by PDU_Left — Forget unlinks it — but it
+    // could not have dropped with it, so "N of M" is out of the two on the plan.
+    const hidden: NodeMappingFile = {
+      ...file,
+      nodes: { ...file.nodes, 43: { ...file.nodes[43]!, hidden: true } }
+    }
+    const m = buildNodeModel(
+      input({
+        file: hidden,
+        roster: [st(3, false), st(41, false), st(42, false), st(43, false)],
+        seen: new Map([
+          [3, off(10_000)],
+          [41, off(10_000)],
+          [42, off(10_000)],
+          [43, off(10_000)]
+        ])
+      })
+    )
+    expect(m.hiddenNodes.map((h) => [h.nodeId, h.pduId])).toEqual([[43, 3]])
+    expect(m.outages).toEqual([{ pduId: 3, nodeIds: [41, 42], fedCount: 2, at: 10_000 }])
+  })
+
   it('a PDU and its nodes all missing from the first roster: not seen, never an outage (#93)', () => {
     const m = buildNodeModel(input({ file, rosterCompleteAt: 2000 }))
     expect(m.outages).toEqual([])
@@ -371,7 +416,8 @@ describe('your cockpit (#93)', () => {
       identified: 'panel', // reported by the board
       console: null,
       pduId: null,
-      registry: { name: 'Center_Armament', console: 'Center', pduId: 5, pduName: 'PDU_Center' }
+      // D7: its NODE_IDS.md PDU (PDU_Center) is not in your cockpit, so the pre-fill has none.
+      registry: { name: 'Center_Armament', console: 'Center', pduId: null }
     })
     expect(isReportableNew(m.nodes[0]!)).toBe(true)
     expect(m.outages).toEqual([])
@@ -430,11 +476,11 @@ describe('your cockpit (#93)', () => {
     expect(m.nodes.map((n) => [n.nodeId, n.source])).toEqual([[3, 'registry']])
   })
 
-  it('a board whose PDU is not in your cockpit keeps its zone (No power zone on the plan)', () => {
+  it('a board whose PDU is not in your cockpit has No power zone (D7)', () => {
     const file: NodeMappingFile = { version: 4, nodes: { 2: { added: true } } }
     const m = buildNodeModel(fresh({ file, roster: [st(2)], rosterCompleteAt: 0 }))
     expect(m.nodes).toHaveLength(1)
-    expect(m.nodes[0]).toMatchObject({ nodeId: 2, pduId: 4 })
+    expect(m.nodes[0]).toMatchObject({ nodeId: 2, pduId: null })
   })
 })
 

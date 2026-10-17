@@ -81,20 +81,45 @@ describe('T16 Board panel Settings tab (B72, X2)', () => {
     ])
   })
 
-  it('picking a console picks its first PDU', async () => {
+  it('a hidden PDU is still a zone, marked "(hidden)" (D7)', async () => {
+    const m = {
+      ...scene(),
+      hidden: [7],
+      hiddenNodes: [
+        {
+          nodeId: 7,
+          name: 'PDU_Right_Mid',
+          console: 'Right',
+          kind: 'pdu',
+          source: 'adopted'
+        } as const
+      ]
+    }
+    const { choices } = await panelGroup(2, 'Right_Navigation', m)
+    expect(choices('Power zone')).toEqual([
+      'None',
+      'PDU_Right',
+      'PDU_Right_Aft',
+      'PDU_Right_Mid (hidden)'
+    ])
+  })
+
+  it('picking a console clears the zone: you pick its PDU (N9, as the Adopt form does)', async () => {
     const { user, field, choices } = await panelGroup(2, 'Right_Navigation')
     await user.selectOptions(field('Console')!, 'Left')
-    expect(field('Power zone')).toHaveDisplayValue('PDU_Left')
+    expect(field('Power zone')).toHaveDisplayValue('None')
     expect(choices('Power zone')).toEqual(['None', 'PDU_Left'])
+    await user.selectOptions(field('Power zone')!, 'PDU_Left')
     await user.selectOptions(field('Console')!, 'Center')
-    expect(field('Power zone')).toHaveDisplayValue('PDU_Center')
+    expect(field('Power zone')).toHaveDisplayValue('None')
   })
 
   it('Save sends only what changed, and the panel closes', async () => {
     const { sky, user, field, save } = await panelGroup(2, 'Right_Navigation')
     await user.selectOptions(field('Console')!, 'Left')
     await save()
-    expect(sky.setNodeMapping).toHaveBeenCalledWith(2, { console: 'Left', pduId: 3 })
+    // N9: the new console cleared the zone (it was PDU_Right), so None is a change too.
+    expect(sky.setNodeMapping).toHaveBeenCalledWith(2, { console: 'Left', pduId: null })
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
