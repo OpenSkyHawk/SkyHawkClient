@@ -21,7 +21,7 @@ import {
   DCS_PUSH,
   type DcsPushChannels,
   type ExportResult,
-  type CaptureState,
+  type RecordState,
   type RelayFacts,
   type RelayResult,
   type RelayState,
@@ -242,7 +242,7 @@ export interface SkyhawkApi {
   clearEvents(): Promise<void>
   /** Save dialog, then every event as TSV, oldest first, whatever the view filters. */
   exportEvents(): Promise<ExportResult>
-  toggleCapture(): Promise<CaptureState>
+  toggleCapture(): Promise<RecordState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
   refreshNodes(): Promise<void>

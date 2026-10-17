@@ -3,7 +3,7 @@ import { hex2 } from '@shared/format'
 
 export type DirFilter = 'all' | 'in' | 'out'
 
-export interface LogRow {
+export interface StreamLine {
   id: number
   time: string
   dir: 'in' | 'out'

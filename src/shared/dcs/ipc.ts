@@ -127,7 +127,7 @@ export interface StatsSnapshot {
   reconnects: number
 }
 
-export interface LogRow {
+export interface StreamRow {
   t: number
   dir: 'in' | 'out' // client diagnostics are client events in the event log (#64)
   address: number
@@ -199,7 +199,7 @@ export interface ExportResult {
   path?: string
 }
 
-export interface CaptureState {
+export interface RecordState {
   recording: boolean
   path?: string
   events?: number
@@ -231,7 +231,7 @@ export interface DcsPushChannels {
   'relay:state': RelayState
   'aircraft:changed': AircraftStatus
   'stats:tick': StatsSnapshot
-  'log:batch': LogRow[]
+  'log:batch': StreamRow[]
   'telemetry:tick': TelemetryReadout[]
   'relay:facts': RelayFacts
 }

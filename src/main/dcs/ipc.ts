@@ -2,7 +2,7 @@
 // replay. app/ipc.ts registers them, in its order (they are not registered together).
 import { writeFileSync } from 'node:fs'
 import type { IpcRegistrar } from '@shared/app'
-import { DCS_CTRL, type CaptureState, type ReplayLoad } from '@shared/dcs'
+import { DCS_CTRL, type RecordState, type ReplayLoad } from '@shared/dcs'
 import type { DcsRelay } from './dcs-relay'
 import type { SessionRecorder } from './session-recorder'
 
@@ -33,12 +33,12 @@ export function registerDcsIpc(ipc: IpcRegistrar, deps: DcsIpcDeps): void {
   })
 
   // The Record controls and the Capture card show the answer (relay:facts, R3.3).
-  ipc.handle(DCS_CTRL.captureToggle, async (): Promise<CaptureState> => {
+  ipc.handle(DCS_CTRL.captureToggle, async (): Promise<RecordState> => {
     const state = await toggleCapture()
     relay.showCapture(state)
     return state
   })
-  const toggleCapture = async (): Promise<CaptureState> => {
+  const toggleCapture = async (): Promise<RecordState> => {
     if (recorder.isRecording()) {
       const { path, events } = recorder.stopRecording()
       return { recording: false, path, events }

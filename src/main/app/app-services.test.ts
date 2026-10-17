@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CAL_TYPE, buildFrame } from '../hid/calibration/codec'
-import type { LogRow } from '@shared/dcs'
+import type { StreamRow } from '@shared/dcs'
 import { eventText } from '@shared/format'
 import type { LogEvent } from '@shared/events'
 import type { NodeModel } from '@shared/nodes'
@@ -227,7 +227,7 @@ describe('node telemetry tap', () => {
       expect(Buffer.concat(transport.sent)).toEqual(ascii(line)) // relay unchanged
       vi.advanceTimersByTime(250)
 
-      const logged = pushes.filter(([c]) => c === 'log:batch').flatMap(([, p]) => p as LogRow[])
+      const logged = pushes.filter(([c]) => c === 'log:batch').flatMap(([, p]) => p as StreamRow[])
       expect(logged.map((r) => r.name)).not.toContain('_NODE_TELEM')
       const telem = pushes.filter(([c]) => c === 'nodes:telemetry')
       expect(telem).toHaveLength(1)
@@ -620,7 +620,7 @@ describe('relay forwarding by source mode (#69)', () => {
       serial.openCb('/dev/fake')
       serial.dataCb(ascii('MASTER_ARM 1\n'))
       vi.advanceTimersByTime(50)
-      const logged = of('log:batch').flat() as LogRow[]
+      const logged = of('log:batch').flat() as StreamRow[]
       expect(logged).toContainEqual(expect.objectContaining({ name: 'MASTER_ARM', value: '1' }))
       expect(FakeTransport.last).toBeUndefined()
       session.shutdown()

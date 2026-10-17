@@ -2,7 +2,7 @@
 // settings a running relay is built from, and what the relay's surfaces show (R3.3).
 import type { AppConfig, DcsTransport, SourceMode } from '@shared/config'
 import type {
-  CaptureState,
+  RecordState,
   EndpointLabel,
   OverviewLink,
   RelayFacts,
@@ -184,7 +184,7 @@ export function captureShown(mode: SourceMode): boolean {
 }
 
 /** The Record control as this page last set it: from the capture toggle's answer. */
-export function captureView(state: CaptureState): RelayFacts['recording'] {
+export function captureView(state: RecordState): RelayFacts['recording'] {
   return { on: state.recording, events: state.events }
 }
 

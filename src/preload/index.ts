@@ -18,7 +18,7 @@ import type {
   ConfigImportOpen,
   ConfigView
 } from '@shared/config'
-import type { CaptureState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs'
+import type { RecordState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs'
 import type { HidAvailability } from '@shared/hid'
 import type {
   NodeBatchResult,
@@ -73,7 +73,7 @@ const api: SkyhawkApi = {
   getEvents: () => ipcRenderer.invoke(CTRL.eventsGet) as Promise<LogEvent[]>,
   clearEvents: () => ipcRenderer.invoke(CTRL.eventsClear) as Promise<void>,
   exportEvents: () => ipcRenderer.invoke(CTRL.eventsExport) as Promise<ExportResult>,
-  toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<CaptureState>,
+  toggleCapture: () => ipcRenderer.invoke(CTRL.captureToggle) as Promise<RecordState>,
   openReplay: () => ipcRenderer.invoke(CTRL.replayOpen) as Promise<ReplayLoad>,
   getHidAvailability: () => ipcRenderer.invoke(CTRL.hidAvailability) as Promise<HidAvailability>,
   refreshNodes: () => ipcRenderer.invoke(CTRL.nodesRefresh) as Promise<void>,

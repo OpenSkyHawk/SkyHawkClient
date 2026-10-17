@@ -59,8 +59,8 @@ import { vi, type Mock } from 'vitest'
 import { DEFAULT_CONFIG, type AppConfig, type ConfigChanged, type ConfigEdit } from '@shared/config'
 import type {
   AircraftStatus,
-  CaptureState,
-  LogRow,
+  RecordState,
+  StreamRow,
   RelayFacts,
   RelayState,
   ReplayLoad,
@@ -141,7 +141,7 @@ export interface Scenario {
    */
   calDevice?: CalDevice
   /** DCS-BIOS stream rows, oldest first (`log:batch`). A batch: pushed, never pulled. */
-  stream?: LogRow[]
+  stream?: StreamRow[]
   /** Raw serial chunks (`serial:traffic`). A batch: pushed, never pulled. */
   serial?: SerialFrame[]
   /** RAW samples for the streamed axis, stamped on arrival in main (its 50 ms batches). A batch. */
@@ -318,7 +318,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     // The Record controls and the Capture card follow main's answer (DcsRelay, `relay:facts`).
     toggleCapture: after(
       vi.fn<SkyhawkApi['toggleCapture']>(() => resolve({ recording: false })),
-      (r: CaptureState) => {
+      (r: RecordState) => {
         recordingShown = captureView(r)
         pushFacts()
       }

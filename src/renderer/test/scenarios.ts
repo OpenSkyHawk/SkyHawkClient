@@ -26,7 +26,7 @@ import type {
   ResetPreview
 } from '@shared/nodes'
 import type { LogEvent } from '@shared/events'
-import type { LogRow, StatsSnapshot, TelemetryReadout } from '@shared/dcs'
+import type { StreamRow, StatsSnapshot, TelemetryReadout } from '@shared/dcs'
 import type { SerialFrame } from '@shared/gateway'
 import type { CalCache, CalHello, CalRawSample, CalSnapshot } from '@shared/hid/calibration'
 import { A4EC_OUTPUTS, CAL_PROTO, TELEM_PAGES } from '@shared/firmware'
@@ -305,7 +305,7 @@ export const logEvent = (id: number, over: Partial<LogEvent> = {}): LogEvent => 
 // ── the DCS-BIOS stream (`log:batch`) and raw serial (`serial:traffic`) ─────────────────────
 
 /** One stream row: an export from DCS (in) at `address`, at 12:00:00 local unless `over` says. */
-export const streamRow = (address: number, over: Partial<LogRow> = {}): LogRow => ({
+export const streamRow = (address: number, over: Partial<StreamRow> = {}): StreamRow => ({
   t: new Date(2026, 9, 16, 12, 0, 0).getTime(),
   dir: 'in',
   address,

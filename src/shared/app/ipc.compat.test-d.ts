@@ -47,7 +47,9 @@
 //
 // R3.4d (final cleanup): the push `cal:data` (IPC.calData) was removed — the renderer stopped
 // listening in R3.1, when the calibration workflow moved to main; main still reads GET_CAL and
-// hands the report to the workflow, which pushes `cal:workflow`.
+// hands the report to the workflow, which pushes `cal:workflow`. Two contract types were renamed
+// with their shapes unchanged — `LogRow` → `StreamRow` (`log:batch`) and the DCS `CaptureState` →
+// `RecordState` (`capture:toggle`); the frozen copies below pin both shapes under the old names.
 //
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
@@ -66,14 +68,14 @@ import type {
 import type { CalibrationState } from '../hid/calibration/ipc'
 import type {
   AircraftStatus,
-  CaptureState,
   ExportResult,
-  LogRow,
+  RecordState,
   RelayFacts,
   RelayResult,
   RelayState,
   ReplayLoad,
   StatsSnapshot,
+  StreamRow,
   TelemetryReadout
 } from '../dcs/ipc'
 import type {
@@ -109,6 +111,23 @@ type Equal<X, Y> =
   (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2 ? true : false
 type Expect<T extends true> = T
 
+/** R3.4d: `StreamRow` as it stood when it was still called `LogRow`. */
+interface OldLogRow {
+  t: number
+  dir: 'in' | 'out'
+  address: number
+  name?: string
+  value: number | string
+  raw?: string
+}
+
+/** R3.4d: `RecordState` as it stood when it was still called `CaptureState`. */
+interface OldCaptureState {
+  recording: boolean
+  path?: string
+  events?: number
+}
+
 interface OldRelayStatus {
   running: boolean
   relay: RelayState
@@ -122,7 +141,7 @@ interface OldPushChannels {
   'relay:state': RelayState
   'aircraft:changed': AircraftStatus
   'stats:tick': StatsSnapshot
-  'log:batch': LogRow[]
+  'log:batch': OldLogRow[]
   'events:batch': LogEvent[]
   'hid:report': HidReport
   'telemetry:tick': TelemetryReadout[]
@@ -225,7 +244,7 @@ interface OldSkyhawkApi {
   getEvents(): Promise<LogEvent[]>
   clearEvents(): Promise<void>
   exportEvents(): Promise<ExportResult>
-  toggleCapture(): Promise<CaptureState>
+  toggleCapture(): Promise<OldCaptureState>
   openReplay(): Promise<ReplayLoad>
   getHidAvailability(): Promise<HidAvailability>
   refreshNodes(): Promise<void>
@@ -269,6 +288,12 @@ export type ApiSurfaceUnchanged = [
   Expect<Equal<OldRelayStatus, RelayStatus>>,
   Expect<Equal<'push:batch', typeof PUSH_BATCH>>,
   Expect<Equal<OldPushBatch, PushBatch>>
+]
+
+/** R3.4d: the renames changed names only. */
+export type RenamedShapesUnchanged = [
+  Expect<Equal<OldLogRow, StreamRow>>,
+  Expect<Equal<OldCaptureState, RecordState>>
 ]
 
 /**

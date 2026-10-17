@@ -7,6 +7,6 @@ export {
   viewTransport,
   type ConfigState,
   type SourceMode,
-  type Transport
+  type TransportId
 } from './store'
 export { ConfigurationSection } from './ConfigurationSection'

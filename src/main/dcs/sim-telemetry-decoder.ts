@@ -6,7 +6,7 @@ import {
   AIRCRAFT_NONE,
   type AircraftStatus,
   type GaugeTone,
-  type LogRow,
+  type StreamRow,
   type TelemetryReadout
 } from '@shared/dcs'
 
@@ -115,7 +115,7 @@ export class Decoder {
   }
 
   /** Apply one write; returns the decoded log rows it produced (may be empty). */
-  handle(address: number, raw: number, t: number): LogRow[] {
+  handle(address: number, raw: number, t: number): StreamRow[] {
     if (this.name.update(address, raw)) {
       const n = this.name.value()
       if (n !== this.lastName) {
@@ -133,7 +133,7 @@ export class Decoder {
     const outputs = A4EC_OUTPUTS_BY_ADDRESS.get(address)
     if (!outputs) return []
 
-    const rows: LogRow[] = []
+    const rows: StreamRow[] = []
     for (const o of outputs) {
       const value = extractValue(raw, o.mask, o.shift)
       rows.push({ t, dir: 'in', address, name: o.id, value })

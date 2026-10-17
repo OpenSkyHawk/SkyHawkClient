@@ -8,14 +8,14 @@ import {
   RELAY_FACTS_IDLE,
   TELEMETRY_IDLE,
   type AircraftStatus,
-  type LogRow as IpcLogRow,
+  type StreamRow,
   type RelayFacts,
   type RelayState,
   type StatsSnapshot,
   type TelemetryReadout
 } from '@shared/dcs'
 import { useEventsStore } from '../events'
-import { rawHex, type DirFilter, type LogRow } from './stream-view'
+import { rawHex, type DirFilter, type StreamLine } from './stream-view'
 
 const MAX_LOG = 1000
 
@@ -48,7 +48,7 @@ export interface DcsState {
   cmdsTotal: number
   lastCmd: string
 
-  log: LogRow[]
+  log: StreamLine[]
   private_logSeq: number
 
   set: (patch: Partial<DcsState>) => void
@@ -176,11 +176,11 @@ export const dcsFromMain = {
     }),
 
   /** `log:batch`: dropped while the Log tab is paused (the pause is the events slice's). */
-  logBatch: (rows: IpcLogRow[]): void => {
+  logBatch: (rows: StreamRow[]): void => {
     const s = useDcsStore.getState()
     if (useEventsStore.getState().logPaused) return
     let seq = s.private_logSeq
-    const mapped: LogRow[] = rows.map((r: IpcLogRow) => ({
+    const mapped: StreamLine[] = rows.map((r: StreamRow) => ({
       id: seq++,
       time: fmtTime(r.t),
       dir: r.dir,

@@ -17,7 +17,7 @@ import {
 import type { PsuLimits, PsuSetting } from '@shared/nodes'
 
 export type SourceMode = 'bridge' | 'monitor' | 'replay'
-export type Transport = 'tcp' | 'loop' | 'uni'
+export type TransportId = 'tcp' | 'loop' | 'uni'
 
 /** A call to main as the view made it: undefined outside Electron (no `window.skyhawk`). */
 type Ask<K extends keyof Omit<SkyhawkApi, 'on'>> = (
@@ -26,7 +26,7 @@ type Ask<K extends keyof Omit<SkyhawkApi, 'on'>> = (
 
 export interface ConfigState {
   sourceMode: SourceMode
-  transport: Transport
+  transport: TransportId
   host: string
   port: string
   autoConnect: boolean
@@ -65,15 +65,15 @@ export function bindConfig(skyhawk: () => SkyhawkApi | undefined): void {
 }
 
 // ── renderer <-> main transport mapping ──────────────────────────────────────
-const TRANSPORT_TO_IPC: Record<Transport, DcsTransport> = {
+const TRANSPORT_TO_IPC: Record<TransportId, DcsTransport> = {
   tcp: 'tcp-to-host',
   loop: 'loopback-multicast',
   uni: 'unicast-listen'
 }
 
 /** The contract's transport as the forms name it. */
-export function viewTransport(transport: DcsTransport): Transport {
-  const t = (Object.keys(TRANSPORT_TO_IPC) as Transport[]).find(
+export function viewTransport(transport: DcsTransport): TransportId {
+  const t = (Object.keys(TRANSPORT_TO_IPC) as TransportId[]).find(
     (k) => TRANSPORT_TO_IPC[k] === transport
   )
   return t ?? 'tcp'
