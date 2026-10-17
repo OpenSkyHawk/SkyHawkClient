@@ -1,9 +1,7 @@
-import { useMemo } from 'react'
 import { fmtBytes, fmtUptime } from '@shared/format'
 import { useStore, type TabId } from '../store'
 import { isLinkUp, type DeviceState } from '@shared/gateway'
-import { attentionItems, healthBand, nodeViews } from '../cockpit'
-import { attentionSummary, cockpitTile, newDevices, newDevicesText } from '../overview'
+import { newDevicesText } from '../overview'
 import { gatewayView } from '../gateway-view'
 import { Dot } from './cockpit/Dot'
 import logo from '../assets/logo.png'
@@ -85,25 +83,15 @@ export function Overview() {
   const acft = s.aircraft.name && s.aircraft.name !== 'NONE' ? s.aircraft.name : 'NONE'
   const acftSub = s.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
 
-  // The Cockpit's own picture (#63), summed up for the tile and the banners (#65).
-  const views = useMemo(
-    () => (s.nodeModel ? nodeViews(s.nodeModel, s.nodeTelemetry) : []),
-    [s.nodeModel, s.nodeTelemetry]
-  )
-  const band = useMemo(() => healthBand(views), [views])
-  const cockpit = cockpitTile(band, connected)
-  const attention = useMemo(
-    () =>
-      connected && s.attentionBanner
-        ? attentionSummary(band, attentionItems(views, s.nodeModel?.outages ?? []))
-        : null,
-    [connected, s.attentionBanner, band, views, s.nodeModel]
-  )
+  // The Cockpit's own picture (#63), summed up for the tile and the banners (#65): main's snapshot
+  // (cockpit:snapshot, R3.2b). The banner also follows Settings › Cockpit's toggle.
+  const summary = s.cockpit.overview
+  const cockpit = summary.tile
+  const attention = s.attentionBanner ? summary.banner : null
   // Serious Gateway faults only (#94): panel input can't reach DCS. Its own link, so not behind the
   // board-problems setting.
   const gatewayAlert = gatewayView(s.deviceGateway, connected).alert
-  const waiting = useMemo(() => newDevices(views, connected), [views, connected])
-  const waitingText = waiting && newDevicesText(waiting)
+  const waitingText = summary.newDevices && newDevicesText(summary.newDevices)
 
   const tiles: {
     label: string

@@ -3,7 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import type { NodeModelEntry, NodeTelemSnapshot, NodeView, PduOutage } from '@shared/nodes'
 import { modelNode as node, nodeModel as model } from '../../test-fixtures/nodes'
-import { RAIL_FLAG } from '@shared/nodes/legacy-rules'
+// The firmware's PDU_RAIL_* bits (legacy-rules' RAIL_FLAG re-exported them; R3.2b).
+import { PDU_RAIL_FLAGS as RAIL_FLAG } from '@shared/firmware'
 import { TELEM_PAGE } from '../../main/nodes/node-telem'
 import { planZones } from '../../main/nodes/cockpit-snapshot/plan-zones'
 import { nodeViews } from '../../main/nodes/cockpit-snapshot/views'

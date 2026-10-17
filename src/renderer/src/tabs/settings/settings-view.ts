@@ -1,7 +1,7 @@
-// Settings text decisions (#67), pure so they are unit-tested: what each Cockpit / About row says.
-import { GATEWAY_NODE_ID } from '@shared/firmware'
+// Settings wording (#67), pure so it is unit-tested: what each Cockpit / Import row says. The
+// registry rows and Reset…'s gate are main's (cockpit:snapshot settings, R3.2b).
 import { day, hhmm, plural } from '@shared/format'
-import type { HiddenNode, NodeModel, NodeRegistryInfo } from '@shared/nodes'
+import type { HiddenNode } from '@shared/nodes'
 import { consoleLabel } from '@shared/nodes'
 
 /** "Reset node mapping" row description. */
@@ -36,45 +36,6 @@ export function hiddenRow(n: HiddenNode): ListRow {
       ? `${consoleLabel(n.console)} · returns when it reports again`
       : 'returns when it reports again'
   }
-}
-
-/**
- * A registry row's name as the client shows it: the bridge row is the Gateway (#94), whatever
- * NODE_IDS.md calls it (the firmware name, PanelBridge).
- */
-export function registryName(n: NodeRegistryInfo['nodes'][number]): string {
-  return n.kind === 'bridge' ? 'Gateway' : n.name
-}
-
-/** "NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, Gateway". */
-export function registrySummary(r: NodeRegistryInfo): string {
-  const pdus = r.nodes.filter((n) => n.kind === 'pdu').length
-  const panels = r.nodes.filter((n) => n.kind === 'panel').length
-  const parts = [plural(pdus, 'PDU'), plural(panels, 'panel group')]
-  const bridge = r.nodes.find((n) => n.kind === 'bridge')
-  if (bridge) parts.push(registryName(bridge))
-  const file = r.file.split('/').pop()
-  return `${file} · ${plural(r.nodes.length, 'node')}: ${parts.join(', ')}`
-}
-
-export type OnBus = { text: string; dot: 'on' | 'off' | '' }
-
-/**
- * Registry list "On the bus" column. PanelBridge is the serial link itself; a CAN node is what
- * the roster says — "—" before any roster, since that is no data rather than "absent".
- */
-export function registryOnBus(
-  nodeId: number,
-  model: NodeModel | undefined,
-  linkUp: boolean
-): OnBus {
-  if (nodeId === GATEWAY_NODE_ID)
-    return linkUp ? { text: 'serial link', dot: 'on' } : { text: 'no device', dot: '' }
-  if (model?.hidden.includes(nodeId)) return { text: 'hidden', dot: '' }
-  const e = model?.nodes.find((n) => n.nodeId === nodeId)
-  if (e?.availability === 'online') return { text: 'yes', dot: 'on' }
-  if (e?.availability === 'offline') return { text: 'offline', dot: 'off' }
-  return { text: '—', dot: '' }
 }
 
 /** Import review subtitle: "skyhawk-config.json · exported 2026-10-12 21:02 · client v0.2.0". */
