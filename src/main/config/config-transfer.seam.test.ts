@@ -70,7 +70,7 @@ describe('B94 an import reads each section on its own', () => {
     dir = mkdtempSync(join(tmpdir(), 'skyhawk-xfer-seam-'))
     stores = {
       config: DEFAULT_CONFIG,
-      mapping: { version: 3, nodes: {} },
+      mapping: { version: 4, nodes: {} },
       cache: { version: 1, boards: {} }
     }
   })
@@ -122,9 +122,9 @@ describe('B94 an import reads each section on its own', () => {
 
   it('"nodeMapping": {} and "app": {} are rejected, so adopted boards and settings stay (C1)', () => {
     stores.mapping = {
-      version: 3,
+      version: 4,
       nodes: {
-        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' },
+        41: { added: true, name: 'Trim', console: 'Left', pduId: null, kind: 'panel' },
         1: { added: true }
       }
     }
@@ -173,8 +173,9 @@ describe('B94 an import reads each section on its own', () => {
     expect(opened.preview.rejected).toEqual([])
     const r = t.apply(opened.preview.token, ['nodeMapping', 'calibration'], false)
     expect(r).toMatchObject({ ok: true })
-    // nodeMapping: an out-of-range NODE_ID and a bad power zone are dropped.
-    expect(stores.mapping).toEqual({ version: 3, nodes: { 2: { name: 'Nav' } } })
+    // nodeMapping: an out-of-range NODE_ID and a bad power zone are dropped; the v3 section is
+    // upgraded to v4 as a local file is.
+    expect(stores.mapping).toEqual({ version: 4, nodes: { 2: { name: 'Nav' } } })
     // calibration: an axis that is not min < centre < max is dropped.
     expect(Object.keys(stores.cache.boards.A7!.axes)).toEqual(['0'])
   })

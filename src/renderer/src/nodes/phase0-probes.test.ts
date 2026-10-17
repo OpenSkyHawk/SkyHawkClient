@@ -112,7 +112,7 @@ describe('fix-track probes (today)', () => {
   })
 
   it('#95 bug 2: a hidden in-cockpit PDU is "(not added)" to Add all and the PDU choices', () => {
-    let f: NodeMappingFile = { version: 3, nodes: { 5: { added: true } } }
+    let f: NodeMappingFile = { version: 4, nodes: { 5: { added: true } } }
     f = setHidden(f, defaults, 5, true)
     const roster = new NodeRoster()
     roster.applyMessage(NODE_MSG, row(1, 1), 0)

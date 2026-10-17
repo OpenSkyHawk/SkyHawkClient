@@ -11,11 +11,11 @@ import { connected, model, modelNode, panel, pdu, resetPreview } from './scenari
  * (#41) adopted onto the Left console under PDU_Left.
  */
 const FILE: NodeMappingFile = {
-  version: 3,
+  version: 4,
   nodes: {
     2: { added: true, name: 'Nav', pduId: 3 },
     3: { added: true },
-    41: { name: 'Left_Trim', console: 'Left', kind: 'panel', pduId: 3 }
+    41: { added: true, name: 'Left_Trim', console: 'Left', kind: 'panel', pduId: 3 }
   }
 }
 const adoptedTrim = () =>
@@ -130,7 +130,7 @@ describe('T30 Settings › Cockpit › Reset… (B89, B24)', () => {
   })
 
   it('only an adopted board: nothing to reset until "Also forget" is ticked', async () => {
-    const file: NodeMappingFile = { version: 3, nodes: { 41: FILE.nodes[41]! } }
+    const file: NodeMappingFile = { version: 4, nodes: { 41: FILE.nodes[41]! } }
     const { sky, user, openReview } = await openCockpit(
       model([panel(1, 'Center_Armament'), adoptedTrim()]),
       file

@@ -251,7 +251,7 @@ function diffNodes(
   // What applying it would leave — the same importMapping the apply stages: membership as written
   // (D3), this computer's last-seen kept, and no hidden flag on a board on the bus or outside your
   // cockpit.
-  const after = importMapping(cur, next, online)
+  const after = importMapping(cur, defaults, next, online)
   const a = effectiveMapping(defaults, cur)
   const b = effectiveMapping(defaults, after)
   const zone = (map: Map<number, MappedNode>, pduId: number | null) =>
@@ -283,8 +283,8 @@ function diffNodes(
     const d = defaults.get(id)
     // Joining or leaving your cockpit, by the one membership rule (nodes/membership.ts): one row
     // with the whole placement, for a registry board or an adopted one alike.
-    const wasIn = inCockpit(cur.nodes[id])
-    const isIn = inCockpit(after.nodes[id])
+    const wasIn = inCockpit(defaults, id, cur.nodes[id])
+    const isIn = inCockpit(defaults, id, after.nodes[id])
     if (wasIn !== isIn) {
       push(d ? d.name : `#${id}`, wasIn ? place(a, x) : OUT, isIn ? place(b, y) : OUT)
       if (isIn) joins++

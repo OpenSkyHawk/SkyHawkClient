@@ -104,7 +104,7 @@ describe('availability', () => {
   })
 
   it('hidden nodes are skipped (not offline)', () => {
-    const file: NodeMappingFile = { version: 3, nodes: { 2: { hidden: true } } }
+    const file: NodeMappingFile = { version: 4, nodes: { 2: { hidden: true } } }
     const m = buildNodeModel(input({ file, rosterCompleteAt: 0 }))
     expect(m.nodes.map((n) => n.nodeId)).toEqual([1, 3, 4, 5])
     expect(m.hidden).toEqual([2])
@@ -113,10 +113,17 @@ describe('availability', () => {
   // Review of #85: Settings › Hidden nodes showed registry names, not what the Cockpit showed.
   it('lists each hidden node with the name and console the Cockpit showed', () => {
     const file: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: {
         2: { hidden: true, name: 'Nav_Repeater', console: 'Left' },
-        41: { hidden: true, name: 'Left_Lights', console: 'Left', kind: 'panel', pduId: 3 }
+        41: {
+          added: true,
+          hidden: true,
+          name: 'Left_Lights',
+          console: 'Left',
+          kind: 'panel',
+          pduId: 3
+        }
       }
     }
     const m = buildNodeModel(input({ file, rosterCompleteAt: 0 }))
@@ -128,7 +135,7 @@ describe('availability', () => {
   })
 
   it('a hidden registry node with no overrides keeps its registry name', () => {
-    const file: NodeMappingFile = { version: 3, nodes: { 2: { hidden: true } } }
+    const file: NodeMappingFile = { version: 4, nodes: { 2: { hidden: true } } }
     expect(buildNodeModel(input({ file })).hiddenNodes).toEqual([
       { nodeId: 2, name: 'Right_Navigation', console: 'Right' }
     ])
@@ -154,8 +161,11 @@ describe('new-node detection', () => {
 
   it('added registry and adopted ids are never new', () => {
     const file: NodeMappingFile = {
-      version: 3,
-      nodes: { 1: { added: true }, 41: { name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' } }
+      version: 4,
+      nodes: {
+        1: { added: true },
+        41: { added: true, name: 'Trim', console: 'Left', pduId: 3, kind: 'panel' }
+      }
     }
     const m = buildNodeModel(fresh({ roster: [st(1), st(41)], file }))
     expect(m.nodes.filter((n) => n.source === 'new')).toEqual([])
@@ -202,11 +212,11 @@ describe('PDU readings', () => {
 describe('PDU-offline grouping', () => {
   // PDU_Left (3) feeds 41, 42, 43.
   const file: NodeMappingFile = {
-    version: 3,
+    version: 4,
     nodes: {
-      41: { name: 'A', console: 'Left', pduId: 3, kind: 'panel' },
-      42: { name: 'B', console: 'Left', pduId: 3, kind: 'panel' },
-      43: { name: 'C', console: 'Left', pduId: 3, kind: 'panel' }
+      41: { added: true, name: 'A', console: 'Left', pduId: 3, kind: 'panel' },
+      42: { added: true, name: 'B', console: 'Left', pduId: 3, kind: 'panel' },
+      43: { added: true, name: 'C', console: 'Left', pduId: 3, kind: 'panel' }
     }
   }
   const off = (at: number, via: 'delta' | 'roster' = 'delta'): NodeSeen => ({
@@ -337,7 +347,7 @@ describe('PDU-offline grouping', () => {
 
 describe('differingCount', () => {
   it('is carried on the model', () => {
-    const file: NodeMappingFile = { version: 3, nodes: { 1: { name: 'X' } } }
+    const file: NodeMappingFile = { version: 4, nodes: { 1: { name: 'X' } } }
     expect(buildNodeModel(input({ file })).differingCount).toBe(1)
   })
 })
@@ -371,11 +381,11 @@ describe('your cockpit (#93)', () => {
 
   it('added and adopted boards are in it; anything else on the bus is new', () => {
     const file: NodeMappingFile = {
-      version: 3,
+      version: 4,
       nodes: {
         2: { added: true, lastSeen: SEEN },
         4: { added: true, name: 'PDU_Starboard' },
-        41: { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
+        41: { added: true, name: 'Trim', console: 'Left', pduId: null, kind: 'panel' }
       }
     }
     const m = buildNodeModel(fresh({ file, roster: [st(1), st(50)], rosterCompleteAt: 0 }))
@@ -407,13 +417,13 @@ describe('your cockpit (#93)', () => {
     const stale = [telem(3, { stale: true })]
     expect(buildNodeModel(fresh({ telemetry: stale, rosterCompleteAt: 0 })).nodes).toEqual([])
     // In your cockpit it stays, as any board does.
-    const file: NodeMappingFile = { version: 3, nodes: { 3: { added: true } } }
+    const file: NodeMappingFile = { version: 4, nodes: { 3: { added: true } } }
     const m = buildNodeModel(fresh({ file, telemetry: stale, rosterCompleteAt: 0 }))
     expect(m.nodes.map((n) => [n.nodeId, n.source])).toEqual([[3, 'registry']])
   })
 
   it('a board whose PDU is not in your cockpit keeps its zone (No power zone on the plan)', () => {
-    const file: NodeMappingFile = { version: 3, nodes: { 2: { added: true } } }
+    const file: NodeMappingFile = { version: 4, nodes: { 2: { added: true } } }
     const m = buildNodeModel(fresh({ file, roster: [st(2)], rosterCompleteAt: 0 }))
     expect(m.nodes).toHaveLength(1)
     expect(m.nodes[0]).toMatchObject({ nodeId: 2, pduId: 4 })

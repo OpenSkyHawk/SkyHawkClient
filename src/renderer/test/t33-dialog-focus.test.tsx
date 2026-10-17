@@ -11,10 +11,10 @@ import { connected, model, modelNode, panel, pdu, resetPreview } from './scenari
 
 /** Right_Navigation renamed (one reset row) and Left_Trim (#41) adopted: four controls in the review. */
 const FILE: NodeMappingFile = {
-  version: 3,
+  version: 4,
   nodes: {
     2: { added: true, name: 'Nav' },
-    41: { name: 'Left_Trim', console: 'Left', kind: 'panel' }
+    41: { added: true, name: 'Left_Trim', console: 'Left', kind: 'panel' }
   }
 }
 
