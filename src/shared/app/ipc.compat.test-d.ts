@@ -82,7 +82,9 @@
 // Fix track #131 (D6/R3, adopt routing): a type change only — no channel, intent or method was
 // added, removed or renamed. `CockpitSnapshot` gained `opens` (NODE_ID → `BoardOpens`, 'panel' |
 // 'adopt'): where clicking a board goes, decided in main from the one membership, so a board
-// outside your cockpit always opens the Adopt dialog on its NODE_ID and never a board panel.
+// outside your cockpit always opens the Adopt dialog on its NODE_ID and never a board panel. So
+// `CockpitSnapshot.panels` holds only boards in your cockpit, and `BoardPanel.placed` (always true
+// for those) was removed.
 //
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'

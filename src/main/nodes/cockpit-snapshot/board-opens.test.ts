@@ -95,6 +95,14 @@ describe('boardOpens: where clicking a board goes (D6)', () => {
     expect(toAdopt).toEqual(queued.slice().sort((a, b) => a - b))
   })
 
+  it('only a board in your cockpit on the plan has a panel; none for a board outside it', () => {
+    const snap = snapshotOf(file)
+    expect(Object.keys(snap.panels).map(Number)).toEqual([1, 6, 20])
+    for (const [id, to] of Object.entries(snap.opens)) {
+      if (to === 'adopt') expect(snap.panels[Number(id)]).toBeUndefined()
+    }
+  })
+
   it('forgetting a board on the bus moves it from its panel to Adopt', () => {
     const forgotten: NodeMappingFile = {
       version: 4,
@@ -103,6 +111,8 @@ describe('boardOpens: where clicking a board goes (D6)', () => {
     const snap = snapshotOf(forgotten)
     expect(snap.opens[1]).toBe('adopt')
     expect(snap.opens[20]).toBe('adopt')
+    expect(snap.panels[1]).toBeUndefined()
+    expect(snap.panels[20]).toBeUndefined()
   })
 
   it('nothing opens before the first model', () => {

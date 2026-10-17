@@ -363,10 +363,11 @@ function fedBoards(members: Members, views: NodeView[], pduId: number): FedBoard
 }
 
 /**
- * Every board's side panel. A panel group shows its resolved power zone (D7: `zones`, one per
- * board). A PDU feeds the boards in your cockpit whose zone it is, hidden ones included; that count
- * is what Forget says it unlinks (X7: an outage counts only the ones that could have dropped with
- * it, pduOutages).
+ * The side panel of every board in your cockpit on the plan. A board outside your cockpit has none:
+ * clicking it opens the Adopt dialog (D6, members.ts boardOpens — the same membership). A panel
+ * group shows its resolved power zone (D7: `zones`, one per board). A PDU feeds the boards in your
+ * cockpit whose zone it is, hidden ones included; that count is what Forget says it unlinks (X7: an
+ * outage counts only the ones that could have dropped with it, pduOutages).
  */
 export function boardPanels(
   views: NodeView[],
@@ -378,13 +379,12 @@ export function boardPanels(
   const out: Record<number, BoardPanel> = {}
   for (const v of views) {
     const e = v.entry
-    const placed = e.source !== 'new'
+    if (!members.get(e.nodeId)) continue
     const live = pduTelemetryLive(telemetry, e.nodeId)
     let p: BoardPanel
     if (e.kind === 'pdu') {
-      const feeds = placed ? fedBoards(members, views, e.nodeId) : []
+      const feeds = fedBoards(members, views, e.nodeId)
       p = {
-        placed,
         faults: pduFaultBoxes(
           v,
           outages.some((o) => o.pduId === e.nodeId)
@@ -405,7 +405,6 @@ export function boardPanels(
       }
     } else {
       p = {
-        placed,
         faults: nodeFaultBoxes(v),
         actions: boardActions(e, live),
         status: nodeStatusRows(v),

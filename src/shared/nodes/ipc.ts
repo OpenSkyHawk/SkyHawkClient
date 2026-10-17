@@ -616,10 +616,8 @@ export interface FedBoard {
   hidden: boolean
 }
 
-/** One board's side panel: what it says and offers. */
+/** One board's side panel: what it says and offers. Only a board in your cockpit has one (D6). */
 export interface BoardPanel {
-  /** In your cockpit (not new): Powered by, Placement and the footer show. */
-  placed: boolean
   /** The boxes at the top of the Status tab, stacked. */
   faults: FaultBox[]
   actions: BoardActions
@@ -801,7 +799,10 @@ export interface CockpitSnapshot {
   plan: PlanConsole[]
   band: CockpitBand
   attention: CockpitAttention
-  /** Each board's side panel, by NODE_ID. */
+  /**
+   * The side panel of each board in your cockpit on the plan, by NODE_ID. A board outside your
+   * cockpit has none: it opens the Adopt dialog instead (D6, `opens`).
+   */
   panels: Record<number, BoardPanel>
   /**
    * Where each board opens, by NODE_ID (D6): every board in your cockpit → its panel, every other
