@@ -7,6 +7,7 @@ import {
   type SerialFrame
 } from '@shared/gateway'
 import { HID_CONTROLS_BY_ID, HID_ID, HID_REPORT_LAYOUT } from '@shared/firmware'
+import type { HidFreshness } from '@shared/hid'
 import { fmtTime, hex2, hex4 } from '@shared/format'
 import type {
   AircraftStatus,
@@ -169,7 +170,12 @@ export interface AppState {
   hidRate: number
   /** Since the last report, or since we began listening if none has arrived. */
   hidAgeMs: number
-  availAxes: number[]
+  /** The report's age as main bands it (`hid:report`, R3.3). */
+  hidBand: HidFreshness
+  /** Axis slots this Gateway declares, as main counts them (`hid:report`). */
+  hidPresent: number
+  /** Per axis slot: shown live (catalogued and declared), as main decides it (`hid:report`). */
+  axisLive: boolean[]
   availHats: number[]
   availButtons: number[]
 
@@ -377,11 +383,14 @@ export const useStore = create<AppState>((set, get) => ({
   axes: Array(HID_REPORT_LAYOUT.axes.count).fill(0),
   buttons: [],
   hats: Array(HID_REPORT_LAYOUT.hats.count).fill(0),
-  availAxes: [],
   availHats: [],
   availButtons: [],
   hidRate: 0,
   hidAgeMs: 0,
+  // A report 0 ms old reads live; no slot is live until main says so (as before the catalogue).
+  hidBand: 'live',
+  hidPresent: 0,
+  axisLive: [],
 
   calibration: CALIBRATION_IDLE,
   calibrate: calibrationIntents(),
@@ -504,9 +513,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!api || bridgeSubscribed) return // outside Electron, or already subscribed
     bridgeSubscribed = true
 
-    void api
-      .getHidAvailability()
-      .then((a) => set({ availAxes: a.axes, availHats: a.hats, availButtons: a.buttons }))
+    void api.getHidAvailability().then((a) => set({ availHats: a.hats, availButtons: a.buttons }))
 
     // Node pushes only fire on change, so a reloaded renderer asks for the current picture.
     void api.getNodes().then(({ model, telemetry }) => setNodes(model, telemetry))
@@ -542,7 +549,10 @@ export const useStore = create<AppState>((set, get) => ({
           buttons: h.buttons.flatMap((b, i) => (b ? [i] : [])),
           hats: h.hats,
           hidRate: h.rateHz,
-          hidAgeMs: h.ageMs
+          hidAgeMs: h.ageMs,
+          hidBand: h.band,
+          hidPresent: h.present,
+          axisLive: h.axisLive
         })
       ),
       api.on('device:status', (d) => set(linkState(d))),

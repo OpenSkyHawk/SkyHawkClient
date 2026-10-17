@@ -4,7 +4,9 @@ import type { NodeModel, NodeSnapshot, NodeTelemSnapshot } from '@shared/nodes'
 import type { PushChannel, PushChannels, RelayStatus } from '@shared/app'
 import type { LogEvent } from '@shared/events'
 import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
+import type { HidSnapshot } from '@shared/hid'
 import { LinkDownClock, linkFacts } from '../../main/gateway/link-state'
+import { hidFacts } from '../../main/hid/hid-facts'
 
 // The store talks to main through window.skyhawk. Only the calls initBridge() makes need to be
 // real here; the rest exist so subscription setup does not throw.
@@ -18,6 +20,7 @@ const listeners = new Map<string, Listener[]>()
  */
 interface Given {
   'device:status': DeviceStatus
+  'hid:report': HidSnapshot
 }
 type GivenPushes = Omit<PushChannels, keyof Given> & Given
 type GivenStatus = Omit<RelayStatus, 'device'> & { device: DeviceStatus }
@@ -90,6 +93,10 @@ function push<C extends PushChannel>(ch: C, data: GivenPushes[C]) {
     const d = data as DeviceStatus
     linkDown.pushed(d.state)
     out = withFacts(d)
+  }
+  if (ch === 'hid:report') {
+    const h = data as HidSnapshot
+    out = { ...h, ...hidFacts(h.ageMs, undefined, [0, 1]) } // main's HidService, no device report
   }
   for (const cb of listeners.get(ch) ?? []) cb(out)
 }

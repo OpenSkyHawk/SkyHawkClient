@@ -149,6 +149,9 @@ export class AppServices {
     // The calibration workflow follows the link (pauses on a drop, drops the device's report),
     // after the link's own reactions and after `device:status` has gone out (R3.1).
     this.connection.onStatus((s) => this.calibration.linkStatus(s.state))
+    // The HID tab's live axes follow what calibration reports the device declares (R3.3), after
+    // `cal:workflow` has gone out, as the tab re-rendered on it.
+    this.calibration.onWorkflow((st) => this.hid.calibrationChanged(st.tab.snapshot))
     // The Cockpit snapshot follows the link too (strays and Attention only while it is up), after
     // `device:status` has gone out, as the Cockpit re-rendered on it (R3.2).
     this.connection.onStatus(() => this.nodes.linkStatus())
@@ -182,6 +185,8 @@ export class AppServices {
   rendererLoaded(): void {
     this.connection.rendererLoaded()
     this.serialMonitor.rendererLoaded()
+    // …and it has the HID report and its live axes now, as it had its catalogue from a pull.
+    this.hid.rendererLoaded()
   }
 
   /** Snapshot so a (re)loaded renderer can rehydrate the relay and link state. */

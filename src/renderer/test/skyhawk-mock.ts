@@ -67,7 +67,9 @@ import type {
   CalSnapshot
 } from '@shared/hid/calibration'
 import type { DeviceStatus, DeviceStatusPush, SerialFrame } from '@shared/gateway'
-import type { HidAvailability, HidSnapshot } from '@shared/hid'
+import type { HidAvailability, HidReport, HidSnapshot } from '@shared/hid'
+import { HID_REPORT_LAYOUT } from '@shared/firmware'
+import { hidFacts } from '../../main/hid/hid-facts'
 import {
   boardFor,
   dropAxis,
@@ -171,6 +173,9 @@ const EMPTY_REGISTRY: NodeRegistryInfo = {
   nodes: []
 }
 
+/** What the renderer is told the firmware catalogues when a scenario says nothing. */
+const NO_CATALOGUE: HidAvailability = { axes: [], hats: [], buttons: [] }
+
 /** Today's push for each scenario part, in the order emitScenario sends them. */
 const PUSHES: { [K in keyof Scenario]?: PushChannel } = {
   device: 'device:status',
@@ -216,6 +221,8 @@ export function installSkyhawkMock(): SkyhawkMock {
       void Promise.resolve().then(() =>
         cockpit.rendererLoaded(state.model ?? EMPTY_MODEL, state.telemetry ?? [])
       )
+      // …and HidService hands it the report with its live axes (R3.3), on the same terms.
+      void Promise.resolve().then(() => push('hid:report', hidPush()))
       // …and what the old page held for itself starts over (GatewayConnection, SerialTrafficMonitor).
       linkDown.pageLoaded(device().state)
       monitorShown = false
@@ -231,9 +238,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     ),
     getEvents: vi.fn(() => resolve(state.events ?? [])),
     getNodeRegistry: vi.fn(() => resolve(state.registry ?? EMPTY_REGISTRY)),
-    getHidAvailability: vi.fn(() =>
-      resolve(state.hidAvailability ?? { axes: [], hats: [], buttons: [] })
-    ),
+    getHidAvailability: vi.fn(() => resolve(state.hidAvailability ?? NO_CATALOGUE)),
 
     // ── intents: harmless defaults ──
     setConfig: vi.fn((p: Partial<AppConfig>) =>
@@ -416,8 +421,31 @@ export function installSkyhawkMock(): SkyhawkMock {
     return f && ({ ok: false as const, ...f } satisfies CalResult<never>)
   }
 
+  // ── the HID report, as main's HidService pushes it (hid-facts.ts) ──
+  /** Before any report: what the renderer starts from (the reader has nothing yet). */
+  const NO_REPORT: HidSnapshot = {
+    axes: Array(HID_REPORT_LAYOUT.axes.count).fill(0),
+    buttons: Array(HID_REPORT_LAYOUT.buttons.count).fill(false),
+    hats: Array(HID_REPORT_LAYOUT.hats.count).fill(0),
+    ageMs: 0,
+    rateHz: 0
+  }
+  /** What the device declares, as calibration last pushed it (`cal:workflow`). */
+  let hidCal: CalSnapshot | undefined
+  const hidPush = (): HidReport => {
+    const h = state.hid ?? NO_REPORT
+    return { ...h, ...hidFacts(h.ageMs, hidCal, (state.hidAvailability ?? NO_CATALOGUE).axes) }
+  }
+
   /** Main's calibration workflow (HidCalibrationService hosts the same), over the spies above. */
-  const host = new CalibrationWorkflowHost(calSpies, (st) => push('cal:workflow', st))
+  const host = new CalibrationWorkflowHost(calSpies, (st) => {
+    push('cal:workflow', st)
+    // HidService follows what the device declares, after the push (AppServices).
+    if (st.tab.snapshot !== hidCal) {
+      hidCal = st.tab.snapshot
+      push('hid:report', hidPush())
+    }
+  })
 
   /** Main's Cockpit snapshot (NodeHub hosts the same), over the scenario as main holds it. */
   const cockpit = new CockpitSnapshotHost((snap) => push('cockpit:snapshot', snap), {
@@ -441,8 +469,8 @@ export function installSkyhawkMock(): SkyhawkMock {
         for (const [key, ch] of Object.entries(PUSHES) as [keyof Scenario, PushChannel][]) {
           const data = s[key]
           if (data === undefined) continue
-          // `device:status` carries what main concludes from the link (R3.3).
-          push(ch, (key === 'device' ? statusPush() : data) as never)
+          // `device:status` and `hid:report` carry what main concludes from them (R3.3).
+          push(ch, (key === 'device' ? statusPush() : key === 'hid' ? hidPush() : data) as never)
           // What main does next, inside the same step: the workflow follows the link's state
           // (onStatus, after `device:status`) and takes the report (calRead, after `cal:data`);
           // the Cockpit snapshot follows the link and each node push (NodeHub).

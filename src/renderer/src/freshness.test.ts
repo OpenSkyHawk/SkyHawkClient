@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { freshness, FRESH_MS, RECENT_MS } from './freshness'
+import type { DeviceState } from '@shared/gateway'
+import { isBoardPresent } from '../../main/gateway/link-state'
+import { FRESH_MS, freshnessBand, RECENT_MS } from '../../main/hid/hid-facts'
+import { freshnessView } from './freshness'
+
+/** The Reports card as the user sees it: main's verdicts (R3.3), coloured here. */
+const freshness = (state: DeviceState, ageMs: number) =>
+  freshnessView(isBoardPresent(state), freshnessBand(ageMs))
 
 const MIN = 60 * 1000
 

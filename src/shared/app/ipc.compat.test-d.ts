@@ -20,7 +20,8 @@
 //
 // R3.3 (link, relay, HID and settings rules pushed from main): `device:status` and the rehydrate
 // bundle's `device` became `DeviceStatusPush` — the status plus what main concludes from it
-// (linkUp, boardPresent, busy, linkDownAt, serialMonitor; additive fields).
+// (linkUp, boardPresent, busy, linkDownAt, serialMonitor; additive fields). `hid:report` became
+// `HidReport` — the report plus its band, present axis count and live axis slots (additive).
 //
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
@@ -47,7 +48,7 @@ import type {
 } from '../dcs/ipc'
 import type { CTRL, DebugDumpResult, IPC, PushChannels, RelayStatus, SkyhawkApi } from './ipc'
 import type { DeviceStatusPush, SerialFrame } from '../gateway/ipc'
-import type { HidAvailability, HidSnapshot } from '../hid/ipc'
+import type { HidAvailability, HidReport } from '../hid/ipc'
 import type {
   AdoptRequest,
   AdoptSpec,
@@ -83,7 +84,7 @@ interface OldPushChannels {
   'stats:tick': StatsSnapshot
   'log:batch': LogRow[]
   'events:batch': LogEvent[]
-  'hid:report': HidSnapshot
+  'hid:report': HidReport
   'telemetry:tick': TelemetryReadout[]
   'nodes:telemetry': NodeTelemSnapshot[]
   'nodes:model': NodeModel
