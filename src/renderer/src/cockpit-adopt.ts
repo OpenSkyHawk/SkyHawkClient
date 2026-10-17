@@ -1,9 +1,8 @@
 // Cockpit Adopt dialog (#77; since #93 the onboarding for every board not in your cockpit): the
 // pure decisions behind it — queue order, what each new NODE_ID is seen doing, the registry
 // pre-fill, when the form is complete, the identify row and where the selection goes next.
-import type { AdoptSpec, NodeKind } from '@shared/node-mapping'
+import type { AdoptSpec, NodeKind, NodeModelEntry } from '@shared/nodes/ipc'
 import { reportedIdentity } from '@shared/node-kind'
-import type { NodeModelEntry } from '@shared/node-rules'
 import { displayCurrentMa } from '@shared/node-telem'
 import { nodeFaultTag } from '@shared/nodes'
 import type { NodeView } from './cockpit'

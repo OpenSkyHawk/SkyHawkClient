@@ -9,19 +9,19 @@ import {
   push as pushSample,
   restartSweep,
   retrySweep,
-  tick,
-  type CaptureResult,
-  type CaptureState
+  tick
 } from '@shared/axis-capture'
 import type {
+  CachedBoard,
   CalCacheEntry,
   CalCommitAxis,
   CalFailure,
   CalRawSample,
   CalResult,
-  CalSnapshot
-} from '@shared/ipc'
-import type { CachedBoard } from '@shared/cal-cache'
+  CalSnapshot,
+  CaptureResult,
+  CaptureState
+} from '@shared/hid/calibration/ipc'
 
 /** Only the calls this controller makes — narrower than SkyhawkApi, and trivial to fake. */
 export interface CalibrationApi {

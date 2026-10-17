@@ -15,6 +15,7 @@ import {
   NODE_STATUS_FIELD,
   NODE_STATUS_ROW_BYTES
 } from './firmware'
+import type { NodeSeen, NodeStatus } from './nodes/ipc'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
 export const SUPPORTED_NODE_PROTO = 3
@@ -45,30 +46,6 @@ const HEX_LEN = NODE_STATUS_ROW_BYTES * 2
 // The legacy v2 row (26 hex), detected client-side only to say "this bridge is too old". The
 // firmware no longer describes it, so it has nothing to sync from: it stays a client constant.
 const V2_HEX_LEN = 26
-
-export interface NodeStatus {
-  nodeId: number // 0 = the bridge's own row (v3), 1..MAX_NODE_ID CAN nodes
-  present: boolean
-  boff: boolean // CAN bus-off
-  epvf: boolean // CAN error-passive
-  uptimeSec: number // wraps ~18 h
-  rxCount: number // node-accepted CAN RX count
-  tec: number // transmit error counter (esr low byte)
-  rec: number // receive error counter (esr high byte)
-  // HEALTH_n telemetry (proto v2). Uncalibrated internal MCU sensor — die temp, not ambient.
-  dieTempC: number | null // whole °C; null = not yet seen (DIE_TEMP_UNAVAILABLE, 0x80 on the wire)
-  overheat: boolean // hFlags bit0 (opt-in firmware trip; usually false)
-  degraded: boolean // hFlags bit1 — a registered FaultSource reports non-NONE (rendered by #40, parsed here)
-  faultId: number // fault code, 0 = none; label via NODE_FAULT_CODES (node-status.generated.ts), render #40
-  /** NODE_KIND as the board reports it (v3); 0 = not reported yet (or pre-#344 firmware). Kept raw: an
-   * unknown future value passes through and is never adoptable. */
-  nodeKind: number
-  // Fault-dictionary enrichment — filled in main from NODE_FAULT_CODES; undefined when healthy or an
-  // unknown/reserved id (the decoder passes any faultId through). Renderer falls back to `Fault N`.
-  faultAbbr?: string
-  faultLabel?: string
-  faultDesc?: string
-}
 
 /** Short degraded-badge tag — the fault abbr, or `Fault N` for an unknown/reserved id. */
 export function nodeFaultTag(n: NodeStatus): string {
@@ -135,21 +112,6 @@ export function nodeRosterRequest(): Uint8Array {
  * answers at once (a burst of lines at 250 kbaud); a second is generous.
  */
 export const ROSTER_REPLY_MS = 1000
-
-/** When a node was first seen and, while it is offline, when and how it went offline. */
-export interface NodeSeen {
-  firstSeenAt: number
-  /** When its latest status row arrived while it was present — what "updated N s ago" counts from. */
-  reportedAt?: number
-  /** Set while offline: when the client learned of it. */
-  offlineAt?: number
-  /**
-   * 'delta' = a live `_NODE_STATUS` pushed on the transition (arrives ~3 s after the node goes
-   * silent, the bridge's heartbeat timeout). 'roster' = found by a roster reply, so the real
-   * transition happened up to one poll earlier.
-   */
-  offlineVia?: 'delta' | 'roster'
-}
 
 /**
  * Tracks every node seen since reset. Bare messages are live deltas; a request/boot

@@ -3,8 +3,8 @@
 // without caring which transport produced the bytes.
 import dgram from 'node:dgram'
 import net from 'node:net'
-import { EXPORT_MULTICAST_ADDR, EXPORT_PORT } from '@shared/dcsbios'
-import type { AppConfig } from '@shared/ipc'
+import { EXPORT_MULTICAST_ADDR, EXPORT_PORT } from '@shared/dcs/ipc'
+import type { AppConfig } from '@shared/config/ipc'
 
 export interface Transport {
   start(): void

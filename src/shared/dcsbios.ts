@@ -8,10 +8,6 @@
 //
 // This mirrors the canonical DCS-BIOS Arduino ProtocolParser state machine.
 
-export const EXPORT_MULTICAST_ADDR = '239.255.50.10'
-export const EXPORT_PORT = 5010
-export const COMMAND_PORT = 7778
-
 /** DCS-BIOS common-metadata address of the null-terminated aircraft name. */
 export const ACFT_NAME_ADDRESS = 0x0000
 export const ACFT_NAME_MAX = 24

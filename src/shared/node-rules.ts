@@ -1,15 +1,22 @@
 // Node status rules (pure): combines the roster, telemetry and node mapping into the one picture
 // the UI shows — availability, new-node detection, PDU-offline grouping and PDU readings.
-import { BRIDGE_NODE_ID, type NodeSeen, type NodeStatus } from './nodes'
-import { isAdoptableKind, resolveKind, type NodeIdentity } from './node-kind'
-import { hasFreshPduPage, type NodeTelemSnapshot } from './node-telem'
-import {
-  differingCount,
-  effectiveMapping,
-  type NodeDefaults,
-  type NodeKind,
-  type NodeMappingFile
-} from './node-mapping'
+import { BRIDGE_NODE_ID } from './nodes'
+import type {
+  HiddenNode,
+  NodeAvailability,
+  NodeDefaults,
+  NodeKind,
+  NodeMappingFile,
+  NodeModel,
+  NodeModelEntry,
+  NodeSeen,
+  NodeStatus,
+  NodeTelemSnapshot,
+  PduOutage
+} from './nodes/ipc'
+import { isAdoptableKind, resolveKind } from './node-kind'
+import { hasFreshPduPage } from './node-telem'
+import { differingCount, effectiveMapping } from './node-mapping'
 
 /**
  * Nodes that lose power together stop heartbeating together, so the bridge's 3 s timeout fires
@@ -22,95 +29,6 @@ export const PDU_GROUP_WINDOW_MS = 2000
  * arrive up to a poll plus the window after the PDU's.
  */
 export const PDU_GROUP_POLL_CATCH_MS = 7000
-
-/** 'unknown' = no complete roster yet and the node has not reported — no data, not a state. */
-export type NodeAvailability = 'online' | 'offline' | 'unknown'
-
-export interface NodeModelEntry {
-  nodeId: number
-  /** Effective name; for a new node its NODE_IDS.md name, else `Node <id>`. */
-  name: string
-  /** null for a new node. */
-  console: string | null
-  /** null for a PDU: a PDU is never fed by another one, whatever was stored. */
-  pduId: number | null
-  /** For drawing: 'pdu' once identified as one, else 'panel'. Never stored, never a gate. */
-  kind: NodeKind
-  /**
-   * What the node is, from the strongest signal (node-kind.ts resolveKind); undefined = not known
-   * yet. Adopt, the new-device counts and the event log key on this, never on `kind`.
-   */
-  identified?: NodeIdentity
-  /**
-   * 'new' = on the bus but not in your cockpit: a NODE_ID the registry does not know, or a registry
-   * board not added yet (#93: it waits in New on the bus, pre-filled from `registry`).
-   */
-  source: 'registry' | 'adopted' | 'new'
-  /**
-   * New registry boards: their NODE_IDS.md defaults, to pre-fill the Adopt form once the board has
-   * identified itself. Never used to identify it.
-   */
-  registry?: { name: string; console: string; pduId: number | null; pduName?: string }
-  availability: NodeAvailability
-  /** While offline this session: when the client learned of it. Absent for `notSeen`. */
-  offlineAt?: number
-  offlineVia?: 'delta' | 'roster'
-  /**
-   * A board remembered from an earlier session (#93) that the bridge has not listed since the link
-   * opened: offline, but not since any time this session knows — `lastSeenAt` says when it was.
-   */
-  notSeen?: boolean
-  /** When it was last on the bus, from node-mapping.json (any session); absent if never recorded. */
-  lastSeenAt?: number
-  /** Last roster entry, when the node has ever reported. */
-  status?: NodeStatus
-  /** When `status` last arrived while the node was present (this session). */
-  reportedAt?: number
-  /** New nodes: when this session first saw it. Not persisted. */
-  firstSeenAt?: number
-  /** Online PDUs: 'none' = status but no fresh telemetry (never, or > TELEM_STALE_MS). */
-  readings?: 'live' | 'none'
-  /** PDUs: telemetry has arrived at least once since the session started. */
-  everHadReadings?: boolean
-  /** Registry node with overrides. */
-  differs: boolean
-}
-
-/** A PDU and most of the nodes it feeds went offline together — one event, not N. */
-export interface PduOutage {
-  pduId: number
-  /** The fed nodes that dropped with it. */
-  nodeIds: number[]
-  /** Fed nodes in total (excluding hidden ones and ones not seen this session), for "N of M". */
-  fedCount: number
-  at: number
-}
-
-/** One hidden node, as Settings › Hidden nodes lists it: what the Cockpit called it. */
-export interface HiddenNode {
-  nodeId: number
-  /** Effective name: the user's own (renamed or adopted), else the registry's. */
-  name: string
-  /** Effective console; '' for an adopted node placed nowhere. */
-  console: string
-}
-
-export interface NodeModel {
-  nodes: NodeModelEntry[]
-  outages: PduOutage[]
-  /** Registry nodes that differ from their defaults (what "Reset all" changes). */
-  differingCount: number
-  /** Hidden until they report again — left out of `nodes`. */
-  hidden: number[]
-  /** The same ids with the name and console the Cockpit showed (the hidden nodes are not in `nodes`). */
-  hiddenNodes: HiddenNode[]
-  /**
-   * The first complete roster since the session started has arrived. Stays false when PanelBridge
-   * never ends a roster reply (node status not built into its firmware): registry nodes then stay
-   * 'unknown', since there is no roster to be missing from.
-   */
-  rosterComplete: boolean
-}
 
 export interface NodeModelInput {
   roster: NodeStatus[]

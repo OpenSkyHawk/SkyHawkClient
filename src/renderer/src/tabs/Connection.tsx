@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useStore, type SourceMode, type Transport } from '../store'
 import { USB_IDENTITY } from '@shared/firmware'
-import { isLinkUp } from '@shared/ipc'
+import { isLinkUp } from '@shared/gateway/ipc'
 import { nodeViews } from '../cockpit'
 import { nodesSummary } from '../connection-summary'
 import { deviceView, relayNote, startBlocked, startBlockedReason } from '../device-view'

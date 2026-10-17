@@ -6,10 +6,9 @@ import {
   captureDurationMs,
   parseCapture,
   serializeCapture,
-  type CaptureEvent,
-  type CaptureFile,
-  type CaptureMeta
+  type CaptureFile
 } from '@shared/capture'
+import type { CaptureEvent, CaptureMeta } from '@shared/dcs/ipc'
 
 export class Recorder {
   private events: CaptureEvent[] = []

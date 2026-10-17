@@ -2,8 +2,8 @@
 // telemetry, flush, snapshot and the mutators — with the mapping store kept in memory. They pin
 // what the app does today, so the refactor can show it still does.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { LogEventInput } from '@shared/events'
-import type { NodeMappingFile } from '@shared/node-mapping'
+import type { LogEventInput } from '@shared/events/ipc'
+import type { NodeMappingFile } from '@shared/nodes/ipc'
 import { NODE_END_MSG, NODE_MSG, NodeRoster } from '@shared/nodes'
 import { statusRow } from '../test-fixtures/nodes'
 

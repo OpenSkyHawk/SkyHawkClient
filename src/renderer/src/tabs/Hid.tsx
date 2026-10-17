@@ -1,5 +1,5 @@
 import { HID_REPORT_LAYOUT } from '@shared/firmware'
-import { isLinkUp } from '@shared/ipc'
+import { isLinkUp } from '@shared/gateway/ipc'
 import { useStore, AXIS_LABELS, HAT_DIRS } from '../store'
 import { freshness } from '../freshness'
 import { CalibrationDialog, useCalibration } from '../CalibrationDialog'

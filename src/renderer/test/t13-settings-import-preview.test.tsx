@@ -1,7 +1,7 @@
 // T13 — Settings › Configuration › Import: the review of what a file would change, and Apply.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import { DEFAULT_CONFIG, type ImportPreview } from '@shared/ipc'
+import { DEFAULT_CONFIG, type ImportPreview } from '@shared/config/ipc'
 import { appSettings } from '@shared/config-file'
 import { Settings } from '../src/tabs/Settings'
 import { renderScenario, settle } from './render'

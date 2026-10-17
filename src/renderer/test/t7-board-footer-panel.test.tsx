@@ -1,7 +1,7 @@
 // T7 — the board panel footer, for a panel group: Save · Reset to default | Forget · Hide.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
-import type { NodeModelEntry } from '@shared/node-rules'
+import type { NodeModelEntry } from '@shared/nodes/ipc'
 import { Cockpit } from '../src/tabs/Cockpit'
 import { renderScenario } from './render'
 import { connected, model, noStatusYet, offline, panel } from './scenarios'

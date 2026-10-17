@@ -11,22 +11,21 @@ import type {
   AppConfig,
   ConfigImportApplyResult,
   ConfigImportOpen,
-  NodeMappingResult
-} from '@shared/ipc'
+  ConfigSnapshot,
+  SectionId
+} from '@shared/config/ipc'
+import type { NodeDefaults, NodeMappingFile, NodeMappingResult } from '@shared/nodes/ipc'
 import {
-  appSettings,
   applyToConfig,
+  appSettings,
   buildConfigFile,
   diffImport,
   mergeCalibration,
   parseConfigFile,
   SECTION_IDS,
-  type ConfigSnapshot,
-  type ParsedConfig,
-  type SectionId
+  type ParsedConfig
 } from '@shared/config-file'
-import type { CalCache } from '@shared/cal-cache'
-import type { NodeDefaults, NodeMappingFile } from '@shared/node-mapping'
+import type { CalCache } from '@shared/hid/calibration/ipc'
 
 export interface ConfigTransferDeps {
   getConfig(): AppConfig

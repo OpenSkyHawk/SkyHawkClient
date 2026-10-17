@@ -1,16 +1,26 @@
 // Node data layer in main: taps `_NODE_TELEM`, owns the node mapping, and pushes the combined
 // node picture. Kept out of session.ts so the session only feeds it lines and ticks.
 import type {
+  AdoptSpec,
+  MappedNode,
+  MappingPatch,
+  NodeDefaults,
+  NodeIdentity,
+  NodeMappingFile,
   NodeMappingResult,
+  NodeModel,
   NodeRegistryInfo,
   NodeSnapshot,
-  PushChannel,
-  PushChannels
-} from '@shared/ipc'
-import { BRIDGE_NODE_ID, type NodeRoster, type NodeStatus } from '@shared/nodes'
-import { isAdoptableKind, resolveKind, type NodeIdentity } from '@shared/node-kind'
+  NodeStatus,
+  ResetOptions,
+  ResetPreview
+} from '@shared/nodes/ipc'
+import type { PushChannel, PushChannels } from '@shared/app/ipc'
+import { BRIDGE_NODE_ID, type NodeRoster } from '@shared/nodes'
+import { isAdoptableKind, resolveKind } from '@shared/node-kind'
 import { NodeTelemStore, parseNodeTelem } from '@shared/node-telem'
-import { NodeEventTracker, type LogEventInput } from '@shared/events'
+import { NodeEventTracker } from '@shared/events'
+import type { LogEventInput } from '@shared/events/ipc'
 import {
   adoptNode,
   clearReportedHidden,
@@ -24,16 +34,9 @@ import {
   resetNode,
   resetPreview,
   setHidden,
-  setNodeMapping,
-  type AdoptSpec,
-  type MappedNode,
-  type MappingPatch,
-  type NodeDefaults,
-  type NodeMappingFile,
-  type ResetOptions,
-  type ResetPreview
+  setNodeMapping
 } from '@shared/node-mapping'
-import { buildNodeModel, type NodeModel } from '@shared/node-rules'
+import { buildNodeModel } from '@shared/node-rules'
 import {
   NODE_FAULT_CODES,
   NODE_NAMES,

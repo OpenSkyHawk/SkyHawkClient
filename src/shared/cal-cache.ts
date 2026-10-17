@@ -13,37 +13,7 @@
 // reverts to identity passthrough, reporting `calibratedMask = 0` rather than serving garbage. The
 // loss is always visible.
 
-import type { CalSnapshot } from './ipc'
-
-/**
- * One axis as the device confirmed storing it.
- *
- * `selfCentring` rides along because it is part of the calibration and the device deliberately
- * does not hold it — there is no axis-type field in the blob. It decides whether centre was
- * measured at rest or derived as the midpoint, so restoring the three numbers without it would
- * restore values whose meaning has been lost.
- */
-export interface CachedAxis {
-  min: number
-  centre: number
-  max: number
-  selfCentring: boolean
-}
-
-export interface CachedBoard {
-  /** When the device last confirmed these values, ISO 8601. Shown before restoring. */
-  confirmedAt: string
-  axes: Record<number, CachedAxis>
-}
-
-/**
- * Keyed by board serial, never by VID/PID — those are identical across every OpenSkyhawk gateway,
- * so a VID/PID key would silently push one board's calibration onto another.
- */
-export interface CalCache {
-  version: 1
-  boards: Record<string, CachedBoard>
-}
+import type { CachedAxis, CachedBoard, CalCache, CalSnapshot } from './hid/calibration/ipc'
 
 export const CAL_CACHE_VERSION = 1
 

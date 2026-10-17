@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PSU, effectivePsuLimits, parsePsuLimit, PSU_PRESETS, sanitizePsu } from './psu'
+import { effectivePsuLimits, parsePsuLimit, PSU_PRESETS, sanitizePsu } from './psu'
+import { DEFAULT_PSU } from './nodes/ipc'
 
 describe('sanitizePsu', () => {
   it('falls back to the default for junk', () => {

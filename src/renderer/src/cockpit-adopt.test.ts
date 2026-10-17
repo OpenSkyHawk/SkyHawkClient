@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { NodeModelEntry } from '@shared/node-rules'
-import type { NodeStatus } from '@shared/nodes'
+import type { NodeModelEntry, NodeStatus, NodeTelemSnapshot } from '@shared/nodes/ipc'
 import { modelNode, nodeModel as model, nodeStatus } from '../../test-fixtures/nodes'
-import { TELEM_PAGE, type NodeTelemSnapshot } from '@shared/node-telem'
+import { TELEM_PAGE } from '@shared/node-telem'
 import { nodeViews } from './cockpit'
 import {
   adoptEvidence,

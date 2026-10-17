@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ResetPreview } from '@shared/node-mapping'
-import type { NodeModel } from '@shared/node-rules'
+import type { NodeModel, ResetPreview } from '@shared/nodes/ipc'
 import { Dialog } from './Dialog'
 import { resetButtonLabel } from './settings-view'
 

@@ -8,36 +8,16 @@
 // popover, Overview alert, Cockpit Attention, event log — only reads it. Every alert is a flag the
 // Gateway raised itself; the one client-side rule is "not responding": once it has answered since
 // the port opened, a roster request unanswered for GATEWAY_NO_ANSWER_MS while the port is open.
-import { faultLabel, STATUS_FLAGS, type LogEventInput, type StatusFlag } from './events'
+import { faultLabel, STATUS_FLAGS, type StatusFlag } from './events'
+import type { LogEventInput } from './events/ipc'
 import { NODE_FAULT_CODES, type NodeFaultName } from './firmware'
-import type { NodeStatus } from './nodes'
+import type { NodeStatus } from './nodes/ipc'
+import type { GatewayKind, GatewayStatus } from './gateway/ipc'
 
 /** How long a roster request may go unanswered, with the port open, before the Gateway is "not responding". */
 export const GATEWAY_NO_ANSWER_MS = 5000
 
 const SECS = GATEWAY_NO_ANSWER_MS / 1000
-
-export type GatewayKind =
-  | 'ok'
-  | 'not-responding'
-  | 'bus-off'
-  | 'overheat'
-  | 'error-passive'
-  | 'fault'
-
-/** What the client shows about the Gateway. Carried on `DeviceStatus` while connected. */
-export interface GatewayStatus {
-  /** err: panel input can't reach DCS. warn: it reports a problem but still works. */
-  severity: 'ok' | 'warn' | 'err'
-  /** The worst thing it reports; only that one is shown. */
-  kind: GatewayKind
-  /** `OK · 42 °C`, `Overheat · 78 °C`, `Error-passive`, `Duplicate NODE_ID`, `Bus-off`, `Not responding`. */
-  label: string
-  /** One line on what it means and what to do; absent when healthy. */
-  note?: string
-  /** Serious faults only (severity err): the Overview alert. */
-  alert?: { head: string; text: string }
-}
 
 type Flag = (typeof STATUS_FLAGS)[number]
 const flag = (key: StatusFlag): Flag => STATUS_FLAGS.find((f) => f.key === key)!

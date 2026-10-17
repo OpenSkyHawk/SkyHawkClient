@@ -7,9 +7,9 @@ import {
   PDU_FLAG,
   RAIL_FLAG,
   TELEM_PAGE,
-  TELEM_STALE_MS,
-  type NodeTelem
+  TELEM_STALE_MS
 } from './node-telem'
+import type { NodeTelem } from './nodes/ipc'
 
 /** `_NODE_TELEM` argument: nodeId + the 8 frame bytes, as the bridge forwards them. */
 const telem = (nodeId: number, bytes: number[]) =>

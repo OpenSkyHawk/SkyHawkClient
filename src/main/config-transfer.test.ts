@@ -2,9 +2,10 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG, type AppConfig, type ImportPreview } from '@shared/ipc'
-import { registryDefaults, type NodeMappingFile } from '@shared/node-mapping'
-import type { CalCache } from '@shared/cal-cache'
+import { DEFAULT_CONFIG, type AppConfig, type ImportPreview } from '@shared/config/ipc'
+import { registryDefaults } from '@shared/node-mapping'
+import type { NodeMappingFile } from '@shared/nodes/ipc'
+import type { CalCache } from '@shared/hid/calibration/ipc'
 import { ConfigTransfer } from './config-transfer'
 
 const defaults = registryDefaults({

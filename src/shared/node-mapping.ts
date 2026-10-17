@@ -8,9 +8,21 @@
 // not know, named by the user — are stored in full, since there is nothing to default from (#93).
 
 import { MAX_NODE_ID } from './firmware'
-import { isAdoptableKind, type NodeIdentity } from './node-kind'
-
-export type NodeKind = 'pdu' | 'panel'
+import { isAdoptableKind } from './node-kind'
+import type {
+  AdoptedRow,
+  AdoptSpec,
+  MappedNode,
+  MappingPatch,
+  NodeDefaults,
+  NodeIdentity,
+  NodeKind,
+  NodeMappingFile,
+  NodeOverride,
+  ResetOptions,
+  ResetPreview,
+  ResetRow
+} from './nodes/ipc'
 
 /**
  * A NODE_ID's type from live signals (node-kind.ts resolveKind over the roster's reported kind and
@@ -18,60 +30,6 @@ export type NodeKind = 'pdu' | 'panel'
  * without it (tests, older callers) only stored kinds count.
  */
 export type KindOf = (nodeId: number) => NodeIdentity | undefined
-
-/** What node-mapping.json holds for one NODE_ID. Every field optional: absent = default. */
-export interface NodeOverride {
-  name?: string
-  console?: string
-  /** Power zone: the PDU NODE_ID feeding this node. null = explicitly none. */
-  pduId?: number | null
-  /** Adopted nodes only — registry nodes take their kind from the registry. */
-  kind?: NodeKind
-  /** Replaced / removed board: skip it until it reports again. */
-  hidden?: boolean
-  /**
-   * Registry boards only: you added it to your cockpit (New on the bus › Add to cockpit). Reset to
-   * default keeps it; only Forget removes it. Adopted nodes are in your cockpit by being adopted.
-   */
-  added?: boolean
-  /**
-   * When it was last on the bus, ISO 8601: written for a board in your cockpit when it comes
-   * online, when it drops and when the link closes.
-   */
-  lastSeen?: string
-}
-
-export interface NodeMappingFile {
-  version: 3
-  nodes: Record<number, NodeOverride>
-}
-
-/** Effective defaults for one registry node. */
-export interface NodeDefaults {
-  name: string
-  console: string
-  pduId: number | null
-  kind: NodeKind
-}
-
-/** A node as the client should present it: registry defaults with overrides applied. */
-export interface MappedNode {
-  nodeId: number
-  name: string
-  console: string
-  pduId: number | null
-  kind: NodeKind
-  source: 'registry' | 'adopted'
-  /** Registry node with at least one stored override (what reset would undo). */
-  differs: boolean
-  hidden: boolean
-  /**
-   * In your cockpit: adopted, or a registry board you added. A registry board that was never added
-   * is only a dictionary entry — when it reports it waits in New on the bus, pre-filled.
-   */
-  known: boolean
-  lastSeen?: string
-}
 
 /**
  * File format this build writes. A file with a higher version came from a newer client.
@@ -232,14 +190,6 @@ export function differingCount(defaults: Map<number, NodeDefaults>, file: NodeMa
     if (defaults.has(Number(k)) && hasOverride(o)) n++
   }
   return n
-}
-
-export type MappingPatch = Partial<Pick<NodeOverride, 'name' | 'console' | 'pduId'>>
-export interface AdoptSpec {
-  name: string
-  console: string
-  pduId: number | null
-  kind: NodeKind
 }
 
 /** Thrown for input the UI should have prevented; main turns it into an error result. */
@@ -471,11 +421,6 @@ function keptOnReset(o: NodeOverride | undefined): NodeOverride {
   return kept
 }
 
-export interface ResetOptions {
-  /** Also drop every adopted node: each is "new" again the next time it reports. */
-  forgetAdopted?: boolean
-}
-
 /** The NODE_IDs "Also forget adopted nodes" drops — exactly the ones the review lists. */
 function forgettable(defaults: Map<number, NodeDefaults>, file: NodeMappingFile): number[] {
   return Object.keys(file.nodes)
@@ -513,32 +458,6 @@ export function resetMapping(
     if (Object.keys(kept).length) nodes[id] = kept
   }
   return { ...file, nodes }
-}
-
-/** One field a reset would change, ready to show as `node · field  from → to`. */
-export interface ResetRow {
-  nodeId: number
-  /** The node's registry name (what it is called after the reset). */
-  node: string
-  field: 'name' | 'console' | 'power zone'
-  from: string
-  to: string
-}
-
-/** An adopted node "Also forget adopted nodes" would drop. */
-export interface AdoptedRow {
-  nodeId: number
-  name: string
-  console: string
-  /** Power zone as shown: the PDU's effective name, or '—'. */
-  zone: string
-}
-
-export interface ResetPreview {
-  rows: ResetRow[]
-  /** Registry nodes the reset changes; equals `differingCount`. */
-  nodeCount: number
-  adopted: AdoptedRow[]
 }
 
 /** What `resetMapping` would change, field by field. Counted from the file like `differingCount`. */

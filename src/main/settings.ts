@@ -2,7 +2,8 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_CONFIG, sanitizeConfig, type AppConfig } from '@shared/ipc'
+import { DEFAULT_CONFIG, type AppConfig } from '@shared/config/ipc'
+import { sanitizeConfig } from '@shared/settings-schema'
 
 function configPath(): string {
   return join(app.getPath('userData'), 'config.json')

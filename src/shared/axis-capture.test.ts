@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_CAPTURE_CONFIG,
   beginCapture,
+  DEFAULT_CAPTURE_CONFIG,
   hasTravelled,
   holdProgress,
   holdRemainingMs,
@@ -11,9 +11,9 @@ import {
   restartSweep,
   retrySweep,
   sweepsRemaining,
-  tick,
-  type CaptureState
+  tick
 } from './axis-capture'
+import type { CaptureState } from './hid/calibration/ipc'
 
 const C = DEFAULT_CAPTURE_CONFIG
 

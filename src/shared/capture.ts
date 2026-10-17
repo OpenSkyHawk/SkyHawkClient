@@ -2,19 +2,7 @@
 // the firmware repo's dcsbios_data.json: adds per-event direction + session
 // metadata while keeping hex-encoded raw bytes so a basic replayer can still read it.
 
-export interface CaptureEvent {
-  /** Milliseconds since capture start. */
-  t: number
-  /** "in" = export from DCS, "out" = command toward DCS. */
-  dir: 'in' | 'out'
-  /** Hex-encoded raw bytes. */
-  hex: string
-}
-
-export interface CaptureMeta {
-  aircraft?: string
-  note?: string
-}
+import type { CaptureEvent, CaptureMeta } from './dcs/ipc'
 
 export interface CaptureFile extends CaptureMeta {
   format: 'skyhawk-capture/1'
