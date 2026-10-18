@@ -106,8 +106,8 @@ export const useDcsStore = create<DcsState>((set, get) => ({
     void api()
       ?.toggleRelay(s.relaying)
       .then((r) => {
-        // Main refuses a Start it cannot honour (no board for a mode that needs one) and pushes
-        // no relay:state for it, so the pending Relaying has to be taken back here.
+        // Main refuses a Start it cannot honour (a Replay with no capture loaded) and pushes no
+        // relay:state for it, so the pending Relaying has to be taken back here.
         if (!s.relaying && r && !r.ok) set({ relaying: false })
       })
     set({ relaying: !s.relaying })

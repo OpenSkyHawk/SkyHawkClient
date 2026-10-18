@@ -570,13 +570,20 @@ describe('device link is independent of the relay (#69)', () => {
     session.shutdown()
   })
 
-  it('refuses Start until the board is connected when the mode delivers to it', () => {
+  // #159: it used to be refused ('Gateway is not connected'), the pill silently flipping back.
+  it('starts with no board when the mode delivers to it, and waits for the board', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
-    expect(session.relay.start()).toEqual({ ok: false, error: 'Gateway is not connected' })
-    expect(session.status().running).toBe(false)
-    expect(FakeTransport.last, 'no DCS transport is opened').toBeUndefined()
+    expect(session.relay.start()).toEqual({ ok: true })
+    expect(session.status().running).toBe(true)
+    expect(FakeTransport.last, 'the DCS transport is opened').toBeDefined()
+    expect(session.relay.facts().running.waiting, 'waiting for the Gateway').toBe('device')
+    // The board arrives: delivery begins with no further Start.
     serial.openCb('/dev/fake')
-    expect(session.relay.start().ok).toBe(true)
+    expect(session.relay.facts().running.waiting).not.toBe('device')
+    serial.written.length = 0
+    FakeTransport.last!.exportCb(Buffer.from([0x55, 0x55]))
+    expect(Buffer.concat(serial.written)).toEqual(Buffer.from([0x55, 0x55]))
+    expect(session.status().running).toBe(true)
     session.shutdown()
   })
 
@@ -584,21 +591,21 @@ describe('device link is independent of the relay (#69)', () => {
     const { session, serial } = launched({ sourceMode: 'bridge' })
     serial.openCb('/dev/fake')
     session.connection.disconnect()
-    expect(session.relay.start().ok).toBe(false)
+    expect(session.relay.start().ok, 'it starts, and waits for the board').toBe(true)
     expect(FakeSerial.last, 'Start leaves the link alone').toBe(serial)
     expect(session.status().device.state).toBe('disconnected')
     session.shutdown()
   })
 
-  it('lets Monitor and an undriven Replay start with no board', () => {
+  it('lets Monitor start with no board; Replay is refused only for having no capture', () => {
     const monitor = launched({ sourceMode: 'monitor' })
     expect(monitor.session.relay.start().ok).toBe(true)
     monitor.session.shutdown()
 
+    // Replay, driven or not, is only refused for having no capture, never for the board (#159).
     const driven = launched({ sourceMode: 'replay', replayDriveSerial: true })
-    expect(driven.session.relay.start()).toEqual({ ok: false, error: 'Gateway is not connected' })
+    expect(driven.session.relay.start()).toEqual({ ok: false, error: 'No capture loaded' })
     driven.session.shutdown()
-    // Undriven Replay is only refused for having no capture, never for the board.
     const plain = launched({ sourceMode: 'replay', replayDriveSerial: false })
     expect(plain.session.relay.start()).toEqual({ ok: false, error: 'No capture loaded' })
     plain.session.shutdown()
