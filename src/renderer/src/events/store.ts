@@ -1,7 +1,8 @@
 // The session's events as main pushes them, and the Log tab's pause (R3.4b: the events slice of
 // the old single store, cut verbatim). The pause lives here because it sets the Events view's
-// pause mark in the same update and Clear reads it; the stream's `log:batch` reads it from here
-// (dcs → events). The IPC adapter binds the intents and delivers the pushes.
+// pause mark in the same update and Clear reads it; the stream reads it from here (dcs → events):
+// `log:batch` holds its rows while paused, and Resume shows them. The IPC adapter binds the
+// intents and delivers the pushes.
 import { create } from 'zustand'
 import type { SkyhawkApi } from '@shared/app'
 import type { LogEvent } from '@shared/events'
