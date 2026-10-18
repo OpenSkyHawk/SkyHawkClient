@@ -7,11 +7,14 @@
 // adopted (node-model.ts newState), each one a board up and a warning, and an Attention item.
 // What is on the bus is one rule (node-model.ts onBusNow, X2): while the link is down the tile says
 // "no live node status", and the banner, the notice and Connected nodes say nothing.
+// With none of your cockpit's boards to count, Connected nodes points to the new ones on the bus
+// (#160): the same count as the Overview's notice and the Cockpit's "New on the bus".
 // A Connected nodes row names its board's resolved power zone (D7, the same one the Cockpit reads):
 // `PDU_Right`, `PDU_Right (hidden)`, else "no power zone".
 import { hhmmss, lastSeenLabel, plural } from '@shared/format'
 import {
   COCKPIT_IDLE,
+  NO_NODES,
   type AttentionItem,
   type AttentionSummary,
   type CockpitTile,
@@ -140,6 +143,16 @@ export function overviewSummary(
 // ── Connection › Connected nodes ────────────────────────────────────────────
 
 /**
+ * The card's line with no board of your cockpit to count: the new boards on the bus and where to
+ * add them (#160) — `1 new board on the bus — add it from the Cockpit.` — else that the bus
+ * reports nothing.
+ */
+function emptyLine(newCount: number): string {
+  if (newCount === 0) return NO_NODES
+  return `${plural(newCount, 'new board')} on the bus — add ${newCount === 1 ? 'it' : 'them'} from the Cockpit.`
+}
+
+/**
  * Connected nodes: the counts and the rows that need attention, the Cockpit's strays included (X3:
  * each one a board up and a warning, with its Attention row). Quiet while the link is down — it
  * says nothing about the bus then (X2), and its tab shows the link's hint instead.
@@ -157,6 +170,8 @@ export function nodesSummary(
   const byId = new Map(views.map((v) => [v.entry.nodeId, v.entry]))
   const items = attentionItems(views, outages, strays)
   const healthy = band.online - band.warn
+  // The Overview's notice's count (the Cockpit's "New on the bus · N"): one rule, isReportableNew.
+  const newCount = newDevices(views, live)?.count ?? 0
 
   const rows = items.slice(0, ATTENTION_SHOWN).map((i): SummaryRow => {
     const e = byId.get(i.nodeId)!
@@ -202,6 +217,8 @@ export function nodesSummary(
     watts: band.watts,
     rows,
     more,
-    footer
+    footer,
+    newCount,
+    empty: emptyLine(newCount)
   }
 }
