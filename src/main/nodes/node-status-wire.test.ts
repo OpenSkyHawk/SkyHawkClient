@@ -143,10 +143,10 @@ describe('NodeRoster', () => {
     expect(r.takeDirty()).toBe(true)
   })
 
-  it('records first-seen, the last report, and when / how a node went offline', () => {
+  it('records first-seen, online-since, the last report, and when / how a node went offline', () => {
     const r = new NodeRoster()
     r.applyMessage(NODE_MSG, '0101000000000000008000000000', 1000)
-    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, reportedAt: 1000 })
+    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, onlineSince: 1000, reportedAt: 1000 })
     r.applyMessage(NODE_MSG, '0100000000000000008000000000', 5000) // live delta: offline
     expect(r.seenInfo().get(1)).toEqual({
       firstSeenAt: 1000,
@@ -156,8 +156,23 @@ describe('NodeRoster', () => {
     })
     r.applyMessage(NODE_MSG, '0100000000000000008000000000', 6000) // repeat keeps the first time
     expect(r.seenInfo().get(1)?.offlineAt).toBe(5000)
+    // Back online: online since now (S6), first seen still 1000.
     r.applyMessage(NODE_MSG, '0101000000000000008000000000', 7000)
-    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, reportedAt: 7000 })
+    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, onlineSince: 7000, reportedAt: 7000 })
+    r.applyMessage(NODE_MSG, '0101000000000000008000000000', 9000) // still online: since 7000
+    expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, onlineSince: 7000, reportedAt: 9000 })
+  })
+
+  it('online since: a first absent row sets none; a roster END that finds it missing clears it (S6)', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, '0100000000000000008000000000', 0) // listed absent first
+    expect(r.seenInfo().get(1)?.onlineSince).toBeUndefined()
+    r.applyMessage(NODE_MSG, '0101000000000000008000000000', 60_000)
+    expect(r.seenInfo().get(1)).toMatchObject({ firstSeenAt: 0, onlineSince: 60_000 })
+    r.beginBurst(70_000)
+    r.applyMessage(NODE_END_MSG, '', 70_000) // a reply without it: offline
+    expect(r.seenInfo().get(1)).toMatchObject({ offlineAt: 70_000 })
+    expect(r.seenInfo().get(1)?.onlineSince).toBeUndefined()
   })
 
   it('an offline found by a roster reply is marked roster, and the first END is remembered', () => {

@@ -5,13 +5,20 @@ import type { NodeStatus } from '@shared/nodes'
 
 export type StatusFlag = 'boff' | 'epvf' | 'degraded' | 'overheat'
 
-/** A node's own heartbeat / health flags, as every row and the Gateway (#94) name them. */
-export const STATUS_FLAGS: { key: StatusFlag; label: string; severity: EventSeverity }[] = [
-  { key: 'boff', label: 'bus-off', severity: 'error' },
-  { key: 'epvf', label: 'error-passive', severity: 'warn' },
-  { key: 'degraded', label: 'degraded', severity: 'warn' },
-  { key: 'overheat', label: 'overheat', severity: 'warn' }
-]
+/**
+ * A node's own heartbeat / health flags, as every row and the Gateway (#94) name them: the label and
+ * the severity, by flag. No order here: the order a node's flags are named in is nodes/faults.ts's
+ * (NODE_FLAG_ORDER), the Gateway's own is gateway-health's.
+ */
+export const STATUS_FLAGS: Record<
+  StatusFlag,
+  { key: StatusFlag; label: string; severity: EventSeverity }
+> = {
+  boff: { key: 'boff', label: 'bus-off', severity: 'error' },
+  epvf: { key: 'epvf', label: 'error-passive', severity: 'warn' },
+  degraded: { key: 'degraded', label: 'degraded', severity: 'warn' },
+  overheat: { key: 'overheat', label: 'overheat', severity: 'warn' }
+}
 
 /** The fault-dictionary label, else `Fault N`. */
 export function faultLabel(n: Pick<NodeStatus, 'faultId' | 'faultLabel'>): string {

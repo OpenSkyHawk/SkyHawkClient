@@ -87,17 +87,18 @@ describe('T3 Overview: Cockpit tile and banners (B58, B59, B42, X1)', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('the Overview doesn’t count a stray (X1 today)', async () => {
-    // contract D1 says strays show on every tab; today the Overview ignores them: the Cockpit
-    // tile reads "no nodes known" and no banner shows, while the Cockpit lists it as a warning.
+  it('the Overview counts a stray as the Cockpit does (D1 / X3, #133)', async () => {
+    // One rule for every tab: the tile counts it up and warning, and the banner names it.
     await renderScenario(<Overview />, {
       device: connected(),
       model: model([newBoard(9, T0 - 60_000, { identified: 'bridge' })])
     })
     const tile = cockpitTile()
-    expect(within(tile).getByText('—')).toBeInTheDocument()
-    expect(within(tile).getByText('no nodes known')).toBeInTheDocument()
-    expect(screen.queryByRole('status')).toBeNull()
+    expect(within(tile).getByText('1 / 1')).toBeInTheDocument()
+    expect(within(tile).queryByText('no nodes known')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 node needs attention — 1 warning (NODE_ID 9)'
+    )
   })
 
   it('its counts equal the Cockpit band for the same model', async () => {

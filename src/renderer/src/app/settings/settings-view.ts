@@ -2,7 +2,7 @@
 // and Reset…'s gate are main's (cockpit:snapshot settings, R3.2b). The Import rows' wording is
 // config/import-view.ts.
 import { plural } from '@shared/format'
-import type { HiddenNode } from '@shared/nodes'
+import type { CockpitSnapshot, HiddenNode, NodeBatchResult } from '@shared/nodes'
 import { consoleLabel } from '@shared/nodes'
 
 /** "Reset node mapping" row description. */
@@ -37,4 +37,35 @@ export function hiddenRow(n: HiddenNode): ListRow {
       ? `${consoleLabel(n.console)} · returns when it reports again`
       : 'returns when it reports again'
   }
+}
+
+/**
+ * What Hidden boards says when main refused an un-hide (N4): one board's refusal as main worded it;
+ * from Un-hide all, every board it couldn't un-hide — by #id and the name it was listed under —
+ * with its reason. The others were un-hidden. undefined = nothing refused.
+ */
+export function unhideError(
+  r: NodeBatchResult,
+  asked: number,
+  listed: HiddenNode[]
+): string | undefined {
+  if (r.ok) return undefined
+  if (asked === 1) return r.error
+  const named = (id: number) => {
+    const name = listed.find((n) => n.nodeId === id)?.name
+    return name ? `#${id} ${name}` : `#${id}`
+  }
+  return `Couldn’t un-hide ${r.failed.map((f) => `${named(f.nodeId)}: ${f.error}`).join('; ')}`
+}
+
+/**
+ * When Reset…'s review asks main for its preview again (R9): the preview is built from the node
+ * mapping, so this is the mapping as the snapshot shows it — every board's name, console, PDU and
+ * where it came from, the hidden ones included, and how many differ. A push that changes none of
+ * it (a roster poll, a PDU page) gives the same key, and the review keeps the preview it has.
+ */
+export function resetPreviewKey(s: CockpitSnapshot): string {
+  const boards = s.views.map(({ entry: e }) => [e.nodeId, e.source, e.name, e.console, e.pduId])
+  const hidden = s.settings.hidden.map((h) => [h.nodeId, h.source, h.name, h.console, h.pduId])
+  return JSON.stringify([s.settings.differing, boards, hidden])
 }

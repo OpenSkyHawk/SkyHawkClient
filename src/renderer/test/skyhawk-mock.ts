@@ -30,8 +30,9 @@
 // `getNodeRegistry` answers it.
 //
 // "Add all" and "Un-hide all" run main's own sequence (R3.2b): `addAllNodes` / `unhideNodes` go
-// through NodeHub's loop (mapping-sequence), one `adoptNode` / `hideNode` per board — the same
-// spies, so a test still sees (and can refuse) each board's call.
+// through NodeHub's loop (mapping-sequence, guarded against re-entry as NodeHub's is), one
+// `adoptNode` / `hideNode` per board — the same spies, so a test still sees (and can refuse) each
+// board's call.
 //
 // Calibration runs main's own workflow (R3.1): the mock hosts a real CalibrationWorkflowHost — the
 // workflow, the dialog's start/close sequencing, the restore offer and the derived CalibrationState
@@ -103,7 +104,7 @@ import { shownStatus } from '../../main/gateway/gateway-health'
 import { captureView, relayFacts, replayView } from '../../main/dcs/relay-rules'
 import { savedEdit } from '../../main/config/settings-form'
 import { resolvePsu } from '../../main/nodes/psu-limits'
-import { addAllInTurn, unhideInTurn } from '../../main/nodes/mapping-sequence'
+import { MappingSequences } from '../../main/nodes/mapping-sequence'
 import type { NodeModel, NodeRegistryInfo, NodeTelemSnapshot } from '@shared/nodes'
 import {
   deliverPushes,
@@ -253,6 +254,10 @@ export function installSkyhawkMock(): SkyhawkMock {
   let state: Scenario = {}
   const resolve = <T>(v: T) => Promise.resolve(v)
   const calFail = { ok: false, kind: 'offline', message: 'mock' } as const
+  /** NodeHub's Add all / Un-hide all, one at a time each (R6). */
+  const sequences = new MappingSequences()
+  /** NodeHub's model rev: one per `nodes:model` push (C5). */
+  let modelRev = 0
 
   const fns: Fns = {
     on: vi.fn<SkyhawkApi['on']>((ch, cb) => {
@@ -357,8 +362,8 @@ export function installSkyhawkMock(): SkyhawkMock {
     previewNodeReset: vi.fn(() => resolve({ rows: [], nodeCount: 0, adopted: [] })),
     hideNode: vi.fn(() => resolve(mapped())),
     // ── node-mapping sequences: main's loop, over the per-board intents above ──
-    addAllNodes: vi.fn((bulk) => addAllInTurn(bulk, (id, spec) => fns.adoptNode(id, spec))),
-    unhideNodes: vi.fn((ids) => unhideInTurn(ids, (id, on) => fns.hideNode(id, on))),
+    addAllNodes: vi.fn((bulk) => sequences.addAll(bulk, (id, spec) => fns.adoptNode(id, spec))),
+    unhideNodes: vi.fn((ids) => sequences.unhide(ids, (id, on) => fns.hideNode(id, on))),
     // Main's SerialTrafficMonitor: the page's flag comes back on `device:status`.
     setSerialMonitor: vi.fn((on: boolean) => {
       monitorShown = on
@@ -657,7 +662,12 @@ export function installSkyhawkMock(): SkyhawkMock {
       // and pushes it, unless the scenario says what main pushed.
       const device = given.calDevice ?? state.calDevice
       const opened = device && given.device?.state === 'connected'
-      const s = opened && given.cal === undefined ? { ...given, cal: snapshotOf(device) } : given
+      const withCal =
+        opened && given.cal === undefined ? { ...given, cal: snapshotOf(device) } : given
+      // NodeHub stamps each model it pushes with a rising rev, and `getNodes` answers the last (C5).
+      const s = withCal.model
+        ? { ...withCal, model: { ...withCal.model, rev: ++modelRev } }
+        : withCal
       if (opened) lastCal = s.cal
       state = { ...state, ...s }
       turn(() => {

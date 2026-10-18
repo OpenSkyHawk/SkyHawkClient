@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildNodeModel,
+  IDENTIFY_WAIT_MS,
   isReportableNew,
+  newReason,
+  newState,
   nodeAvailability,
   onBusNow,
+  onlineByPages,
+  strayKind,
   type NodeModelInput
 } from './node-model'
 import { cockpitMembers } from './cockpit-snapshot/members'
@@ -12,8 +17,14 @@ import { nodeViews } from './cockpit-snapshot/views'
 import { PDU_GROUP_POLL_CATCH_MS, PDU_GROUP_WINDOW_MS } from './power-zone'
 import { EMPTY_MAPPING } from './mapping-rules'
 import { registryDefaults } from './registry'
-import type { NodeMappingFile, NodeSeen, NodeStatus, NodeTelemSnapshot } from '@shared/nodes'
-import { nodeStatus } from '../../test-fixtures/nodes'
+import type {
+  NodeMappingFile,
+  NodeModelEntry,
+  NodeSeen,
+  NodeStatus,
+  NodeTelemSnapshot
+} from '@shared/nodes'
+import { modelNode, nodeStatus } from '../../test-fixtures/nodes'
 
 const defaults = registryDefaults({
   0: { name: 'PanelBridge', console: '—' },
@@ -631,5 +642,56 @@ describe('board kind (#344)', () => {
       })
     )
     expect(m.nodes.filter((n) => isReportableNew(n, true)).map((n) => n.nodeId)).toEqual([41, 42])
+  })
+})
+
+describe('newState: one answer for every tab and the log (X3 / S6, #133)', () => {
+  const entry = (over: Partial<NodeModelEntry> = {}): NodeModelEntry =>
+    modelNode(9, { source: 'new', console: null, onlineSince: 1000, ...over })
+
+  it('news once it identifies as a PDU or a panel group; a stray at once for any other kind', () => {
+    expect(newState(entry({ identified: 'panel' }), 0, true)).toEqual({ state: 'news' })
+    expect(newState(entry({ identified: 'pdu' }), 0, true)).toEqual({ state: 'news' })
+    expect(newState(entry({ identified: 'bridge' }), 0, true)).toEqual({ state: 'stray' })
+    expect(newState(entry({ identified: 'other' }), 0, true)).toEqual({ state: 'stray' })
+  })
+
+  it('unidentified: identifying for IDENTIFY_WAIT_MS after it came online, then a stray', () => {
+    const e = entry({ firstSeenAt: 0, onlineSince: 60_000 })
+    expect(newState(e, 60_001, true)).toEqual({ state: 'identifying', strayAt: 65_000 })
+    expect(65_000 - 60_000).toBe(IDENTIFY_WAIT_MS)
+    expect(newState(e, 65_000, true)).toEqual({ state: 'stray' })
+  })
+
+  it('nothing for a board in your cockpit, one off the bus, or any while the link is down', () => {
+    expect(newState(modelNode(1), 0, true)).toBeUndefined()
+    expect(
+      newState(entry({ identified: 'panel', availability: 'offline' }), 0, true)
+    ).toBeUndefined()
+    expect(newState(entry({ identified: 'bridge' }), 0, false)).toBeUndefined()
+  })
+
+  it('the model carries onlineSince for a new board: reset each time it comes back online', () => {
+    const seen = new Map<number, NodeSeen>([[41, { firstSeenAt: 0, onlineSince: 60_000 }]])
+    const m = buildNodeModel(input({ roster: [st(41)], seen, rosterCompleteAt: 0 }))
+    expect(m.nodes.find((n) => n.nodeId === 41)).toMatchObject({
+      firstSeenAt: 0,
+      onlineSince: 60_000
+    })
+  })
+
+  it('newReason: "from NODE_IDS.md" for a registry board waiting, else "not in NODE_IDS.md" (X8)', () => {
+    const registry = { name: 'Right_Navigation', console: 'Right', pduId: null }
+    expect(newReason(entry({ registry }))).toBe('from NODE_IDS.md')
+    expect(newReason(entry())).toBe('not in NODE_IDS.md')
+  })
+
+  it('strayKind and onlineByPages', () => {
+    expect(
+      [undefined, 'bridge', 'other'].map((k) => strayKind({ identified: k as never }))
+    ).toEqual(['unidentified', 'second Gateway', 'unknown board type'])
+    expect(onlineByPages(modelNode(4, { status: undefined }))).toBe(true)
+    expect(onlineByPages(modelNode(4))).toBe(false) // its roster row says present
+    expect(onlineByPages(modelNode(4, { status: undefined, availability: 'offline' }))).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
 // T4 — Overview: the new-devices notice.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { screen, within } from '@testing-library/react'
 import { Overview } from '../src/app/overview/Overview'
 import { App } from '../src/app/App'
@@ -48,12 +48,17 @@ describe('T4 Overview: new-devices notice (B60)', () => {
   })
 
   it('a board still identifying, or one that can’t be adopted, is not mentioned', async () => {
+    vi.useFakeTimers({ now: T0 }) // #9 came online just now: still identifying
     await renderScenario(<Overview />, {
       device: connected(),
       model: model([newBoard(9, T0), newBoard(10, T0, { identified: 'bridge' })])
     })
     expect(notice()).toBeUndefined()
-    expect(screen.queryByRole('status')).toBeNull()
+    // The one that can't be adopted is a stray: the attention banner's warning (D1 / X3, #133),
+    // not news. The one still identifying is neither.
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '1 node needs attention — 1 warning (NODE_ID 10)'
+    )
   })
 
   it('it is hidden while the link is down', async () => {

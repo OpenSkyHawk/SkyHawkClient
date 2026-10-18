@@ -7,18 +7,22 @@ import { NodeEventTracker, type NodeLookup } from '../nodes/node-events'
 import type { LogEventInput } from '@shared/events'
 import { eventText } from '@shared/format'
 import { NODE_END_MSG, NODE_MSG, ROSTER_REPLY_MS } from '../nodes/node-status-wire'
-import type { NodeStatus, NodeTelem } from '@shared/nodes'
+import type { NodeModelEntry, NodeStatus, NodeTelem } from '@shared/nodes'
 import { PDU_RAIL_FLAGS as RAIL_FLAG, PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
-import { nodeStatus } from '../../test-fixtures/nodes'
+import { modelNode, nodeStatus } from '../../test-fixtures/nodes'
 
 const st = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
   nodeStatus(nodeId, { uptimeSec: 0, rxCount: 0, dieTempC: null, ...over })
 
 const NAMES: Record<number, string> = { 2: 'Right_Navigation', 4: 'PDU_Right', 7: 'Left_Fuel' }
-const lookup = (): NodeLookup => ({
+/** Boards in your cockpit are NAMES; any other id is outside it, on the bus as a panel group. */
+const lookup = (entries: Record<number, Partial<NodeModelEntry>> = {}): NodeLookup => ({
   name: (id) => NAMES[id] ?? `Node ${id}`,
-  isNew: (id) => !(id in NAMES),
-  unmapped: (id) => !(id in NAMES)
+  outside: (id) => !(id in NAMES),
+  entry: (id) =>
+    id in NAMES
+      ? undefined
+      : modelNode(id, { source: 'new', identified: 'panel', onlineSince: 0, ...entries[id] })
 })
 
 /** Short form for assertions: `name: event · detail [severity]`. */
@@ -90,7 +94,9 @@ describe('NodeEventTracker — changes', () => {
     ])
   })
 
-  it('raises and clears bus-off, error-passive (with TEC), overheat', () => {
+  // X6/R8 (#133): in the Cockpit's order — bus-off, fault, overheat, error-passive (was bus-off,
+  // error-passive, overheat).
+  it('raises and clears bus-off, overheat, error-passive (with TEC)', () => {
     const t = live([st(2)])
     expect(
       short(
@@ -98,24 +104,29 @@ describe('NodeEventTracker — changes', () => {
       )
     ).toEqual([
       'Right_Navigation: bus-off [error]',
-      'Right_Navigation: error-passive · TEC 131 [warn]',
-      'Right_Navigation: overheat [warn]'
+      'Right_Navigation: overheat [warn]',
+      'Right_Navigation: error-passive · TEC 131 [warn]'
     ])
     expect(short(t.status([st(2)], NODE_MSG, '', 30))).toEqual([
       'Right_Navigation: bus-off cleared [info]',
-      'Right_Navigation: error-passive cleared [info]',
-      'Right_Navigation: overheat cleared [info]'
+      'Right_Navigation: overheat cleared [info]',
+      'Right_Navigation: error-passive cleared [info]'
     ])
   })
 
-  it('degraded carries the fault label (or Fault N), and a new fault id is a new row', () => {
+  it('degraded carries the fault label (or Fault N), once per episode (D8, #133)', () => {
     const t = live([st(2)])
     const deg = (faultId: number, faultLabel?: string) =>
       st(2, { degraded: true, faultId, faultLabel })
     expect(short(t.status([deg(2, 'I2C peripheral')], NODE_MSG, '', 20))).toEqual([
       'Right_Navigation: degraded · I2C peripheral [warn]'
     ])
-    expect(short(t.status([deg(9)], NODE_MSG, '', 30))).toEqual([
+    // Was: a new fault id while degraded was a new row. Same episode: none.
+    expect(short(t.status([deg(9)], NODE_MSG, '', 30))).toEqual([])
+    expect(short(t.status([st(2)], NODE_MSG, '', 35))).toEqual([
+      'Right_Navigation: degraded cleared [info]'
+    ])
+    expect(short(t.status([deg(9)], NODE_MSG, '', 37))).toEqual([
       'Right_Navigation: degraded · Fault 9 [warn]'
     ])
     expect(short(t.status([st(2)], NODE_MSG, '', 40))).toEqual([
@@ -134,24 +145,25 @@ describe('NodeEventTracker — changes', () => {
     ])
   })
 
-  it('a registry board not added yet is new too, and says it is in NODE_IDS.md (#93)', () => {
-    const t = new NodeEventTracker({ ...lookup(), inRegistry: (id) => id === 41 })
+  it('a registry board not added yet is new too, and says it is from NODE_IDS.md (#93, X8)', () => {
+    const registry = { name: 'Left_Oxygen', console: 'Left', pduId: null }
+    const t = new NodeEventTracker(lookup({ 41: { registry } }))
     t.status([st(2)], NODE_MSG, '', 0)
     t.status([st(2)], NODE_END_MSG, '_NODE_STATUS_END', 10)
     expect(short(t.status([st(2), st(41)], NODE_MSG, '', 20))).toEqual([
-      'Node 41: new on the bus · in NODE_IDS.md [new]'
+      'Node 41: new on the bus · from NODE_IDS.md [new]'
     ])
   })
 
   it('reports a new node once per app run, even across a reopen', () => {
     const t = live([st(2)])
     expect(short(t.status([st(2), st(41)], NODE_MSG, '', 20))).toEqual([
-      'Node 41: new on the bus · not in registry [new]'
+      'Node 41: new on the bus · not in NODE_IDS.md [new]'
     ])
     t.reset()
     t.status([st(41)], NODE_MSG, '', 30)
     expect(short(t.status([st(41)], NODE_END_MSG, '', 31))).toEqual([
-      'roster: 1 node online [info]'
+      'roster: 1 node online · 1 not in your cockpit [info]'
     ])
   })
 
@@ -161,17 +173,132 @@ describe('NodeEventTracker — changes', () => {
     t.reset() // port reopens with 41 unplugged
     t.status([st(2)], NODE_MSG, '', 30)
     expect(short(t.status([st(2)], NODE_END_MSG, '', 31))).toEqual(['roster: 1 node online [info]'])
-    expect(short(t.status([st(2), st(41)], NODE_MSG, '', 40))).toEqual(['Node 41: online [info]'])
+    expect(short(t.status([st(2), st(41)], NODE_MSG, '', 40))).toEqual([
+      'Node 41: online · not in your cockpit [info]'
+    ])
     expect(short(t.status([st(2), st(41, { present: false })], NODE_MSG, '', 50))).toEqual([
-      'Node 41: offline · no heartbeat [error]'
+      'Node 41: offline · no heartbeat · not in your cockpit [info]'
     ])
   })
 
   it('a new node seen at baseline still gets its row', () => {
     const t = new NodeEventTracker(lookup())
     expect(short(t.status([st(41)], NODE_MSG, '', 0))).toEqual([
-      'Node 41: new on the bus · not in registry [new]'
+      'Node 41: new on the bus · not in NODE_IDS.md [new]'
     ])
+  })
+})
+
+describe('NodeEventTracker — the physical bus (D8 / S5 / C4, #133)', () => {
+  it('a board outside your cockpit: every row at info, labelled; yours keep their severity', () => {
+    const t = live([st(2)])
+    t.status([st(2), st(41)], NODE_MSG, '', 20) // new on the bus
+    expect(
+      short(
+        t.status(
+          [st(2, { boff: true }), st(41, { boff: true, epvf: true, tec: 140 })],
+          NODE_MSG,
+          '',
+          30
+        )
+      )
+    ).toEqual([
+      'Right_Navigation: bus-off [error]',
+      'Node 41: bus-off · not in your cockpit [info]',
+      'Node 41: error-passive · TEC 140 · not in your cockpit [info]'
+    ])
+  })
+
+  it('the baseline counts every board on the bus, and says how many are not yours', () => {
+    const t = new NodeEventTracker(lookup())
+    t.status([st(2), st(41), st(42)], NODE_MSG, '', 0)
+    const out = t.status([st(2), st(41), st(42)], NODE_END_MSG, 'end', 1)
+    expect(short(out)).toEqual(['roster: 3 nodes online · 2 not in your cockpit [info]'])
+  })
+
+  it('a stray is logged once newState says so: at once when it can’t be adopted, else after 5 s', () => {
+    const t = new NodeEventTracker(
+      lookup({
+        9: { identified: 'bridge' },
+        10: { identified: undefined, onlineSince: 0 }
+      })
+    )
+    t.status([st(2)], NODE_END_MSG, '', 0)
+    // #9 says it is a Gateway: a stray at once. #10 says nothing: still identifying at 1 s.
+    expect(short(t.status([st(2), st(9), st(10)], NODE_MSG, '', 1000))).toEqual([
+      'Node 9: new on the bus · second Gateway · can’t be adopted [info]'
+    ])
+    expect(short(t.status([st(2), st(9), st(10)], NODE_MSG, '', 5000))).toEqual([
+      'Node 10: new on the bus · unidentified · can’t be adopted [info]'
+    ])
+    expect(t.status([st(2), st(9), st(10)], NODE_MSG, '', 10_000)).toEqual([]) // once
+  })
+
+  it('a stray that later identifies as something adoptable is news then', () => {
+    const entries: Record<number, Partial<NodeModelEntry>> = { 10: { identified: undefined } }
+    const t = new NodeEventTracker(lookup(entries))
+    t.status([st(2)], NODE_END_MSG, '', 0)
+    expect(short(t.status([st(2), st(10)], NODE_MSG, '', 6000))).toEqual([
+      'Node 10: new on the bus · unidentified · can’t be adopted [info]'
+    ])
+    entries[10] = { identified: 'panel' }
+    expect(short(t.status([st(2), st(10, { nodeKind: 1 })], NODE_MSG, '', 7000))).toEqual([
+      'Node 10: new on the bus · not in NODE_IDS.md [new]'
+    ])
+  })
+
+  it('PDU pages that identify a board outside your cockpit make its "new on the bus" row', () => {
+    const t = new NodeEventTracker(lookup({ 42: { kind: 'pdu', identified: 'pdu' } }))
+    t.status([st(2)], NODE_END_MSG, '', 0)
+    const page: NodeTelem = {
+      nodeId: 42,
+      kind: 'rail',
+      page: 1,
+      flags: 0,
+      vAvgMv: 12000,
+      vMinMv: 11900,
+      iAvgMa: 500
+    }
+    expect(short(t.telemetry(page, 'p', 1000))).toEqual([
+      'Node 42: new on the bus · not in NODE_IDS.md [new]'
+    ])
+    expect(t.telemetry(page, 'p', 2000)).toEqual([])
+  })
+
+  it('the "seen new" record goes once the board is in your cockpit: forgotten, it is new again', () => {
+    const outside = new Set([41])
+    const t = new NodeEventTracker({
+      ...lookup(),
+      outside: (id) => !(id in NAMES) && outside.has(id)
+    })
+    t.status([st(2)], NODE_END_MSG, '', 0)
+    expect(short(t.status([st(2), st(41)], NODE_MSG, '', 10))).toEqual([
+      'Node 41: new on the bus · not in NODE_IDS.md [new]'
+    ])
+    outside.delete(41) // adopted
+    t.cockpitChanged()
+    t.status([st(2), st(41, { present: false })], NODE_MSG, '', 20) // unplugged
+    outside.add(41) // forgotten
+    t.cockpitChanged()
+    expect(short(t.status([st(2), st(41)], NODE_MSG, '', 30))).toEqual([
+      'Node 41: new on the bus · not in NODE_IDS.md [new]',
+      'Node 41: online · not in your cockpit [info]'
+    ])
+  })
+
+  it('a board online by its pages alone gets online / offline rows; the roster taking over adds none', () => {
+    const t = live([st(2)])
+    const pdu = (over: Partial<NodeModelEntry> = {}) =>
+      modelNode(4, { kind: 'pdu', status: undefined, ...over })
+    expect(short(t.pagesOnline([pdu()], 20))).toEqual(['PDU_Right: online [info]'])
+    expect(t.pagesOnline([pdu()], 30)).toEqual([]) // still online
+    expect(short(t.pagesOnline([pdu({ availability: 'offline' })], 40))).toEqual([
+      'PDU_Right: offline · no telemetry [error]'
+    ])
+    expect(short(t.pagesOnline([pdu()], 50))).toEqual(['PDU_Right: online [info]'])
+    // The roster lists it now: no second "online", and its pages no longer decide.
+    expect(t.status([st(2), st(4)], NODE_MSG, '', 60)).toEqual([])
+    expect(t.pagesOnline([pdu({ status: st(4) })], 70)).toEqual([])
   })
 })
 

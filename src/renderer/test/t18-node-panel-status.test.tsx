@@ -139,7 +139,7 @@ describe('T18 Node panel, Status tab (B70, B14, F11)', () => {
   })
 
   it('a zone naming a board not in your cockpit is No power zone: Powered by opens nothing (D7)', async () => {
-    // contract C6/X5 (the "Not in registry" label) is pinned in main (phase0-probes C6). A new
+    // contract C6/X8 (a new board's "from NODE_IDS.md" label, #133) is pinned in phase0-probes C6. A new
     // board's panel was reached only through a placed board's Powered by (X2 R3); with D7 (#131) a
     // zone is only ever a PDU in your cockpit, so Powered by reads the resolved zone: none here.
     const { sheet } = await openStatus({ pduId: 41 }, [

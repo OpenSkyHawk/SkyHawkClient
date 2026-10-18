@@ -129,6 +129,11 @@ export function endRowCount(arg: string): number | undefined {
   return /^\d+$/.test(a) ? Number(a) : undefined
 }
 
+/** A board's timing once it is absent: no longer online since anything. */
+function offline({ onlineSince: _onlineSince, ...seen }: NodeSeen): NodeSeen {
+  return seen
+}
+
 /**
  * Tracks every node seen since reset. Bare messages are live deltas; a request/boot
  * burst ends with `_NODE_STATUS_END`, after which nodes absent from the burst are
@@ -213,13 +218,17 @@ export class NodeRoster {
         this.replying = true
       }
       this.burst.push(ns)
-      const wasPresent = this.nodes.get(ns.nodeId)?.present ?? true
+      const prev = this.nodes.get(ns.nodeId)
+      const wasPresent = prev?.present ?? true
       this.nodes.set(ns.nodeId, ns) // keep absent nodes too; present flag carries state
       const seen = this.seen.get(ns.nodeId) ?? { firstSeenAt: now }
-      if (ns.present) this.seen.set(ns.nodeId, { firstSeenAt: seen.firstSeenAt, reportedAt: now })
-      else if (wasPresent || seen.offlineAt === undefined) {
+      if (ns.present) {
+        // Online since its first present row, or since the first one after an absent one (S6).
+        const onlineSince = prev?.present ? (seen.onlineSince ?? now) : now
+        this.seen.set(ns.nodeId, { firstSeenAt: seen.firstSeenAt, onlineSince, reportedAt: now })
+      } else if (wasPresent || seen.offlineAt === undefined) {
         this.seen.set(ns.nodeId, {
-          ...seen,
+          ...offline(seen),
           offlineAt: now,
           offlineVia: this.inReply(now) ? 'roster' : 'delta'
         })
@@ -241,7 +250,7 @@ export class NodeRoster {
         if (!inBurst.has(id) && node.present) {
           this.nodes.set(id, { ...node, present: false })
           const seen = this.seen.get(id) ?? { firstSeenAt: now }
-          this.seen.set(id, { ...seen, offlineAt: now, offlineVia: 'roster' })
+          this.seen.set(id, { ...offline(seen), offlineAt: now, offlineVia: 'roster' })
         }
       }
       this.endReply()
