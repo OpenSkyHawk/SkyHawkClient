@@ -25,7 +25,7 @@ export function NodesCard({ autoConnect }: { autoConnect: boolean }) {
       {!linkUp ? (
         <div className="hint">{deviceView(deviceState, { autoConnect }).nodesHint}</div>
       ) : sum.known === 0 ? (
-        <div className="hint">No nodes reported. Power on a PanelGroup.</div>
+        <div className="hint">{sum.empty}</div>
       ) : (
         <>
           <div className="nsum">

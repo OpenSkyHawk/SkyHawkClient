@@ -114,6 +114,26 @@ describe('T5 Connection › nodes summary card (B63, B14, B37, X2)', () => {
     expect(rowButtons()).toEqual([])
   })
 
+  it('with none of your cockpit’s boards, it points to the new ones on the bus (#160)', async () => {
+    const T0 = Date.UTC(2026, 9, 16, 12, 0, 0)
+    const fresh = (n: number) => newBoard(n, T0, { identified: 'panel' })
+    const { sky } = await renderScenario(<Connection />, { device: connected(), model: model([]) })
+    expect(screen.getByText('No nodes reported. Power on a PanelGroup.')).toBeInTheDocument()
+    sky.emitScenario({ model: model([fresh(1)]) })
+    expect(
+      screen.getByText('1 new board on the bus — add it from the Cockpit.')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('No nodes reported. Power on a PanelGroup.')).toBeNull()
+    sky.emitScenario({ model: model([fresh(1), fresh(2)]) })
+    expect(
+      screen.getByText('2 new boards on the bus — add them from the Cockpit.')
+    ).toBeInTheDocument()
+    // Added to your cockpit: the normal card again.
+    sky.emitScenario({ model: model([panel(1, 'Center_Armament')]) })
+    expect(count('healthy')).toBe('1healthy')
+    expect(screen.queryByText(/new boards? on the bus/)).toBeNull()
+  })
+
   it('"›" opens the Cockpit on that board', async () => {
     const { user } = await renderScenario(<App />, { device: connected(), model: scene() })
     await user.click(screen.getByRole('tab', { name: 'Connection' }))

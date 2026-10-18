@@ -200,3 +200,23 @@ describe('nodesSummary rows', () => {
     expect([s.rows, s.more, s.footer]).toEqual([[], 0, 'healthy nodes hidden'])
   })
 })
+
+describe('nodesSummary with no board of your cockpit (#160)', () => {
+  const panelNew = (nodeId: number) => node(nodeId, { source: 'new', identified: 'panel' })
+
+  it('points to the new boards on the bus — the Overview notice’s count — and where to add them', () => {
+    const one = summary([panelNew(41)])
+    expect([one.known, one.newCount]).toEqual([0, 1])
+    expect(one.empty).toBe('1 new board on the bus — add it from the Cockpit.')
+    const two = summary([panelNew(41), pdu(42, 'Left', { source: 'new', identified: 'pdu' })])
+    expect(two.newCount).toBe(2)
+    expect(two.empty).toBe('2 new boards on the bus — add them from the Cockpit.')
+  })
+
+  it('says the bus reports nothing only when it does: none on it, or none identified yet', () => {
+    expect(summary([]).empty).toBe('No nodes reported. Power on a PanelGroup.')
+    // Still identifying: not news yet (isReportableNew), so not counted.
+    const s = summary([node(41, { source: 'new' })])
+    expect([s.newCount, s.empty]).toEqual([0, 'No nodes reported. Power on a PanelGroup.'])
+  })
+})
