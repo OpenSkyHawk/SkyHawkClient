@@ -58,6 +58,35 @@ describe('T12 Settings › Cockpit › Hidden boards (B88)', () => {
     ])
   })
 
+  it('Un-hide all with one board failing un-hides the rest and lists the failure (N4)', async () => {
+    // Three hidden; main can't save #8. It used to stop there: #30 and #41 were never tried.
+    const { sky, user, unhideAll } = await openCockpitSection(
+      model([panel(1, 'Center_Armament')], [], {
+        hidden: [8, 30, 41],
+        hiddenNodes: [
+          { nodeId: 8, name: 'Right_Radar', console: 'Right', kind: 'panel', source: 'registry' },
+          { nodeId: 30, name: 'Left_Spare', console: '', kind: 'panel', source: 'adopted' },
+          { nodeId: 41, name: 'Left_Lights', console: 'Left', kind: 'panel', source: 'adopted' }
+        ]
+      })
+    )
+    sky.hideNode.mockImplementation(async (id: number) =>
+      id === 8
+        ? { ok: false as const, error: 'permission denied in userData' }
+        : { ok: true as const, model: sky.scenario.model! }
+    )
+    await user.click(unhideAll())
+    await settle()
+    expect(sky.hideNode.mock.calls).toEqual([
+      [8, false],
+      [30, false],
+      [41, false]
+    ])
+    expect(
+      screen.getByText('Couldn’t un-hide #8 Right_Radar: permission denied in userData')
+    ).toBeInTheDocument()
+  })
+
   it('a refused un-hide shows main’s error', async () => {
     const { sky, user, unhide } = await openCockpitSection(twoHidden())
     sky.hideNode.mockResolvedValueOnce({ ok: false, error: 'Node mapping is read-only' })

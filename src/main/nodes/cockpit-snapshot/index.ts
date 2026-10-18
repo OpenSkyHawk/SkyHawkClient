@@ -14,27 +14,20 @@
 // pages count as online, and while the link is down "New on the bus", the strays, the Overview's
 // notice, Connected nodes and About's On the bus all say nothing.
 //
-// Where the Cockpit and another surface answer differently today, this builder keeps the Cockpit's
-// own answer as its own function (X3–X8 option a, co-located, not unified — the fix track does
-// that):
-//   X3 strays               counted in the Cockpit's band, online and warning (band.ts
-//                           cockpitBand); the "New on the bus" count is isReportableNew
-//                           (attention.ts newCount); strays wait IDENTIFY_WAIT_MS (strayNew)
-//   X6 fault order          the tile and Attention (views.ts nodeHealth), the fault boxes
-//                           (panels.ts nodeFaultBoxes / pduFaultBoxes), the Adopt evidence
-//                           (adopt.ts adoptEvidence)
-//   X8 registry wording     NOT IN REGISTRY / "Not in registry" for a new board (views.ts,
-//                           panels.ts)
+// What a board outside your cockpit is to the user is one rule too (node-model.ts newState, X3):
+// news (it can be adopted: "New on the bus" and the Overview's notice), still identifying, or a
+// stray — a warning counted on every tab alike (the Cockpit's band and Attention, the Overview's
+// tile and banner, Connected nodes), once an unidentified one has had IDENTIFY_WAIT_MS since it came
+// online. Where it comes from is worded once (node-model.ts newReason, X8): "from NODE_IDS.md".
+//
+// A board's flags are named in one order everywhere (faults.ts NODE_FLAG_ORDER, X6): the tile and
+// Attention, the fault boxes and the Adopt evidence.
 // Hide and Forget (X5) are offered by the one rule main refuses them by (offline-actions.ts).
 // Where clicking a board goes is that membership too (D6, members.ts boardOpens): its panel while
 // it is in your cockpit, else the Adopt dialog on its NODE_ID.
 //
-// The Overview, Connection and Settings read their own sections (R3.2b), each with its own answer
-// where it differs from the Cockpit's — the same option a, co-located:
-//   X3 strays               the Overview and Connection count none (summaries.ts: healthBand and
-//                           attentionItems with no strays); the notice is isReportableNew
-//                           (newDevices)
-//   X8 registry wording     the registry's bridge row is "Gateway" (registry-rows.ts registryName)
+// The Overview, Connection and Settings read their own sections (R3.2b), from the same views and
+// the same strays. The registry's bridge row is "Gateway" (registry-rows.ts registryName).
 import type { DeviceStatus } from '@shared/gateway'
 import { isLinkUp } from '../../gateway'
 import type {
@@ -83,7 +76,8 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
   const members = cockpitMembers(i.model)
   const zones = boardZones(i.model?.nodes ?? [], members.get)
   // New boards that can't be adopted are active on the bus, so they are warnings (#93) — once an
-  // unidentified one has had IDENTIFY_WAIT_MS to report its kind, so a normal board never flashes.
+  // unidentified one has had IDENTIFY_WAIT_MS since it came online to report its kind, so a normal
+  // board never flashes. One list for every tab (X3).
   const stray = strayNew(views, i.now, live)
   const strays: StrayItem[] = stray.strays.map((v) => ({
     nodeId: v.entry.nodeId,
@@ -101,8 +95,8 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     opens: boardOpens(views, members),
     zones: zoneChoices(views, members),
     adopt: adoptRows(views, members),
-    overview: overviewSummary(views, outages, live),
-    nodesCard: nodesSummary(views, outages, zones, live),
+    overview: overviewSummary(views, outages, strays, live),
+    nodesCard: nodesSummary(views, outages, strays, zones, live),
     settings: settingsNodes(i.model, i.registry, live)
   }
   return stray.nextAt === undefined ? { snapshot } : { snapshot, nextAt: stray.nextAt }

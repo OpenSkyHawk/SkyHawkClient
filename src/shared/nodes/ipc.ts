@@ -30,6 +30,11 @@ export interface NodeStatus {
 /** When a node was first seen and, while it is offline, when and how it went offline. */
 export interface NodeSeen {
   firstSeenAt: number
+  /**
+   * Set while its roster row says present: when it last came online — its first present row, or
+   * the first one after an absent one (S6: a new board's identify grace counts from here).
+   */
+  onlineSince?: number
   /** When its latest status row arrived while it was present — what "updated N s ago" counts from. */
   reportedAt?: number
   /** Set while offline: when the client learned of it. */
@@ -256,6 +261,11 @@ export interface NodeModelEntry {
   reportedAt?: number
   /** New nodes: when this session first saw it. Not persisted. */
   firstSeenAt?: number
+  /**
+   * New nodes on the roster: when they last came online this session (offline → online resets it).
+   * The identify grace counts from here (node-model.ts newState, S6). Not persisted.
+   */
+  onlineSince?: number
   /** Online PDUs: 'none' = status but no fresh telemetry (never, or > TELEM_STALE_MS). */
   readings?: 'live' | 'none'
   /** PDUs: telemetry has arrived at least once since the session started. */
@@ -317,6 +327,12 @@ export interface NodeModel {
    * 'unknown', since there is no roster to be missing from.
    */
   rosterComplete: boolean
+  /**
+   * Rises with every `nodes:model` push (C5). A `nodes:get` answer carries the rev of the last push
+   * it is at least as new as, so the renderer never lets an older model replace a newer one. Absent
+   * only in a model not from main (a test's fixture).
+   */
+  rev?: number
 }
 
 /** Rail limits as printed on a PSU label. Absent = unknown: the Cockpit shows plain totals. */
@@ -396,11 +412,19 @@ export interface AdoptRequest {
 
 /**
  * Mapping changes run one board at a time ("Add all", "Un-hide all"; R3.2): the NODE_IDs done in
- * order, and — when one was refused — that one and why. The boards after it were not tried.
+ * order, and — when any was refused — the first one and why, and every refusal in `failed`. Add all
+ * stops at its first refusal (the boards after it were not tried); Un-hide all tries every board
+ * (N4).
  */
 export type NodeBatchResult =
   | { ok: true; done: number[] }
-  | { ok: false; done: number[]; nodeId: number; error: string }
+  | {
+      ok: false
+      done: number[]
+      nodeId: number
+      error: string
+      failed: { nodeId: number; error: string }[]
+    }
 
 // ── consoles ────────────────────────────────────────────────────────────────
 
@@ -743,7 +767,10 @@ export interface SummaryRow {
 
 /** Connection › Connected nodes. */
 export interface NodesSummary {
-  /** Known nodes (registry + adopted, PDUs included); new nodes are not counted. */
+  /**
+   * Known nodes (registry + adopted, PDUs included) plus the strays on the bus (X3: the Cockpit's
+   * band total); other new nodes are not counted.
+   */
   known: number
   healthy: number
   warn: number

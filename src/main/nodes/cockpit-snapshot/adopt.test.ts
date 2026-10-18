@@ -258,7 +258,7 @@ describe('strayNew', () => {
   const ids = (r: ReturnType<typeof strayNew>) => r.strays.map((v) => v.entry.nodeId)
 
   it('waits IDENTIFY_WAIT_MS for an unknown board, and says when the next one is due', () => {
-    const views = at([fresh(41, { firstSeenAt: 0 }), fresh(43, { firstSeenAt: 3000 })])
+    const views = at([fresh(41, { onlineSince: 0 }), fresh(43, { onlineSince: 3000 })])
     expect(strayNew(views, 4000, true)).toEqual({ strays: [], nextAt: 5000 })
     const r = strayNew(views, 5000, true)
     expect(ids(r)).toEqual([41])
@@ -269,12 +269,19 @@ describe('strayNew', () => {
 
   it('takes a bridge or an unknown type at once; never an adoptable or offline node', () => {
     const views = at([
-      fresh(44, { identified: 'bridge', firstSeenAt: 1000 }),
-      fresh(45, { identified: 'other', firstSeenAt: 1000 }),
-      fresh(41, { identified: 'panel', firstSeenAt: 0 }),
-      fresh(46, { availability: 'offline', firstSeenAt: 0 })
+      fresh(44, { identified: 'bridge', onlineSince: 1000 }),
+      fresh(45, { identified: 'other', onlineSince: 1000 }),
+      fresh(41, { identified: 'panel', onlineSince: 0 }),
+      fresh(46, { availability: 'offline', onlineSince: 0 })
     ])
     expect(ids(strayNew(views, 1000, true))).toEqual([44, 45])
+  })
+
+  it('counts the grace from when it came online, not from when it was first seen (S6)', () => {
+    // First seen (absent) at 0, online at 60 s: identifying until 65 s.
+    const views = at([fresh(9, { firstSeenAt: 0, onlineSince: 60_000 })])
+    expect(strayNew(views, 60_001, true)).toEqual({ strays: [], nextAt: 65_000 })
+    expect(ids(strayNew(views, 65_000, true))).toEqual([9])
   })
 })
 

@@ -99,6 +99,16 @@
 // flag as main holds them (no type change there). `CalibrationTabState` (`cal:workflow`) gained
 // `badgeOpens`: the badges follow the Calibrate button's link rule (a type change only).
 //
+// Fix track #133 (N4, Un-hide all): a type change only — no channel, intent or method was added,
+// removed or renamed. `NodeBatchResult`'s refused case (`addAllNodes`, `unhideNodes`) gained
+// `failed`: every board refused, in order. Un-hide all now tries every board and lists each one
+// it couldn't un-hide; Add all still stops at its first refusal (one entry).
+//
+// Fix track #133 (D1/X3, S6: strays on every tab, grace from coming online): a type change only —
+// no channel, intent or method was added, removed or renamed. `NodeModelEntry` (`nodes:model`) and
+// `NodeSeen` gained the optional `onlineSince`: when a board last came online, which a new board's
+// identify grace counts from. `NodesSummary.known` now counts the strays too (no shape change).
+//
 // Fix track #134 (X9, X12, N2: the relay's endpoint, Record, the waiting wording): a type change
 // only — no channel, intent or method was added, removed or renamed. `RelayFacts.endpoint` became
 // one string (relay-rules relayEndpoint), the same label for the pill, the Overview and the event

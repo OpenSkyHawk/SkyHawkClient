@@ -166,7 +166,12 @@ describe('CockpitSnapshotHost', () => {
   it('a board still identifying: rebuilt nextAt + 50 ms later, when it becomes a stray', () => {
     vi.useFakeTimers({ now: 10_000 })
     const { host, pushed } = rig()
-    const fresh = modelNode(9, { source: 'new', console: null, firstSeenAt: 10_000 })
+    const fresh = modelNode(9, {
+      source: 'new',
+      console: null,
+      firstSeenAt: 10_000,
+      onlineSince: 10_000
+    })
     host.modelPushed(nodeModel([fresh]))
     expect(pushed.at(-1)!.attention.items).toEqual([])
     const due = 10_000 + IDENTIFY_WAIT_MS + STRAY_RECHECK_MS
@@ -186,7 +191,7 @@ describe('CockpitSnapshotHost', () => {
   it('keeps one timer per nextAt, as the renderer effect did, and drops it once nothing waits', () => {
     vi.useFakeTimers({ now: 0 })
     const { host, pushed } = rig()
-    const a = modelNode(9, { source: 'new', console: null, firstSeenAt: 0 })
+    const a = modelNode(9, { source: 'new', console: null, firstSeenAt: 0, onlineSince: 0 })
     host.modelPushed(nodeModel([a]))
     host.telemetryPushed([]) // same nextAt: the timer stays
     vi.advanceTimersByTime(2000)
@@ -201,7 +206,7 @@ describe('CockpitSnapshotHost — the strays’ clock', () => {
   it('a push inside the 50 ms after a board is due is judged at the old time, as the tab was', () => {
     vi.useFakeTimers({ now: 0 })
     const { host, pushed } = rig()
-    const a = modelNode(9, { source: 'new', console: null, firstSeenAt: 0 })
+    const a = modelNode(9, { source: 'new', console: null, firstSeenAt: 0, onlineSince: 0 })
     host.modelPushed(nodeModel([a]))
     vi.advanceTimersByTime(IDENTIFY_WAIT_MS + 20)
     host.telemetryPushed([])

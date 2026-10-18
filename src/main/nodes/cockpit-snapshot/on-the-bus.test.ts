@@ -28,8 +28,15 @@ const REG: NodeRegistryInfo = {
 const LAST = model([
   node(1, { name: 'Center_Armament' }),
   node(2, { name: 'Right_Navigation', console: 'Right', availability: 'offline', offlineAt: 0 }),
-  node(9, { name: 'Node 9', console: null, source: 'new', firstSeenAt: 0 }),
-  node(41, { name: 'Node 41', console: null, source: 'new', identified: 'panel', firstSeenAt: 0 })
+  node(9, { name: 'Node 9', console: null, source: 'new', firstSeenAt: 0, onlineSince: 0 }),
+  node(41, {
+    name: 'Node 41',
+    console: null,
+    source: 'new',
+    identified: 'panel',
+    firstSeenAt: 0,
+    onlineSince: 0
+  })
 ])
 
 function snapshot(state: DeviceState): CockpitSnapshot {
@@ -63,8 +70,9 @@ describe('every "on the bus" surface goes quiet with the link down (X2 / R5, #13
     expect(up.strays).toEqual([9])
     expect(up.bandStrays).toBe(1)
     expect(up.newDevices).toEqual({ count: 1, panels: 1, pdus: 0, registry: 0 })
-    expect(up.nodesCard).toMatchObject({ known: 2, healthy: 1, off: 1 })
-    expect(up.nodesCard.rows.map((r) => r.nodeId)).toEqual([2])
+    // Connected nodes counts the stray as the band does (D1 / X3, #133): one up, one warning.
+    expect(up.nodesCard).toMatchObject({ known: 3, healthy: 1, warn: 1, off: 1 })
+    expect(up.nodesCard.rows.map((r) => r.nodeId)).toEqual([2, 9])
     expect(up.aboutOnBus).toEqual(['serial link', 'yes', 'offline'])
   })
 

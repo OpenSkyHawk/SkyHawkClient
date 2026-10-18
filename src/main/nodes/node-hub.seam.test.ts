@@ -221,8 +221,8 @@ describe('B10 Hide keeps links: boards fed by a hidden PDU keep their power zone
   })
 })
 
-describe('B33 a board identified only by PDU telemetry is "new on the bus" at its next status row', () => {
-  it('no row when the pages arrive; one row, at that time, when its next status row comes', () => {
+describe('B33 / C4 (#133): a board identified only by PDU telemetry is "new on the bus" when its pages identify it', () => {
+  it('one row, at that time, when the pages arrive; none again at its next status row', () => {
     const { h, events, status, end, node } = hub()
     status(1, PANEL, 0)
     end(1, 0) // the baseline is closed: what appears from here on is news
@@ -234,11 +234,12 @@ describe('B33 a board identified only by PDU telemetry is "new on the bus" at it
     const page = '090100E02E182EBC02' // node 9, 12 V rail page: it is a PDU
     h.telemetry(page, 1500, `_NODE_TELEM ${page}`)
     expect(node(9, 1500)?.identified).toBe('pdu')
-    expect(news(), 'the pages identify it, but write no row').toEqual([])
+    // Was: no row until its next status row (C4). Now the model's newState says news: one row.
+    expect(news()).toEqual([
+      expect.objectContaining({ nodeId: 9, t: 1500, severity: 'new', raw: `_NODE_TELEM ${page}` })
+    ])
 
     status(9, NOT_REPORTED, 5000) // the next roster poll
-    expect(news()).toEqual([expect.objectContaining({ nodeId: 9, t: 5000, severity: 'new' })])
-
     status(9, NOT_REPORTED, 10_000)
     expect(news(), 'once per board').toHaveLength(1)
   })

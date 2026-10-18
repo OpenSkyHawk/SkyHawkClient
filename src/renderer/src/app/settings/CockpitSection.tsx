@@ -5,7 +5,7 @@ import { useConfigStore } from '../../config'
 import { useNodesStore } from '../../nodes'
 import { Row, SectionHead } from '../kit'
 import { ResetDialog } from './ResetDialog'
-import { hiddenRow, resetRowDesc } from './settings-view'
+import { hiddenRow, resetPreviewKey, resetRowDesc, unhideError } from './settings-view'
 import { useNodesPulled } from './useNodesPulled'
 
 type LimitKey = keyof PsuLimits
@@ -101,11 +101,12 @@ function HiddenNodes() {
   const [error, setError] = useState<string>()
   const hidden = pulled ? nodes.hidden : []
 
-  // Main un-hides them one at a time and stops at the first it can't (R3.2b).
+  // Main un-hides them one at a time, goes on past one it can't and lists each it couldn't (N4).
   const unhide = async (ids: number[]) => {
     setError(undefined)
+    const listed = hidden
     const r = await useNodesStore.getState().unhideNodes(ids)
-    if (r && !r.ok) setError(r.error)
+    if (r) setError(unhideError(r, ids.length, listed))
   }
 
   return (
@@ -159,8 +160,8 @@ function HiddenNodes() {
 export function CockpitSection() {
   const pulled = useNodesPulled()
   const nodes = useNodesStore((s) => s.cockpit.settings)
-  // The review asks main for a fresh preview each time the model is pushed.
-  const model = useNodesStore((s) => s.nodeModel)
+  // The review asks main for a fresh preview when the mapping it is built from changes (R9).
+  const previewKey = useNodesStore((s) => resetPreviewKey(s.cockpit))
   const attentionBanner = useConfigStore((s) => s.attentionBanner)
   const setConfigField = useConfigStore((s) => s.setConfigField)
   // Main's settings replaced the forms (an import): the PSU limits start over from them (N8).
@@ -197,7 +198,7 @@ export function CockpitSection() {
       </div>
       <PowerSupply key={formsReset} />
       <HiddenNodes />
-      {resetOpen && <ResetDialog model={model} onClose={() => setResetOpen(false)} />}
+      {resetOpen && <ResetDialog inputs={previewKey} onClose={() => setResetOpen(false)} />}
     </>
   )
 }
