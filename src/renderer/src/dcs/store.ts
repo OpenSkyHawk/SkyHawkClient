@@ -49,6 +49,11 @@ export interface DcsState {
   lastCmd: string
 
   log: StreamLine[]
+  /**
+   * Rows that arrived while the Log tab is paused (#161), newest first, capped like `log`: held
+   * out of the frozen list and added to it on Resume.
+   */
+  private_held: StreamLine[]
   private_logSeq: number
 
   set: (patch: Partial<DcsState>) => void
@@ -91,6 +96,7 @@ export const useDcsStore = create<DcsState>((set, get) => ({
   lastCmd: '—',
 
   log: [],
+  private_held: [],
   private_logSeq: 1000,
 
   set: (patch) => set(patch),
@@ -122,7 +128,7 @@ export const useDcsStore = create<DcsState>((set, get) => ({
     void api()?.openReplay()
   },
 
-  clearLog: () => set({ log: [] }),
+  clearLog: () => set({ log: [], private_held: [] }),
 
   exportLog: async () => {
     const rows = get().log
@@ -178,10 +184,12 @@ export const dcsFromMain = {
       lastCmd: st.lastCommand ?? '—'
     }),
 
-  /** `log:batch`: dropped while the Log tab is paused (the pause is the events slice's). */
+  /**
+   * `log:batch`. While the Log tab is paused (the pause is the events slice's) the list holds still
+   * and the rows are held instead, shown on Resume (#161).
+   */
   logBatch: (rows: StreamRow[]): void => {
     const s = useDcsStore.getState()
-    if (useEventsStore.getState().logPaused) return
     let seq = s.private_logSeq
     const mapped: StreamLine[] = rows.map((r: StreamRow) => ({
       id: seq++,
@@ -193,9 +201,25 @@ export const dcsFromMain = {
       raw: r.raw ?? rawHex(r.address, r.value)
     }))
     // newest first, capped
+    if (useEventsStore.getState().logPaused) {
+      useDcsStore.setState({
+        private_held: [...mapped.reverse(), ...s.private_held].slice(0, MAX_LOG),
+        private_logSeq: seq
+      })
+      return
+    }
     useDcsStore.setState({
       log: [...mapped.reverse(), ...s.log].slice(0, MAX_LOG),
       private_logSeq: seq
     })
   }
 }
+
+// Resume (the events slice's pause turning off) shows the rows held while paused, newest first
+// over the list, within its cap: the oldest fall off as they do while live (#161).
+useEventsStore.subscribe((ev, prev) => {
+  if (!prev.logPaused || ev.logPaused) return
+  const s = useDcsStore.getState()
+  if (s.private_held.length === 0) return
+  useDcsStore.setState({ log: [...s.private_held, ...s.log].slice(0, MAX_LOG), private_held: [] })
+})
