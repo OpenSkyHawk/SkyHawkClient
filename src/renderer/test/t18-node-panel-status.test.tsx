@@ -56,7 +56,7 @@ describe('T18 Node panel, Status tab (B70, B14, F11)', () => {
       'Uptime00:01:40',
       'CAN frames rx10',
       'CAN TEC / REC0 / 0',
-      'CAN stateerror-active',
+      'CAN stateOK',
       'MCU temp30 °C'
     ])
   })
