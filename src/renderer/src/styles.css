@@ -177,14 +177,6 @@ body {
 .pill--on .pill__txt {
   color: var(--green);
 }
-/* Stopped, and Start would be refused: no board for a mode that needs one (#69). A grey "!"
-   replaces the dot — grey because nothing failed. Still a normal pointer: it answers a click. */
-.pill--blocked {
-  opacity: 0.85;
-}
-.pill--blocked .pill__dot {
-  display: none;
-}
 .pill__sym {
   width: 13px;
   height: 13px;
@@ -195,10 +187,6 @@ body {
   font: 800 9px/1 var(--disp);
   color: #04101f;
   background: var(--muted-2);
-}
-.devpop__hint {
-  font-size: 11px;
-  color: var(--muted-3);
 }
 /* Running but not delivering end to end — still "Relaying", gold (#69). */
 .pill--wait {
@@ -221,9 +209,6 @@ body {
   line-height: 1.5;
   color: var(--gold);
   text-align: center;
-}
-.waitnote--info {
-  color: var(--muted-3);
 }
 
 /* ── device link indicator (#69): the automatic SimGateway link, separate from the relay pill ── */

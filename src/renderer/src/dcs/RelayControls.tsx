@@ -1,5 +1,5 @@
 import { useDcsStore } from './store'
-import { relayNote, relaySide, startBlockedReason } from './relay-view'
+import { relayNote, relaySide } from './relay-view'
 
 // The Connection tab's relay controls (R3.4b: cut from Connection.tsx). The tab puts its settings
 // cards (source mode, DCS link) between them, so each is its own component.
@@ -112,28 +112,24 @@ export function RecordCard() {
   )
 }
 
-/** Start / Stop relay, and what a running relay is waiting for or why Start is blocked. */
+/** Start / Stop relay, and what a running relay is waiting for. Start always starts (#159). */
 export function RelayStart() {
   const facts = useDcsStore((x) => x.relayFacts)
   const relaying = useDcsStore((x) => x.relaying)
   const toggleRelay = useDcsStore((x) => x.toggleRelay)
   // The relay controls as main decides them (relay:facts, R3.3), for the on/off as shown.
   const side = relaySide(facts, relaying)
-  const blocked = side.startBlocked
-  const note = blocked
-    ? { text: startBlockedReason(blocked), info: true }
-    : relayNote(side.waiting, facts.stream)
+  const note = relayNote(side.waiting, facts.stream)
   return (
     <div>
       <button
         className={`bigbtn${relaying ? ' bigbtn--stop' : ''}`}
         style={{ width: '100%' }}
-        disabled={!!blocked}
         onClick={() => toggleRelay()}
       >
         {relaying ? 'Stop relay' : 'Start relay'}
       </button>
-      {note && <div className={`waitnote${note.info ? ' waitnote--info' : ''}`}>{note.text}</div>}
+      {note && <div className="waitnote">{note}</div>}
     </div>
   )
 }

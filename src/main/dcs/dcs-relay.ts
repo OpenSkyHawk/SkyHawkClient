@@ -125,22 +125,18 @@ export class DcsRelay {
   /**
    * Start relaying. Attaches the stream to the device link; never opens or closes the port.
    *
-   * Refused while a mode that delivers to the board has no board to deliver to: nothing can be
-   * relayed before the link is up. Once running, a drop does not end the relay — it waits, and
-   * resumes when the link returns.
+   * Never gated on the board (#159): a mode that delivers to it starts with no board and waits,
+   * as it does through a drop (relay-rules waitingForDevice), and delivers once the link is up.
    */
   start(): RelayResult {
-    if (exportToDevice(this.config) && !isLinkUp(this.device.deviceStatus().state)) {
-      return { ok: false, error: 'Gateway is not connected' }
-    }
     return this.run()
   }
 
   /** A settings change: a running relay is rebuilt if a setting it is built from changed. */
   reconfigure(prev: RelayOptions, next: RelayOptions): void {
     if (this.running && relayConfigChanged(prev, next)) {
-      // A rebuild of a relay already running, not a new Start: it is not gated on the device,
-      // or editing a setting during a drop would end a relay that only Stop may end.
+      // A rebuild of a relay already running: only Stop may end it, so a rebuild during a drop
+      // keeps it running, waiting for the board.
       this.stop()
       this.run()
     }

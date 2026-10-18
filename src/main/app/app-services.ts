@@ -111,7 +111,7 @@ export class AppServices {
     // The DCS side keeps its order from before the split too (R2.3a). None of its constructors has
     // a side effect.
     //   open             the stream log's flush (33) first, then the connection's start
-    //   relay Start      Bridge / driven Replay refused unless the link is up → a running relay
+    //   relay Start      never gated on the link (#159) → a running relay
     //                    stopped → decoder, parser, stats reset → DCS error forgotten → Replay:
     //                    `connected`, playback; else the transport built and subscribed →
     //                    `connecting` → transport start; then the telemetry (200) and stats
@@ -167,7 +167,7 @@ export class AppServices {
     // The Cockpit snapshot follows the link too (strays and Attention only while it is up), after
     // `device:status` has gone out, as the Cockpit re-rendered on it (R3.2).
     this.connection.onStatus(() => this.nodes.linkStatus())
-    // So do the relay's facts (blocked, waiting for the Gateway, the Link tile), R3.3.
+    // So do the relay's facts (waiting for the Gateway, the Link tile), R3.3.
     this.connection.onStatus(() => this.relay.inputsChanged())
     // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
     this.settings.store.subscribe((config, prev) => {

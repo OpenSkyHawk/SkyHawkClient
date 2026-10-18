@@ -54,25 +54,62 @@ describe('device:status carries the link’s facts', () => {
 })
 
 describe('relay:facts: what the relay’s surfaces show', () => {
-  it('Bridge with no board: Start blocked; the board arriving lifts it', () => {
+  // #159: Start with no board used to be refused ('Gateway is not connected'): the pill flipped
+  // back to Stopped with no word why. Now it starts and waits, and the board arriving delivers.
+  it('Bridge with no board: Start starts and waits for the board; the board arriving delivers', () => {
     const app = makeServices({ paths: { files: { 'config.json': { sourceMode: 'bridge' } } } })
-    expect(app.lastPush('relay:facts')?.stopped.startBlocked).toBe('bridge')
+    expect(app.lastPush('relay:facts')?.stopped).not.toHaveProperty('startBlocked')
+    expect(app.invoke(CTRL.relayToggle, false)).toEqual({ ok: true })
+    expect(app.lastPush('relay:state')).toEqual({ running: true, stream: 'connecting' })
+    expect(app.lastPush('relay:facts')?.running).toMatchObject({
+      waiting: 'device',
+      tip: 'waiting-device',
+      overviewLink: 'waiting'
+    })
+    app.transport.connected(true)
+    // The board arrives: no further click, the relay delivers to it.
     app.serial.open()
-    expect(app.lastPush('relay:facts')?.stopped.startBlocked).toBeUndefined()
-    expect(app.lastPush('relay:facts')?.running.waiting).toBe('dcs')
+    expect(app.lastPush('relay:facts')?.running).toMatchObject({
+      waiting: 'none',
+      tip: 'delivering'
+    })
+    app.serial.clearWritten()
+    app.transport.export('UUUU')
+    expect(app.serial.writtenText()).toBe('UUUU')
+    expect(app.lastPush('relay:state')?.running, 'still the one relay').toBe(true)
+  })
+
+  it('a driven Replay with no board: Start plays and waits for the board (#159)', async () => {
+    const app = makeServices({
+      paths: {
+        files: {
+          'config.json': { sourceMode: 'replay', replayDriveSerial: true },
+          'flight.skyhawk-capture': serializeCapture([{ t: 0, dir: 'in', hex: '55555555' }])
+        }
+      }
+    })
+    app.dialogs.openCapture('flight.skyhawk-capture')
+    await app.invoke(CTRL.replayOpen)
+    expect(app.invoke(CTRL.relayToggle, false)).toEqual({ ok: true })
+    expect(app.lastPush('relay:facts')?.running).toMatchObject({
+      waiting: 'device',
+      tip: 'waiting-device',
+      overviewLink: 'waiting'
+    })
+    app.serial.open()
+    expect(app.lastPush('relay:facts')?.running.tip).toBe('replay-playing')
   })
 
   it('toggle: Start saves the settings first; a refused Start pushes no relay state', () => {
-    const app = makeServices({ paths: { files: { 'config.json': { sourceMode: 'bridge' } } } })
-    const states = app.pushesOf('relay:state').length
-    expect(app.invoke(CTRL.relayToggle, false)).toEqual({
-      ok: false,
-      error: 'Gateway is not connected'
-    })
-    expect(app.pushesOf('relay:state')).toHaveLength(states)
-    expect(app.files.json('config.json')).toMatchObject({ sourceMode: 'bridge', commandPort: 7778 })
-    expect(app.lastPush('config:changed')?.source).toBe('edit')
+    // Replay with no capture loaded: the one Start main still refuses.
+    const app = makeServices({ paths: { files: { 'config.json': { sourceMode: 'replay' } } } })
     app.serial.open()
+    const states = app.pushesOf('relay:state').length
+    expect(app.invoke(CTRL.relayToggle, false)).toEqual({ ok: false, error: 'No capture loaded' })
+    expect(app.pushesOf('relay:state')).toHaveLength(states)
+    expect(app.files.json('config.json')).toMatchObject({ sourceMode: 'replay', commandPort: 7778 })
+    expect(app.lastPush('config:changed')?.source).toBe('edit')
+    app.invoke(CTRL.configEdit, { sourceMode: 'bridge' })
     expect(app.invoke(CTRL.relayToggle, false)).toEqual({ ok: true })
     expect(app.lastPush('relay:state')).toEqual({ running: true, stream: 'connecting' })
     expect(app.invoke(CTRL.relayToggle, true)).toEqual({ ok: true })
