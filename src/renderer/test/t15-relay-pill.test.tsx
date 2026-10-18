@@ -72,6 +72,40 @@ describe('T15 RelayPill (B45, B47)', () => {
     )
   })
 
+  it('N3: a driven Replay relaying while the board is gone: waiting for the Gateway', async () => {
+    await renderScenario(<RelayPill />, {
+      config: { sourceMode: 'replay', replayDriveSerial: true },
+      device: link('reconnecting'),
+      relay: { running: true, stream: 'connected' }
+    })
+    expect(pill()).toHaveAttribute(
+      'title',
+      'Relaying — waiting for the Gateway (device link reconnecting). Resumes when it connects — click to stop'
+    )
+    expect(pill()).toHaveClass('pill--wait')
+  })
+
+  it('N3: an undriven Replay never uses the board, so it just plays', async () => {
+    await renderScenario(<RelayPill />, {
+      config: { sourceMode: 'replay', replayDriveSerial: false },
+      device: link('reconnecting'),
+      relay: { running: true, stream: 'connected' }
+    })
+    expect(pill()).toHaveAttribute('title', 'Replay · playing — click to stop')
+    expect(pill()).not.toHaveClass('pill--wait')
+  })
+
+  it('N2: Monitor relaying with no board says nothing about the Gateway', async () => {
+    await renderScenario(<RelayPill />, {
+      device: link('no-device'),
+      relay: { running: true, stream: 'connected' }
+    })
+    expect(pill()).toHaveAttribute(
+      'title',
+      'DCS-BIOS stream · connected · 127.0.0.1:7778 — click to stop'
+    )
+  })
+
   it('Bridge without a board: blocked with "!", and a click explains instead of starting', async () => {
     const { sky, user } = await renderScenario(<RelayPill />, {
       config: { sourceMode: 'bridge' },

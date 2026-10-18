@@ -19,7 +19,8 @@ function PowerSupply() {
   // The preset as main resolves it (`config:changed`, R3.3).
   const preset = useConfigStore((s) => s.psuView.preset)
   const isPreset = psu.mode === 'preset'
-  // What is typed, per field: a refused value stays visible (and unsaved) until corrected.
+  // What is typed, per field: a refused value stays visible (and unsaved) until corrected, or until
+  // main's settings replace the forms (CockpitSection keys this on them, N8).
   const [typed, setTyped] = useState<Record<LimitKey, string>>(() => ({
     a12: text(psu.custom.a12),
     a5: text(psu.custom.a5),
@@ -163,6 +164,8 @@ export function CockpitSection() {
   const previewKey = useNodesStore((s) => resetPreviewKey(s.cockpit))
   const attentionBanner = useConfigStore((s) => s.attentionBanner)
   const setConfigField = useConfigStore((s) => s.setConfigField)
+  // Main's settings replaced the forms (an import): the PSU limits start over from them (N8).
+  const formsReset = useConfigStore((s) => s.formsReset)
   const [resetOpen, setResetOpen] = useState(false)
   const differing = pulled ? nodes.differing : 0
 
@@ -193,7 +196,7 @@ export function CockpitSection() {
           </button>
         </Row>
       </div>
-      <PowerSupply />
+      <PowerSupply key={formsReset} />
       <HiddenNodes />
       {resetOpen && <ResetDialog inputs={previewKey} onClose={() => setResetOpen(false)} />}
     </>

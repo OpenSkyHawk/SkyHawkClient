@@ -7,14 +7,14 @@ import { RELAY_FACTS_IDLE } from '@shared/dcs'
 import {
   canRecord,
   captureView,
-  overviewEndpoint,
   overviewLink,
   captureShown,
-  pillEndpoint,
   recordShown,
+  relayEndpoint,
   relayFacts,
   relayNote,
   relayTip,
+  relayWaiting,
   replayView
 } from './relay-rules'
 
@@ -41,7 +41,9 @@ describe('relayFacts', () => {
       config: { ...DEFAULT_CONFIG, sourceMode: 'replay', replayDriveSerial: true }
     })
     expect(replay.stopped.startBlocked).toBe('replay')
-    expect(replay.running.tip).toBe('replay-playing')
+    expect(replay.running.tip, 'a driven Replay waits for the board (N3)').toBe('waiting-device')
+    const undriven = facts({ config: { ...DEFAULT_CONFIG, sourceMode: 'replay' } })
+    expect(undriven.running.tip).toBe('replay-playing')
   })
 
   it('carries the mode and the transport it was judged against (R3.4c)', () => {
@@ -49,50 +51,105 @@ describe('relayFacts', () => {
       config: { ...DEFAULT_CONFIG, sourceMode: 'replay', transport: 'unicast-listen' }
     })
     expect(f).toMatchObject({ mode: 'replay', transport: 'unicast-listen', captureShown: true })
-    expect(f.endpoint.pill).toEqual(pillEndpoint('unicast-listen'))
+    expect(f.endpoint).toBe(relayEndpoint({ ...DEFAULT_CONFIG, transport: 'unicast-listen' }))
   })
 })
 
-describe('N3: waiting for the Gateway is Bridge only; a driven Replay is blocked, never waiting', () => {
-  it.each(['monitor', 'replay'] as const)('%s, no board, running', (mode) => {
-    const o = {
-      mode,
-      relaying: true,
-      stream: 'connected' as const,
-      deviceState: 'no-device' as const
-    }
+describe('N3: waiting for the Gateway — Bridge and a driven Replay', () => {
+  const run = (mode: 'bridge' | 'monitor' | 'replay', replayDriveSerial: boolean) => ({
+    mode,
+    replayDriveSerial,
+    relaying: true,
+    stream: 'connected' as const,
+    deviceState: 'no-device' as const
+  })
+
+  it.each([
+    ['bridge', false],
+    ['replay', true]
+  ] as const)('%s (drive %s), no board, running: the waiting reason', (mode, drive) => {
+    const o = run(mode, drive)
+    expect(relayNote(o)).toBe('device')
+    expect(relayTip(o)).toBe('waiting-device')
+    expect(relayWaiting(o)).toBe(true)
+  })
+
+  it.each([
+    ['monitor', false],
+    ['monitor', true],
+    ['replay', false]
+  ] as const)('%s (drive %s), no board, running: never waiting for it', (mode, drive) => {
+    const o = run(mode, drive)
     expect(relayNote(o)).toBe('none')
     expect(relayTip(o)).not.toBe('waiting-device')
+    expect(relayWaiting(o)).toBe(false)
+  })
+
+  it('a driven Replay with the board up plays on', () => {
+    expect(relayTip({ ...run('replay', true), deviceState: 'connected' })).toBe('replay-playing')
   })
 })
 
-describe('N2: the Overview says "relay waiting" whenever a relay runs with the link down', () => {
-  it('in every mode, Monitor included', () => {
-    expect(overviewLink(true, false)).toBe('waiting')
-    expect(overviewLink(true, true)).toBe('gateway-relaying')
-    expect(overviewLink(false, true)).toBe('gateway-stopped')
-    expect(overviewLink(false, false)).toBe('stopped')
+describe('N2: the Overview says "relay waiting" only while the relay waits for the board', () => {
+  const o = (
+    mode: 'bridge' | 'monitor' | 'replay',
+    relaying: boolean,
+    replayDriveSerial = false
+  ) => ({
+    mode,
+    replayDriveSerial,
+    relaying,
+    stream: 'connected' as const,
+    deviceState: 'no-device' as const
+  })
+
+  it('Bridge and a driven Replay wait; Monitor and an undriven Replay just run', () => {
+    expect(overviewLink(o('bridge', true), false)).toBe('waiting')
+    expect(overviewLink(o('replay', true, true), false)).toBe('waiting')
+    expect(overviewLink(o('monitor', true), false)).toBe('running')
+    expect(overviewLink(o('replay', true), false)).toBe('running')
+  })
+
+  it('stopped, or with the link up, the same in every mode', () => {
+    for (const mode of ['bridge', 'monitor', 'replay'] as const) {
+      expect(overviewLink(o(mode, false), false), mode).toBe('stopped')
+      expect(overviewLink(o(mode, false), true), mode).toBe('gateway-stopped')
+      expect(overviewLink(o(mode, true), true), mode).toBe('gateway-relaying')
+    }
+  })
+
+  it('pushed in the facts: Monitor running with no board is not waiting', () => {
+    expect(facts().running.overviewLink).toBe('running')
+    const bridge = facts({ config: { ...DEFAULT_CONFIG, sourceMode: 'bridge' } })
+    expect(bridge.running.overviewLink).toBe('waiting')
   })
 })
 
-describe('X9: each surface’s own endpoint label', () => {
-  it('the pill: host and port as typed, the multicast group, or "unicast listen"', () => {
-    expect(pillEndpoint('tcp-to-host')).toEqual({ hostPort: { suffix: '' } })
-    expect(pillEndpoint('loopback-multicast')).toEqual({ text: '239.255.50.10:5010' })
-    expect(pillEndpoint('unicast-listen')).toEqual({ text: 'unicast listen' })
+describe('X9: one endpoint label, right for each transport', () => {
+  const at = (transport: (typeof DEFAULT_CONFIG)['transport']) =>
+    relayEndpoint({ transport, host: '10.0.0.7', commandPort: 7779, listenPort: 5011 })
+
+  it('TCP: the host and command port; Multicast: the group; Unicast: the port it listens on', () => {
+    expect(at('tcp-to-host')).toBe('10.0.0.7:7779')
+    expect(at('loopback-multicast')).toBe('239.255.50.10:5010')
+    expect(at('unicast-listen')).toBe('this PC:5011')
   })
 
-  it('the Overview: host and port as typed, else the multicast group — for Unicast too', () => {
-    expect(overviewEndpoint('tcp-to-host')).toEqual({ hostPort: { suffix: ' · remote' } })
-    expect(overviewEndpoint('loopback-multicast')).toEqual({ text: '239.255.50.10:5010 · local' })
-    expect(overviewEndpoint('unicast-listen')).toEqual({ text: '239.255.50.10:5010 · local' })
+  it('pushed once in the facts, from the settings held', () => {
+    const f = facts({ config: { ...DEFAULT_CONFIG, host: '10.0.0.7', commandPort: 7779 } })
+    expect(f.endpoint).toBe('10.0.0.7:7779')
   })
 })
 
-describe('X12: each surface’s own Record rule', () => {
-  it('the Connection card only while relaying; Settings › Connection whenever', () => {
-    expect(canRecord(true)).toEqual({ connection: true, settings: true })
-    expect(canRecord(false)).toEqual({ connection: false, settings: true })
+describe('X12: Record only while relaying, on every surface', () => {
+  it('a recording starts only while relaying; one already on can always be stopped', () => {
+    expect(canRecord(true, false)).toBe(true)
+    expect(canRecord(false, false)).toBe(false)
+    expect(canRecord(false, true)).toBe(true)
+    const f = facts()
+    expect([f.running.canRecord, f.stopped.canRecord]).toEqual([true, false])
+    const on = facts({ recording: { on: true } })
+    expect(on.stopped.canRecord, 'a relay stopped mid-recording can still stop it').toBe(true)
   })
 })
 

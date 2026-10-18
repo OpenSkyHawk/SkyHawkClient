@@ -25,6 +25,7 @@ import { DcsBiosProtocol } from './bios-protocol'
 import type { DcsConnection } from './dcs-connection'
 import { relayContext, relayEvents } from './relay-events'
 import {
+  canRecord,
   captureView,
   deviceToDcs,
   exportToDevice,
@@ -252,6 +253,14 @@ export class DcsRelay {
       recording: this.recordingView,
       replay: this.replayLoaded
     })
+  }
+
+  /**
+   * May the Record control act now (X12, relay-rules canRecord): start a recording only while
+   * relaying; stop one already on whenever. The rule the surfaces' `canRecord` shows.
+   */
+  mayRecord(): boolean {
+    return canRecord(this.running, this.recorder.isRecording())
   }
 
   /** The link or the settings changed (AppServices): push the facts if they changed with them. */

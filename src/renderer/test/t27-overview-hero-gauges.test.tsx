@@ -46,8 +46,32 @@ describe('T27 Overview hero tiles and gauges (B56, B57)', () => {
       'var(--green)'
     ],
     [
-      'reconnecting while relaying',
-      { device: link('reconnecting'), relay: { running: true, stream: 'connected' } },
+      'Bridge, reconnecting while relaying',
+      {
+        config: { sourceMode: 'bridge' },
+        device: link('reconnecting'),
+        relay: { running: true, stream: 'connected' }
+      },
+      'Reconnecting',
+      'relay waiting — resumes when it connects',
+      'var(--gold)'
+    ],
+    [
+      // N2: Monitor never uses the Gateway, so it never waits for it.
+      'Monitor, no board while relaying',
+      { device: link('no-device'), relay: { running: true, stream: 'connected' } },
+      'No device',
+      'stream running',
+      'var(--muted)'
+    ],
+    [
+      // N3: a Replay that drives the Gateway waits for it, as Bridge does.
+      'driven Replay, reconnecting while relaying',
+      {
+        config: { sourceMode: 'replay', replayDriveSerial: true },
+        device: link('reconnecting'),
+        relay: { running: true, stream: 'connected' }
+      },
       'Reconnecting',
       'relay waiting — resumes when it connects',
       'var(--gold)'
@@ -131,25 +155,46 @@ describe('T27 Overview hero tiles and gauges (B56, B57)', () => {
   })
 
   it.each([
-    ['tcp-to-host', 'TCP', '10.0.0.7:7779 · remote'],
-    ['loopback-multicast', 'Multicast', '239.255.50.10:5010 · local'],
-    // The sub-line reads the multicast endpoint for Unicast too, today.
-    ['unicast-listen', 'Unicast', '239.255.50.10:5010 · local']
+    ['tcp-to-host', 'TCP', '10.0.0.7:7779'],
+    ['loopback-multicast', 'Multicast', '239.255.50.10:5010'],
+    // X9: Unicast shows the port it listens on, not the multicast group.
+    ['unicast-listen', 'Unicast', 'this PC:5011']
   ] as const)('DCS Link tile, %s: "%s"', async (transport, v, s) => {
     await renderScenario(<Overview />, {
-      config: { transport, host: '10.0.0.7', commandPort: 7779 }
+      config: { transport, host: '10.0.0.7', commandPort: 7779, listenPort: 5011 }
     })
     expect(value('DCS Link')).toHaveTextContent(v)
     expect(sub('DCS Link')).toBe(s)
   })
 
-  it('gauges: five idle readouts, "—", until the first telemetry tick', async () => {
+  it.each([
+    ['tcp-to-host', '10.0.0.7:7779'],
+    ['loopback-multicast', '239.255.50.10:5010'],
+    ['unicast-listen', 'this PC:5011']
+  ] as const)(
+    'X9: the Relay pill and the DCS Link tile show the same endpoint, %s',
+    async (transport, endpoint) => {
+      await renderScenario(<App />, {
+        config: { transport, host: '10.0.0.7', commandPort: 7779, listenPort: 5011 },
+        device: connected(),
+        relay: { running: true, stream: 'connected' }
+      })
+      const pill = screen.getByRole('button', { name: /^Relaying$/ })
+      expect(pill).toHaveAttribute(
+        'title',
+        `DCS-BIOS stream · connected · ${endpoint} — click to stop`
+      )
+      expect(sub('DCS Link')).toBe(endpoint)
+    }
+  )
+
+  it('gauges: five idle readouts, "—", until the first tick — in kt / ft already (X10)', async () => {
     await renderScenario(<Overview />, { device: connected() })
     expect(['RPM', 'IAS', 'Flap', 'Press Alt', 'Fuel'].map((l) => gauge(l).text)).toEqual([
       '—% RPM',
-      '—% FS',
+      '—kt',
       '—% DN',
-      '—% FS',
+      '—ft',
       '—% QTY'
     ])
   })

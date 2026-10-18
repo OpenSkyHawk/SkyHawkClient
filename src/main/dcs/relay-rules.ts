@@ -1,16 +1,17 @@
 // Relay rules (pure, no Node/Electron deps): which way the stream goes in each source mode, which
 // settings a running relay is built from, and what the relay's surfaces show (R3.3).
-import type { AppConfig, DcsTransport, SourceMode } from '@shared/config'
-import type {
-  RecordState,
-  EndpointLabel,
-  OverviewLink,
-  RelayFacts,
-  RelaySurfaces,
-  RelayTip,
-  RelayWaiting,
-  ReplayLoad,
-  StreamState
+import type { AppConfig, SourceMode } from '@shared/config'
+import {
+  EXPORT_MULTICAST_ADDR,
+  EXPORT_PORT,
+  type RecordState,
+  type OverviewLink,
+  type RelayFacts,
+  type RelaySurfaces,
+  type RelayTip,
+  type RelayWaiting,
+  type ReplayLoad,
+  type StreamState
 } from '@shared/dcs'
 import type { DeviceState } from '@shared/gateway'
 
@@ -57,14 +58,21 @@ export function relayConfigChanged<T extends RelayOptions>(prev: T, next: T): bo
 
 interface RelayOpts {
   mode: SourceMode
+  /** Replay's "Drive Gateway": a Replay that delivers to the board (N3). */
+  replayDriveSerial: boolean
   relaying: boolean
   stream?: StreamState
   deviceState: DeviceState
 }
 
-/** Running, but Bridge has no device to deliver to. */
+/**
+ * Running, but a mode that delivers to the board has no board to deliver to: Bridge, and a Replay
+ * driving the Gateway (N3). Monitor and an undriven Replay never wait for it (N2).
+ */
 const waitingForDevice = (o: RelayOpts): boolean =>
-  o.relaying && o.mode === 'bridge' && o.deviceState !== 'connected'
+  o.relaying &&
+  exportToDevice({ sourceMode: o.mode, replayDriveSerial: o.replayDriveSerial }) &&
+  o.deviceState !== 'connected'
 
 /** Running, but the DCS-BIOS stream is not up. Replay has no DCS to wait for. */
 const waitingForDcs = (o: RelayOpts): boolean =>
@@ -77,6 +85,7 @@ const waitingForDcs = (o: RelayOpts): boolean =>
 export function relayTip(opts: RelayOpts): RelayTip {
   if (opts.mode === 'replay') {
     if (!opts.relaying) return 'replay-stopped'
+    if (waitingForDevice(opts)) return 'waiting-device'
     if (opts.stream === 'ended') return 'replay-ended'
     return 'replay-playing'
   }
@@ -104,14 +113,17 @@ export function startBlocked(opts: {
   replayDriveSerial: boolean
   deviceState: DeviceState
 }): boolean {
-  const needsBoard = opts.mode === 'bridge' || (opts.mode === 'replay' && opts.replayDriveSerial)
+  const needsBoard = exportToDevice({
+    sourceMode: opts.mode,
+    replayDriveSerial: opts.replayDriveSerial
+  })
   return needsBoard && opts.deviceState !== 'connected'
 }
 
 /**
  * A running relay that is not delivering end to end — shown degraded rather than green. It keeps
  * running and resumes on its own; this only stops the pill claiming data is flowing when it is not.
- * Bridge also needs the device; Monitor and Replay never use it.
+ * Bridge and a driven Replay also need the device; Monitor and an undriven Replay never use it.
  */
 export function relayWaiting(opts: RelayOpts): boolean {
   if (!opts.relaying) return false
@@ -123,51 +135,46 @@ export function relayWaiting(opts: RelayOpts): boolean {
 }
 
 /**
- * The Overview Link tile's sub-line. "Waiting" whenever a relay runs with the link down, whatever
- * the mode — Monitor included, which never uses the link (N2).
+ * The Overview Link tile's sub-line. "Waiting" only while a running relay waits for the board — the
+ * same rule as the pill and the note under Start, so Monitor and an undriven Replay, which never
+ * use the link, never say it (N2). Otherwise the relay is simply running.
  */
-export function overviewLink(relaying: boolean, linkUp: boolean): OverviewLink {
-  return linkUp
-    ? relaying
-      ? 'gateway-relaying'
-      : 'gateway-stopped'
-    : relaying
-      ? 'waiting'
-      : 'stopped'
+export function overviewLink(opts: RelayOpts, linkUp: boolean): OverviewLink {
+  if (linkUp) return opts.relaying ? 'gateway-relaying' : 'gateway-stopped'
+  if (waitingForDevice(opts)) return 'waiting'
+  return opts.relaying ? 'running' : 'stopped'
 }
 
 /**
- * The Relay pill's endpoint (X9, its own variant): the host and port as typed for TCP, the
- * multicast group for loopback, `unicast listen` for unicast.
+ * Where the relay's stream comes from (X9): the one endpoint label every surface shows — the Relay
+ * pill, the Overview's DCS Link tile and the event log. The host and command port the TCP link
+ * connects to; the multicast group and port loopback joins; "this PC" and the port Unicast binds
+ * on every address (transports.ts binds it with none).
  */
-export function pillEndpoint(transport: DcsTransport): EndpointLabel {
-  return transport === 'tcp-to-host'
-    ? { hostPort: { suffix: '' } }
-    : transport === 'loopback-multicast'
-      ? { text: '239.255.50.10:5010' }
-      : { text: 'unicast listen' }
+export function relayEndpoint(
+  cfg: Pick<AppConfig, 'transport' | 'host' | 'commandPort' | 'listenPort'>
+): string {
+  switch (cfg.transport) {
+    case 'tcp-to-host':
+      return `${cfg.host}:${cfg.commandPort}`
+    case 'loopback-multicast':
+      return `${EXPORT_MULTICAST_ADDR}:${EXPORT_PORT}`
+    case 'unicast-listen':
+      return `this PC:${cfg.listenPort}`
+  }
 }
 
 /**
- * The Overview DCS Link tile's endpoint (X9, its own variant): the multicast group for Unicast
- * too, as it reads today.
+ * May a recording start (X12): only while relaying, on every surface that offers it — the
+ * Connection tab's Record card and Settings › Connection's Record row. A recording already on can
+ * always be stopped, so a relay stopped mid-recording never strands it.
  */
-export function overviewEndpoint(transport: DcsTransport): EndpointLabel {
-  return transport === 'tcp-to-host'
-    ? { hostPort: { suffix: ' · remote' } }
-    : { text: '239.255.50.10:5010 · local' }
+export function canRecord(relaying: boolean, recording: boolean): boolean {
+  return relaying || recording
 }
 
 /**
- * May a recording start (X12, each surface its own variant): the Connection tab's Record card
- * only while relaying; Settings › Connection's Record whenever.
- */
-export function canRecord(relaying: boolean): RelaySurfaces['canRecord'] {
-  return { connection: relaying, settings: true }
-}
-
-/**
- * Is a Record control shown at all (R3.4a, each surface its own variant like canRecord): the
+ * Is a Record control shown at all (R3.4a, each surface its own variant): the
  * Connection tab's Record card is hidden in Replay (the renderer's rule before); Settings ›
  * Connection's Record row always shows.
  */
@@ -196,7 +203,10 @@ export function replayView(load: ReplayLoad, prev: RelayFacts['replay']): RelayF
 
 /** What DcsRelay judges the surfaces against. */
 export interface RelayInputs {
-  config: Pick<AppConfig, 'sourceMode' | 'replayDriveSerial' | 'transport'>
+  config: Pick<
+    AppConfig,
+    'sourceMode' | 'replayDriveSerial' | 'transport' | 'host' | 'commandPort' | 'listenPort'
+  >
   stream?: StreamState
   deviceState: DeviceState
   /** The link is up (the gateway's isLinkUp). */
@@ -207,7 +217,13 @@ export interface RelayInputs {
 
 /** The surfaces for one state of the on/off. */
 function surfaces(i: RelayInputs, relaying: boolean): RelaySurfaces {
-  const o = { mode: i.config.sourceMode, relaying, stream: i.stream, deviceState: i.deviceState }
+  const o = {
+    mode: i.config.sourceMode,
+    replayDriveSerial: i.config.replayDriveSerial,
+    relaying,
+    stream: i.stream,
+    deviceState: i.deviceState
+  }
   const blocked =
     !relaying &&
     startBlocked({
@@ -219,12 +235,12 @@ function surfaces(i: RelayInputs, relaying: boolean): RelaySurfaces {
     waiting: relayNote(o),
     tip: relayTip(o),
     ...(blocked ? { startBlocked: i.config.sourceMode === 'replay' ? 'replay' : 'bridge' } : {}),
-    overviewLink: overviewLink(relaying, i.linkUp),
-    canRecord: canRecord(relaying)
+    overviewLink: overviewLink(o, i.linkUp),
+    canRecord: canRecord(relaying, i.recording.on)
   }
 }
 
-/** `relay:facts`: both sides of the on/off, the endpoints, the recording and the capture. */
+/** `relay:facts`: both sides of the on/off, the endpoint, the recording and the capture. */
 export function relayFacts(i: RelayInputs): RelayFacts {
   return {
     mode: i.config.sourceMode,
@@ -233,10 +249,7 @@ export function relayFacts(i: RelayInputs): RelayFacts {
     stopped: surfaces(i, false),
     ...(i.stream !== undefined ? { stream: i.stream } : {}),
     deviceState: i.deviceState,
-    endpoint: {
-      pill: pillEndpoint(i.config.transport),
-      overview: overviewEndpoint(i.config.transport)
-    },
+    endpoint: relayEndpoint(i.config),
     recording: i.recording,
     recordShown: recordShown(i.config.sourceMode),
     captureShown: captureShown(i.config.sourceMode),

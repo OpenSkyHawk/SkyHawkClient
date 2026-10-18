@@ -2,7 +2,7 @@ import { fmtBytes, fmtUptime } from '@shared/format'
 import type { DeviceState } from '@shared/gateway'
 import type { GaugeTone, OverviewLink } from '@shared/dcs'
 import { useConfigStore, viewTransport } from '../../config'
-import { endpointText, relaySide, useDcsStore } from '../../dcs'
+import { relaySide, useDcsStore } from '../../dcs'
 import { gatewayView, useGatewayStore } from '../../gateway'
 import { Dot, useNodesStore } from '../../nodes'
 import { useNav, type TabId } from '../kit'
@@ -31,6 +31,7 @@ const LINK_SUB: Record<OverviewLink, string> = {
   'gateway-relaying': 'Gateway · relaying',
   'gateway-stopped': 'Gateway · stream stopped',
   waiting: 'relay waiting — resumes when it connects',
+  running: 'stream running',
   stopped: 'stream stopped'
 }
 /** A gauge ring's colour, for its level as main judges it (R3.3). */
@@ -100,8 +101,9 @@ export function Overview() {
   // The transport the relay's facts were judged against (R3.4c), as its endpoint below is.
   const transport = viewTransport(dcs.relayFacts.transport)
   const link = transport === 'tcp' ? 'TCP' : transport === 'loop' ? 'Multicast' : 'Unicast'
-  // The DCS Link tile's endpoint and the Link tile's sub-line are main's (relay:facts, R3.3).
-  const linkSub = endpointText(dcs.relayFacts.endpoint.overview, cfg.host, cfg.port)
+  // The DCS Link tile's endpoint (the pill's too, X9) and the Link tile's sub-line are main's
+  // (relay:facts, R3.3).
+  const linkSub = dcs.relayFacts.endpoint
   const relaySub = LINK_SUB[relaySide(dcs.relayFacts, dcs.relaying).overviewLink]
 
   const acft = dcs.aircraft.name && dcs.aircraft.name !== 'NONE' ? dcs.aircraft.name : 'NONE'

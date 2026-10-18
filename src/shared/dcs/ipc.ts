@@ -49,8 +49,16 @@ export type RelayTip =
   | 'replay-ended'
   | 'replay-playing'
 
-/** The Overview Link tile's sub-line: the relay under the device link. */
-export type OverviewLink = 'gateway-relaying' | 'gateway-stopped' | 'waiting' | 'stopped'
+/**
+ * The Overview Link tile's sub-line: the relay under the device link. `waiting` only while the
+ * relay waits for the board (Bridge, a driven Replay); `running` when it runs without needing it.
+ */
+export type OverviewLink =
+  | 'gateway-relaying'
+  | 'gateway-stopped'
+  | 'waiting'
+  | 'running'
+  | 'stopped'
 
 /**
  * What the relay's surfaces show, for one state of the on/off. Main pushes it for both, so the
@@ -62,12 +70,12 @@ export interface RelaySurfaces {
   /** Start would be refused, by the mode that needs the board for it; absent = Start may go. */
   startBlocked?: 'bridge' | 'replay'
   overviewLink: OverviewLink
-  /** May a recording start, on each surface that offers it (X12: they disagree). */
-  canRecord: { connection: boolean; settings: boolean }
+  /**
+   * May the Record control be used, on every surface that offers it (X12): a recording starts only
+   * while relaying; one already on can always be stopped.
+   */
+  canRecord: boolean
 }
-
-/** Where the stream comes from, as a surface labels it: fixed text, or the host and port typed. */
-export type EndpointLabel = { text: string } | { hostPort: { suffix: string } }
 
 /**
  * `relay:facts` (R3.3): what DcsRelay concludes for the Relay pill, the Connection tab's relay
@@ -93,8 +101,11 @@ export interface RelayFacts {
   /** The stream and the link these were judged against, for the wording. */
   stream?: StreamState
   deviceState: DeviceState
-  /** Each surface's own endpoint label (X9: they disagree). */
-  endpoint: { pill: EndpointLabel; overview: EndpointLabel }
+  /**
+   * Where the stream comes from, as every surface labels it (X9: relay-rules relayEndpoint) — the
+   * host and port for TCP, the multicast group, or the port Unicast listens on.
+   */
+  endpoint: string
   /**
    * The recording, as the Record control last answered: a page that (re)loads is handed it too
    * (N1). `events`: how many the last stop saved.
@@ -147,17 +158,17 @@ export const RELAY_FACTS_IDLE: RelayFacts = {
   running: {
     waiting: 'dcs',
     tip: 'waiting-dcs',
-    overviewLink: 'waiting',
-    canRecord: { connection: true, settings: true }
+    overviewLink: 'running',
+    canRecord: true
   },
   stopped: {
     waiting: 'none',
     tip: 'stopped',
     overviewLink: 'stopped',
-    canRecord: { connection: false, settings: true }
+    canRecord: false
   },
   deviceState: 'no-device',
-  endpoint: { pill: { hostPort: { suffix: '' } }, overview: { hostPort: { suffix: ' · remote' } } },
+  endpoint: '127.0.0.1:7778',
   recording: { on: false },
   recordShown: { connection: true, settings: true },
   captureShown: false
@@ -178,15 +189,15 @@ export interface TelemetryReadout {
 }
 
 /**
- * The idle gauges (value NaN -> "—") the renderer shows until live telemetry arrives: the
- * decoder's idle variant (X10 — its ids and units are not the live readouts'; main pins them,
- * main/dcs/sim-telemetry-decoder.test.ts).
+ * The idle gauges (value NaN -> "—") the renderer shows until live telemetry arrives: the live
+ * readouts with nothing decoded yet, in the same units (X10 — main pins it to the decoder's one
+ * spec, main/dcs/sim-telemetry-decoder.test.ts).
  */
 export const TELEMETRY_IDLE: TelemetryReadout[] = [
   { id: 'RPM', label: 'RPM', value: NaN, pct: 0, unit: '% RPM', tone: 'primary' },
-  { id: 'D_IAS_DEG', label: 'IAS', value: NaN, pct: 0, unit: '% FS', tone: 'primary' },
+  { id: 'D_IAS_DEG', label: 'IAS', value: NaN, pct: 0, unit: 'kt', tone: 'primary' },
   { id: 'D_FLAPS_IND', label: 'Flap', value: NaN, pct: 0, unit: '% DN', tone: 'secondary' },
-  { id: 'D_ALT_NEEDLE', label: 'Press Alt', value: NaN, pct: 0, unit: '% FS', tone: 'primary' },
+  { id: 'ALT_FT', label: 'Press Alt', value: NaN, pct: 0, unit: 'ft', tone: 'secondary' },
   { id: 'D_FUEL', label: 'Fuel', value: NaN, pct: 0, unit: '% QTY', tone: 'fuel-low' }
 ]
 

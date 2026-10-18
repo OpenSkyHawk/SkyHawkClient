@@ -32,8 +32,10 @@ export function registerDcsIpc(ipc: IpcRegistrar, deps: DcsIpcDeps): void {
     return { path: filePath }
   })
 
-  // The Record controls and the Capture card show the answer (relay:facts, R3.3).
+  // The Record controls and the Capture card show the answer (relay:facts, R3.3). A recording
+  // starts only while relaying (X12): refused before the save dialog, nothing changes.
   ipc.handle(DCS_CTRL.captureToggle, async (): Promise<RecordState> => {
+    if (!relay.mayRecord()) return { recording: false }
     const state = await toggleCapture()
     relay.showCapture(state)
     return state

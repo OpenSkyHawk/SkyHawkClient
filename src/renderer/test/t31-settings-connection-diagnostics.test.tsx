@@ -38,14 +38,37 @@ describe('T31 Settings › Connection + Diagnostics (B86, B91)', () => {
     expect(control('Command port')).toHaveValue('7779')
   })
 
-  it('the DCS host and command port are saved as typed', async () => {
-    const { user, saved } = await openSettings()
+  it('the DCS host and command port are saved on commit (blur / Enter), not per keystroke', async () => {
+    const { sky, user, saved } = await openSettings()
     await user.clear(control('DCS host'))
     await user.type(control('DCS host'), '192.168.1.20')
+    expect(sky.setConfig, 'N5: typing saves nothing').not.toHaveBeenCalled()
+    await user.keyboard('{Enter}')
     expect(saved()).toMatchObject({ host: '192.168.1.20' })
     await user.clear(control('Command port'))
     await user.type(control('Command port'), '7780')
+    expect(sky.setConfig).toHaveBeenCalledTimes(1)
+    await user.tab()
     expect(saved()).toMatchObject({ host: '192.168.1.20', commandPort: 7780 })
+  })
+
+  it('a junk command port: main’s error under the card, nothing saved', async () => {
+    const { sky, user, saved } = await openSettings(undefined, { commandPort: 7779 })
+    await user.clear(control('Command port'))
+    await user.type(control('Command port'), '99999')
+    await user.tab()
+    await settle()
+    expect(control('Command port')).toHaveValue('99999')
+    expect(control('Command port')).toHaveAttribute('aria-invalid', 'true')
+    expect(
+      screen.getByText('Not a port. Enter a whole number from 1 to 65535.')
+    ).toBeInTheDocument()
+    expect(sky.setConfig).not.toHaveBeenCalled()
+    await user.clear(control('Command port'))
+    await user.type(control('Command port'), '7781{Enter}')
+    await settle()
+    expect(saved()).toMatchObject({ commandPort: 7781 })
+    expect(screen.queryByText(/^Not a port/)).toBeNull()
   })
 
   it('Connect automatically: the toggle saves the setting either way', async () => {
@@ -65,8 +88,9 @@ describe('T31 Settings › Connection + Diagnostics (B86, B91)', () => {
   it('Record session asks main, and says it is recording', async () => {
     const { sky, user } = await openSettings()
     expect(desc('Record session')).toBe('Capture the DCS-BIOS stream to a file for replay')
-    // contract B62 has Record disabled unless relaying (the Connection tab's Record card); today
-    // this Settings row offers it while the relay is stopped too.
+    // X12: Record only while relaying, as the Connection tab's Record card (contract B62).
+    expect(screen.getByRole('button', { name: '● Record' })).toBeDisabled()
+    sky.emitScenario({ relay: { running: true, stream: 'connected' } })
     expect(screen.getByRole('button', { name: '● Record' })).toBeEnabled()
     sky.toggleCapture.mockResolvedValueOnce({ recording: true, events: 7 })
     await user.click(screen.getByRole('button', { name: '● Record' }))

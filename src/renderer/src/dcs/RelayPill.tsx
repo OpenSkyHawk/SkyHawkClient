@@ -1,13 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { deviceView, useGatewayStore } from '../gateway'
 import { useDcsStore } from './store'
-import {
-  endpointText,
-  relaySide,
-  relayTip,
-  startBlockedCallout,
-  startBlockedReason
-} from './relay-view'
+import { relaySide, relayTip, startBlockedCallout, startBlockedReason } from './relay-view'
 
 /** How long the blocked-Start callout stays up on its own. */
 const CALLOUT_MS = 6000
@@ -18,18 +12,10 @@ const CALLOUT_MS = 6000
  * Green while delivering end to end, gold while running but waiting, grey when stopped. When Start
  * would be refused — no board for a mode that needs one — it says so at a glance with a "!", and a
  * click answers with a callout under the pill: why, and the Connect that fixes it. What each of
- * those is, main decides (`relay:facts`, R3.3); the pill words it. `autoConnect`, `host` and
- * `port` are Settings' (the title bar hands them in).
+ * those is, main decides (`relay:facts`, R3.3), the endpoint included (X9); the pill words it.
+ * `autoConnect` is Settings' (the title bar hands it in).
  */
-export function RelayPill({
-  autoConnect,
-  host,
-  port
-}: {
-  autoConnect: boolean
-  host: string
-  port: string
-}) {
+export function RelayPill({ autoConnect }: { autoConnect: boolean }) {
   const relaying = useDcsStore((s) => s.relaying)
   const facts = useDcsStore((s) => s.relayFacts)
   const toggleRelay = useDcsStore((s) => s.toggleRelay)
@@ -47,7 +33,7 @@ export function RelayPill({
         tip: side.tip,
         stream: facts.stream,
         deviceLabel: deviceView(facts.deviceState, { autoConnect }).label,
-        endpoint: endpointText(facts.endpoint.pill, host, port),
+        endpoint: facts.endpoint,
         replayFile: facts.replay?.file
       })
 

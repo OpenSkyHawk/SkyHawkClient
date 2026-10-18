@@ -4,16 +4,35 @@
 import type { AppConfig, ConfigEdit } from '@shared/config'
 import { parsePsuLimit, type PsuLimits, type PsuSetting } from '@shared/nodes'
 
-/** The edited fields, with the command port as text (what the Connection forms show). */
-export type ConfigForm = Required<Omit<ConfigEdit, 'psuMode' | 'psuLimit'>>
+/** The edited fields as the settings hold them (the command port as its number). */
+export type ConfigForm = Required<Omit<ConfigEdit, 'psuMode' | 'psuLimit' | 'port'>> & {
+  commandPort: number
+}
 
-/** The forms' fields as the settings hold them: the port as its digits. */
+/** A form's change once its typed port is read (commandPortOf): the fields, and the PSU switch. */
+export type FormEdit = Partial<ConfigForm> & Pick<ConfigEdit, 'psuMode'>
+
+/** What a refused command port says, under the field (N5). */
+export const COMMAND_PORT_ERROR = 'Not a port. Enter a whole number from 1 to 65535.'
+
+/**
+ * The command port as typed, if it is one: whole digits (spaces around them ignored), 1–65535.
+ * Anything else is no port (undefined), and nothing is saved for it (N5).
+ */
+export function commandPortOf(text: string): number | undefined {
+  const t = text.trim()
+  if (!/^\d{1,5}$/.test(t)) return undefined
+  const n = Number(t)
+  return n >= 1 && n <= 65535 ? n : undefined
+}
+
+/** The forms' fields as the settings hold them. */
 export function formOf(cfg: AppConfig): ConfigForm {
   return {
     sourceMode: cfg.sourceMode,
     transport: cfg.transport,
     host: cfg.host,
-    port: String(cfg.commandPort),
+    commandPort: cfg.commandPort,
     autoConnect: cfg.autoConnect,
     replayDriveSerial: cfg.replayDriveSerial,
     debugMode: cfg.debugMode,
@@ -22,16 +41,13 @@ export function formOf(cfg: AppConfig): ConfigForm {
   }
 }
 
-/**
- * The settings save the forms make: every field they edit, saved whole. A port that isn't a
- * number, or is empty, saves as 7778 — while the field keeps showing what was typed (N5).
- */
+/** The settings save the forms make: every field they edit, saved whole. */
 export function buildConfig(s: ConfigForm): Partial<AppConfig> {
   return {
     sourceMode: s.sourceMode,
     transport: s.transport,
     host: s.host,
-    commandPort: Number(s.port) || 7778,
+    commandPort: s.commandPort,
     autoConnect: s.autoConnect,
     replayDriveSerial: s.replayDriveSerial,
     debugMode: s.debugMode,
@@ -45,8 +61,8 @@ export function buildConfig(s: ConfigForm): Partial<AppConfig> {
  * them, built into the save (buildConfig). A PSU mode switch keeps the rest of the setting — the
  * preset and the custom limits — as it is (R3.4a: Settings › Cockpit's `{ ...psu, mode }`).
  */
-export function editedConfig(current: AppConfig, edit: ConfigEdit): Partial<AppConfig> {
-  const { psuMode: mode, psuLimit: _limit, ...fields } = edit
+export function editedConfig(current: AppConfig, edit: FormEdit): Partial<AppConfig> {
+  const { psuMode: mode, ...fields } = edit
   const form = { ...formOf(current), ...fields }
   return buildConfig(mode === undefined ? form : { ...form, psu: { ...form.psu, mode } })
 }
@@ -69,14 +85,24 @@ export function withPsuLimit(
   return { ...psu, custom }
 }
 
+/** What a form's change comes to: the save, or why nothing is saved (`error`, for the form). */
+export type SavedEdit = { ok: true; save: Partial<AppConfig> } | { ok: false; error?: string }
+
 /**
- * A form's change as SettingsService saves it (`config:edit`): editedConfig, with a typed PSU limit
- * applied over the setting held. undefined = refused, nothing to save — as the form sent nothing
- * for it before.
+ * A form's change as SettingsService saves it (`config:edit`): editedConfig, with the typed port
+ * read (commandPortOf) and a typed PSU limit applied over the setting held. A port that is not one
+ * is refused with its error (N5); a refused PSU limit is refused quietly, as the form sent nothing
+ * for it before (its field judges itself). Refused = nothing to save.
  */
-export function savedEdit(current: AppConfig, edit: ConfigEdit): Partial<AppConfig> | undefined {
-  const { psuLimit: limit, ...rest } = edit
-  if (limit === undefined) return editedConfig(current, rest)
+export function savedEdit(current: AppConfig, edit: ConfigEdit): SavedEdit {
+  const { psuLimit: limit, port, ...rest } = edit
+  const fields: FormEdit = rest
+  if (port !== undefined) {
+    const commandPort = commandPortOf(port)
+    if (commandPort === undefined) return { ok: false, error: COMMAND_PORT_ERROR }
+    fields.commandPort = commandPort
+  }
+  if (limit === undefined) return { ok: true, save: editedConfig(current, fields) }
   const psu = withPsuLimit(current.psu, limit.key, limit.text)
-  return psu && editedConfig(current, { ...rest, psu })
+  return psu ? { ok: true, save: editedConfig(current, { ...fields, psu }) } : { ok: false }
 }
