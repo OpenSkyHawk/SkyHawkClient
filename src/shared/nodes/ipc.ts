@@ -787,6 +787,16 @@ export interface NodesSummary {
   more: number
   /** `+5 more · healthy nodes hidden`; empty when there is nothing to say. */
   footer: string
+  /**
+   * New boards on the bus that can be added: the Overview's new-devices count (the Cockpit's "New
+   * on the bus · N"), not part of `known`.
+   */
+  newCount: number
+  /**
+   * The card's line when `known` is 0: where to add the new boards on the bus (#160), else that
+   * the bus reports nothing.
+   */
+  empty: string
 }
 
 /** A registry row's "On the bus" column. */
@@ -848,6 +858,9 @@ export interface CockpitSnapshot {
   settings: SettingsNodes
 }
 
+/** Connected nodes' line while the bus reports nothing at all (NodesSummary `empty`). */
+export const NO_NODES = 'No nodes reported. Power on a PanelGroup.'
+
 /** What the Cockpit shows before main's first snapshot: no model, link down. */
 export const COCKPIT_IDLE: CockpitSnapshot = {
   rev: 0,
@@ -899,7 +912,9 @@ export const COCKPIT_IDLE: CockpitSnapshot = {
     watts: null,
     rows: [],
     more: 0,
-    footer: ''
+    footer: '',
+    newCount: 0,
+    empty: NO_NODES
   },
   settings: { differing: 0, canReset: false, hidden: [], registry: { summary: '', rows: [] } }
 }

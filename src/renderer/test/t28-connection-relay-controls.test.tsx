@@ -123,7 +123,8 @@ describe('T28 Connection device card and relay controls (B61, B62)', () => {
     )
   })
 
-  it('Replay: the Drive Gateway toggle saves, and without a board it blocks Start', async () => {
+  // #159: without a board, Drive Gateway used to grey Start out ("Connect the Gateway…").
+  it('Replay: the Drive Gateway toggle saves, and without a board Start still starts', async () => {
     const { sky, user } = await renderScenario(<Connection />, {
       device: link('no-device'),
       config: { sourceMode: 'replay' }
@@ -134,10 +135,13 @@ describe('T28 Connection device card and relay controls (B61, B62)', () => {
     await user.click(drive)
     expect(drive).toHaveAttribute('aria-pressed', 'true')
     expect(lastSaved(sky)).toMatchObject({ replayDriveSerial: true })
-    expect(startBtn()).toBeDisabled()
-    expect(waitnote()).toBe(
-      'Connect the Gateway to play the capture to it, or turn Drive Gateway off.'
-    )
+    expect(startBtn()).toBeEnabled()
+    expect(waitnote()).toBeNull()
+    await user.click(startBtn())
+    await settle()
+    expect(sky.startRelay).toHaveBeenCalledTimes(1)
+    expect(startBtn()).toHaveTextContent('Stop relay')
+    expect(waitnote()).toBe('Relaying — waiting for the Gateway. Resumes when it connects.')
   })
 
   it('DCS link: host and port are saved on commit (blur / Enter), transport as picked', async () => {
@@ -215,14 +219,23 @@ describe('T28 Connection device card and relay controls (B61, B62)', () => {
     ).toBeInTheDocument()
   })
 
-  it('Bridge without a board: Start is greyed out, with the reason under it', async () => {
-    await renderScenario(<Connection />, {
+  // #159: it used to be greyed out, with "Connect the Gateway to start the relay." under it.
+  it('Bridge without a board: Start starts, and the note says it waits for the Gateway', async () => {
+    const { sky, user } = await renderScenario(<Connection />, {
       device: link('no-device'),
       config: { sourceMode: 'bridge' }
     })
     expect(startBtn()).toHaveTextContent('Start relay')
-    expect(startBtn()).toBeDisabled()
-    expect(waitnote()).toBe('Connect the Gateway to start the relay.')
+    expect(startBtn()).toBeEnabled()
+    expect(waitnote()).toBeNull()
+    await user.click(startBtn())
+    await settle()
+    expect(sky.startRelay).toHaveBeenCalledTimes(1)
+    expect(startBtn()).toHaveTextContent('Stop relay')
+    expect(waitnote()).toBe('Relaying — waiting for the Gateway. Resumes when it connects.')
+    // The board arrives: no further click; now it waits only for DCS-BIOS.
+    sky.emitScenario({ device: connected() })
+    expect(waitnote()).toBe('Relaying — waiting for DCS-BIOS (connecting).')
   })
 
   it('Monitor needs no board: Start asks main; relaying, the button stops it', async () => {

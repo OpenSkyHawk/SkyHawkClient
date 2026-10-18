@@ -72,20 +72,51 @@ describe('T23 Log › Stream (B77)', () => {
     ])
   })
 
-  it('Pause freezes the list: rows that arrive while paused are dropped, not held (today)', async () => {
+  // #161: rows that arrived while paused used to be dropped, never shown.
+  it('Pause freezes the list and holds what arrives; Resume shows it', async () => {
     const { user, sky, button } = await openStream()
     await user.click(button('❚❚ Pause'))
     expect(screen.getByText('PAUSED')).toBeInTheDocument()
     sky.emitScenario({ stream: [streamRow(0x1a4, { t: T(4), name: 'FLAPS', value: 2 })] })
-    expect(rows()).toHaveLength(3)
+    sky.emitScenario({ stream: [streamRow(0x1a6, { t: T(5), name: 'HOOK', value: 1 })] })
+    expect(rows(), 'the list holds still while paused').toHaveLength(3)
 
     await user.click(button('▶ Resume'))
     expect(screen.getByText('LIVE')).toBeInTheDocument()
-    // contract B77 lists Pause; today the renderer drops a stream batch that lands while paused
-    // (Log › Events holds its rows instead), so the paused row never shows.
+    expect(rows()).toEqual([
+      '12:00:05.000IN ▸HOOK1',
+      '12:00:04.000IN ▸FLAPS2',
+      '12:00:03.000◂ OUTGUN_ARMTOGGLE',
+      '12:00:02.000IN ▸ARC51_FREQ251.00',
+      '12:00:01.000IN ▸MASTER_ARM1'
+    ])
+    sky.emitScenario({ stream: [streamRow(0x1a8, { t: T(6), name: 'GEAR', value: 0 })] })
+    expect(rows()[0]).toBe('12:00:06.000IN ▸GEAR0')
+  })
+
+  it('rows held while paused keep the list’s cap: the oldest fall off as they do live', async () => {
+    const { user, sky, button } = await openStream()
+    await user.click(button('❚❚ Pause'))
+    const many = Array.from({ length: 1000 }, (_, i) =>
+      streamRow(0x1a4, { t: T(4) + i, name: `HELD_${i}`, value: i })
+    )
+    sky.emitScenario({ stream: many })
     expect(rows()).toHaveLength(3)
+    await user.click(button('▶ Resume'))
+    expect(screen.getByRole('tab', { name: 'Stream 1,000' })).toBeInTheDocument()
+    expect(rows()[0]).toMatch(/HELD_999/)
+    expect(screen.queryByText('MASTER_ARM'), 'the oldest rows fell off').toBeNull()
+  })
+
+  it('Clear while paused also drops what was held', async () => {
+    const { user, sky, button } = await openStream()
+    await user.click(button('❚❚ Pause'))
+    sky.emitScenario({ stream: [streamRow(0x1a4, { t: T(4), name: 'FLAPS', value: 2 })] })
+    await user.click(button('Clear'))
     sky.emitScenario({ stream: [streamRow(0x1a6, { t: T(5), name: 'HOOK', value: 1 })] })
-    expect(rows()[0]).toBe('12:00:05.000IN ▸HOOK1')
+    expect(rows()).toEqual([])
+    await user.click(button('▶ Resume'))
+    expect(rows(), 'only what arrived after Clear').toEqual(['12:00:05.000IN ▸HOOK1'])
   })
 
   it('Clear empties the view on this side only', async () => {

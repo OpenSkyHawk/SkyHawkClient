@@ -121,6 +121,10 @@
 // `AppConfig`: the settings now held, or the change refused (nothing saved) with why — a command
 // port that is not one shows main's error under the field.
 //
+// Fix track #159 (Start with no Gateway waits for it): a type change only — no channel, intent or
+// method was added, removed or renamed. `RelaySurfaces.startBlocked` was removed: Start is never
+// refused for want of the board; the relay runs and waits for it (`waiting: 'device'`).
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
