@@ -31,7 +31,8 @@ export type RelayOptions = Pick<AppConfig, (typeof RELAY_KEYS)[number]>
 type ForwardConfig = Pick<RelayOptions, 'sourceMode' | 'replayDriveSerial'>
 
 /**
- * Whether the export stream is written to the SimGateway — and so whether Start needs the board.
+ * Whether the export stream is written to the SimGateway — and so whether a running relay waits
+ * for the board (#159: Start never needs it; with no board the relay runs and waits).
  *
  * Bridge always; Replay only with "Drive SimGateway"; Monitor never. Monitor has to say so
  * explicitly now that the port is open in every mode — before #69 it was read-only only because
@@ -101,23 +102,6 @@ export function relayNote(opts: RelayOpts): RelayWaiting {
   if (waitingForDcs(opts)) return 'dcs'
   if (opts.relaying && opts.mode === 'replay' && opts.stream === 'ended') return 'replay-ended'
   return 'none'
-}
-
-/**
- * Start is refused while a mode that delivers to the board has no board to deliver to: Bridge, and
- * Replay driving the SimGateway. Monitor and an undriven Replay never touch it. The same rule as
- * DcsRelay.start(), which is the one that actually enforces it.
- */
-export function startBlocked(opts: {
-  mode: SourceMode
-  replayDriveSerial: boolean
-  deviceState: DeviceState
-}): boolean {
-  const needsBoard = exportToDevice({
-    sourceMode: opts.mode,
-    replayDriveSerial: opts.replayDriveSerial
-  })
-  return needsBoard && opts.deviceState !== 'connected'
 }
 
 /**
@@ -224,17 +208,9 @@ function surfaces(i: RelayInputs, relaying: boolean): RelaySurfaces {
     stream: i.stream,
     deviceState: i.deviceState
   }
-  const blocked =
-    !relaying &&
-    startBlocked({
-      mode: i.config.sourceMode,
-      replayDriveSerial: i.config.replayDriveSerial,
-      deviceState: i.deviceState
-    })
   return {
     waiting: relayNote(o),
     tip: relayTip(o),
-    ...(blocked ? { startBlocked: i.config.sourceMode === 'replay' ? 'replay' : 'bridge' } : {}),
     overviewLink: overviewLink(o, i.linkUp),
     canRecord: canRecord(relaying, i.recording.on)
   }

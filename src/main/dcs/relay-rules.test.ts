@@ -34,13 +34,18 @@ describe('relayFacts', () => {
 
   it('each side of the on/off: a pending Start reads as running, with the stream not up yet', () => {
     const f = facts({ config: { ...DEFAULT_CONFIG, sourceMode: 'bridge' } })
-    expect(f.stopped).toMatchObject({ tip: 'stopped', startBlocked: 'bridge', waiting: 'none' })
+    // #159: Start is never blocked for want of the board — the Start it shows waits for it.
+    expect(f.stopped).toEqual({
+      tip: 'stopped',
+      waiting: 'none',
+      overviewLink: 'stopped',
+      canRecord: false
+    })
     expect(f.running).toMatchObject({ tip: 'waiting-device', waiting: 'device' })
-    expect(f.running.startBlocked, 'a running relay is never blocked').toBeUndefined()
     const replay = facts({
       config: { ...DEFAULT_CONFIG, sourceMode: 'replay', replayDriveSerial: true }
     })
-    expect(replay.stopped.startBlocked).toBe('replay')
+    expect(replay.stopped).not.toHaveProperty('startBlocked')
     expect(replay.running.tip, 'a driven Replay waits for the board (N3)').toBe('waiting-device')
     const undriven = facts({ config: { ...DEFAULT_CONFIG, sourceMode: 'replay' } })
     expect(undriven.running.tip).toBe('replay-playing')

@@ -1,19 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { DeviceState } from '@shared/gateway'
 import { isBusy, linkAction } from '../../../main/gateway/link-state'
-import {
-  relayNote as noteOf,
-  relayTip as tipOf,
-  relayWaiting,
-  startBlocked
-} from '../../../main/dcs/relay-rules'
+import { relayNote as noteOf, relayTip as tipOf, relayWaiting } from '../../../main/dcs/relay-rules'
 import { deviceView as viewOf, linkButton } from './link-view'
-import {
-  relayNote as noteText,
-  relayTip as tipText,
-  startBlockedCallout,
-  startBlockedReason
-} from '../dcs/relay-view'
+import { relayNote as noteText, relayTip as tipText } from '../dcs/relay-view'
 import type { SourceMode } from '../config'
 import type { StreamState } from '@shared/dcs'
 
@@ -199,43 +189,10 @@ describe('relayNote', () => {
   })
 
   it('says what a running relay waits for', () => {
-    expect(relayNote({ ...run, deviceState: 'no-device' })).toEqual({
-      text: 'Relaying — waiting for the Gateway. Resumes when it connects.',
-      info: false
-    })
-    expect(relayNote({ ...run, stream: 'error' })?.text).toBe(
-      'Relaying — waiting for DCS-BIOS (error).'
+    expect(relayNote({ ...run, deviceState: 'no-device' })).toBe(
+      'Relaying — waiting for the Gateway. Resumes when it connects.'
     )
-    expect(relayNote({ ...run, mode: 'replay', stream: 'ended' })?.text).toMatch(/Replay ended/)
-  })
-})
-
-describe('startBlocked', () => {
-  const at = (
-    mode: 'bridge' | 'monitor' | 'replay',
-    deviceState: DeviceState,
-    replayDriveSerial = false
-  ) => startBlocked({ mode, deviceState, replayDriveSerial })
-
-  it('needs the board in Bridge, and in Replay only when driving it', () => {
-    for (const s of STATES.filter((x) => x !== 'connected')) {
-      expect(at('bridge', s), s).toBe(true)
-      expect(at('replay', s, true), s).toBe(true)
-      expect(at('replay', s, false), s).toBe(false)
-      expect(at('monitor', s), s).toBe(false)
-    }
-    expect(at('bridge', 'connected')).toBe(false)
-    expect(at('replay', 'connected', true)).toBe(false)
-  })
-})
-
-describe('startBlockedReason', () => {
-  it('tells Replay it can also run undriven', () => {
-    expect(startBlockedReason('bridge')).toBe('Connect the Gateway to start the relay.')
-    expect(startBlockedReason('replay')).toMatch(/turn Drive Gateway off/)
-    expect(startBlockedCallout('bridge')).toBe(
-      "The Gateway isn't connected, and the relay delivers to it. Connect first."
-    )
-    expect(startBlockedCallout('replay')).toMatch(/Connect first, or turn Drive off/)
+    expect(relayNote({ ...run, stream: 'error' })).toBe('Relaying — waiting for DCS-BIOS (error).')
+    expect(relayNote({ ...run, mode: 'replay', stream: 'ended' })).toMatch(/Replay ended/)
   })
 })

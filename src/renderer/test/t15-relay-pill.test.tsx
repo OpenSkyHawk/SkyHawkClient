@@ -1,19 +1,18 @@
 // T15 — the title-bar Relay pill: the one on/off for the DCS-BIOS stream.
 import { describe, expect, it } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { RelayPill } from '../src/app/titlebar/RelayPill'
 import { renderScenario, settle } from './render'
 import { connected, link } from './scenarios'
 
-/** The pill: the only button until the blocked callout opens. */
-const pill = () => screen.getByRole('button', { name: /^!?(Stopped|Relaying)$/ })
+/** The pill: the only button. */
+const pill = () => screen.getByRole('button', { name: /^(Stopped|Relaying)$/ })
 
 describe('T15 RelayPill (B45, B47)', () => {
   it('stopped: "Stopped", and a click asks main to start', async () => {
     const { sky, user } = await renderScenario(<RelayPill />, { device: connected() })
     expect(pill()).toHaveTextContent(/^Stopped$/)
     expect(pill()).toHaveAttribute('title', 'DCS-BIOS stream stopped — click to start')
-    expect(pill()).toHaveAttribute('aria-disabled', 'false')
     await user.click(pill())
     await settle()
     // Settings are saved first, then the relay starts.
@@ -106,60 +105,35 @@ describe('T15 RelayPill (B45, B47)', () => {
     )
   })
 
-  it('Bridge without a board: blocked with "!", and a click explains instead of starting', async () => {
+  // #159: it used to show a "!" and answer a click with a "Can't start" callout, never starting.
+  it.each([
+    ['Bridge', { sourceMode: 'bridge' as const }],
+    ['a driven Replay', { sourceMode: 'replay' as const, replayDriveSerial: true }]
+  ])('%s without a board: a click starts, and the pill waits for the Gateway', async (_, cfg) => {
     const { sky, user } = await renderScenario(<RelayPill />, {
-      config: { sourceMode: 'bridge' },
+      config: cfg,
       device: link('no-device')
     })
-    expect(pill()).toHaveTextContent(/^!Stopped$/)
-    expect(pill()).toHaveAttribute('aria-disabled', 'true')
-    expect(pill()).toHaveAttribute('title', 'Connect the Gateway to start the relay.')
-    expect(screen.queryByRole('alertdialog')).toBeNull()
-
-    await user.click(pill())
-    const callout = screen.getByRole('alertdialog', { name: "Can't start the relay" })
-    expect(
-      within(callout).getByText(
-        "The Gateway isn't connected, and the relay delivers to it. Connect first."
-      )
-    ).toBeInTheDocument()
-    expect(sky.startRelay).not.toHaveBeenCalled()
-
-    // Connect only connects: Start stays a second step.
-    await user.click(within(callout).getByRole('button', { name: 'Connect' }))
-    expect(sky.connectDevice).toHaveBeenCalledTimes(1)
-    expect(sky.startRelay).not.toHaveBeenCalled()
-    expect(screen.queryByRole('alertdialog')).toBeNull()
-  })
-
-  it('the board arriving lifts the block and closes the callout', async () => {
-    const { sky, user } = await renderScenario(<RelayPill />, {
-      config: { sourceMode: 'bridge' },
-      device: link('no-device')
-    })
-    await user.click(pill())
-    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-    sky.emitScenario({ device: connected() })
-    expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(pill()).toHaveTextContent(/^Stopped$/)
-    expect(pill()).toHaveAttribute('aria-disabled', 'false')
-  })
-
-  it('Esc closes the callout and focus returns to the pill', async () => {
-    const { user } = await renderScenario(<RelayPill />, {
-      config: { sourceMode: 'bridge' },
-      device: link('no-device')
-    })
     await user.click(pill())
-    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
-    await user.keyboard('{Escape}')
+    await settle()
+    expect(sky.startRelay).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('alertdialog')).toBeNull()
-    expect(pill()).toHaveFocus()
+    expect(pill()).toHaveTextContent(/^Relaying$/)
+    expect(pill()).toHaveClass('pill--wait')
+    expect(pill()).toHaveAttribute(
+      'title',
+      'Relaying — waiting for the Gateway (device link no device). Resumes when it connects — click to stop'
+    )
+    // The board arrives: no further click, the wait for it is over.
+    sky.emitScenario({ device: connected() })
+    expect(pill()).toHaveTextContent(/^Relaying$/)
+    expect(pill().getAttribute('title')).not.toMatch(/waiting for the Gateway/)
+    expect(sky.startRelay).toHaveBeenCalledTimes(1)
   })
 
   it('Monitor starts without a board', async () => {
     const { sky, user } = await renderScenario(<RelayPill />, { device: link('no-device') })
-    expect(pill()).toHaveAttribute('aria-disabled', 'false')
     await user.click(pill())
     await settle()
     expect(sky.startRelay).toHaveBeenCalledTimes(1)

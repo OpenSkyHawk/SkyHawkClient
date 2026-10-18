@@ -67,8 +67,6 @@ export type OverviewLink =
 export interface RelaySurfaces {
   waiting: RelayWaiting
   tip: RelayTip
-  /** Start would be refused, by the mode that needs the board for it; absent = Start may go. */
-  startBlocked?: 'bridge' | 'replay'
   overviewLink: OverviewLink
   /**
    * May the Record control be used, on every surface that offers it (X12): a recording starts only
