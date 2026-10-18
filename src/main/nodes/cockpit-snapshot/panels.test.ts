@@ -295,7 +295,7 @@ describe('nodeStatusRows', () => {
       { k: 'Uptime', v: '01:02:05' },
       { k: 'CAN frames rx', v: '12,345' },
       { k: 'CAN TEC / REC', v: '8 / 1' },
-      { k: 'CAN state', v: 'error-active' },
+      { k: 'CAN state', v: 'OK' },
       { k: 'MCU temp', v: '33 °C' }
     ])
   })

@@ -238,7 +238,7 @@ export function nodeStatusRows(v: NodeView): Row[] {
     { k: 'CAN TEC / REC', v: live ? `${live.tec} / ${live.rec}` : DASH },
     {
       k: 'CAN state',
-      v: live ? (live.boff ? 'bus-off' : live.epvf ? 'error-passive' : 'error-active') : DASH
+      v: live ? (live.boff ? 'bus-off' : live.epvf ? 'error-passive' : 'OK') : DASH
     },
     { k: 'MCU temp', v: live && live.dieTempC !== null ? `${live.dieTempC} °C` : DASH }
   ]
