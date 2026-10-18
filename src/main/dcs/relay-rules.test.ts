@@ -132,7 +132,7 @@ describe('X9: one endpoint label, right for each transport', () => {
   it('TCP: the host and command port; Multicast: the group; Unicast: the port it listens on', () => {
     expect(at('tcp-to-host')).toBe('10.0.0.7:7779')
     expect(at('loopback-multicast')).toBe('239.255.50.10:5010')
-    expect(at('unicast-listen')).toBe('0.0.0.0:5011')
+    expect(at('unicast-listen')).toBe('this PC:5011')
   })
 
   it('pushed once in the facts, from the settings held', () => {

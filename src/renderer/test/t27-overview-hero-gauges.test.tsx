@@ -158,7 +158,7 @@ describe('T27 Overview hero tiles and gauges (B56, B57)', () => {
     ['tcp-to-host', 'TCP', '10.0.0.7:7779'],
     ['loopback-multicast', 'Multicast', '239.255.50.10:5010'],
     // X9: Unicast shows the port it listens on, not the multicast group.
-    ['unicast-listen', 'Unicast', '0.0.0.0:5011']
+    ['unicast-listen', 'Unicast', 'this PC:5011']
   ] as const)('DCS Link tile, %s: "%s"', async (transport, v, s) => {
     await renderScenario(<Overview />, {
       config: { transport, host: '10.0.0.7', commandPort: 7779, listenPort: 5011 }
@@ -170,7 +170,7 @@ describe('T27 Overview hero tiles and gauges (B56, B57)', () => {
   it.each([
     ['tcp-to-host', '10.0.0.7:7779'],
     ['loopback-multicast', '239.255.50.10:5010'],
-    ['unicast-listen', '0.0.0.0:5011']
+    ['unicast-listen', 'this PC:5011']
   ] as const)(
     'X9: the Relay pill and the DCS Link tile show the same endpoint, %s',
     async (transport, endpoint) => {

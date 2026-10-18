@@ -82,7 +82,7 @@ describe('relay:facts: what the relay’s surfaces show', () => {
   it('a form’s edit: built over the settings held, a typed port checked (N5); the facts follow', () => {
     const app = makeServices(monitor)
     app.invoke(CTRL.configEdit, { transport: 'unicast-listen' })
-    expect(app.lastPush('relay:facts')?.endpoint).toBe('0.0.0.0:5010')
+    expect(app.lastPush('relay:facts')?.endpoint).toBe('this PC:5010')
     expect(app.invoke(CTRL.configEdit, { port: '7781' })).toMatchObject({
       ok: true,
       config: { commandPort: 7781 }
@@ -111,7 +111,7 @@ describe('fix track #134: the relay endpoint, Record and the waiting wording', (
     app.invoke(CTRL.configEdit, { transport: 'loopback-multicast' })
     expect(app.lastPush('relay:facts')?.endpoint).toBe('239.255.50.10:5010')
     app.invoke(CTRL.configEdit, { transport: 'unicast-listen' })
-    expect(app.lastPush('relay:facts')?.endpoint).toBe('0.0.0.0:5010')
+    expect(app.lastPush('relay:facts')?.endpoint).toBe('this PC:5010')
   })
 
   it('X12: Record refused while stopped, before any dialog; allowed while relaying', async () => {

@@ -148,8 +148,8 @@ export function overviewLink(opts: RelayOpts, linkUp: boolean): OverviewLink {
 /**
  * Where the relay's stream comes from (X9): the one endpoint label every surface shows — the Relay
  * pill, the Overview's DCS Link tile and the event log. The host and command port the TCP link
- * connects to; the multicast group and port loopback joins; the port Unicast binds, on every
- * address (transports.ts binds it with none).
+ * connects to; the multicast group and port loopback joins; "this PC" and the port Unicast binds
+ * on every address (transports.ts binds it with none).
  */
 export function relayEndpoint(
   cfg: Pick<AppConfig, 'transport' | 'host' | 'commandPort' | 'listenPort'>
@@ -160,7 +160,7 @@ export function relayEndpoint(
     case 'loopback-multicast':
       return `${EXPORT_MULTICAST_ADDR}:${EXPORT_PORT}`
     case 'unicast-listen':
-      return `0.0.0.0:${cfg.listenPort}`
+      return `this PC:${cfg.listenPort}`
   }
 }
 
