@@ -22,8 +22,8 @@ import {
   type ZoneChoices
 } from '@shared/nodes'
 import { PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
-import type { StatusFlag } from '../../events'
-import { nodeFaultTag, pduAlertFlags, pduFlagMeanings, raisedNodeFlags } from '../faults'
+import { faultLabel, type StatusFlag } from '../../events'
+import { pduAlertFlags, pduFlagMeanings, raisedNodeFlags } from '../faults'
 import { newReason } from '../node-model'
 import { displayCurrentMa } from '../node-telem'
 import { canForget, canHide, type OfflineGate } from '../offline-actions'
@@ -178,7 +178,7 @@ const FLAG_BOX: Record<StatusFlag, (st: NodeStatus) => FaultBox> = {
   }),
   degraded: (st) => ({
     tone: 'warn',
-    title: st.faultLabel ?? nodeFaultTag(st),
+    title: faultLabel(st),
     text: st.faultDesc || 'reported by the node; this client has no description for this code.'
   }),
   overheat: () => ({

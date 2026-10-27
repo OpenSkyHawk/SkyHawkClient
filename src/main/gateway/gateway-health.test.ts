@@ -84,7 +84,7 @@ describe('gatewayStatus — the one place the Gateway’s health is decided', ()
       note: undefined,
       firmware: { version: null, tooNew: false, supportedMajor: FIRMWARE_RELEASE.major }
     })
-    expect(st({ faultId: 0x2a }).label).toBe('Fault 42')
+    expect(st({ faultId: 0x2a }).label).toBe('Unknown fault (42)')
   })
 
   it('errors carry the Overview alert; warnings never do', () => {
@@ -140,7 +140,9 @@ describe('gatewayEvents — rows read the status', () => {
 
   it('a temperature change is not news; a new fault code is', () => {
     expect(ev({ overheat: true, dieTempC: 78 }, { overheat: true, dieTempC: 80 })).toEqual([])
-    expect(ev({ faultId: 5 }, { faultId: 9 })).toEqual(['Gateway: degraded · Fault 9 [warn]'])
+    expect(ev({ faultId: 5 }, { faultId: 9 })).toEqual([
+      'Gateway: degraded · Unknown fault (9) [warn]'
+    ])
   })
 
   it('a worse problem takes over silently; a milder one says the worse one cleared', () => {

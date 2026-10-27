@@ -78,11 +78,11 @@ export const CAL_NACK = byName(CAL_NACK_REASONS)
 
 /**
  * A NACK reason's name (X11): the synced firmware table's name for any reason it lists, the five
- * reachable ones and the three that never reach a client alike; anything else as `reason 0x…`.
+ * reachable ones and the three that never reach a client alike; anything else as `Unknown reason (N)` (#183).
  * The one name both CalLink's refusal message and a calibration failure's `reasonName` carry.
  */
 export function nackName(reason: number): string {
-  return CAL_NACK_REASONS[reason]?.name ?? `reason 0x${reason.toString(16)}`
+  return CAL_NACK_REASONS[reason]?.name ?? `Unknown reason (${reason})`
 }
 
 /**

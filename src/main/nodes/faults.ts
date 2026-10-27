@@ -25,9 +25,14 @@ export function raisedNodeFlags(n: NodeStatus): StatusFlag[] {
   return NODE_FLAG_ORDER.filter((k) => n[k])
 }
 
-/** The flags a node raised, in words (`bus-off`, the fault tag, `overheat`, `error-passive`). */
+/**
+ * The flags a node raised, in words (`bus-off`, the fault abbr or `unknown fault (N)`, `overheat`,
+ * `error-passive`).
+ */
 export function nodeFlagWords(n: NodeStatus): string[] {
-  return raisedNodeFlags(n).map((k) => (k === 'degraded' ? nodeFaultTag(n) : STATUS_FLAGS[k].label))
+  return raisedNodeFlags(n).map((k) =>
+    k === 'degraded' ? (n.faultAbbr ?? `unknown fault (${n.faultId})`) : STATUS_FLAGS[k].label
+  )
 }
 
 const CHIP: Record<StatusFlag, string> = {
@@ -71,9 +76,12 @@ export function railReading(bit: number, p: PduRailPage): string {
   return volts(p.vAvgMv)
 }
 
-/** Short degraded-badge tag — the fault abbr, or `Fault N` for an unknown/reserved id. */
+/**
+ * Short degraded-badge tag, as a flag prints: the fault abbr, or `UNKNOWN FAULT (N)` for a code this
+ * client has no label for (#183).
+ */
 export function nodeFaultTag(n: NodeStatus): string {
-  return n.faultAbbr ?? `Fault ${n.faultId}`
+  return n.faultAbbr ?? `UNKNOWN FAULT (${n.faultId})`
 }
 
 // ── the Cockpit's flag text (moved from the renderer, R3.2): the same tables as the log's ──

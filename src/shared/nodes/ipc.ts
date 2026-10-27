@@ -32,7 +32,7 @@ export interface NodeStatus {
    * NODE_BOOT_STATE_UPDATING (0x80) while update traffic flows (v4, #365). Kept raw. */
   bootState: number
   // Fault-dictionary enrichment — filled in main from NODE_FAULT_CODES; undefined when healthy or an
-  // unknown/reserved id (the decoder passes any faultId through). Renderer falls back to `Fault N`.
+  // unknown/reserved id (the decoder passes any faultId through). main falls back to `Unknown fault (N)` (#183).
   faultAbbr?: string
   faultLabel?: string
   faultDesc?: string
