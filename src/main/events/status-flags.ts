@@ -20,7 +20,7 @@ export const STATUS_FLAGS: Record<
   overheat: { key: 'overheat', label: 'overheat', severity: 'warn' }
 }
 
-/** The fault-dictionary label, else `Fault N`. */
+/** The fault-dictionary label, else `Unknown fault (N)` for a code this client has no label for (#183). */
 export function faultLabel(n: Pick<NodeStatus, 'faultId' | 'faultLabel'>): string {
-  return n.faultLabel ?? `Fault ${n.faultId}`
+  return n.faultLabel ?? `Unknown fault (${n.faultId})`
 }

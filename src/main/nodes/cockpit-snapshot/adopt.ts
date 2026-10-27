@@ -80,7 +80,7 @@ function detectedAs(e: NodeModelEntry): string {
     case 'bridge':
       return 'Gateway (reported by the board)'
     case 'other':
-      return `unknown board type ${e.status?.nodeKind ?? ''} (reported by the board)`.trim()
+      return `Unknown board type (${e.status?.nodeKind ?? '?'}), reported by the board`
     default:
       return 'not known yet'
   }
