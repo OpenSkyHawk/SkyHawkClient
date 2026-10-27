@@ -34,7 +34,7 @@ import { format } from 'prettier'
 
 const PIN = {
   repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
-  commit: 'a78dd90276fffb820b64ba74b82f354ab167348a'
+  commit: 'e82ac6eb7c6ada62135e39a065ddf652eaf35eaf'
 }
 
 const SRC = {
@@ -157,11 +157,24 @@ function parseEnum(
     `enum\\s+(?:class\\s+)?${enumName}\\s*:\\s*\\w+\\s*\\{([\\s\\S]*?)\\}`
   ).exec(header)
   if (!block) throw new Error(`[sync] enum ${enumName} not found in ${where}`)
-  const line = /^\s*([A-Z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)\s*,?\s*(?:\/\/\s*(.*?))?\s*$/gm
+  const entry = /^\s*([A-Z0-9_]+)\s*=\s*(0x[0-9A-Fa-f]+|\d+)\s*,?\s*(?:\/\/\s*(.*?))?\s*$/
   const entries: { name: string; value: number; comment: string }[] = []
-  let m: RegExpExecArray | null
-  while ((m = line.exec(block[1]!))) {
-    entries.push({ name: m[1]!, value: Number(m[2]), comment: (m[3] ?? '').trim() })
+  // Column of the last entry's `//`: a comment-only line starting there continues that comment.
+  let commentAt = -1
+  for (const text of block[1]!.split('\n')) {
+    const m = entry.exec(text)
+    if (m) {
+      entries.push({ name: m[1]!, value: Number(m[2]), comment: (m[3] ?? '').trim() })
+      commentAt = m[3] === undefined ? -1 : text.indexOf('//')
+      continue
+    }
+    const more = /^(\s*)\/\/\s*(.*?)\s*$/.exec(text)
+    if (more && commentAt >= 0 && more[1]!.length === commentAt) {
+      const last = entries[entries.length - 1]!
+      last.comment = `${last.comment} ${more[2]}`.trim()
+    } else {
+      commentAt = -1
+    }
   }
   if (entries.length === 0) throw new Error(`[sync] enum ${enumName} had no entries`)
   return entries
@@ -790,13 +803,15 @@ ${flagInfo(statusFlags)}
  *
  * It lives in the .cpp rather than the header, and as a fall-through switch: a run of
  * `case CAL_T_X:` labels terminated by `return len == N;`. Parsed line by line — labels
- * accumulate until a return assigns the length to all of them. `default: return false;`
+ * accumulate until a return assigns the length to all of them. The length is a literal or a
+ * named AxisCal.h constant (`return len == CAL_DIAG_BYTES;`), resolved like any constexpr; a
+ * return the parser can't read fails the sync. `default: return false;`
  * carries no length and is skipped, which is correct: an unknown type is not a frame.
  *
  * Every type must resolve. A type added firmware-side without a length therefore fails the
  * sync rather than silently defaulting, which is the whole point of the LEN-fixed-by-TYPE rule.
  */
-function parseLenTable(cpp: string, typeNames: string[]): Record<string, number> {
+function parseLenTable(cpp: string, header: string, typeNames: string[]): Record<string, number> {
   const fn = /bool\s+calLenValidForType\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/.exec(cpp)
   if (!fn) throw new Error('[sync] calLenValidForType not found in AxisCal.cpp')
 
@@ -804,9 +819,12 @@ function parseLenTable(cpp: string, typeNames: string[]): Record<string, number>
   let pending: string[] = []
   for (const line of fn[1]!.split('\n')) {
     for (const c of line.matchAll(/case\s+(CAL_T_\w+)\s*:/g)) pending.push(c[1]!)
-    const r = /return\s+len\s*==\s*(\d+)\s*;/.exec(line)
+    const r = /return\s+len\b(.*?);/.exec(line)
     if (!r) continue
-    for (const n of pending) out[n] = Number(r[1])
+    const v = /^\s*==\s*(?:(\d+)|([A-Z_][A-Z0-9_]*))\s*$/.exec(r[1]!)
+    if (!v) throw new Error(`[sync] calLenValidForType: cannot read '${line.trim()}'`)
+    const len = v[1] !== undefined ? Number(v[1]) : constexprNum(header, v[2]!, 'AxisCal.h')
+    for (const n of pending) out[n] = len
     pending = []
   }
   if (pending.length) {
@@ -828,6 +846,7 @@ function genAxisCal(header: string, cpp: string, simGateway: string): string {
   const nacks = parseEnum(header, 'CalNackReason', 'AxisCal.h')
   const lens = parseLenTable(
     cpp,
+    header,
     types.map((t) => t.name)
   )
 
@@ -875,7 +894,8 @@ function genAxisCal(header: string, cpp: string, simGateway: string): string {
     ['CalResetField', 'CAL_RESET', lens.CAL_T_RESET],
     ['CalAckField', 'CAL_ACK', lens.CAL_T_ACK],
     ['CalNackField', 'CAL_NACK', lens.CAL_T_NACK],
-    ['CalRawField', 'CAL_RAW', lens.CAL_T_RAW]
+    ['CalRawField', 'CAL_RAW', lens.CAL_T_RAW],
+    ['CalDiagField', 'CAL_DIAG', lens.CAL_T_DIAG]
   ] as const
   const fieldConsts = fieldTables
     .map(([enumName, prefix, bytes]) => {
@@ -895,6 +915,19 @@ ${offsetLines(es)}
 } as const`
     })
     .join('\n\n')
+
+  // DIAG (#355): the length table already resolved CAL_T_DIAG to CAL_DIAG_BYTES; cross-check it so
+  // the exported constant and the frame table can never disagree.
+  const diagBytes = constexprNum(header, 'CAL_DIAG_BYTES', 'AxisCal.h')
+  if (lens.CAL_T_DIAG !== diagBytes) {
+    throw new Error(`[sync] CAL_T_DIAG length ${lens.CAL_T_DIAG} != CAL_DIAG_BYTES ${diagBytes}`)
+  }
+  const resetReasons = parseEnum(header, 'CalDiagResetReason', 'AxisCal.h').map((e) => {
+    if (!e.name.startsWith('CAL_DIAG_RESET_')) {
+      throw new Error(`[sync] CalDiagResetReason.${e.name}: expected the CAL_DIAG_RESET_ prefix`)
+    }
+    return { ...e, name: e.name.slice('CAL_DIAG_RESET_'.length) }
+  })
 
   return (
     banner([
@@ -990,6 +1023,14 @@ ${lenEntries}
 // are little-endian; a field runs to the next offset, the last to the type's payload length.
 
 ${fieldConsts}
+
+/** DIAG payload length (CAL_DIAG_BYTES). From CAL_DIAG_FIELD.RESERVED on: sent as 0, ignored on receive. */
+export const CAL_DIAG_BYTES = ${diagBytes}
+
+/** DIAG RESET_REASON values — from CalDiagResetReason (AxisCal.h). Append-only: a newer value is unknown, not an error. */
+export const CAL_DIAG_RESET_REASONS = {
+${offsetLines(resetReasons)}
+} as const
 `
   )
 }

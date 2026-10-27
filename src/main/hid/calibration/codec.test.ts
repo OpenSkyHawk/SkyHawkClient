@@ -20,7 +20,7 @@ import {
   encodeSessionOpen,
   nackName
 } from './codec'
-import { CAL_NACK_REASONS } from '@shared/firmware'
+import { CAL_NACK_REASONS, CAL_PROTO } from '@shared/firmware'
 
 const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)))
 const cat = (...parts: Uint8Array[]) => {
@@ -101,8 +101,9 @@ describe('CalDemux', () => {
   const frameOf = (type: number, seq = 0) =>
     buildFrame(type, seq, new Uint8Array(CAL_PAYLOAD_LEN[type]!))
 
-  it('round-trips every message type', () => {
+  it('round-trips every message type that fits the carry (all but UPL_DATA, client-only)', () => {
     for (const [name, type] of Object.entries(CAL_TYPE)) {
+      if (CAL_PROTO.envelopeBytes + CAL_PAYLOAD_LEN[type]! > CAL_MAX_FRAME) continue
       const payload = Uint8Array.from(
         { length: CAL_PAYLOAD_LEN[type]! },
         (_, i) => (i * 7 + 3) & 0xff
@@ -194,6 +195,15 @@ describe('CalDemux', () => {
     expect(x.pending).toBeLessThanOrEqual(CAL_MAX_FRAME)
   })
 
+  it('a frame larger than the device ever sends is never held (UPL_DATA, 260 bytes)', () => {
+    const x = d()
+    const UPL_DATA = 0x12 // client -> device only; larger than any frame the device sends
+    expect(CAL_PAYLOAD_LEN[UPL_DATA]).toBeGreaterThan(CAL_MAX_FRAME)
+    const r = x.push(cat(CAL_MAGIC, Uint8Array.of(UPL_DATA, 0, 0x04, 0x01), new Uint8Array(40)))
+    expect(r.frames).toHaveLength(0)
+    expect(x.pending).toBe(0)
+  })
+
   it('flush releases held bytes and clears the carry', () => {
     const x = d()
     x.push(CAL_MAGIC.subarray(0, 3))
@@ -219,7 +229,9 @@ describe('CalDemux', () => {
 // implementation — TEXT1 FRAME TEXT2 yields TEXT1+TEXT2 and [FRAME], which no ordering
 // reassembles. The test builds the input, so it knows every frame's range.
 describe('passthrough completeness', () => {
-  const TYPES = Object.values(CAL_TYPE)
+  const TYPES = Object.values(CAL_TYPE).filter(
+    (t) => CAL_PROTO.envelopeBytes + CAL_PAYLOAD_LEN[t]! <= CAL_MAX_FRAME
+  )
 
   it('passthrough equals the input with accepted frame ranges removed', () => {
     for (let seed = 1; seed <= 40; seed++) {
@@ -299,7 +311,7 @@ describe('decoders', () => {
 
   it('names every NACK reason the firmware table lists, and an unknown one by its byte (X11)', () => {
     // One name for the refusal message and the failure's reasonName, from the synced table: the
-    // five reachable reasons and the three the framing layer stops alike.
+    // calibration reasons, the three the framing layer stops, and the firmware-upload ones alike.
     const named = Object.keys(CAL_NACK_REASONS).map((k) => [Number(k), nackName(Number(k))])
     expect(named).toEqual([
       [0x1, 'BAD_CRC'],
@@ -309,9 +321,15 @@ describe('decoders', () => {
       [0x5, 'BAD_ORDER'],
       [0x6, 'NO_SESSION'],
       [0x7, 'NO_STORAGE'],
-      [0x8, 'BAD_DEADZONE']
+      [0x8, 'BAD_DEADZONE'],
+      [0x9, 'BUSY'],
+      [0xa, 'TOO_LARGE'],
+      [0xb, 'BAD_OFFSET'],
+      [0xc, 'IMAGE_CRC'],
+      [0xd, 'BAD_IMAGE'],
+      [0xe, 'NOT_STAGED']
     ])
-    expect(nackName(0x9)).toBe('reason 0x9')
+    expect(nackName(0xf)).toBe('reason 0xf')
     expect(nackName(0x0)).toBe('reason 0x0')
     expect(nackName(0xff)).toBe('reason 0xff')
   })

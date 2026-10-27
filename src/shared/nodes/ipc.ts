@@ -20,6 +20,16 @@ export interface NodeStatus {
   /** NODE_KIND as the board reports it (v3); 0 = not reported yet (or pre-#344 firmware). Kept raw: an
    * unknown future value passes through and is never adoptable. */
   nodeKind: number
+  /** Firmware release the board reported in READY_n (v4); 0.0.0 = not reported (no READY since the
+   * bridge booted, or older firmware). The node-0 row carries the bridge's own build. Shown by #171. */
+  fwMajor: number
+  fwMinor: number
+  fwPatch: number
+  /** Bootloader protocol version (v4, #365); 0 = no bootloader / not reported. Kept raw. */
+  bootloader: number
+  /** NODE_BOOT_STATE_APP (0) = the app is running; else the bootloader's BootState, with
+   * NODE_BOOT_STATE_UPDATING (0x80) while update traffic flows (v4, #365). Kept raw. */
+  bootState: number
   // Fault-dictionary enrichment — filled in main from NODE_FAULT_CODES; undefined when healthy or an
   // unknown/reserved id (the decoder passes any faultId through). Renderer falls back to `Fault N`.
   faultAbbr?: string

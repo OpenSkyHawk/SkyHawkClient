@@ -3,11 +3,11 @@ import {
   canRequestRoster,
   cleanNodeLine,
   endRowCount,
-  isLegacyNodeStatus,
   NODE_END_MSG,
   NODE_MSG,
   NodeRoster,
   nodeRosterRequest,
+  olderNodeStatus,
   parseNodeStatus,
   ROSTER_REPLY_MS
 } from './node-status-wire'
@@ -19,10 +19,11 @@ const node = (over: Partial<NodeStatus>): NodeStatus =>
   nodeStatus(1, { uptimeSec: 0, rxCount: 0, ...over })
 
 describe('parseNodeStatus', () => {
-  it('decodes a v3 row (28 hex, nodeKind last)', () => {
+  it('decodes a v4 row (38 hex: v3, then the firmware version and the bootloader state)', () => {
     // nodeId 03, present 01, flags 02 (EPVF), uptime 000A, rxCount 0003, esr 1100,
-    // dieTempC 24 (36 C), hFlags 00, faultMask 00, faultId 00, nodeKind 02 (PDU)
-    const ns = parseNodeStatus('030102000A000311002400000002')
+    // dieTempC 24 (36 C), hFlags 00, faultMask 00, faultId 00, nodeKind 02 (PDU),
+    // fw 01.02.03, bootloader 01, bootState 00 (the app is running)
+    const ns = parseNodeStatus('030102000A00031100240000000201020301' + '00')
     expect(ns).toEqual({
       nodeId: 3,
       present: true,
@@ -36,71 +37,93 @@ describe('parseNodeStatus', () => {
       overheat: false,
       degraded: false,
       faultId: 0,
-      nodeKind: 2
+      nodeKind: 2,
+      fwMajor: 1,
+      fwMinor: 2,
+      fwPatch: 3,
+      bootloader: 1,
+      bootState: 0
     })
   })
 
-  it("decodes the bridge's own row (node 0, kind 03) and passes unknown kinds through", () => {
-    expect(parseNodeStatus('0001000000000000008000000003')).toMatchObject({
-      nodeId: 0,
-      nodeKind: 3
-    })
-    expect(parseNodeStatus('2901000000000000008000000007')?.nodeKind).toBe(7) // a newer kind
+  it('a version of 00 00 00 is "not reported", and the bootloader fields pass through raw', () => {
+    const ns = parseNodeStatus('0101000000000000008000000001' + '000000' + '00' + '00')
+    expect(ns).toMatchObject({ fwMajor: 0, fwMinor: 0, fwPatch: 0, bootloader: 0, bootState: 0 })
+    // In its bootloader, update traffic flowing: NODE_BOOT_STATE_UPDATING (0x80) | a BootState.
+    const boot = parseNodeStatus('0101000000000000008000000001' + '000000' + '02' + '83')
+    expect(boot).toMatchObject({ bootloader: 2, bootState: 0x83 })
+  })
+
+  it('reads a longer row by its v4 prefix: fields a newer bridge appended are ignored (D22)', () => {
+    const v4 = '0501000000000000008000000001' + '010203' + '0100'
+    expect(parseNodeStatus(v4 + 'ABCD')).toEqual(parseNodeStatus(v4))
+    expect(parseNodeStatus(v4 + 'ABCD')).toMatchObject({ nodeId: 5, nodeKind: 1, fwPatch: 3 })
+  })
+
+  it("decodes the bridge's own row (node 0, kind 03) and passes unknown values through", () => {
+    expect(parseNodeStatus(statusRow(0, true, 3))).toMatchObject({ nodeId: 0, nodeKind: 3 })
+    expect(parseNodeStatus(statusRow(0x29, true, 7))?.nodeKind).toBe(7) // a newer kind
+    // An unknown fault code, and flag bits this client has no name for: kept, never an error.
+    const odd = parseNodeStatus('05012100000000000080FC00EE01' + '000000' + '0000')
+    expect(odd).toMatchObject({ faultId: 0xee, boff: true, epvf: false, overheat: false })
+    expect(odd?.degraded).toBe(false)
   })
 
   it('decodes present/removed and the CAN flags', () => {
-    expect(parseNodeStatus('0501000000000000008000000000')?.present).toBe(true) // present=01
-    expect(parseNodeStatus('0500000000000000008000000000')?.present).toBe(false) // present=00
-    expect(parseNodeStatus('0501030000000000008000000000')?.boff).toBe(true) // flags bit0 BOFF
-    expect(parseNodeStatus('0501030000000000008000000000')?.epvf).toBe(true) // flags bit1 EPVF
+    const row = (head: string) =>
+      parseNodeStatus(head + '000000000000' + '80000000' + '00' + '0000000000')
+    expect(row('050100')?.present).toBe(true) // present=01
+    expect(row('050000')?.present).toBe(false) // present=00
+    expect(row('050103')?.boff).toBe(true) // flags bit0 BOFF
+    expect(row('050103')?.epvf).toBe(true) // flags bit1 EPVF
   })
 
   it('decodes the HEALTH_n telemetry fields', () => {
-    // dieTempC 24 = 36 C
-    expect(parseNodeStatus('0501000000000000002400000000')?.dieTempC).toBe(36)
-    // dieTempC EC = -20 C (int8 two's-complement)
-    expect(parseNodeStatus('050100000000000000EC00000000')?.dieTempC).toBe(-20)
-    // dieTempC 80 = INT8_MIN sentinel = not-yet-seen => null
-    expect(parseNodeStatus('0501000000000000008000000000')?.dieTempC).toBeNull()
-    // hFlags bit0 overheat, bit1 degraded
-    expect(parseNodeStatus('0501000000000000008001000000')?.overheat).toBe(true)
-    expect(parseNodeStatus('0501000000000000008002000000')?.degraded).toBe(true)
-    expect(parseNodeStatus('0501000000000000008000000000')?.degraded).toBe(false)
-    // faultId passes through (last byte)
-    expect(parseNodeStatus('0501000000000000008002000A00')?.faultId).toBe(0x0a)
+    // From the die temperature on: dieTempC, hFlags, faultMask, faultId, then kind 00 and v4's tail.
+    const row = (tail: string) => parseNodeStatus('05010000000000000' + tail + '00' + '0000000000')
+    expect(row('0' + '24000000')?.dieTempC).toBe(36) // 24 = 36 C
+    expect(row('0' + 'EC000000')?.dieTempC).toBe(-20) // EC = -20 C (int8 two's-complement)
+    expect(row('0' + '80000000')?.dieTempC).toBeNull() // 80 = INT8_MIN sentinel = not yet seen
+    expect(row('0' + '80010000')?.overheat).toBe(true) // hFlags bit0
+    expect(row('0' + '80020000')?.degraded).toBe(true) // hFlags bit1
+    expect(row('0' + '80000000')?.degraded).toBe(false)
+    expect(row('0' + '8002000A')?.faultId).toBe(0x0a) // faultId passes through
   })
 
-  it('rejects malformed input', () => {
+  it('rejects malformed input and rows shorter than v4', () => {
     expect(parseNodeStatus('zzzz')).toBeNull()
-    expect(parseNodeStatus('010100000000000080000000')).toBeNull() // 24 chars — wrong length
     expect(parseNodeStatus('05010000000000000080000000')).toBeNull() // 26 chars — a v2 row
-    expect(parseNodeStatus('0501000000000000008000000000ab')).toBeNull() // 30 chars
-    expect(parseNodeStatus('4001000000000000008000000001')).toBeNull() // nodeId 64
+    expect(parseNodeStatus('0501000000000000008000000001')).toBeNull() // 28 chars — a v3 row
+    expect(parseNodeStatus(statusRow(5).slice(0, 36))).toBeNull() // one byte short
+    expect(parseNodeStatus(statusRow(5) + 'a')).toBeNull() // half a byte
+    expect(parseNodeStatus(statusRow(5).replace(/^05/, 'zz'))).toBeNull()
+    expect(parseNodeStatus(statusRow(64))).toBeNull() // nodeId 64
   })
 
-  it('tells a v2 row apart from a corrupt one, so a v2 bridge can be reported', () => {
-    expect(isLegacyNodeStatus('05010000000000000080000000')).toBe(true)
-    expect(isLegacyNodeStatus('0501000000000000008000000001')).toBe(false) // v3
-    expect(isLegacyNodeStatus('zz010000000000000080000000')).toBe(false)
+  it('tells an older bridge’s row apart from a corrupt or cut-short one, so it can be reported', () => {
+    expect(olderNodeStatus('05010000000000000080000000')).toBe(2) // 26 hex
+    expect(olderNodeStatus('0501000000000000008000000001')).toBe(3) // 28 hex
+    expect(olderNodeStatus(statusRow(5))).toBeUndefined() // v4
+    expect(olderNodeStatus(statusRow(5).slice(0, 30))).toBeUndefined() // a line cut short
+    expect(olderNodeStatus('zz010000000000000080000000')).toBeUndefined()
   })
 
   it('cuts UART noise off the front of a node-status line, and nothing else', () => {
     // Seen on the bench right after a PanelBridge reset: '_\xfe' before the node-0 row.
-    expect(cleanNodeLine('_\xfe_NODE_STATUS 0001000000000000008000000000')).toBe(
-      '_NODE_STATUS 0001000000000000008000000000'
+    expect(cleanNodeLine(`_\xfe_NODE_STATUS ${statusRow(0, true, 3)}`)).toBe(
+      `_NODE_STATUS ${statusRow(0, true, 3)}`
     )
-    expect(cleanNodeLine('_NODE_STATUS 0101000000000000008000000001')).toBe(
-      '_NODE_STATUS 0101000000000000008000000001'
-    )
+    expect(cleanNodeLine(`_NODE_STATUS ${statusRow(1)}`)).toBe(`_NODE_STATUS ${statusRow(1)}`)
     expect(cleanNodeLine('MY_NODE_LAMP 1')).toBe('MY_NODE_LAMP 1') // printable prefix: left alone
     expect(cleanNodeLine('UFC_1 1')).toBe('UFC_1 1')
   })
 })
 
 describe('nodeRosterRequest', () => {
-  it('encodes a sync+export frame for 0x86FE = 1', () => {
+  // 0x86FE was a live DCS-BIOS address (AH-64D, Mirage F1); 0xFF00 is used by no module (D23).
+  it('encodes a sync+export frame for 0xFF00 = 1', () => {
     expect([...nodeRosterRequest()]).toEqual([
-      0x55, 0x55, 0x55, 0x55, 0xfe, 0x86, 0x02, 0x00, 0x01, 0x00
+      0x55, 0x55, 0x55, 0x55, 0x00, 0xff, 0x02, 0x00, 0x01, 0x00
     ])
   })
 })
@@ -118,10 +141,10 @@ describe('canRequestRoster (the poll, its re-ask and the seed on connect)', () =
 describe('NodeRoster', () => {
   it('keeps a removed node, marked offline', () => {
     const r = new NodeRoster()
-    r.applyMessage(NODE_MSG, '0101000000000000008000000000') // node 1 present
-    r.applyMessage(NODE_MSG, '0201000000000000008000000000') // node 2 present
+    r.applyMessage(NODE_MSG, '01010000000000000080000000000000000000') // node 1 present
+    r.applyMessage(NODE_MSG, '02010000000000000080000000000000000000') // node 2 present
     expect(r.snapshot().map((n) => n.nodeId)).toEqual([1, 2])
-    r.applyMessage(NODE_MSG, '0100000000000000008000000000') // node 1 removed (present=00)
+    r.applyMessage(NODE_MSG, '01000000000000000080000000000000000000') // node 1 removed (present=00)
     expect(r.snapshot().map((n) => [n.nodeId, n.present])).toEqual([
       [1, false],
       [2, true]
@@ -130,11 +153,11 @@ describe('NodeRoster', () => {
 
   it('marks nodes absent from a completed burst offline (but keeps them)', () => {
     const r = new NodeRoster()
-    r.applyMessage(NODE_MSG, '0101000000000000008000000000') // node 1 present
+    r.applyMessage(NODE_MSG, '01010000000000000080000000000000000000') // node 1 present
     r.takeDirty()
     // a fresh roster request returns only node 3, then END
     r.beginBurst() // client sends the request → isolate the reply burst
-    r.applyMessage(NODE_MSG, '0301000000000000008000000000')
+    r.applyMessage(NODE_MSG, '03010000000000000080000000000000000000')
     r.applyMessage(NODE_END_MSG, '1')
     expect(r.snapshot().map((n) => [n.nodeId, n.present])).toEqual([
       [1, false], // went silent → offline, still listed
@@ -145,29 +168,29 @@ describe('NodeRoster', () => {
 
   it('records first-seen, online-since, the last report, and when / how a node went offline', () => {
     const r = new NodeRoster()
-    r.applyMessage(NODE_MSG, '0101000000000000008000000000', 1000)
+    r.applyMessage(NODE_MSG, '01010000000000000080000000000000000000', 1000)
     expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, onlineSince: 1000, reportedAt: 1000 })
-    r.applyMessage(NODE_MSG, '0100000000000000008000000000', 5000) // live delta: offline
+    r.applyMessage(NODE_MSG, '01000000000000000080000000000000000000', 5000) // live delta: offline
     expect(r.seenInfo().get(1)).toEqual({
       firstSeenAt: 1000,
       reportedAt: 1000, // its last report stays: "last report N s ago"
       offlineAt: 5000,
       offlineVia: 'delta'
     })
-    r.applyMessage(NODE_MSG, '0100000000000000008000000000', 6000) // repeat keeps the first time
+    r.applyMessage(NODE_MSG, '01000000000000000080000000000000000000', 6000) // repeat keeps the first time
     expect(r.seenInfo().get(1)?.offlineAt).toBe(5000)
     // Back online: online since now (S6), first seen still 1000.
-    r.applyMessage(NODE_MSG, '0101000000000000008000000000', 7000)
+    r.applyMessage(NODE_MSG, '01010000000000000080000000000000000000', 7000)
     expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, onlineSince: 7000, reportedAt: 7000 })
-    r.applyMessage(NODE_MSG, '0101000000000000008000000000', 9000) // still online: since 7000
+    r.applyMessage(NODE_MSG, '01010000000000000080000000000000000000', 9000) // still online: since 7000
     expect(r.seenInfo().get(1)).toEqual({ firstSeenAt: 1000, onlineSince: 7000, reportedAt: 9000 })
   })
 
   it('online since: a first absent row sets none; a roster END that finds it missing clears it (S6)', () => {
     const r = new NodeRoster()
-    r.applyMessage(NODE_MSG, '0100000000000000008000000000', 0) // listed absent first
+    r.applyMessage(NODE_MSG, '01000000000000000080000000000000000000', 0) // listed absent first
     expect(r.seenInfo().get(1)?.onlineSince).toBeUndefined()
-    r.applyMessage(NODE_MSG, '0101000000000000008000000000', 60_000)
+    r.applyMessage(NODE_MSG, '01010000000000000080000000000000000000', 60_000)
     expect(r.seenInfo().get(1)).toMatchObject({ firstSeenAt: 0, onlineSince: 60_000 })
     r.beginBurst(70_000)
     r.applyMessage(NODE_END_MSG, '', 70_000) // a reply without it: offline
@@ -177,11 +200,11 @@ describe('NodeRoster', () => {
 
   it('an offline found by a roster reply is marked roster, and the first END is remembered', () => {
     const r = new NodeRoster()
-    r.applyMessage(NODE_MSG, '0101000000000000008000000000', 0)
-    r.applyMessage(NODE_MSG, '0201000000000000008000000000', 0)
+    r.applyMessage(NODE_MSG, '01010000000000000080000000000000000000', 0)
+    r.applyMessage(NODE_MSG, '02010000000000000080000000000000000000', 0)
     expect(r.rosterCompleteAt()).toBeUndefined()
     r.beginBurst(3999)
-    r.applyMessage(NODE_MSG, '0200000000000000008000000000', 4000) // in the reply, reported absent
+    r.applyMessage(NODE_MSG, '02000000000000000080000000000000000000', 4000) // in the reply, reported absent
     r.applyMessage(NODE_END_MSG, '1', 4001) // node 1 missing from the reply
     expect(r.seenInfo().get(1)).toMatchObject({ offlineAt: 4001, offlineVia: 'roster' })
     expect(r.seenInfo().get(2)).toMatchObject({ offlineAt: 4000, offlineVia: 'roster' })
@@ -196,12 +219,12 @@ describe('NodeRoster', () => {
 
   it('a reply that never ends does not turn later deltas into roster finds', () => {
     const r = new NodeRoster()
-    r.applyMessage(NODE_MSG, '0101000000000000008000000000', 0)
-    r.applyMessage(NODE_MSG, '0201000000000000008000000000', 0)
+    r.applyMessage(NODE_MSG, '01010000000000000080000000000000000000', 0)
+    r.applyMessage(NODE_MSG, '02010000000000000080000000000000000000', 0)
     r.beginBurst(1000) // the bridge never answers with _NODE_STATUS_END
-    r.applyMessage(NODE_MSG, '0100000000000000008000000000', 1000 + ROSTER_REPLY_MS)
+    r.applyMessage(NODE_MSG, '01000000000000000080000000000000000000', 1000 + ROSTER_REPLY_MS)
     expect(r.seenInfo().get(1)?.offlineVia).toBe('roster') // inside the reply window
-    r.applyMessage(NODE_MSG, '0200000000000000008000000000', 1001 + ROSTER_REPLY_MS)
+    r.applyMessage(NODE_MSG, '02000000000000000080000000000000000000', 1001 + ROSTER_REPLY_MS)
     expect(r.seenInfo().get(2)?.offlineVia).toBe('delta') // after it: a live delta
     expect(r.rosterCompleteAt()).toBeUndefined() // registry nodes stay unknown, honestly
   })
@@ -388,24 +411,48 @@ describe('NodeRoster — a reply missing a line reconciles nothing (#132)', () =
   })
 })
 
-describe('NodeRoster — a v2 bridge’s END completes nothing (M3)', () => {
+describe('NodeRoster — an older bridge’s END completes nothing (M3)', () => {
   const V2 = '01010000000000000080000000' // 26 hex: a v2 row, dropped
+  const V3 = '0101000000000000008000000001' // 28 hex: a v3 row, dropped
 
-  it('with a v2 bridge the roster never completes, so no board reads offline', () => {
-    const r = new NodeRoster()
-    r.beginBurst(0)
-    r.applyMessage(NODE_MSG, V2, 1)
-    r.applyMessage(NODE_END_MSG, '1', 1)
-    expect(r.legacyBridge()).toBe(true)
-    expect(r.rosterCompleteAt(), 'unknown, not a complete empty roster').toBeUndefined()
-    expect(r.snapshot()).toEqual([])
+  it('with an older bridge the roster never completes, so no board reads offline', () => {
+    for (const [row, v] of [
+      [V2, 2],
+      [V3, 3]
+    ] as const) {
+      const r = new NodeRoster()
+      r.beginBurst(0)
+      r.applyMessage(NODE_MSG, row, 1)
+      r.applyMessage(NODE_END_MSG, '1', 1)
+      expect(r.legacyBridge(), `v${v}`).toBe(v)
+      expect(r.rosterCompleteAt(), 'unknown, not a complete empty roster').toBeUndefined()
+      expect(r.snapshot()).toEqual([])
+    }
   })
 
-  it('a reset (a port open) forgets it: a v3 bridge on the new link completes as before', () => {
+  it('a line cut short is malformed, not an older bridge: the reply still decides', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, statusRow(0, true, 3), 1)
+    r.applyMessage(NODE_MSG, statusRow(1).slice(0, 20), 1)
+    expect(r.legacyBridge()).toBeUndefined()
+    r.applyMessage(NODE_END_MSG, '1', 1)
+    expect(r.rosterCompleteAt()).toBe(1)
+  })
+
+  it('a current row clears it: that bridge is current, and its END completes', () => {
+    const r = new NodeRoster()
+    r.applyMessage(NODE_MSG, V3, 1)
+    r.applyMessage(NODE_MSG, statusRow(0, true, 3), 2)
+    expect(r.legacyBridge()).toBeUndefined()
+    r.applyMessage(NODE_END_MSG, '1', 2)
+    expect(r.rosterCompleteAt()).toBe(2)
+  })
+
+  it('a reset (a port open) forgets it: a v4 bridge on the new link completes as before', () => {
     const r = new NodeRoster()
     r.applyMessage(NODE_MSG, V2, 1)
     r.reset()
-    expect(r.legacyBridge()).toBe(false)
+    expect(r.legacyBridge()).toBeUndefined()
     r.applyMessage(NODE_END_MSG, '0', 2)
     expect(r.rosterCompleteAt()).toBe(2)
   })

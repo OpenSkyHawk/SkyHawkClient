@@ -738,7 +738,7 @@ describe('Gateway health (#94)', () => {
 
   /** The Gateway's own row (node 0, kind 03, 42 °C), with these heartbeat flags. */
   const gatewayLine = (flags = 0): string =>
-    `_NODE_STATUS 0001${flags.toString(16).padStart(2, '0')}0000000000002a00000003\n`
+    `_NODE_STATUS 0001${flags.toString(16).padStart(2, '0')}0000000000002a000000030000000000\n`
 
   it('carries its own row on device:status, and logs its flags', () => {
     vi.useFakeTimers()
@@ -876,14 +876,21 @@ describe('event log (#64)', () => {
     session.shutdown()
   })
 
-  it('a v2 bridge is reported once, loudly, instead of an empty Cockpit', () => {
-    const { session, serial } = launched()
-    serial.openCb('/dev/fake')
-    const v2 = '_NODE_STATUS 01010000000000000080000000\n' // 26 hex: no nodeKind
-    serial.dataCb(Buffer.from(v2 + v2 + '_NODE_STATUS_END 1\n'))
-    const errs = rows(session).filter((r) => r.includes('needs v3'))
-    expect(errs).toHaveLength(1)
-    session.shutdown()
+  it('an older bridge (v2, v3) is reported once, loudly, instead of an empty Cockpit', () => {
+    for (const [row, v] of [
+      ['01010000000000000080000000', 2], // 26 hex: no nodeKind
+      ['0101000000000000008000000001', 3] // 28 hex: no firmware version
+    ] as const) {
+      const { session, serial } = launched()
+      serial.openCb('/dev/fake')
+      const line = `_NODE_STATUS ${row}\n`
+      serial.dataCb(Buffer.from(line + line + '_NODE_STATUS_END 1\n'))
+      const errs = rows(session).filter((r) => r.includes('Gateway firmware too old'))
+      expect(errs, `v${v}`).toEqual([
+        `client:NODES: error · Gateway firmware too old: it sends node status v${v}; this client needs v4 — update the Gateway firmware`
+      ])
+      session.shutdown()
+    }
   })
 
   it("tolerates reset noise before the bridge's own row, and leaves that row out of the counts", () => {
