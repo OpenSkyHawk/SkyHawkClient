@@ -9,6 +9,7 @@ export {
 } from './store'
 export { DevicePopover } from './DevicePopover'
 export { DeviceCard } from './DeviceCard'
+export { ClientTooOld } from './ClientTooOld'
 export { Serial as SerialTab } from './Serial'
 export { gatewayView } from './gateway-view'
 export { deviceView } from './link-view'

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useNav } from '../app/kit'
 import { useGatewayStore } from './store'
 import { deviceView, linkButton } from './link-view'
-import { gatewayView } from './gateway-view'
+import { gatewayFirmwareView, gatewayView } from './gateway-view'
 
 /**
  * The title-bar Device indicator (#69) and its popover: the link state at a glance on every tab,
@@ -31,6 +31,7 @@ export function DevicePopover({ autoConnect }: { autoConnect: boolean }) {
   })
   const button = linkButton(deviceAction)
   const gw = gatewayView(deviceGateway, devicePort)
+  const fw = gatewayFirmwareView(deviceGateway?.firmware)
   const cls = gw.pill?.cls ?? dev.cls
   const meta = gw.meta ?? dev.popMeta
 
@@ -79,15 +80,23 @@ export function DevicePopover({ autoConnect }: { autoConnect: boolean }) {
               {gw.title ?? dev.chip}
             </div>
             {meta && <div className="devpop__meta">{meta}</div>}
-            {gw.health && (
+            {(gw.health || fw) && (
               <div className="gw">
-                <div className="gw__row">
-                  <span className="gw__k">Health</span>
-                  <span className={`gw__v${gw.health.tone ? ` gw--${gw.health.tone}` : ''}`}>
-                    {gw.health.text}
-                  </span>
-                </div>
-                {gw.health.note && <div className="gw__note">{gw.health.note}</div>}
+                {gw.health && (
+                  <div className="gw__row">
+                    <span className="gw__k">Health</span>
+                    <span className={`gw__v${gw.health.tone ? ` gw--${gw.health.tone}` : ''}`}>
+                      {gw.health.text}
+                    </span>
+                  </div>
+                )}
+                {gw.health?.note && <div className="gw__note">{gw.health.note}</div>}
+                {fw && (
+                  <div className="gw__row">
+                    <span className="gw__k">Firmware</span>
+                    <span className={`gw__v${fw.warn ? ' gw--warn' : ''}`}>{fw.pop}</span>
+                  </div>
+                )}
               </div>
             )}
             <div className="devpop__acts">

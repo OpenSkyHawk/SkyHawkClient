@@ -14,14 +14,27 @@ import type {
 import { lastSeenLabel } from '@shared/format'
 import { shownHealth } from '../../gateway'
 import { isReportableNew, newState, strayKind } from '../node-model'
+import { FW_MISMATCH } from './views'
 
 /** "1 node affected" / "3 nodes affected" — a PDU outage, wherever it is shown. */
 export function affected(n: number): string {
   return `${n} node${n === 1 ? '' : 's'} affected`
 }
 
+/** A firmware mismatch's Attention line (#171), in the board's and the Gateway's majors. */
+export const mismatchFlag = (m: { board: number; gateway: number }): string =>
+  `runs firmware ${m.board}.x, Gateway runs ${m.gateway}.x — reflash it`
+
+/** A board's flag with the firmware mismatch taken out: that one is its own item (#171). */
+const withoutMismatch = (flag: string | undefined): string =>
+  (flag ?? '')
+    .split(' · ')
+    .filter((f) => f && f !== FW_MISMATCH)
+    .join(' · ')
+
 /**
- * Most severe first: PDU outages, then offline (incl. bus-off), then warnings — each by NODE_ID.
+ * Firmware mismatches first (#171: reflash before chasing faults), then PDU outages, then offline
+ * (incl. bus-off), then warnings — each by NODE_ID.
  * Nodes that dropped with their PDU are folded into its outage item. New boards that can be
  * adopted have their own prompt; ones that can't (`strays`) are warnings, after the rest. A PDU
  * without readings is not an issue (its panel explains).
@@ -34,8 +47,21 @@ export function attentionItems(
   const folded = new Set(outages.flatMap((o) => o.nodeIds))
   const items: (AttentionItem & { rank: number })[] = []
   for (const v of views) {
-    const { state, flag } = v.health
+    const { state } = v.health
+    const mismatch = v.firmware.mismatch
+    if (mismatch && v.entry.source !== 'new' && v.entry.availability === 'online') {
+      items.push({
+        key: `f-${v.entry.nodeId}`,
+        nodeId: v.entry.nodeId,
+        name: v.entry.name,
+        state: 'warn',
+        flag: mismatchFlag(mismatch),
+        rank: -1
+      })
+    }
+    const flag = withoutMismatch(v.health.flag)
     if (state !== 'off' && state !== 'warn') continue
+    if (state === 'warn' && !flag) continue // the mismatch was its only warning
     const outage = outages.find((o) => o.pduId === v.entry.nodeId)
     if (!outage && folded.has(v.entry.nodeId)) continue
     const e = v.entry

@@ -459,6 +459,32 @@ button.devind[aria-expanded='true'] {
   font-weight: 600;
   text-transform: uppercase;
 }
+/* client too old for the Gateway's firmware (#171): under the tab bar on every tab, not dismissible */
+.appalert {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 28px 0;
+  padding: 10px 16px;
+  border-radius: 11px;
+  background: rgba(244, 179, 33, 0.1);
+  border: 1px solid rgba(244, 179, 33, 0.4);
+  color: var(--gold);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.appalert b {
+  color: #ffd27a;
+}
+.appalert a {
+  margin-left: auto;
+  color: var(--gold);
+  white-space: nowrap;
+}
+.appalert__sym {
+  font-weight: 700;
+}
 
 /* ── content ──────────────────────────────────────────────────── */
 .content {

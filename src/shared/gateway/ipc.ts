@@ -66,6 +66,25 @@ export interface GatewayStatus {
    * title and line show it, in place of a Health row (R3.4a: gateway-view.ts's choice before).
    */
   aboutLink?: true
+  /** The Gateway's own firmware release, from its own status row (#171). */
+  firmware?: GatewayFirmware
+}
+
+/** A firmware release as a board reports it (`_NODE_STATUS` v4). */
+export interface FirmwareVersion {
+  major: number
+  minor: number
+  patch: number
+}
+
+/** The Gateway's firmware as main judges it (#171). */
+export interface GatewayFirmware {
+  /** null: not reported (0.0.0) — it was running before the bridge restarted, or it is older. */
+  version: FirmwareVersion | null
+  /** Its major is newer than the release this client was synced against: some status may be missing or wrong. */
+  tooNew: boolean
+  /** The firmware major this client supports (the release it was synced against). */
+  supportedMajor: number
 }
 
 /**

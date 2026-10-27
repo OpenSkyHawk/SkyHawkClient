@@ -5,6 +5,7 @@
 // A leaf: nothing in this folder imports anything else in src (L-firmware-leaf).
 export * from './a4ec-controls.generated'
 export * from './axis-cal.generated'
+export * from './firmware-release.generated'
 export * from './hid-controls.generated'
 export * from './hid-report-layout.generated'
 export * from './node-bus.generated'

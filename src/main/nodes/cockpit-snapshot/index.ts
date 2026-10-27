@@ -70,7 +70,7 @@ export interface CockpitBuild {
 }
 
 export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
-  const views = i.model ? nodeViews(i.model, i.telemetry) : []
+  const views = i.model ? nodeViews(i.model, i.telemetry, i.device.gateway?.firmware) : []
   const outages = i.model?.outages ?? []
   const live = isLinkUp(i.device.state)
   const members = cockpitMembers(i.model)

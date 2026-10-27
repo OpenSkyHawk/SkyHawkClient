@@ -2,6 +2,7 @@ import { USB_IDENTITY } from '@shared/firmware'
 import { useNav } from '../app/kit'
 import { useGatewayStore } from './store'
 import { deviceView, linkButton } from './link-view'
+import { gatewayFirmwareView } from './gateway-view'
 
 /** `0x2E8A`: a USB id as the device card prints it, four upper-case hex digits. */
 const usbId = (n: number) => '0x' + n.toString(16).toUpperCase().padStart(4, '0')
@@ -17,6 +18,7 @@ export function DeviceCard({ autoConnect }: { autoConnect: boolean }) {
   const deviceDetail = useGatewayStore((x) => x.deviceDetail)
   const deviceBusy = useGatewayStore((x) => x.deviceBusy)
   const deviceAction = useGatewayStore((x) => x.deviceAction)
+  const firmware = useGatewayStore((x) => gatewayFirmwareView(x.deviceGateway?.firmware))
   const connectDevice = useGatewayStore((x) => x.connectDevice)
   const disconnectDevice = useGatewayStore((x) => x.disconnectDevice)
   const set = useNav((x) => x.set)
@@ -36,7 +38,9 @@ export function DeviceCard({ autoConnect }: { autoConnect: boolean }) {
     { k: 'Identity', v: connected ? USB_IDENTITY.product : '— no device' },
     { k: 'VID / PID', v: connected ? VID_PID : `${VID_PID} · target` },
     { k: 'Serial port', v: dev.portRow },
-    { k: 'Interfaces', v: connected ? 'CDC serial + HID' : '—' }
+    { k: 'Interfaces', v: connected ? 'CDC serial + HID' : '—' },
+    // The Gateway's own build, from its status row (#171).
+    { k: 'Firmware', v: connected && firmware ? firmware.card : '—' }
   ]
 
   return (

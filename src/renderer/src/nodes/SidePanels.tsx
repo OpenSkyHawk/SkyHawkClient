@@ -39,6 +39,20 @@ function Rows({ rows }: { rows: { k: string; v: string }[] }) {
   )
 }
 
+/** The Status tab's Firmware section (#171): the release the board reports, or why there is none. */
+function Firmware({ fw }: { fw: BoardPanel['firmware'] }) {
+  return (
+    <div className="sh__sec">
+      <div className="section-h">Firmware</div>
+      <div className="dev__row">
+        <span className="dev__k">Installed</span>
+        <span className="dev__v">{fw.installed}</span>
+      </div>
+      {fw.hint && <div className="hint sh__hint">{fw.hint}</div>}
+    </div>
+  )
+}
+
 /** Runs one mapping invoke: closes the panel on success, keeps the error to show inline. */
 function useMappingCall(onDone: () => void) {
   const [busy, setBusy] = useState(false)
@@ -370,6 +384,7 @@ export function NodePanel(props: {
               <div className="hint">No power zone. Pick one in the Settings tab.</div>
             )}
           </div>
+          <Firmware fw={panel.firmware} />
         </>
       ) : (
         <>
@@ -516,6 +531,7 @@ export function PduPanel(props: {
               Limits and fuses are fixed in the PDU firmware. Calibrate at the bench over serial.
             </div>
           </div>
+          <Firmware fw={panel.firmware} />
         </>
       )}
 
