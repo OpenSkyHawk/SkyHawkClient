@@ -2,13 +2,27 @@
 // spec it sends, the rows kept while it is open, the identify dot, the next selection and "Add all".
 // The rows themselves are main's (adoptRows), built here from the same views.
 import { describe, expect, it } from 'vitest'
-import type { AdoptForm, NodeModelEntry, NodeStatus, NodeView } from '@shared/nodes'
+import type {
+  AdoptForm,
+  AdoptRow,
+  NodeKind,
+  NodeModelEntry,
+  NodeStatus,
+  NodeView
+} from '@shared/nodes'
 import { modelNode, nodeModel as model, nodeStatus } from '../../../test-fixtures/nodes'
 import { seenAgo } from '@shared/format'
 import { adoptRows } from '../../../main/nodes/cockpit-snapshot/adopt'
 import { cockpitMembers } from '../../../main/nodes/cockpit-snapshot/members'
 import { nodeViews } from '../../../main/nodes/cockpit-snapshot/views'
-import { adoptSpec, identState, keptQueue, nextSelection, registrySpecs } from './adopt-view'
+import {
+  adoptSpec,
+  identState,
+  keptQueue,
+  nextSelection,
+  queueHeading,
+  registrySpecs
+} from './adopt-view'
 
 const status = (nodeId: number, over: Partial<NodeStatus> = {}): NodeStatus =>
   nodeStatus(nodeId, { uptimeSec: 130, ...over })
@@ -176,5 +190,32 @@ describe('registry onboarding (#93)', () => {
     // A form left unfinished ("Choose…") is not added in bulk.
     const half = new Map([[1, { name: 'Arm', console: 'Center', pduId: '' as const }]])
     expect(specs(queue, views, half).map((b) => b.nodeId)).toEqual([2])
+  })
+})
+
+describe('queueHeading (#180)', () => {
+  /** A queue row as far as the heading reads it: adoptable as `kind`, or not (undefined). */
+  const row = (kind?: NodeKind) => ({ kind }) as AdoptRow
+  const heading = (...kinds: (NodeKind | undefined)[]) => queueHeading(kinds.map(row))
+
+  it('counts every board in the list', () => {
+    expect(heading('panel')).toBe('1 board this computer hasn’t added yet.')
+    expect(heading('panel', 'pdu')).toBe('2 boards this computer hasn’t added yet.')
+  })
+
+  it('names how many of them can’t be adopted', () => {
+    expect(heading('panel', 'pdu', undefined)).toBe(
+      '3 boards this computer hasn’t added yet; 1 can’t be adopted.'
+    )
+    expect(heading('panel', undefined, undefined, 'pdu')).toBe(
+      '4 boards this computer hasn’t added yet; 2 can’t be adopted.'
+    )
+  })
+
+  it('when none of them can be adopted: it / they', () => {
+    expect(heading(undefined)).toBe('1 board this computer hasn’t added yet; it can’t be adopted.')
+    expect(heading(undefined, undefined)).toBe(
+      '2 boards this computer hasn’t added yet; they can’t be adopted.'
+    )
   })
 })

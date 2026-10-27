@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { seenAgo } from '@shared/format'
 import {
   CONSOLE_OPTIONS,
@@ -8,7 +9,14 @@ import {
   type NodeMappingResult,
   type ZoneChoices
 } from '@shared/nodes'
-import { adoptSpec, identState, keptQueue, nextSelection, registrySpecs } from './adopt-view'
+import {
+  adoptSpec,
+  identState,
+  keptQueue,
+  nextSelection,
+  queueHeading,
+  registrySpecs
+} from './adopt-view'
 import { zoneOptions } from './panel-view'
 import { useModalFocus } from '../app/kit'
 import { useNodesStore } from './store'
@@ -27,12 +35,11 @@ export function AdoptDialog(props: {
   /** Main's queue: new NODE_IDs, oldest first seen first. */
   rows: AdoptRow[]
   zones: ZoneChoices
-  /** "New on the bus · N", as the Attention button that opens this shows it (R10: one count). */
-  count: number
   initial?: number
   onClose: () => void
 }) {
   const ref = useRef<HTMLElement>(null)
+  const [footer, setFooter] = useState<HTMLDivElement | null>(null)
   useModalFocus(ref, props.onClose)
 
   const live = props.rows
@@ -129,8 +136,7 @@ export function AdoptDialog(props: {
           <div>
             <div className="ad__t">New on the bus</div>
             <div className="ad__s">
-              {props.count} board{props.count === 1 ? '' : 's'} this computer hasn’t added yet.
-              Boards in NODE_IDS.md come pre-filled — check them and add.
+              {queueHeading(queue)} Boards in NODE_IDS.md come pre-filled — check them and add.
             </div>
           </div>
           <button className="toolbtn" style={{ marginLeft: 'auto' }} onClick={props.onClose}>
@@ -138,34 +144,39 @@ export function AdoptDialog(props: {
           </button>
         </div>
         <div className="ad__b">
-          <div className="ad__q" role="listbox" aria-label="New NODE_IDs">
-            {queue.map((r) => {
-              const v = r.view
-              const on = v.entry.nodeId === current.view.entry.nodeId
-              return (
-                <button
-                  key={v.entry.nodeId}
-                  role="option"
-                  aria-selected={on}
-                  className={`ad__i${on ? ' on' : ''}`}
-                  onClick={() => setSel(v.entry.nodeId)}
-                >
-                  <div className="ad__in">
-                    <span className="node__dot new" aria-hidden="true" />
-                    NODE_ID {v.entry.nodeId}
-                    <Badge badge={r.badge} />
-                  </div>
-                  <div className="ad__im">
-                    {v.entry.registry
-                      ? `${v.entry.registry.name} · from NODE_IDS.md`
-                      : seenAgo(v.entry.firstSeenAt, Date.now())}
-                  </div>
-                </button>
-              )
-            })}
+          {/* The list sits out of flow in its cell (#180): it scrolls on its own and never sets
+              the body's height, so picking another board never resizes the dialog. */}
+          <div className="ad__qw">
+            <div className="ad__q" role="listbox" aria-label="New NODE_IDs">
+              {queue.map((r) => {
+                const v = r.view
+                const on = v.entry.nodeId === current.view.entry.nodeId
+                return (
+                  <button
+                    key={v.entry.nodeId}
+                    role="option"
+                    aria-selected={on}
+                    className={`ad__i${on ? ' on' : ''}`}
+                    onClick={() => setSel(v.entry.nodeId)}
+                  >
+                    <div className="ad__in">
+                      <span className="node__dot new" aria-hidden="true" />
+                      NODE_ID {v.entry.nodeId}
+                      <Badge badge={r.badge} />
+                    </div>
+                    <div className="ad__im">
+                      {v.entry.registry
+                        ? `${v.entry.registry.name} · from NODE_IDS.md`
+                        : seenAgo(v.entry.firstSeenAt, Date.now())}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <AdoptForm
             key={current.view.entry.nodeId}
+            footer={footer}
             row={current}
             zones={props.zones}
             dropped={dropped.has(current.view.entry.nodeId)}
@@ -181,12 +192,17 @@ export function AdoptDialog(props: {
             onLater={() => move('later')}
           />
         </div>
+        {/* The footer is the dialog's own row (#180), outside the body that gives up height; the
+            selected board's form renders its buttons into it. */}
+        <div className="ad__ft" ref={setFooter} />
       </section>
     </>
   )
 }
 
 function AdoptForm(props: {
+  /** The dialog's footer row, where this form's buttons go (#180); null before it mounts. */
+  footer: HTMLElement | null
   /** Main's row: what it is, what it starts as, what it is seen doing. */
   row: AdoptRow
   zones: ZoneChoices
@@ -234,7 +250,8 @@ function AdoptForm(props: {
     else setError(r.error)
   }
 
-  // Fields and footer are siblings in the dialog's grid, so the footer spans both columns.
+  // The form is the body's second cell; its buttons go to the dialog's footer row (#180), which
+  // stays on screen while the body gives up height.
   return (
     <>
       <div className="ad__f">
@@ -343,29 +360,33 @@ function AdoptForm(props: {
           <div className="set-err ad__err">{error || props.bulkError}</div>
         )}
       </div>
-      <div className="ad__ft">
-        <span className="hint ad__pos">{props.position}</span>
-        {props.bulk > 0 && (
-          <button className="toolbtn" disabled={busy} onClick={props.onAddAll}>
-            Add all {props.bulk} panel groups from NODE_IDS.md
-          </button>
+      {props.footer &&
+        createPortal(
+          <>
+            <span className="hint ad__pos">{props.position}</span>
+            {props.bulk > 0 && (
+              <button className="toolbtn" disabled={busy} onClick={props.onAddAll}>
+                Add all {props.bulk} panel groups from NODE_IDS.md
+              </button>
+            )}
+            <button
+              className="toolbtn"
+              style={{ marginLeft: 'auto' }}
+              disabled={busy}
+              onClick={props.onLater}
+            >
+              Later
+            </button>
+            <button
+              className="browse"
+              disabled={busy || !spec}
+              onClick={() => spec && void run(() => useNodesStore.getState().adoptNode(id, spec))}
+            >
+              {e.registry ? 'Add to cockpit' : 'Adopt'}
+            </button>
+          </>,
+          props.footer
         )}
-        <button
-          className="toolbtn"
-          style={{ marginLeft: 'auto' }}
-          disabled={busy}
-          onClick={props.onLater}
-        >
-          Later
-        </button>
-        <button
-          className="browse"
-          disabled={busy || !spec}
-          onClick={() => spec && void run(() => useNodesStore.getState().adoptNode(id, spec))}
-        >
-          {e.registry ? 'Add to cockpit' : 'Adopt'}
-        </button>
-      </div>
     </>
   )
 }
