@@ -27,14 +27,18 @@ export interface RelayState {
   detail?: string
 }
 
+/**
+ * The aircraft, from DCS-BIOS `_ACFT_NAME` only (#172). Never guessed from export addresses: modules
+ * share address space (the AH-64D's and MB-339's outputs overlap the A-4E's), so a guess would name
+ * the wrong aircraft.
+ */
 export interface AircraftStatus {
   name: string // module name or "NONE"
-  inferred: boolean // true if guessed from address range rather than _ACFT_NAME
   supported: boolean // false => non-A-4E warning banner
 }
 
-/** No aircraft named, and none inferred: the decoder's answer before DCS says anything. */
-export const AIRCRAFT_NONE: AircraftStatus = { name: 'NONE', inferred: false, supported: true }
+/** No aircraft named: the decoder's answer before DCS sends `_ACFT_NAME`. */
+export const AIRCRAFT_NONE: AircraftStatus = { name: 'NONE', supported: true }
 
 /** What a running relay is waiting for, if anything (the pill goes gold; the Start note says it). */
 export type RelayWaiting = 'device' | 'dcs' | 'replay-ended' | 'none'

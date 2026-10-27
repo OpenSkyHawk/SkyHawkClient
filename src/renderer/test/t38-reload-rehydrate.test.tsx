@@ -69,7 +69,7 @@ describe('T38 a reload keeps what main holds (N1)', () => {
     const page = await renderScenario(<Overview />, {
       device: connected(),
       relay: { running: true, stream: 'connected' },
-      aircraft: { name: 'A-4E-C', inferred: false, supported: true },
+      aircraft: { name: 'A-4E-C', supported: true },
       gauges: simTelemetry({ RPM: 0.85, D_FUEL: 0.6 })
     })
     page.sky.emitScenario({ relay: { running: false } })

@@ -139,9 +139,3 @@ export const ACFT_NAME = {
   /** Null-terminated, max 24 bytes. Empty / "NONE" when no module is loaded. */
   maxLength: 24
 } as const
-
-/**
- * Address window the A-4E-C module exports into. Used to *infer* "A-4E-C" when
- * _ACFT_NAME is unavailable, and to gate named decoding (raw-only outside it).
- */
-export const A4EC_ADDRESS_RANGE = { start: 0x8400, end: 0x8554 } as const

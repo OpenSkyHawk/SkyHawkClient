@@ -20,17 +20,28 @@ describe('Decoder aircraft tracking', () => {
     d.handle(0x0002, '4'.charCodeAt(0) | ('E'.charCodeAt(0) << 8), 0)
     d.handle(0x0004, 0, 0)
     const ac = d.aircraft()
-    expect(ac?.name).toBe('A-4E')
-    expect(ac?.inferred).toBe(false)
-    expect(ac?.supported).toBe(true)
+    expect(ac).toEqual({ name: 'A-4E', supported: true })
   })
 
-  it('infers A-4E-C from the address range when no name seen', () => {
+  /** Write `name` into the _ACFT_NAME string region, two characters per word, NUL-ended. */
+  const writeName = (d: Decoder, name: string) => {
+    const bytes = [...name].map((c) => c.charCodeAt(0)).concat(0)
+    for (let i = 0; i < bytes.length; i += 2) d.handle(i, bytes[i]! | ((bytes[i + 1] ?? 0) << 8), 0)
+  }
+
+  // #172: modules share address space. In DCS-BIOS v0.11.8 the AH-64D's outputs span
+  // 0x8000–0x87AB and the MB-339's reach 0x8417, both over the A-4E's 0x8400–0x8555.
+  it('never guesses from addresses: an AH-64D stream with no name yet is NONE, not the A-4E', () => {
+    const d = new Decoder()
+    for (const a of [0x8000, 0x8400, 0x8452, 0x8554, 0x87ab]) d.handle(a, 0x1234, 0)
+    expect(d.aircraft()).toEqual({ name: 'NONE', supported: true })
+  })
+
+  it('_ACFT_NAME wins: the AH-64D is named, and warned about, over the A-4E addresses it writes', () => {
     const d = new Decoder()
     d.handle(0x8400, 0x1234, 0)
-    const ac = d.aircraft()
-    expect(ac?.name).toBe('A-4E-C')
-    expect(ac?.inferred).toBe(true)
+    writeName(d, 'AH-64D_BLK_II')
+    expect(d.aircraft()).toEqual({ name: 'AH-64D_BLK_II', supported: false })
   })
 
   it('returns null when nothing changed', () => {

@@ -269,7 +269,7 @@ describe('relay state (#69)', () => {
   })
 
   it('rehydrates what main still shows on a reload: the aircraft, the gauges, the link (N1)', async () => {
-    const aircraft = { name: 'A-4E-C', inferred: false, supported: true }
+    const aircraft = { name: 'A-4E-C', supported: true }
     const telemetry = TELEMETRY_IDLE.map((g) => ({ ...g, value: 42, pct: 0.42 }))
     status = { running: false, relay: { running: false }, device: { state: 'connected' } }
     const before = await freshStore()

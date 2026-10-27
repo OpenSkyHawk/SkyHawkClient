@@ -129,6 +129,10 @@
 // added — GET_DIAG again while the link is up. `DeviceStatus` (`device:status`) gained
 // `linkHealth`, the record and what main concludes from it (an additive field).
 //
+// #172 (the aircraft from _ACFT_NAME only): a type change only — no channel, intent or method was
+// added, removed or renamed. `AircraftStatus` (`aircraft:changed`, the rehydrate bundle) lost
+// `inferred`: the client no longer guesses the aircraft from export addresses.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator

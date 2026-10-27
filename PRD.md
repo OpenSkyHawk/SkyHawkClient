@@ -91,7 +91,7 @@ Settings expose: source mode, DCS host + transport (`loopback-multicast | unicas
 ## 6. Functional requirements (UI panels)
 
 1. **Connection** — auto-detected device (name/VID/PID/port), state (scanning / connected / relaying / error / reconnecting), DCS link (transport, **local vs remote host**, UDP/TCP, multicast joined / `7778` reachable), source-mode + remote-DCS host picker, manual port override, **record / replay** controls, start/stop. Auto-reconnect on unplug.
-2. **Aircraft** — live module name from DCS-BIOS common metadata `_ACFT_NAME` (address `0x0000`, string[24], value or `"NONE"`); else inferred "A-4E-C (from address range)"; else "no aircraft / sim not exporting". **Non-A-4E module → amber warning banner** ("named decode is A-4E-C only — relaying + stats continue; log shows raw addresses").
+2. **Aircraft** — live module name from DCS-BIOS common metadata `_ACFT_NAME` (address `0x0000`, string[24], value or `"NONE"`) only; until it arrives, `NONE`. Never inferred from export addresses: DCS-BIOS modules share address space (the AH-64D's and MB-339's outputs overlap the A-4E-C's), so a guess would name the wrong aircraft (#172). **Non-A-4E module → amber warning banner** ("named decode is A-4E-C only — relaying + stats continue; log shows raw addresses").
 3. **Stats** (chosen scope = health + command activity + sim telemetry):
    - _Link/stream health_: bytes/sec each direction, DCS-BIOS frames/sec, parse/resync errors, uptime, reconnect count.
    - _Command activity_: panel→sim commands/sec, total, last command string.

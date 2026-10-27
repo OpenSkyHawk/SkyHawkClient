@@ -1,7 +1,7 @@
 // Turns raw DCS-BIOS writes into named log rows, aircraft state, and the five
 // sim-telemetry readouts — using the generated A-4E-C reference.
 import { A4EC_OUTPUTS_BY_ADDRESS } from '@shared/firmware'
-import { A4EC_ADDRESS_RANGE, StringRegion, ACFT_NAME_ADDRESS, ACFT_NAME_MAX } from './bios-protocol'
+import { StringRegion, ACFT_NAME_ADDRESS, ACFT_NAME_MAX } from './bios-protocol'
 import {
   AIRCRAFT_NONE,
   type AircraftStatus,
@@ -86,7 +86,6 @@ export class Decoder {
   private readonly telemetryMax = new Map<string, number>()
   private readonly altDrums = new Map<string, number>() // D_ALT_10K/1K/100S raw values
   private lastName = ''
-  private sawA4ecAddress = false
   private aircraftDirty = true
 
   constructor() {
@@ -104,13 +103,6 @@ export class Decoder {
         this.aircraftDirty = true
       }
     }
-    if (address >= A4EC_ADDRESS_RANGE.start && address <= A4EC_ADDRESS_RANGE.end) {
-      if (!this.sawA4ecAddress) {
-        this.sawA4ecAddress = true
-        this.aircraftDirty = true
-      }
-    }
-
     const outputs = A4EC_OUTPUTS_BY_ADDRESS.get(address)
     if (!outputs) return []
 
@@ -129,15 +121,16 @@ export class Decoder {
     return rows
   }
 
-  /** Current aircraft state if it changed since the last call, else null. */
+  /**
+   * Current aircraft state if it changed since the last call, else null. From `_ACFT_NAME` only
+   * (#172): with no name it is NONE, never a guess from the addresses written — modules share
+   * address space, so A-4E-C addresses also come from the AH-64D and the MB-339.
+   */
   aircraft(): AircraftStatus | null {
     if (!this.aircraftDirty) return null
     this.aircraftDirty = false
     if (this.lastName && this.lastName.toUpperCase() !== 'NONE') {
-      return { name: this.lastName, inferred: false, supported: isA4E(this.lastName) }
-    }
-    if (this.sawA4ecAddress) {
-      return { name: 'A-4E-C', inferred: true, supported: true }
+      return { name: this.lastName, supported: isA4E(this.lastName) }
     }
     return { ...AIRCRAFT_NONE }
   }
