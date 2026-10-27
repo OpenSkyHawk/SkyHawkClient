@@ -45,7 +45,7 @@ describe('B29 a v2 Gateway is reported once per link, and raised again after a r
     expect(app.invoke(CTRL.relayStart)).toEqual({ ok: true })
     const v2 = '_NODE_STATUS 01010000000000000080000000\n' // 26 hex: no nodeKind
     const warnings = () =>
-      app.invoke(CTRL.eventsGet).filter((e) => eventText(e).includes('needs v3'))
+      app.invoke(CTRL.eventsGet).filter((e) => eventText(e).includes('firmware too old'))
     const raised = () => {
       app.clock.advance(1000)
       return app.lastPush('stats:tick')?.errors

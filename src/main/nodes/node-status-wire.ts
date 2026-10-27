@@ -19,7 +19,7 @@ import type { NodeSeen, NodeStatus } from '@shared/nodes'
 import { encodeExportFrame, isLinkUp } from '../gateway'
 
 /** protoVersion this decoder is written for. reference.test asserts the firmware matches. */
-export const SUPPORTED_NODE_PROTO = 3
+export const SUPPORTED_NODE_PROTO = 4
 
 /** Reserved DCS-BIOS identifiers (NODE_STATUS in the firmware reference). */
 export const NODE_MSG = NODE_STATUS.msgName
@@ -30,7 +30,7 @@ const NODE_REQ_ADDR = NODE_STATUS.reqAddress
 const HFLAG_OVERHEAT = NODE_HEALTH_FLAGS.OVERHEAT
 const HFLAG_DEGRADED = NODE_HEALTH_FLAGS.DEGRADED
 
-/** HEALTH_n board kind, as _NODE_STATUS v3 forwards it (NODE_KINDS in the firmware reference). */
+/** HEALTH_n board kind, as _NODE_STATUS forwards it since v3 (NODE_KINDS in the firmware reference). */
 export const NODE_KIND = NODE_KINDS
 
 /**
@@ -41,16 +41,25 @@ export const NODE_KIND = NODE_KINDS
  */
 export const BRIDGE_NODE_ID = GATEWAY_NODE_ID
 
-// proto v3: NODE_STATUS_ROW_BYTES (14) as hex, 28 chars — v2 plus the node's reported board kind
-// (#344). Field offsets: NODE_STATUS_FIELD; each byte is two hex chars.
+// proto v4: NODE_STATUS_ROW_BYTES (19) as hex, 38 chars — v3 plus the node's firmware version
+// (READY_n) and its bootloader state (#365). Field offsets: NODE_STATUS_FIELD; each byte is two hex
+// chars. Firmware only appends fields within a major (D22), so a longer row is read by this prefix.
 const HEX_LEN = NODE_STATUS_ROW_BYTES * 2
-// The legacy v2 row (26 hex), detected client-side only to say "this bridge is too old". The
-// firmware no longer describes it, so it has nothing to sync from: it stays a client constant.
-const V2_HEX_LEN = 26
+// The row lengths older bridges sent (hex chars -> proto version), detected client-side only to say
+// "this bridge is too old". The firmware no longer describes them, so they have nothing to sync
+// from: they stay client constants. Only these count, not any short row: a line cut short in transit
+// is dropped as malformed rather than read as a whole bridge being too old.
+const OLDER_ROWS: Readonly<Record<number, number>> = { 26: 2, 28: 3 }
 
-/** Decode the 28-hex v3 `_NODE_STATUS` argument; null if malformed / nodeId out of range. */
+/** Whole bytes of hex: the shape every `_NODE_STATUS` argument has, of any version. */
+const isHexBytes = (hex: string): boolean => hex.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(hex)
+
+/**
+ * Decode a `_NODE_STATUS` argument: the 38-hex v4 row, or a longer one by its v4 prefix (a newer
+ * bridge's appended fields are ignored). Null if malformed, shorter than v4 or nodeId out of range.
+ */
 export function parseNodeStatus(hex: string): NodeStatus | null {
-  if (hex.length !== HEX_LEN || !/^[0-9a-fA-F]+$/.test(hex)) return null
+  if (hex.length < HEX_LEN || !isHexBytes(hex)) return null
   const F = NODE_STATUS_FIELD
   // A field at byte offset `at`, `bytes` wide: hex index 2 × at, most-significant byte first.
   const f = (at: number, bytes: number) => parseInt(hex.slice(at * 2, (at + bytes) * 2), 16)
@@ -74,16 +83,22 @@ export function parseNodeStatus(hex: string): NodeStatus | null {
     overheat: (hf & HFLAG_OVERHEAT) !== 0,
     degraded: (hf & HFLAG_DEGRADED) !== 0,
     faultId: f(F.FAULT_ID, 1),
-    nodeKind: f(F.NODE_KIND, 1)
+    nodeKind: f(F.NODE_KIND, 1),
+    fwMajor: f(F.FW_MAJOR, 1),
+    fwMinor: f(F.FW_MINOR, 1),
+    fwPatch: f(F.FW_PATCH, 1),
+    bootloader: f(F.BOOTLOADER, 1),
+    bootState: f(F.BOOT_STATE, 1)
   }
 }
 
 /**
- * A v2 (pre-#344) row: well-formed, but this client needs v3. The caller says so loudly rather than
- * dropping it like a corrupt line, since every row from that bridge would be lost the same way.
+ * The node-status version of a row an older bridge sent (v2, v3): well-formed, but this client needs
+ * v4. The caller says so loudly rather than dropping it like a corrupt line, since every row from
+ * that bridge would be lost the same way. Undefined for anything else.
  */
-export function isLegacyNodeStatus(hex: string): boolean {
-  return hex.length === V2_HEX_LEN && /^[0-9a-fA-F]+$/.test(hex)
+export function olderNodeStatus(hex: string): number | undefined {
+  return isHexBytes(hex) ? OLDER_ROWS[hex.length] : undefined
 }
 
 /**
@@ -162,10 +177,11 @@ export class NodeRoster {
   /** A reply is arriving: its node-0 row is in, its `_NODE_STATUS_END` not yet (M2). */
   private replying = false
   /**
-   * A v2 (pre-#344) bridge was heard on this link (M3). Its rows are dropped, so its END would
-   * reconcile against nothing and mark every board offline while it is on the bus: ignored.
+   * The node-status version of an older bridge (v2, v3) heard on this link (M3), until a current
+   * row arrives. Its rows are dropped, so its END would reconcile against nothing and mark every
+   * board offline while it is on the bus: ignored.
    */
-  private legacy = false
+  private legacy?: number
   private completeAt?: number
   private dirty = false
   /** The last reply that ended short of its count, until taken (takeIncompleteReply). */
@@ -177,7 +193,7 @@ export class NodeRoster {
     this.burst = []
     this.burstAt = undefined
     this.replying = false
-    this.legacy = false
+    this.legacy = undefined
     this.completeAt = undefined
     this.incomplete = undefined
     this.dirty = true
@@ -208,9 +224,10 @@ export class NodeRoster {
     if (name === NODE_MSG) {
       const ns = parseNodeStatus(arg.trim())
       if (!ns) {
-        if (isLegacyNodeStatus(arg.trim())) this.legacy = true
+        this.legacy = olderNodeStatus(arg.trim()) ?? this.legacy
         return
       }
+      this.legacy = undefined // a current row: whatever sent the older one, this bridge is current
       if (ns.nodeId === BRIDGE_NODE_ID) {
         // A reply starts with node 0: from here its rows are the reply — not the deltas before it,
         // nor what an earlier reply that never ended brought — so its count can be checked.
@@ -235,8 +252,8 @@ export class NodeRoster {
       }
       this.dirty = true
     } else if (name === NODE_END_MSG) {
-      // A v2 bridge's END completes nothing: its rows never reached the roster (M3).
-      if (this.legacy) return
+      // An older bridge's END completes nothing: its rows never reached the roster (M3).
+      if (this.legacy !== undefined) return
       const inBurst = new Set(this.burst.map((n) => n.nodeId))
       const expected = endRowCount(arg)
       if (expected !== undefined && expected !== inBurst.size) {
@@ -285,8 +302,11 @@ export class NodeRoster {
     return this.seen
   }
 
-  /** A v2 (pre-#344) bridge was heard since reset: its rows are dropped, its END ignored (M3). */
-  legacyBridge(): boolean {
+  /**
+   * The node-status version (2, 3) of an older bridge heard since reset, until a current row: its
+   * rows are dropped, its END ignored (M3). Undefined when none.
+   */
+  legacyBridge(): number | undefined {
     return this.legacy
   }
 

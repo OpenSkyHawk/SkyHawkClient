@@ -20,6 +20,11 @@ export const nodeStatus = (nodeId: number, over: Partial<NodeStatus> = {}): Node
   degraded: false,
   faultId: 0,
   nodeKind: 0,
+  fwMajor: 0,
+  fwMinor: 0,
+  fwPatch: 0,
+  bootloader: 0,
+  bootState: 0,
   ...over
 })
 
@@ -48,13 +53,14 @@ export const nodeModel = (nodes: NodeModelEntry[], outages: PduOutage[] = []): N
 })
 
 /**
- * A v3 `_NODE_STATUS` argument (28 hex, lower case): no flags, die temperature not yet seen, and
- * `kind` (default 01, a panel group) as the last byte.
+ * A v4 `_NODE_STATUS` argument (38 hex, lower case): no flags, die temperature not yet seen,
+ * `kind` (default 01, a panel group), firmware version not reported (00 00 00), no bootloader and
+ * the app running (00 00).
  */
 export const statusRow = (nodeId: number, present = true, kind = 1): string =>
   `${nodeId.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
     .toString(16)
-    .padStart(2, '0')}`
+    .padStart(2, '0')}0000000000`
 
 /** The whole `_NODE_STATUS` line the Gateway sends for `statusRow`, newline included. */
 export const statusLine = (nodeId: number, present = true, kind = 1): string =>

@@ -196,6 +196,9 @@ function classify(buf: Uint8Array, at: number): Verdict {
   if (CAL_PAYLOAD_LEN[type] !== len) return INVALID // unknown type lands here too
 
   const total = CAL_ENVELOPE_BYTES + len
+  // Nothing the device sends is larger. A client-only type can be (UPL_DATA, 260 bytes): holding
+  // for one would let a stray magic in the DCS stream keep more than CAL_MAX_FRAME back.
+  if (total > CAL_MAX_FRAME) return INVALID
   if (avail < total) return INCOMPLETE
 
   const want = buf[at + 8 + len]! | (buf[at + 9 + len]! << 8)

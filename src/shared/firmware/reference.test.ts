@@ -148,6 +148,11 @@ describe('node-status.generated', () => {
     expect(NODE_STATUS.protoVersion).toBe(SUPPORTED_NODE_PROTO)
   })
 
+  // 0x86FE is a live DCS-BIOS address (AH-64D, Mirage F1); no module exports at 0xFF00 (D23).
+  it('pins the roster request at 0xFF00', () => {
+    expect(NODE_STATUS.reqAddress).toBe(0xff00)
+  })
+
   it('fault-code dictionary pins every known code (append-only; a renumber fails loudly)', () => {
     // Each id -> name + badge tag. A code appended at 0x09+ still passes; swapping or renaming an
     // existing one (which would put the wrong badge on a degraded node) does not.
@@ -204,7 +209,7 @@ describe('node-status.generated', () => {
   // decoder was proven against, so a firmware relayout fails here before it mis-decodes a node.
   it('pins the _NODE_STATUS row layout the decoder reads', () => {
     expect(GATEWAY_NODE_ID).toBe(0)
-    expect(NODE_STATUS_ROW_BYTES).toBe(14)
+    expect(NODE_STATUS_ROW_BYTES).toBe(19)
     expect(NODE_STATUS_FIELD).toEqual({
       ID: 0,
       PRESENT: 1,
@@ -216,7 +221,12 @@ describe('node-status.generated', () => {
       HEALTH_FLAGS: 10,
       FAULT_MASK: 11,
       FAULT_ID: 12,
-      NODE_KIND: 13
+      NODE_KIND: 13,
+      FW_MAJOR: 14,
+      FW_MINOR: 15,
+      FW_PATCH: 16,
+      BOOTLOADER: 17,
+      BOOT_STATE: 18
     })
   })
 

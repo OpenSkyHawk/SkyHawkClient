@@ -65,6 +65,7 @@ import {
   NODE_MSG,
   nodeRosterRequest,
   parseNodeStatus,
+  SUPPORTED_NODE_PROTO,
   type NodeRoster
 } from './node-status-wire'
 import { NODE_TELEM_MSG, NodeTelemStore, parseNodeTelem } from './node-telem'
@@ -308,13 +309,13 @@ export class NodeHub implements NodeLineSink {
           `roster reply incomplete: ${short.received} of ${short.expected} rows; absences not reconciled`
         )
       }
-      if (!this.legacyNodesWarned && this.roster.legacyBridge()) {
-        // Every v2 row is dropped as malformed (and its END ignored, M3): say why the Cockpit is
-        // empty, once.
+      const legacy = this.roster.legacyBridge()
+      if (!this.legacyNodesWarned && legacy !== undefined) {
+        // Every older row is dropped (and its END ignored, M3): say why the Cockpit is empty, once.
         this.legacyNodesWarned = true
         this.raise(
           'NODES',
-          'The Gateway sends node status v2; this client needs v3 — update the Gateway firmware (OpenSkyhawk#344)'
+          `Gateway firmware too old: it sends node status v${legacy}; this client needs v${SUPPORTED_NODE_PROTO} — update the Gateway firmware`
         )
       }
       this.statusLine(identifier, line, t)

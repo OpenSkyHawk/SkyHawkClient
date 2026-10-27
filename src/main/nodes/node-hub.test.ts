@@ -104,7 +104,7 @@ describe('NodeHub', () => {
     disk.file = { version: 4, nodes: { 2: { hidden: true, added: true } } }
     disk.fail = true
     const { h, roster } = hub()
-    roster.applyMessage(NODE_MSG, '0201000000000000008000000000', 0)
+    roster.applyMessage(NODE_MSG, '02010000000000000080000000000000000000', 0)
     h.flush(roster.takeDirty(), 0)
     expect(h.snapshot(0).model.hidden).toEqual([])
     expect(disk.file.nodes).toEqual({ 2: { hidden: true, added: true } }) // not on disk
@@ -113,7 +113,7 @@ describe('NodeHub', () => {
   it('clears "hidden until it reports again" once the node reports, and saves it', () => {
     disk.file = { version: 4, nodes: { 1: { added: true }, 2: { hidden: true, added: true } } }
     const { h, roster } = hub()
-    roster.applyMessage(NODE_MSG, '0101000000000000008000000000', 0) // node 1 present
+    roster.applyMessage(NODE_MSG, '01010000000000000080000000000000000000', 0) // node 1 present
     roster.applyMessage(NODE_END_MSG, '1', 0)
     h.flush(roster.takeDirty(), 0)
     expect(disk.file.nodes).toEqual({
@@ -122,7 +122,7 @@ describe('NodeHub', () => {
     })
     expect(h.snapshot(0).model.hidden).toEqual([2]) // skipped, not offline
 
-    roster.applyMessage(NODE_MSG, '0201000000000000008000000000', 100) // node 2 reports
+    roster.applyMessage(NODE_MSG, '02010000000000000080000000000000000000', 100) // node 2 reports
     h.flush(roster.takeDirty(), 100)
     expect(disk.file.nodes[2]).toEqual({ added: true, lastSeen: '1970-01-01T00:00:00.100Z' })
     expect(disk.saves).toBe(2)
@@ -132,7 +132,7 @@ describe('NodeHub', () => {
   it('last seen (#93): written when a board comes online, drops, and when the link closes', () => {
     const { h, roster } = hub()
     const row = (id: number, present: boolean) =>
-      `0${id}${present ? '01' : '00'}000000000000008000000000`
+      `0${id}${present ? '01' : '00'}0000000000000080000000000000000000`
     roster.applyMessage(NODE_MSG, row(1, true), 1000)
     roster.applyMessage(NODE_MSG, row(2, true), 1000)
     h.flush(roster.takeDirty(), 1000)
@@ -158,8 +158,8 @@ describe('NodeHub', () => {
   it('a board not in your cockpit is never written until added or adopted (#93)', () => {
     disk.file = { version: 4, nodes: {} }
     const { h, roster } = hub()
-    roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 0) // node 41
-    roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // registry board 1
+    roster.applyMessage(NODE_MSG, '29010000000000000080000000010000000000', 0) // node 41
+    roster.applyMessage(NODE_MSG, '01010000000000000080000000010000000000', 0) // registry board 1
     h.flush(roster.takeDirty(), 0)
     expect(disk.saves).toBe(0)
     expect(h.snapshot(0).model.nodes.map((n) => [n.nodeId, n.source])).toEqual([
@@ -206,14 +206,14 @@ describe('NodeHub', () => {
 
   it('adopting a new node takes it out of "new"; a nameless adopt is refused and changes nothing', () => {
     const { h, roster } = hub()
-    roster.applyMessage(NODE_MSG, '2901000000000000008000000000', 0) // node 41: kind not reported yet
+    roster.applyMessage(NODE_MSG, '29010000000000000080000000000000000000', 0) // node 41: kind not reported yet
     h.flush(roster.takeDirty(), 0)
     const node41 = () => h.snapshot(0).model.nodes.find((n) => n.nodeId === 41)
     expect(node41()?.source).toBe('new')
     // #344: nothing is adopted on a guess — not until it reports what it is.
     const spec = { name: 'Left_Trim', console: 'Left', pduId: 3, kind: 'panel' } as const
     expect(h.adopt(41, spec)).toEqual({ ok: false, error: 'Its board type is not known yet' })
-    roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 10) // ... then: panel group
+    roster.applyMessage(NODE_MSG, '29010000000000000080000000010000000000', 10) // ... then: panel group
     h.flush(roster.takeDirty(), 10)
 
     const nameless = { console: 'Left', pduId: 3, kind: 'panel' } as never
@@ -233,7 +233,7 @@ describe('NodeHub', () => {
   it('Hide and Forget wait until a board is offline (#93): online, it is active on the bus', () => {
     const { h, roster } = hub()
     const node2 = (present: boolean) =>
-      present ? '0201000000000000008000000000' : '0200000000000000008000000000'
+      present ? '02010000000000000080000000000000000000' : '02000000000000000080000000000000000000'
     roster.applyMessage(NODE_MSG, node2(true), 0)
     h.flush(roster.takeDirty(), 0)
     const saves = disk.saves
@@ -268,7 +268,7 @@ describe('NodeHub', () => {
       const kind = id === 43 ? '00' : '01'
       roster.applyMessage(
         NODE_MSG,
-        `${id.toString(16).toUpperCase()}010000000000000080000000${kind}`,
+        `${id.toString(16).toUpperCase()}010000000000000080000000${kind}0000000000`,
         0
       )
     }
@@ -367,7 +367,7 @@ describe('NodeHub', () => {
 
   it('reset can also forget adopted nodes, and previews what it changes', () => {
     const { h, roster } = hub()
-    roster.applyMessage(NODE_MSG, '2901000000000000008000000001', 0) // node 41: a panel group
+    roster.applyMessage(NODE_MSG, '29010000000000000080000000010000000000', 0) // node 41: a panel group
     h.setMapping(1, { name: 'Armament' })
     h.adopt(41, { name: 'Trim', console: 'Left', pduId: null, kind: 'panel' })
     expect(h.previewReset()).toMatchObject({ nodeCount: 1, adopted: [{ nodeId: 41 }] })
@@ -381,7 +381,7 @@ describe('NodeHub', () => {
 
   it('a config import never hides a board that is on the bus (#93 re-review K)', () => {
     const { h, roster } = hub()
-    roster.applyMessage(NODE_MSG, '0101000000000000008000000001', 0) // node 1 online
+    roster.applyMessage(NODE_MSG, '01010000000000000080000000010000000000', 0) // node 1 online
     h.flush(roster.takeDirty(), 0)
     expect(h.onlineIds()).toEqual([1])
     // ConfigTransfer stages the import over the hub's mapping and online boards, then saves it.
@@ -473,7 +473,7 @@ describe('board kind (#344)', () => {
   const row = (id: number, kind: number, present = true) =>
     `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
       .toString(16)
-      .padStart(2, '0')}`.toUpperCase()
+      .padStart(2, '0')}0000000000`.toUpperCase()
 
   function withEvents() {
     const events: { event: string; nodeId?: number }[] = []
@@ -625,13 +625,14 @@ describe('board kind (#344)', () => {
   })
 })
 
-describe('bench capture, v3 firmware (2026-10-16)', () => {
+describe('bench capture, v3 firmware (2026-10-16), rows extended to v4', () => {
   it('reads the rig’s roster: the bridge row is the link, Center_Armament is online and degraded', () => {
     const { h, roster } = hub()
-    // Verbatim from the bench rig (PanelBridge + one panel group on the latest firmware).
+    // From the bench rig (PanelBridge + one panel group): the v3 rows verbatim, each with v4's tail
+    // appended (version not reported, no bootloader, the app running).
     for (const line of [
-      '_NODE_STATUS 000100002D000000002E00000003',
-      '_NODE_STATUS 010100002C000000002702000101',
+      '_NODE_STATUS 000100002D000000002E000000030000000000',
+      '_NODE_STATUS 010100002C0000000027020001010000000000',
       '_NODE_STATUS_END 2'
     ]) {
       const [id, arg = ''] = line.split(' ')
@@ -659,7 +660,7 @@ describe('one rule for the footer and main (M1/C3, S7)', () => {
   const row = (id: number, kind: number, present = true) =>
     `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
       .toString(16)
-      .padStart(2, '0')}`.toUpperCase()
+      .padStart(2, '0')}0000000000`.toUpperCase()
   const NOW = 10_000
   /** PDU_Right's (#4) 12 V page, as `_NODE_TELEM` carries it. */
   const PDU4_PAGE = '040100E02E182EBC02'
@@ -782,7 +783,7 @@ describe('on the bus (X2 / S10) and a lost line inside a reply (#132)', () => {
   const line = (id: number, present = true, kind = 1) =>
     `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
       .toString(16)
-      .padStart(2, '0')}`
+      .padStart(2, '0')}0000000000`
 
   /** A hub fed as the Gateway's line tap feeds it, with its debug log and event rows recorded. */
   function tapped() {
@@ -845,7 +846,7 @@ describe('a PDU’s pages against the roster: the newest evidence wins (X2, #132
   const row = (id: number, present = true, kind = 1) =>
     `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind
       .toString(16)
-      .padStart(2, '0')}`
+      .padStart(2, '0')}0000000000`
 
   /**
    * PDU_Right (#4) feeds Right_Navigation (#2); both and Center_Armament (#1) are on the bus, and

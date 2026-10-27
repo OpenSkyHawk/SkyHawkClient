@@ -47,7 +47,7 @@ const REG = {
 }
 const defaults = registryDefaults(REG)
 const row = (id: number, kind: number, present = true) =>
-  `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind.toString(16).padStart(2, '0')}`.toUpperCase()
+  `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind.toString(16).padStart(2, '0')}0000000000`.toUpperCase()
 
 describe('fix-track probes (today)', () => {
   it('D1 (fixed, #133 X3): one stray is a warning on the Cockpit, the Overview and Connection alike', () => {

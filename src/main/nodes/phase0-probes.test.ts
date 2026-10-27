@@ -61,7 +61,7 @@ const kinds =
     })
 const REPORTS = { panel: NODE_KINDS.PANEL_GROUP, pdu: NODE_KINDS.PDU } as const
 const row = (id: number, kind: number, present = true) =>
-  `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind.toString(16).padStart(2, '0')}`.toUpperCase()
+  `${id.toString(16).padStart(2, '0')}${present ? '01' : '00'}0000000000000080000000${kind.toString(16).padStart(2, '0')}0000000000`.toUpperCase()
 const added = (): NodeMappingFile => ({
   version: 4,
   nodes: {
