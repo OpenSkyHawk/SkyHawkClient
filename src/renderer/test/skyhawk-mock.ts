@@ -337,6 +337,7 @@ export function installSkyhawkMock(): SkyhawkMock {
     ),
     connectDevice: vi.fn(() => resolve(undefined)),
     disconnectDevice: vi.fn(() => resolve(undefined)),
+    readGatewayDiag: vi.fn(() => resolve(undefined)),
     exportLog: vi.fn(() => resolve({})),
     clearEvents: vi.fn(() => resolve(undefined)),
     exportEvents: vi.fn(() => resolve({})),

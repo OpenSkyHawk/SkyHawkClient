@@ -15,6 +15,7 @@ import {
   buildFrame,
   decodeAck,
   decodeCalData,
+  decodeDiag,
   decodeHelloAck,
   decodeNack,
   decodeRaw,
@@ -28,6 +29,7 @@ import {
   type RawSample
 } from './codec'
 import { CAL_PROTO } from '@shared/firmware'
+import type { GatewayDiag } from '@shared/gateway'
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void
@@ -203,6 +205,16 @@ export class CalLink {
   async getCal(): Promise<CalData> {
     const f = await this.request(CAL_TYPE.GET_CAL)
     return decodeCalData(f.payload)
+  }
+
+  /**
+   * The Gateway's link-health record (#169). Answered at any time, outside a session.
+   * @throws CalTimeoutError from firmware older than #355: it rejects the unknown type and relays
+   *         the bytes, so silence is how "not supported" presents — not a link fault.
+   */
+  async getDiag(): Promise<GatewayDiag> {
+    const f = await this.request(CAL_TYPE.GET_DIAG)
+    return decodeDiag(f.payload)
   }
 
   /**
