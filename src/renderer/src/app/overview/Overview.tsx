@@ -107,7 +107,7 @@ export function Overview() {
   const relaySub = LINK_SUB[relaySide(dcs.relayFacts, dcs.relaying).overviewLink]
 
   const acft = dcs.aircraft.name && dcs.aircraft.name !== 'NONE' ? dcs.aircraft.name : 'NONE'
-  const acftSub = dcs.aircraft.inferred ? 'inferred · address range' : '_ACFT_NAME · metadata'
+  const acftSub = '_ACFT_NAME · metadata'
 
   // The Cockpit's own picture (#63), summed up for the tile and the banners (#65): main's snapshot
   // (cockpit:snapshot, R3.2b). The banner also follows Settings › Cockpit's toggle.

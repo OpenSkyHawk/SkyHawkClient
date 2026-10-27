@@ -124,23 +124,15 @@ describe('T27 Overview hero tiles and gauges (B56, B57)', () => {
     const { sky } = await renderScenario(<Overview />, { device: connected() })
     expect(value('Aircraft')).toHaveTextContent('NONE')
     expect(sub('Aircraft')).toBe('_ACFT_NAME · metadata')
-    sky.emitScenario({ aircraft: { name: 'A-4E-C', inferred: false, supported: true } })
+    sky.emitScenario({ aircraft: { name: 'A-4E-C', supported: true } })
     expect(value('Aircraft')).toHaveTextContent('A-4E-C')
     expect(sub('Aircraft')).toBe('_ACFT_NAME · metadata')
     expect(value('Aircraft').style.color).toBe('var(--text)')
   })
 
-  it('Aircraft tile: an aircraft inferred from the address range says so', async () => {
-    await renderScenario(<Overview />, {
-      aircraft: { name: 'A-4E-C', inferred: true, supported: true }
-    })
-    expect(value('Aircraft')).toHaveTextContent('A-4E-C')
-    expect(sub('Aircraft')).toBe('inferred · address range')
-  })
-
   it('Aircraft tile: another aircraft is gold, with the A-4E-C-only banner', async () => {
     await renderScenario(<Overview />, {
-      aircraft: { name: 'F-16C_50', inferred: false, supported: false }
+      aircraft: { name: 'F-16C_50', supported: false }
     })
     expect(value('Aircraft')).toHaveTextContent('F-16C_50')
     expect(value('Aircraft').style.color).toBe('var(--gold)')
