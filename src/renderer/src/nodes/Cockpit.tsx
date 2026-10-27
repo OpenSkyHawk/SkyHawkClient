@@ -184,7 +184,6 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
           key={adoptOpen}
           rows={snap.adopt}
           zones={snap.zones}
-          count={snap.attention.newCount}
           initial={adoptAt}
           onClose={() => setAdopting(false)}
         />

@@ -86,3 +86,17 @@ export function nextSelection(
   if (how === 'later') return after ?? null
   return after ?? queue.find((id) => id !== current) ?? null
 }
+
+/**
+ * The header's count (#180): every board in the list — the same N as the footer's "x of N" —
+ * and how many of them can't be adopted, which main marks by leaving `kind` unset (still
+ * identifying, a Gateway, a type this client doesn't know). The Attention button that opens the
+ * dialog still counts the adoptable ones only.
+ */
+export function queueHeading(queue: readonly AdoptRow[]): string {
+  const n = queue.length
+  const no = queue.filter((r) => r.kind === undefined).length
+  const which = no === n ? (n === 1 ? 'it' : 'they') : String(no)
+  const cant = no ? `; ${which} can’t be adopted` : ''
+  return `${n} board${n === 1 ? '' : 's'} this computer hasn’t added yet${cant}.`
+}

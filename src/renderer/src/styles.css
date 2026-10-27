@@ -3779,12 +3779,16 @@ select.input {
   inset: 0;
   background: rgba(3, 6, 12, 0.7);
 }
+/* a flex column like the import modal (.im): header and footer keep their place, only the body
+   gives up height (#180) */
 .ad {
   position: fixed;
   left: 50%;
   top: 60px;
   max-height: calc(100% - 80px);
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   width: min(820px, calc(100% - 32px));
   transform: translateX(-50%);
   background: var(--panel);
@@ -3810,20 +3814,39 @@ select.input {
   font-size: 12px;
   color: var(--muted-2);
 }
-/* queue | form, with the footer spanning both */
+.ad > * {
+  flex: 0 0 auto;
+}
+/* queue | form. One steady height: picking another board never resizes the dialog; a short
+   window takes height from here (#180) */
+.ad > .ad__b {
+  flex: 0 1 420px;
+  min-height: 0;
+}
 .ad__b {
   display: grid;
   grid-template-columns: minmax(180px, 250px) 1fr;
-  grid-template-rows: minmax(360px, auto) auto;
+  grid-template-rows: minmax(0, 1fr);
+}
+/* the list sits out of flow in its cell, so the row height comes from the body, never the list */
+.ad__qw {
+  position: relative;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--panel-2);
 }
 .ad__q {
-  grid-row: 1;
-  border-right: 1px solid var(--line);
+  position: absolute;
+  inset: 0;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: var(--panel-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ad__q .ad__i {
+  flex: 0 0 auto;
 }
 .ad__i {
   appearance: none;
@@ -3875,10 +3898,10 @@ select.input {
   background: rgba(244, 179, 33, 0.14);
 }
 .ad__f {
-  grid-row: 1;
-  grid-column: 2;
   padding: 18px 22px;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 .ad__ev {
   display: flex;
@@ -3934,7 +3957,6 @@ select.input {
   margin: 0 0 8px;
 }
 .ad__ft {
-  grid-column: 1 / -1;
   display: flex;
   gap: 8px;
   align-items: center;

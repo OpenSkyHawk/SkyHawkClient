@@ -58,14 +58,29 @@ describe('T10 Adopt dialog: queue and form (B74, B21, B22)', () => {
       'NODE_ID 10BRIDGEfirst seen just now',
       'NODE_ID 13UNKNOWN TYPEfirst seen just now'
     ])
-    // R10 (#133): the count is the "New on the bus · N" button's (the boards that can be added),
-    // not every row listed — it was 6 here, against the button's 3.
+    // The "New on the bus · N" button counts the boards that can be added (R10, #133)…
     expect(screen.getByText('New on the bus · 3')).toBeInTheDocument()
+    // …while the header counts every board listed, the footer's "x of 6", and names the ones that
+    // can't be adopted (#180): identifying, a Gateway and an unknown type.
     expect(
       within(dlg).getByText(
-        /^3 boards this computer hasn’t added yet\. Boards in NODE_IDS\.md come pre-filled/
+        /^6 boards this computer hasn’t added yet; 3 can’t be adopted\. Boards in NODE_IDS\.md come pre-filled/
       )
     ).toBeInTheDocument()
+    expect(within(dlg).getByText('1 of 6')).toBeInTheDocument()
+  })
+
+  it('the footer is the dialog’s own row, outside the list and form that scroll (#180)', async () => {
+    const { dlg, button } = await openAdopt()
+    const body = dlg.querySelector('.ad__b')!
+    const footer = dlg.querySelector('.ad__ft')!
+    expect(footer.parentElement).toBe(dlg)
+    expect(body.parentElement).toBe(dlg)
+    for (const name of ['Later', 'Add to cockpit']) {
+      expect(footer).toContainElement(button(name))
+      expect(body).not.toContainElement(button(name))
+    }
+    expect(body.querySelector('.ad__qw > [role="listbox"]')).not.toBeNull()
   })
 
   it('a request to open another board while the dialog is open lands on that board (R10)', async () => {
