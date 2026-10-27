@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GatewayDiag } from '@shared/gateway'
-import { firstFault, linkHealth, resetReason, unsupported } from './gateway-diag'
+import { firstFault, linkHealth, resetReason, unsupportedLinkHealth } from './gateway-diag'
 
 /** A healthy record: up an hour, nothing ever went wrong, a cold start. */
 const diag = (over: Partial<GatewayDiag> = {}): GatewayDiag => ({
@@ -75,6 +75,6 @@ describe('linkHealth', () => {
   })
 
   it('no DIAG within the timeout is "not supported", not a fault', () => {
-    expect(unsupported(7)).toEqual({ at: 7, supported: false })
+    expect(unsupportedLinkHealth(7)).toEqual({ at: 7, supported: false })
   })
 })

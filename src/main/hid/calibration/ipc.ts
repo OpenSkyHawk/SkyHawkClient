@@ -2,7 +2,6 @@
 // The protocol exchanges they drive are main-internal (HidCalibrationService); main answers each
 // action by pushing `cal:workflow`.
 import type { IpcRegistrar } from '@shared/app'
-import { GATEWAY_CTRL } from '@shared/gateway'
 import { CALIBRATION_CTRL } from '@shared/hid/calibration'
 import type { HidCalibrationService } from './hid-calibration-service'
 
@@ -30,6 +29,4 @@ export function registerCalibrationIpc(ipc: IpcRegistrar, deps: CalibrationIpcDe
   )
   // The HID tab's mount and unmount: the workflow's lifetime (useCalibration's, before R3.1).
   ipc.handle(CALIBRATION_CTRL.calAttach, (_e, on: boolean) => workflow.attach(on))
-  // The Gateway's link health (#169): a gateway intent, answered over the calibration channel.
-  ipc.handle(GATEWAY_CTRL.deviceDiag, () => deps.calibration.gatewayDiag())
 }

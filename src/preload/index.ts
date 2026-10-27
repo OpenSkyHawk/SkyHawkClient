@@ -21,7 +21,6 @@ import type {
   ConfigView
 } from '@shared/config'
 import type { RecordState, ExportResult, RelayResult, ReplayLoad } from '@shared/dcs'
-import type { GatewayLinkHealth } from '@shared/gateway'
 import type { HidAvailability } from '@shared/hid'
 import type {
   NodeBatchResult,
@@ -76,8 +75,7 @@ const api: SkyhawkApi = {
   getStatus: () => ipcRenderer.invoke(CTRL.relayStatus) as Promise<RelayStatus>,
   connectDevice: () => ipcRenderer.invoke(CTRL.deviceConnect) as Promise<void>,
   disconnectDevice: () => ipcRenderer.invoke(CTRL.deviceDisconnect) as Promise<void>,
-  readGatewayDiag: () =>
-    ipcRenderer.invoke(CTRL.deviceDiag) as Promise<GatewayLinkHealth | undefined>,
+  refreshGatewayDiag: () => ipcRenderer.invoke(CTRL.deviceDiagRefresh) as Promise<void>,
   exportLog: (text: string) => ipcRenderer.invoke(CTRL.logExport, text) as Promise<ExportResult>,
   getEvents: () => ipcRenderer.invoke(CTRL.eventsGet) as Promise<LogEvent[]>,
   clearEvents: () => ipcRenderer.invoke(CTRL.eventsClear) as Promise<void>,

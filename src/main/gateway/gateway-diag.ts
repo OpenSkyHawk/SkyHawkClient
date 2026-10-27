@@ -1,5 +1,7 @@
-// The Gateway's link health (#169), from its DIAG record (pure, no Node/Electron deps). What main
-// concludes from the counters, so the renderer and the debug log only read it.
+// The Gateway's link health (#169), from its DIAG record: a model (pure, no I/O, time passed in).
+// What main concludes from the counters, so the renderer and the debug log only read it. The
+// record is read on the wire by hid/calibration (it owns that channel) and handed to
+// GatewayConnection, which carries the result on `device:status`.
 import { CAL_DIAG_RESET_REASONS } from '@shared/firmware'
 import type { GatewayDiag, GatewayLinkHealth, GatewayResetReason } from '@shared/gateway'
 
@@ -46,4 +48,4 @@ export function linkHealth(diag: GatewayDiag, at: number): GatewayLinkHealth {
 }
 
 /** No DIAG within the request timeout: firmware older than #355, not a link fault. */
-export const unsupported = (at: number): GatewayLinkHealth => ({ at, supported: false })
+export const unsupportedLinkHealth = (at: number): GatewayLinkHealth => ({ at, supported: false })

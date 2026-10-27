@@ -34,6 +34,11 @@ export interface DeviceStatus {
    * while the link is down (main/gateway/gateway-health.ts shownStatus, R3.4a).
    */
   gateway?: GatewayStatus
+  /**
+   * The Gateway's link-health record (#169), read with GET_DIAG on connect and on refresh. Only
+   * while `connected`: a link that drops or reopens starts without one (it may be another board).
+   */
+  linkHealth?: GatewayLinkHealth
 }
 
 export type GatewayKind =
@@ -193,5 +198,5 @@ export const GATEWAY_CTRL = {
   deviceConnect: 'device:connect',
   deviceDisconnect: 'device:disconnect',
   serialMonitor: 'serial:monitor',
-  deviceDiag: 'device:diag'
+  deviceDiagRefresh: 'device:diag-refresh'
 } as const

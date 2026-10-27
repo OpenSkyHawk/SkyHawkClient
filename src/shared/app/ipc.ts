@@ -36,7 +36,6 @@ import {
   GATEWAY_CTRL,
   GATEWAY_PUSH,
   type DeviceStatusPush,
-  type GatewayLinkHealth,
   type GatewayPushChannels
 } from '../gateway/ipc'
 import { HID_CTRL, HID_PUSH, type HidAvailability, type HidPushChannels } from '../hid/ipc'
@@ -259,10 +258,10 @@ export interface SkyhawkApi {
   /** Close the device link and keep it closed — through a replug — until connectDevice(). */
   disconnectDevice(): Promise<void>
   /**
-   * The Gateway's link health (#169): read fresh with `GET_DIAG` while the link is up, else the
-   * last read this link; undefined before any read, or with no Gateway attached.
+   * Read the Gateway's link health again (#169): GET_DIAG while the link is up. The answer comes
+   * on `device:status` (`linkHealth`), not here.
    */
-  readGatewayDiag(): Promise<GatewayLinkHealth | undefined>
+  refreshGatewayDiag(): Promise<void>
   exportLog(text: string): Promise<ExportResult>
 
   // ── event log (#64) — in memory in main, this app run only ────────────────

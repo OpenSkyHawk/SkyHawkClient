@@ -21,12 +21,17 @@ import type {
 } from '@shared/hid/calibration'
 import type { Emit } from '@shared/app'
 import type { DeviceState, GatewayLinkHealth } from '@shared/gateway'
-import type { CalFrameFilter, LinkRider, LinkTimer } from '../../gateway'
+import {
+  linkHealth,
+  unsupportedLinkHealth,
+  type CalFrameFilter,
+  type LinkRider,
+  type LinkTimer
+} from '../../gateway'
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
 import { loadCalCache, saveCalCache, type CacheFileEvents, type CacheFileIO } from './cache-store'
 import { boardFor, dropAxis, regressedAxes, storeAxes } from './cache-rules'
 import { CAL_AXIS_NONE, nackName } from './codec'
-import { linkHealth, unsupported } from './gateway-diag'
 import { CalibrationWorkflowHost } from './workflow-host'
 
 /** RAW batches (`cal:raw` before R3.1): the serial monitor's cadence, as before the split. */
@@ -44,6 +49,11 @@ export interface HidCalibrationDeps {
   /** Where the cache file's problems are reported (the event log); none, for a quiet owner. */
   cacheEvents?: CacheFileEvents
   log: Log
+  /**
+   * Where a link-health read goes (#169): GatewayConnection.pushLinkHealth, which carries it on
+   * `device:status`. This service only reads it on the wire; the Gateway topic owns it.
+   */
+  linkHealth?: (health: GatewayLinkHealth) => void
 }
 
 export class HidCalibrationService implements LinkRider, CalFrameFilter {
@@ -57,8 +67,6 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
    * longer attached — or, worse, a different one after a reconnect.
    */
   private lastCal?: CalSnapshot
-  /** The Gateway's link health as last read on this link (#169); cleared when the link goes. */
-  private lastDiag?: GatewayLinkHealth
   /** The calibration dialog's workflow, over this service's own commands. */
   readonly workflow: CalibrationWorkflowHost
   private readonly workflowCbs = new Set<(state: CalibrationState) => void>()
@@ -124,7 +132,6 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
     this.cal = undefined
     this.calRawBuf = []
     this.lastCal = undefined
-    this.lastDiag = undefined
     this.calSerialNumber = undefined
   }
 
@@ -142,7 +149,6 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
     const held = this.cal?.close()
     if (held?.length) pass(held)
     this.lastCal = undefined // the board it described may not be the one that comes back
-    this.lastDiag = undefined
   }
 
   // ── the frame filter (CalFrameFilter) ──────────────────────────────────────
@@ -196,7 +202,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
       serial: this.calSerialNumber ?? null
     })
     // Every connect leaves the link-health record in the debug log (#169), right after HELLO.
-    await this.gatewayDiag()
+    await this.readGatewayDiag()
     const read = await this.calRead()
     if (!read.ok) {
       this.deps.log('cal.absent', `read failed: ${read.message}`)
@@ -241,19 +247,18 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
   }
 
   /**
-   * The Gateway's link health (#169): GET_DIAG now, while the port is open; with no port, the
-   * last read on this link (none after it closed). Asked once on connect and on demand, never in a
-   * loop: a timeout is older firmware ("not supported"), not a fault to retry.
+   * Read the Gateway's link health (#169): GET_DIAG, logged and handed to the Gateway topic. Asked
+   * once on connect (after HELLO) and on refresh, never in a loop: a timeout is older firmware
+   * ("not supported"), not a fault to retry.
    */
-  async gatewayDiag(now: () => number = Date.now): Promise<GatewayLinkHealth | undefined> {
-    if (!this.cal) return this.lastDiag
+  async readGatewayDiag(): Promise<void> {
+    if (!this.cal) return
     const r = await this.calRun((l) => l.getDiag())
     if (!r.ok && r.kind !== 'timeout') {
       this.deps.log('cal.diag', `read failed: ${r.message}`)
-      return this.lastDiag
+      return
     }
-    const health = r.ok ? linkHealth(r.value, now()) : unsupported(now())
-    this.lastDiag = health
+    const health = r.ok ? linkHealth(r.value, Date.now()) : unsupportedLinkHealth(Date.now())
     this.deps.log(
       'cal.diag',
       health.supported
@@ -265,7 +270,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
           }
         : { supported: false }
     )
-    return health
+    this.deps.linkHealth?.(health)
   }
 
   /** Read stored calibration and report it to the workflow, so badges follow the device. */

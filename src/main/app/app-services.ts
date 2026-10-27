@@ -67,14 +67,16 @@ export class AppServices {
       serialNumber: () => this.connection.usbSerialNumber(),
       cacheFile,
       cacheEvents: this.journal,
-      log: debugLog
+      log: debugLog,
+      linkHealth: (health) => this.connection.pushLinkHealth(health)
     })
     this.hid = new HidService(emit, debugLog)
     this.connection = new GatewayConnection(emit, {
       log: debugLog,
       frames: this.calibration,
       health: () => this.nodes.gatewayHealth(),
-      serialMonitor: () => this.serialMonitor.shown
+      serialMonitor: () => this.serialMonitor.shown,
+      readLinkHealth: () => this.calibration.readGatewayDiag()
     })
     this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,
