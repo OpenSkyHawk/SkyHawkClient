@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CAL_TYPE, buildFrame } from '../hid/calibration/codec'
 import type { StreamRow } from '@shared/dcs'
+import { FIRMWARE_RELEASE } from '@shared/firmware'
 import { eventText } from '@shared/format'
 import type { LogEvent } from '@shared/events'
 import type { CockpitSnapshot, NodeModel } from '@shared/nodes'
@@ -750,7 +751,8 @@ describe('Gateway health (#94)', () => {
       expect(session.status().device.gateway).toEqual({
         severity: 'ok',
         kind: 'ok',
-        label: 'OK · 42 °C'
+        label: 'OK · 42 °C',
+        firmware: { version: null, tooNew: false, supportedMajor: FIRMWARE_RELEASE.major }
       })
       serial.dataCb(ascii(gatewayLine(0x01))) // bus-off
       vi.advanceTimersByTime(250)

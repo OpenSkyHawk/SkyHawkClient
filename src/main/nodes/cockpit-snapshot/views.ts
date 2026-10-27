@@ -1,7 +1,10 @@
 // Per-board health, flag and readings (moved from the renderer, R3.2): what each node
 // reads as on the plan, computed once per snapshot from the node model and the telemetry. The
-// client applies no thresholds — a warning is always a flag a board raised itself.
+// client applies no thresholds — a warning is always a flag a board raised itself, with one
+// finding of the client's own: a board on another firmware major than the Gateway (#171).
+import type { GatewayFirmware } from '@shared/gateway'
 import type {
+  BoardFirmware,
   NodeHealth,
   NodeModel,
   NodeModelEntry,
@@ -9,6 +12,7 @@ import type {
   NodeView,
   PduReadings
 } from '@shared/nodes'
+import { majorMismatch, reportedVersion } from '../../gateway'
 import { nodeFlagChips, pduAlertFlags } from '../faults'
 import { newReason } from '../node-model'
 
@@ -40,7 +44,33 @@ export function nodeHealth(e: NodeModelEntry, r: PduReadings = {}): NodeHealth {
   return flags.length ? { state: 'warn', flag: flags.join(' · ') } : { state: 'on' }
 }
 
-export function nodeViews(model: NodeModel, telemetry: NodeTelemSnapshot[]): NodeView[] {
+/** The tile and Attention flag for a board on another firmware major than the Gateway (#171). */
+export const FW_MISMATCH = 'FW MISMATCH'
+
+/** A board's release, and whether it runs another major than the Gateway (#171). */
+export function boardFirmware(e: NodeModelEntry, gateway?: GatewayFirmware): BoardFirmware {
+  const version = reportedVersion(e.status)
+  const mismatch = majorMismatch(version, gateway)
+  return mismatch ? { version, mismatch } : { version }
+}
+
+/**
+ * A mismatch is a warning on the tile and in the ring, on top of whatever the board raised: a
+ * healthy board turns warn with FW_MISMATCH, a warning gains it. Offline and new boards are left
+ * as they are (offline says it all; a new one isn't in your cockpit).
+ */
+function withFirmware(h: NodeHealth, fw: BoardFirmware): NodeHealth {
+  if (!fw.mismatch) return h
+  if (h.state === 'on') return { state: 'warn', flag: FW_MISMATCH }
+  if (h.state === 'warn') return { state: 'warn', flag: `${h.flag} · ${FW_MISMATCH}` }
+  return h
+}
+
+export function nodeViews(
+  model: NodeModel,
+  telemetry: NodeTelemSnapshot[],
+  gateway?: GatewayFirmware
+): NodeView[] {
   const telem = new Map(telemetry.map((t) => [t.nodeId, t]))
   return model.nodes.map((entry) => {
     // An offline PDU has no readings, even in the seconds before its last pages go stale.
@@ -48,11 +78,13 @@ export function nodeViews(model: NodeModel, telemetry: NodeTelemSnapshot[]): Nod
       entry.kind === 'pdu' && entry.availability === 'online'
         ? freshReadings(telem.get(entry.nodeId))
         : {}
+    const firmware = boardFirmware(entry, gateway)
     return {
       entry,
-      health: nodeHealth(entry, readings),
+      health: withFirmware(nodeHealth(entry, readings), firmware),
       readings,
-      noReadings: entry.kind === 'pdu' && entry.readings === 'none'
+      noReadings: entry.kind === 'pdu' && entry.readings === 'none',
+      firmware
     }
   })
 }

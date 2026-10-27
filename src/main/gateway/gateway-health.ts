@@ -16,6 +16,7 @@ import { title } from '@shared/format'
 import type { NodeStatus } from '@shared/nodes'
 import type { DeviceStatus, GatewayKind, GatewayStatus } from '@shared/gateway'
 import { faultLabel, STATUS_FLAGS, type StatusFlag } from '../events'
+import { gatewayFirmware } from './firmware'
 import { isLinkUp } from './link-state'
 
 /** How long a roster request may go unanswered, with the port open, before the Gateway is "not responding". */
@@ -65,6 +66,12 @@ export function gatewayStatus(
   row: NodeStatus | undefined,
   notResponding: boolean
 ): GatewayStatus | undefined {
+  const s = healthOf(row, notResponding)
+  // Its own firmware release rides along whenever there is a status to carry it (#171).
+  return s && row ? { ...s, firmware: gatewayFirmware(row) } : s
+}
+
+function healthOf(row: NodeStatus | undefined, notResponding: boolean): GatewayStatus | undefined {
   if (notResponding) {
     return {
       severity: 'err',

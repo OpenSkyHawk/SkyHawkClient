@@ -7,6 +7,7 @@
  *   Firmware/Libraries/HIDControls/HIDControls.h -> hid-controls.generated.ts
  *   Firmware/Libraries/SimGateway/SimGateway.cpp -> hid-report-layout.generated.ts (asserted)
  *                                                -> usb-identity.generated.ts
+ *   Firmware/Libraries/FirmwareVersion/FirmwareVersion.h -> firmware-release.generated.ts
  *   Firmware/Libraries/NodeStatus/NodeStatus.h   -> node-status.generated.ts
  *   Firmware/Libraries/SimGateway/AxisCal.{h,cpp} -> axis-cal.generated.ts
  *   Firmware/Libraries/PanelBridge/PanelBridge.cpp,
@@ -46,7 +47,8 @@ const SRC = {
   axisCalCpp: 'Firmware/Libraries/SimGateway/AxisCal.cpp',
   nodeIds: 'Firmware/NODE_IDS.md',
   panelBridge: 'Firmware/Libraries/PanelBridge/PanelBridge.cpp',
-  telemSchedule: 'Firmware/Libraries/PowerMonitor/TelemSchedule.h'
+  telemSchedule: 'Firmware/Libraries/PowerMonitor/TelemSchedule.h',
+  firmwareVersion: 'Firmware/Libraries/FirmwareVersion/FirmwareVersion.h'
 }
 
 const REPO_ROOT = join(__dirname, '..')
@@ -1137,6 +1139,36 @@ export const USB_IDENTITY = {
   )
 }
 
+// ── firmware release ─────────────────────────────────────────────────────────
+
+/**
+ * The firmware release this client is synced against (FirmwareVersion.h). Its major is the one the
+ * client supports: within a major firmware only appends (D22), so a newer major may not read right.
+ */
+function genFirmwareRelease(h: string): string {
+  const part = (name: string): number => {
+    const all = [...h.matchAll(new RegExp(`#define\\s+OPENSKYHAWK_FW_${name}\\s+(\\d+)\\b`, 'g'))]
+    if (all.length !== 1) {
+      throw new Error(
+        `[sync] OPENSKYHAWK_FW_${name}: expected one in FirmwareVersion.h, found ${all.length}`
+      )
+    }
+    return Number(all[0]![1])
+  }
+  const [major, minor, patch] = [part('MAJOR'), part('MINOR'), part('PATCH')]
+  return (
+    banner([`${SRC.firmwareVersion} (the release this client is synced against)`]) +
+    `
+/**
+ * The firmware release this client was synced against. Boards report their own release in their
+ * status rows; a Gateway on a newer major than this one runs firmware this client may not read
+ * right (within a major, firmware only appends).
+ */
+export const FIRMWARE_RELEASE = { major: ${major}, minor: ${minor}, patch: ${patch} } as const
+`
+  )
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 async function writeGenerated(file: string, code: string): Promise<void> {
@@ -1157,6 +1189,7 @@ async function main(): Promise<void> {
     await writeGenerated('axis-cal.generated.ts', genAxisCal(s.axisCal, s.axisCalCpp, s.simGateway))
     await writeGenerated('node-bus.generated.ts', genNodeBus(s.panelBridge, s.telemSchedule))
     await writeGenerated('usb-identity.generated.ts', genUsbIdentity(s.simGateway))
+    await writeGenerated('firmware-release.generated.ts', genFirmwareRelease(s.firmwareVersion))
   } finally {
     s.cleanup()
   }

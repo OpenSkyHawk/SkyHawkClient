@@ -3,7 +3,7 @@
 // the rows each panel shows, which PDU feeds a panel group and which boards a PDU feeds, and the
 // power zones a panel can be given. Every value is something a board reported or the client
 // computed, labelled as such.
-import { DASH, fmtUptime, lastSeenLabel } from '@shared/format'
+import { DASH, fmtUptime, lastSeenLabel, versionText } from '@shared/format'
 import {
   CONSOLE_OPTIONS,
   type BoardAction,
@@ -29,6 +29,7 @@ import { displayCurrentMa } from '../node-telem'
 import { canForget, canHide, type OfflineGate } from '../offline-actions'
 import { fedBy, zoneLabel } from '../power-zone'
 import type { Members } from './members'
+import { nodeHealth } from './views'
 
 // ── board actions ───────────────────────────────────────────────────────────
 
@@ -141,7 +142,31 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
     ]
   }
   if (!st) return []
-  return raisedNodeFlags(st).map((k) => FLAG_BOX[k](st))
+  const m = v.firmware.mismatch
+  // A firmware mismatch first (#171): the client's finding, and the one to fix before the rest.
+  const fw: FaultBox[] = m
+    ? [
+        {
+          tone: 'warn',
+          title: 'Firmware mismatch',
+          text: `it runs firmware ${m.board}.x, the Gateway runs ${m.gateway}.x — reflash it. Boards on different major versions don’t work together on the bus.`
+        }
+      ]
+    : []
+  return [...fw, ...raisedNodeFlags(st).map((k) => FLAG_BOX[k](st))]
+}
+
+/**
+ * The Firmware section of the Status tab (#171): the release the board reports, or "version not
+ * reported" with why. It shows what the board says; a mismatch is the box at the top.
+ */
+export function boardFirmwareRows(v: NodeView): BoardPanel['firmware'] {
+  const fw = v.firmware.version
+  if (fw) return { installed: versionText(fw) }
+  return {
+    installed: 'version not reported',
+    hint: 'The board was already running when the Gateway started, so it hasn’t reported its version yet. It will after its next restart. Firmware older than 0.2.0 doesn’t report one.'
+  }
 }
 
 /** Each flag's box, as nodeFaultBoxes stacks them (in faults.ts NODE_FLAG_ORDER). */
@@ -214,14 +239,16 @@ export function pduFaultBoxes(v: NodeView, outage: boolean): FaultBox[] {
 /** "Reported by the node" on the Status tab. An offline node keeps what it last said. */
 export function nodeStatusRows(v: NodeView): Row[] {
   const st = v.entry.status
+  // What the board reports: a firmware mismatch is the client's finding, not the board's (#171).
+  const said = nodeHealth(v.entry, v.readings)
   const state =
-    v.health.state === 'unknown'
+    said.state === 'unknown'
       ? 'no status yet'
       : v.entry.availability === 'offline'
         ? 'offline'
         : st?.boff
           ? 'bus-off'
-          : v.health.state === 'warn'
+          : said.state === 'warn'
             ? st?.degraded
               ? 'degraded'
               : 'warning'
@@ -393,6 +420,7 @@ export function boardPanels(
           outages.some((o) => o.pduId === e.nodeId)
         ),
         actions: boardActions(e, feeds.length),
+        firmware: boardFirmwareRows(v),
         rails: pduRailRows(v),
         board: pduBoardRows(v),
         feeds,
@@ -410,6 +438,7 @@ export function boardPanels(
       p = {
         faults: nodeFaultBoxes(v),
         actions: boardActions(e),
+        firmware: boardFirmwareRows(v),
         status: nodeStatusRows(v),
         zone: zones.get(e.nodeId) ?? { status: 'none' }
       }

@@ -1,6 +1,7 @@
 // Nodes topic contract (arch-phase0-v2 §2.3): the CAN node roster, PDU telemetry, the node mapping
 // and the PSU limits the Cockpit draws against. Imported by main, preload and the renderer.
 import type { TELEM_PAGES } from '../firmware'
+import type { FirmwareVersion } from '../gateway/ipc'
 import { DASH } from '../format'
 
 export interface NodeStatus {
@@ -479,6 +480,15 @@ export interface NodeView {
   readings: PduReadings
   /** PDUs: online but no fresh telemetry. */
   noReadings: boolean
+  /** Its firmware release (#171): null = not reported (0.0.0). */
+  firmware: BoardFirmware
+}
+
+/** A board's firmware as main judges it (#171). */
+export interface BoardFirmware {
+  version: FirmwareVersion | null
+  /** It runs another major than the Gateway (neither side 0.0.0): reflash it. */
+  mismatch?: { board: number; gateway: number }
 }
 
 export interface AttentionItem {
@@ -655,6 +665,8 @@ export interface BoardPanel {
   /** The boxes at the top of the Status tab, stacked. */
   faults: FaultBox[]
   actions: BoardActions
+  /** The Status tab's Firmware section (#171): the release it reports, or why there is none. */
+  firmware: { installed: string; hint?: string }
   /** Panel groups: "Reported by the node". */
   status?: Row[]
   /** Panel groups: its power zone, as resolved (D7). */

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useDcsStore } from '../dcs'
-import { SerialTab } from '../gateway'
+import { ClientTooOld, SerialTab } from '../gateway'
 import { initBridge } from './ipc-adapter'
 import { useNav, type TabId } from './kit'
 import { DevicePopover } from './titlebar/DevicePopover'
@@ -62,6 +62,8 @@ export function App() {
           SOURCE <b>{sourceMode}</b>
         </span>
       </nav>
+      {/* On every tab while this Gateway is connected (#171). */}
+      <ClientTooOld />
 
       <main className="content scroll" role="tabpanel">
         {tab === 'overview' && <Overview />}

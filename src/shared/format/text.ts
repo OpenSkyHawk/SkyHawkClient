@@ -19,3 +19,7 @@ export function fileName(path: string): string {
 
 /** A caught error's message; anything else thrown, as a string. */
 export const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+/** A firmware release as the UI writes it: `1.0.1`. */
+export const versionText = (v: { major: number; minor: number; patch: number }): string =>
+  `${v.major}.${v.minor}.${v.patch}`
