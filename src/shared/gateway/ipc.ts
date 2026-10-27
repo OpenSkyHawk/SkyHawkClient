@@ -34,6 +34,11 @@ export interface DeviceStatus {
    * while the link is down (main/gateway/gateway-health.ts shownStatus, R3.4a).
    */
   gateway?: GatewayStatus
+  /**
+   * The Gateway's link-health record (#169), read with GET_DIAG on connect and on refresh. Only
+   * while `connected`: a link that drops or reopens starts without one (it may be another board).
+   */
+  linkHealth?: GatewayLinkHealth
 }
 
 export type GatewayKind =
@@ -62,6 +67,58 @@ export interface GatewayStatus {
    */
   aboutLink?: true
 }
+
+/**
+ * The Gateway's link-health record (#169): `DIAG`, the reply to `GET_DIAG` on the calibration
+ * channel (AxisCal.h CalDiagField). Times are the device's `millis()` since its boot, 0 = never;
+ * counters are u16 and saturate at 0xFFFF; the reboot and watchdog counts are u8 and survive a
+ * warm reboot.
+ */
+export interface GatewayDiag {
+  /** Device `millis()` when the reply was built: the reference for every time below. */
+  uptimeMs: number
+  firstUartErrMs: number
+  lastUartErrMs: number
+  /** Healthy → unhealthy USB-link edges. */
+  firstUsbLossMs: number
+  lastUsbLossMs: number
+  uartOverrun: number
+  uartFraming: number
+  uartBreak: number
+  uartParity: number
+  uartRxOverflow: number
+  linesDropped: number
+  linesCorrupt: number
+  linesOverlong: number
+  framesDropped: number
+  uartRestarts: number
+  usbReattaches: number
+  cdcStalls: number
+  recoveryReboots: number
+  watchdogResets: number
+  /** CalDiagResetReason, raw: a value this client does not know is kept, never an error. */
+  resetReason: number
+}
+
+/** Why the Gateway's current boot happened; `unknown` for a reason newer than this client. */
+export type GatewayResetReason = 'power-on' | 'watchdog' | 'recovery' | 'unknown'
+
+/**
+ * What the client knows of the Gateway's link health, read on connect and on demand (#169).
+ * `supported: false`: no `DIAG` within the request timeout — firmware older than #355, not a fault.
+ */
+export type GatewayLinkHealth =
+  | { at: number; supported: false }
+  | {
+      at: number
+      supported: true
+      diag: GatewayDiag
+      resetReason: GatewayResetReason
+      /** Which happened first this boot, a UART error or a USB loss; null when neither did. */
+      firstFault: 'uart' | 'usb' | null
+      /** It re-plugged or rebooted itself this boot: the evidence #355 needs. */
+      selfRecovered: boolean
+    }
 
 /**
  * The link's one action, for the state it is in (R3.4a): which button the device card and the
@@ -140,5 +197,6 @@ export const GATEWAY_PUSH = {
 export const GATEWAY_CTRL = {
   deviceConnect: 'device:connect',
   deviceDisconnect: 'device:disconnect',
-  serialMonitor: 'serial:monitor'
+  serialMonitor: 'serial:monitor',
+  deviceDiagRefresh: 'device:diag-refresh'
 } as const

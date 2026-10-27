@@ -18,6 +18,9 @@ import {
   CAL_COMMIT_FIELD,
   CAL_DATA_FIELD,
   CAL_DATA_REC_FIELD,
+  CAL_DIAG_BYTES,
+  CAL_DIAG_FIELD,
+  CAL_DIAG_RESET_REASONS,
   CAL_HELLO_ACK_FIELD,
   CAL_NACK_FIELD,
   CAL_RAW_FIELD,
@@ -318,5 +321,40 @@ describe('axis-cal.generated', () => {
     // The batch form allowed a message to name the same axis twice and silently apply the last.
     // If this length ever grows, encodeCommit() is wrong in kind, not merely short.
     expect(CAL_PAYLOAD_LEN[cal.CAL_TYPE.COMMIT]).toBe(9)
+  })
+
+  // codec.decodeDiag reads DIAG by these names (#169). Pinned at the layout it was written for:
+  // a relayout fails here; a counter added in the reserved bytes does not (bytes 0–46 stay put).
+  it('pins GET_DIAG / DIAG and the DIAG layout the decoder reads', () => {
+    expect(cal.CAL_TYPE.GET_DIAG).toBe(0x09)
+    expect(cal.CAL_TYPE.DIAG).toBe(0x87)
+    expect(CAL_PAYLOAD_LEN[0x09]).toBe(0)
+    expect(CAL_DIAG_BYTES).toBe(64)
+    expect(CAL_PAYLOAD_LEN[0x87]).toBe(CAL_DIAG_BYTES)
+    expect(CAL_DIAG_BYTES).toBeLessThanOrEqual(CAL_PROTO.maxPayload) // fits the receiver's carry
+    expect(CAL_DIAG_FIELD).toEqual({
+      UPTIME_MS: 0,
+      FIRST_UART_ERR_MS: 4,
+      LAST_UART_ERR_MS: 8,
+      FIRST_USB_LOSS_MS: 12,
+      LAST_USB_LOSS_MS: 16,
+      UART_OVERRUN: 20,
+      UART_FRAMING: 22,
+      UART_BREAK: 24,
+      UART_PARITY: 26,
+      UART_RX_OVERFLOW: 28,
+      LINES_DROPPED: 30,
+      LINES_CORRUPT: 32,
+      LINES_OVERLONG: 34,
+      FRAMES_DROPPED: 36,
+      UART_RESTARTS: 38,
+      USB_REATTACHES: 40,
+      CDC_STALLS: 42,
+      RECOVERY_REBOOTS: 44,
+      WATCHDOG_RESETS: 45,
+      RESET_REASON: 46,
+      RESERVED: 47
+    })
+    expect(CAL_DIAG_RESET_REASONS).toEqual({ POWER_ON: 0, WATCHDOG: 1, RECOVERY: 2 })
   })
 })

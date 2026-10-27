@@ -20,8 +20,14 @@ import type {
   CalSnapshot
 } from '@shared/hid/calibration'
 import type { Emit } from '@shared/app'
-import type { DeviceState } from '@shared/gateway'
-import type { CalFrameFilter, LinkRider, LinkTimer } from '../../gateway'
+import type { DeviceState, GatewayLinkHealth } from '@shared/gateway'
+import {
+  linkHealth,
+  unsupportedLinkHealth,
+  type CalFrameFilter,
+  type LinkRider,
+  type LinkTimer
+} from '../../gateway'
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
 import { loadCalCache, saveCalCache, type CacheFileEvents, type CacheFileIO } from './cache-store'
 import { boardFor, dropAxis, regressedAxes, storeAxes } from './cache-rules'
@@ -43,6 +49,11 @@ export interface HidCalibrationDeps {
   /** Where the cache file's problems are reported (the event log); none, for a quiet owner. */
   cacheEvents?: CacheFileEvents
   log: Log
+  /**
+   * Where a link-health read goes (#169): GatewayConnection.pushLinkHealth, which carries it on
+   * `device:status`. This service only reads it on the wire; the Gateway topic owns it.
+   */
+  linkHealth?: (health: GatewayLinkHealth) => void
 }
 
 export class HidCalibrationService implements LinkRider, CalFrameFilter {
@@ -190,6 +201,8 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
       fw: `${fw.major}.${fw.minor}.${fw.patch}`,
       serial: this.calSerialNumber ?? null
     })
+    // Every connect leaves the link-health record in the debug log (#169), right after HELLO.
+    await this.readGatewayDiag()
     const read = await this.calRead()
     if (!read.ok) {
       this.deps.log('cal.absent', `read failed: ${read.message}`)
@@ -231,6 +244,33 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
 
   calHello(): Promise<CalResult<CalHello>> {
     return this.calRun((l) => l.hello())
+  }
+
+  /**
+   * Read the Gateway's link health (#169): GET_DIAG, logged and handed to the Gateway topic. Asked
+   * once on connect (after HELLO) and on refresh, never in a loop: a timeout is older firmware
+   * ("not supported"), not a fault to retry.
+   */
+  async readGatewayDiag(): Promise<void> {
+    if (!this.cal) return
+    const r = await this.calRun((l) => l.getDiag())
+    if (!r.ok && r.kind !== 'timeout') {
+      this.deps.log('cal.diag', `read failed: ${r.message}`)
+      return
+    }
+    const health = r.ok ? linkHealth(r.value, Date.now()) : unsupportedLinkHealth(Date.now())
+    this.deps.log(
+      'cal.diag',
+      health.supported
+        ? {
+            ...health.diag,
+            resetReason: health.resetReason,
+            firstFault: health.firstFault,
+            selfRecovered: health.selfRecovered
+          }
+        : { supported: false }
+    )
+    this.deps.linkHealth?.(health)
   }
 
   /** Read stored calibration and report it to the workflow, so badges follow the device. */

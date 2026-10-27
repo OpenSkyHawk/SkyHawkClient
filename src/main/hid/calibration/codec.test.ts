@@ -10,6 +10,7 @@ import {
   buildFrame,
   crc16,
   decodeCalData,
+  decodeDiag,
   decodeHelloAck,
   decodeNack,
   decodeRaw,
@@ -20,7 +21,7 @@ import {
   encodeSessionOpen,
   nackName
 } from './codec'
-import { CAL_NACK_REASONS, CAL_PROTO } from '@shared/firmware'
+import { CAL_DIAG_FIELD, CAL_NACK_REASONS, CAL_PROTO } from '@shared/firmware'
 
 const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)))
 const cat = (...parts: Uint8Array[]) => {
@@ -386,6 +387,113 @@ describe('decoders', () => {
     })
     // An absent slot carries controlId 0 and zeroed endpoints, not junk.
     expect(cal.axes[7]).toMatchObject({ controlId: 0, min: 0, centre: 0, max: 0 })
+  })
+})
+
+describe('decodeDiag (#169)', () => {
+  /** A DIAG payload with these fields set, little-endian at their CalDiagField offsets. */
+  const diag = (set: Partial<Record<keyof typeof CAL_DIAG_FIELD, number>> = {}) => {
+    const p = new Uint8Array(64)
+    const v = new DataView(p.buffer)
+    for (const [k, n] of Object.entries(set) as [keyof typeof CAL_DIAG_FIELD, number][]) {
+      const at = CAL_DIAG_FIELD[k]
+      if (at < CAL_DIAG_FIELD.UART_OVERRUN) v.setUint32(at, n, true)
+      else if (at < CAL_DIAG_FIELD.RECOVERY_REBOOTS) v.setUint16(at, n, true)
+      else p[at] = n
+    }
+    return p
+  }
+
+  it('decodes every field at its offset, little-endian', () => {
+    const p = diag({
+      UPTIME_MS: 3_600_000,
+      FIRST_UART_ERR_MS: 1000,
+      LAST_UART_ERR_MS: 2000,
+      FIRST_USB_LOSS_MS: 3000,
+      LAST_USB_LOSS_MS: 4000,
+      UART_OVERRUN: 1,
+      UART_FRAMING: 2,
+      UART_BREAK: 3,
+      UART_PARITY: 4,
+      UART_RX_OVERFLOW: 5,
+      LINES_DROPPED: 6,
+      LINES_CORRUPT: 7,
+      LINES_OVERLONG: 8,
+      FRAMES_DROPPED: 9,
+      UART_RESTARTS: 10,
+      USB_REATTACHES: 11,
+      CDC_STALLS: 12,
+      RECOVERY_REBOOTS: 13,
+      WATCHDOG_RESETS: 14,
+      RESET_REASON: 2
+    })
+    expect(decodeDiag(p)).toEqual({
+      uptimeMs: 3_600_000,
+      firstUartErrMs: 1000,
+      lastUartErrMs: 2000,
+      firstUsbLossMs: 3000,
+      lastUsbLossMs: 4000,
+      uartOverrun: 1,
+      uartFraming: 2,
+      uartBreak: 3,
+      uartParity: 4,
+      uartRxOverflow: 5,
+      linesDropped: 6,
+      linesCorrupt: 7,
+      linesOverlong: 8,
+      framesDropped: 9,
+      uartRestarts: 10,
+      usbReattaches: 11,
+      cdcStalls: 12,
+      recoveryReboots: 13,
+      watchdogResets: 14,
+      resetReason: 2
+    })
+  })
+
+  it('times of 0 mean never; an uptime past 2^31 ms stays unsigned', () => {
+    const d = decodeDiag(diag({ UPTIME_MS: 0xfffffff0 }))
+    expect(d.uptimeMs).toBe(0xfffffff0) // ~49.7 days, not a negative number
+    expect([d.firstUartErrMs, d.lastUartErrMs, d.firstUsbLossMs, d.lastUsbLossMs]).toEqual([
+      0, 0, 0, 0
+    ])
+  })
+
+  it('saturated counters read 0xFFFF (u16) and 0xFF (u8)', () => {
+    const d = decodeDiag(
+      diag({
+        LINES_DROPPED: 0xffff,
+        CDC_STALLS: 0xffff,
+        RECOVERY_REBOOTS: 0xff,
+        WATCHDOG_RESETS: 0xff
+      })
+    )
+    expect([d.linesDropped, d.cdcStalls, d.recoveryReboots, d.watchdogResets]).toEqual([
+      0xffff, 0xffff, 0xff, 0xff
+    ])
+  })
+
+  it('keeps every reset reason raw, a newer one too', () => {
+    for (const r of [0, 1, 2, 9]) expect(decodeDiag(diag({ RESET_REASON: r })).resetReason).toBe(r)
+  })
+
+  it('ignores the reserved bytes, so a later counter there changes nothing it reads', () => {
+    const p = diag({ UPTIME_MS: 5 })
+    const q = p.slice()
+    q.fill(0xab, CAL_DIAG_FIELD.RESERVED)
+    expect(decodeDiag(q)).toEqual(decodeDiag(p))
+  })
+
+  it('rejects any length but CAL_DIAG_BYTES (64), the 47-byte pre-#359 one too', () => {
+    expect(() => decodeDiag(new Uint8Array(47))).toThrow(/64/)
+    expect(() => decodeDiag(new Uint8Array(65))).toThrow(/64/)
+  })
+
+  it('a DIAG frame passes the demux whole; it fits the carry', () => {
+    const x = new CalDemux()
+    const r = x.push(buildFrame(CAL_TYPE.DIAG, 3, diag({ UPTIME_MS: 7 })))
+    expect(r.frames).toHaveLength(1)
+    expect(decodeDiag(r.frames[0]!.payload).uptimeMs).toBe(7)
   })
 })
 

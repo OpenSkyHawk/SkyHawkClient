@@ -10,6 +10,7 @@ export { DeviceLineTap, type DeviceLine, type NodeLineSink } from './device-line
 export { SerialTrafficMonitor } from './serial-traffic-monitor'
 export { isLinkUp } from './link-state'
 export { GatewayWatch, shownHealth } from './gateway-health'
+export { linkHealth, unsupportedLinkHealth } from './gateway-diag'
 export { encodeExportFrame } from './link-framing'
 export { deviceEvent } from './link-events'
 export { listSerialPorts } from './serial-bridge'

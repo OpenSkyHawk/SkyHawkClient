@@ -257,6 +257,11 @@ export interface SkyhawkApi {
   connectDevice(): Promise<void>
   /** Close the device link and keep it closed — through a replug — until connectDevice(). */
   disconnectDevice(): Promise<void>
+  /**
+   * Read the Gateway's link health again (#169): GET_DIAG while the link is up. The answer comes
+   * on `device:status` (`linkHealth`), not here.
+   */
+  refreshGatewayDiag(): Promise<void>
   exportLog(text: string): Promise<ExportResult>
 
   // ── event log (#64) — in memory in main, this app run only ────────────────

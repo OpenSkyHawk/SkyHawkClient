@@ -17,6 +17,8 @@ import {
   CAL_COMMIT_FIELD,
   CAL_DATA_FIELD,
   CAL_DATA_REC_FIELD,
+  CAL_DIAG_BYTES,
+  CAL_DIAG_FIELD,
   CAL_HELLO_ACK_FIELD,
   CAL_NACK_FIELD,
   CAL_NACK_REASONS,
@@ -28,6 +30,7 @@ import {
   CAL_SESSION_OPEN_FIELD,
   CAL_TYPES
 } from '@shared/firmware'
+import type { GatewayDiag } from '@shared/gateway'
 
 /**
  * Constants from the generated firmware reference (shared/firmware, AxisCal.h), under the names
@@ -404,6 +407,44 @@ export interface RawSample {
 export function decodeRaw(p: Uint8Array): RawSample {
   const F = CAL_RAW_FIELD
   return { idx: p[F.IDX]!, raw: u16(p, F.RAW), cal: u16(p, F.CAL) }
+}
+
+/** u32 little-endian, unsigned: `millis()` passes 2^31 after ~25 days up. */
+const u32 = (p: Uint8Array, off: number) => u16(p, off) + u16(p, off + 2) * 0x10000
+
+/**
+ * DIAG (#169): the Gateway's link-health record. Reads the fields this client knows; bytes from
+ * CAL_DIAG_FIELD.RESERVED on are sent as 0 and ignored, so a later firmware can fill them.
+ * @throws on any length but CAL_DIAG_BYTES — the demux only hands over that one, so this is a
+ *         programming error, never wire noise.
+ */
+export function decodeDiag(p: Uint8Array): GatewayDiag {
+  if (p.length !== CAL_DIAG_BYTES) {
+    throw new Error(`calibration: DIAG takes ${CAL_DIAG_BYTES} payload bytes, got ${p.length}`)
+  }
+  const F = CAL_DIAG_FIELD
+  return {
+    uptimeMs: u32(p, F.UPTIME_MS),
+    firstUartErrMs: u32(p, F.FIRST_UART_ERR_MS),
+    lastUartErrMs: u32(p, F.LAST_UART_ERR_MS),
+    firstUsbLossMs: u32(p, F.FIRST_USB_LOSS_MS),
+    lastUsbLossMs: u32(p, F.LAST_USB_LOSS_MS),
+    uartOverrun: u16(p, F.UART_OVERRUN),
+    uartFraming: u16(p, F.UART_FRAMING),
+    uartBreak: u16(p, F.UART_BREAK),
+    uartParity: u16(p, F.UART_PARITY),
+    uartRxOverflow: u16(p, F.UART_RX_OVERFLOW),
+    linesDropped: u16(p, F.LINES_DROPPED),
+    linesCorrupt: u16(p, F.LINES_CORRUPT),
+    linesOverlong: u16(p, F.LINES_OVERLONG),
+    framesDropped: u16(p, F.FRAMES_DROPPED),
+    uartRestarts: u16(p, F.UART_RESTARTS),
+    usbReattaches: u16(p, F.USB_REATTACHES),
+    cdcStalls: u16(p, F.CDC_STALLS),
+    recoveryReboots: p[F.RECOVERY_REBOOTS]!,
+    watchdogResets: p[F.WATCHDOG_RESETS]!,
+    resetReason: p[F.RESET_REASON]!
+  }
 }
 
 // ── encoders ─────────────────────────────────────────────────────────────────
