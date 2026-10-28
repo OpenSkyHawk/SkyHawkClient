@@ -219,7 +219,7 @@ describe('T10 Adopt dialog: queue and form (B74, B21, B22)', () => {
     await pick(13)
     expect(
       within(dlg).getByText(
-        'It reports a board type this client doesn’t know (0), so it can’t be adopted. A newer client may know it. It stays in Attention as an issue while it’s on the bus.'
+        'It reports a board type this client doesn’t know (0x00), so it can’t be adopted. A newer client may know it. It stays in Attention as an issue while it’s on the bus.'
       )
     ).toBeInTheDocument()
     expect(within(dlg).queryByLabelText('Name')).toBeNull()

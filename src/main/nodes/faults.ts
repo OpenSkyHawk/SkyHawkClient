@@ -2,7 +2,7 @@
 // called in an event row and on the Cockpit, what it means, and the reading that goes with it — and
 // the one order a node's own flags are named in, on the Cockpit and in the event log alike (X6/R8).
 import type { EventSeverity } from '@shared/events'
-import { amps, volts } from '@shared/format'
+import { amps, unknownLabel, volts } from '@shared/format'
 import { PDU_RAIL_FLAGS as RAIL_FLAG, PDU_STATUS_FLAGS as PDU_FLAG } from '@shared/firmware'
 import type { NodeStatus, NodeView, PduRailPage, PduReadings } from '@shared/nodes'
 import { STATUS_FLAGS, type StatusFlag } from '../events'
@@ -26,12 +26,14 @@ export function raisedNodeFlags(n: NodeStatus): StatusFlag[] {
 }
 
 /**
- * The flags a node raised, in words (`bus-off`, the fault abbr or `unknown fault (N)`, `overheat`,
- * `error-passive`).
+ * The flags a node raised, in words (`bus-off`, the fault abbr or `unknown fault (0xNN)`,
+ * `overheat`, `error-passive`).
  */
 export function nodeFlagWords(n: NodeStatus): string[] {
   return raisedNodeFlags(n).map((k) =>
-    k === 'degraded' ? (n.faultAbbr ?? `unknown fault (${n.faultId})`) : STATUS_FLAGS[k].label
+    k === 'degraded'
+      ? (n.faultAbbr ?? unknownLabel('fault', n.faultId, 'word'))
+      : STATUS_FLAGS[k].label
   )
 }
 
@@ -77,11 +79,11 @@ export function railReading(bit: number, p: PduRailPage): string {
 }
 
 /**
- * Short degraded-badge tag, as a flag prints: the fault abbr, or `UNKNOWN FAULT (N)` for a code this
- * client has no label for (#183).
+ * Short degraded-badge tag, as a flag prints: the fault abbr, or `UNKNOWN FAULT (0xNN)` for a code
+ * this client has no label for (#183, #190).
  */
 export function nodeFaultTag(n: NodeStatus): string {
-  return n.faultAbbr ?? `UNKNOWN FAULT (${n.faultId})`
+  return n.faultAbbr ?? unknownLabel('fault', n.faultId, 'badge')
 }
 
 // ── the Cockpit's flag text (moved from the renderer, R3.2): the same tables as the log's ──

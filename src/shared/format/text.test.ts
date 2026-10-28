@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DASH, errorText, fileName, onOff, plural, title } from './text'
+import { DASH, errorText, fileName, onOff, plural, title, unknownLabel } from './text'
 
 describe('plural', () => {
   it('one for 1, the plural otherwise', () => {
@@ -29,6 +29,29 @@ describe('title', () => {
     expect(title('bus-off')).toBe('Bus-off')
     expect(title('error-passive')).toBe('Error-passive')
     expect(title('Overheat')).toBe('Overheat')
+  })
+})
+
+describe('unknownLabel', () => {
+  it('sentence (the default), word and badge forms', () => {
+    expect(unknownLabel('fault', 0xee)).toBe('Unknown fault (0xEE)')
+    expect(unknownLabel('fault', 0xee, 'sentence')).toBe('Unknown fault (0xEE)')
+    expect(unknownLabel('fault', 0xee, 'word')).toBe('unknown fault (0xEE)')
+    expect(unknownLabel('fault', 0xee, 'badge')).toBe('UNKNOWN FAULT (0xEE)')
+  })
+
+  it('a multi-word what', () => {
+    expect(unknownLabel('board type', 7)).toBe('Unknown board type (0x07)')
+  })
+
+  it('badge upper-cases the words, never the 0x', () => {
+    expect(unknownLabel('reason', 0x0f, 'badge')).toBe('UNKNOWN REASON (0x0F)')
+    expect(unknownLabel('fault', 0xee, 'badge')).not.toContain('0X')
+  })
+
+  it('(?) when there is no code', () => {
+    expect(unknownLabel('board type', undefined)).toBe('Unknown board type (?)')
+    expect(unknownLabel('fault', undefined, 'word')).toBe('unknown fault (?)')
   })
 })
 

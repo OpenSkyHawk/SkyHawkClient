@@ -9,7 +9,10 @@ export type Log = (tag: string, data?: unknown) => void
 
 export const SIMGATEWAY_VID = USB_IDENTITY.vid
 export const SIMGATEWAY_PID = USB_IDENTITY.pid
+// Lower-case, no 0x: the form the OS port list reports, for matching only, never displayed.
+// eslint-disable-next-line no-restricted-syntax
 const VID_HEX = SIMGATEWAY_VID.toString(16).padStart(4, '0')
+// eslint-disable-next-line no-restricted-syntax
 const PID_HEX = SIMGATEWAY_PID.toString(16).padStart(4, '0')
 
 export type SerialPortInfo = Awaited<ReturnType<typeof SerialPort.list>>[number]

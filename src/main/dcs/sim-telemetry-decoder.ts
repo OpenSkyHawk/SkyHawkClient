@@ -1,7 +1,7 @@
 // Turns raw DCS-BIOS writes into named log rows, aircraft state, and the five
 // sim-telemetry readouts — using the generated A-4E-C reference.
 import { A4EC_OUTPUTS_BY_ADDRESS } from '@shared/firmware'
-import { StringRegion, ACFT_NAME_ADDRESS, ACFT_NAME_MAX } from './bios-protocol'
+import { StringRegion, ACFT_NAME } from './bios-protocol'
 import {
   AIRCRAFT_NONE,
   type AircraftStatus,
@@ -81,7 +81,7 @@ function isA4E(name: string): boolean {
 }
 
 export class Decoder {
-  private readonly name = new StringRegion(ACFT_NAME_ADDRESS, ACFT_NAME_MAX)
+  private readonly name = new StringRegion(ACFT_NAME.address, ACFT_NAME.maxLength)
   private readonly telemetry = new Map<string, number>() // id -> latest value
   private readonly telemetryMax = new Map<string, number>()
   private readonly altDrums = new Map<string, number>() // D_ALT_10K/1K/100S raw values

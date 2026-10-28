@@ -12,7 +12,7 @@ import {
   type NodeModelEntry,
   type NodeView
 } from '@shared/nodes'
-import { amps, fmtUptime, volts } from '@shared/format'
+import { amps, fmtUptime, hexCode, unknownLabel, volts } from '@shared/format'
 import { nodeFlagWords } from '../faults'
 import { isAdoptableKind, reportedIdentity } from '../node-kind'
 import { displayCurrentMa } from '../node-telem'
@@ -57,7 +57,7 @@ export function adoptability(e: NodeModelEntry): Adoptability {
     case 'other':
       return {
         badge: 'UNKNOWN TYPE',
-        note: `It reports a board type this client doesn’t know (${e.status?.nodeKind ?? '?'}), so it can’t be adopted. A newer client may know it. It stays in Attention as an issue while it’s on the bus.`
+        note: `It reports a board type this client doesn’t know (${hexCode(e.status?.nodeKind)}), so it can’t be adopted. A newer client may know it. It stays in Attention as an issue while it’s on the bus.`
       }
     default:
       return {
@@ -80,7 +80,7 @@ function detectedAs(e: NodeModelEntry): string {
     case 'bridge':
       return 'Gateway (reported by the board)'
     case 'other':
-      return `Unknown board type (${e.status?.nodeKind ?? '?'}), reported by the board`
+      return `${unknownLabel('board type', e.status?.nodeKind)}, reported by the board`
     default:
       return 'not known yet'
   }

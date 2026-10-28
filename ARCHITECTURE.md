@@ -169,8 +169,9 @@ firmware commit and writes `src/shared/firmware/*.generated.ts`.
 - Import them from `@shared/firmware`; never type a firmware value by hand.
 - Never edit a generated file. Change the generator (or the pinned commit) and run `npm run sync`.
 - CI re-runs the sync and fails if the committed files differ.
-- The one hand-curated exception is the DCS-BIOS common-metadata address (`_ACFT_NAME`), which
-  the firmware repo does not carry; it lives in `main/dcs/bios-protocol.ts`.
+- DCS-BIOS `_ACFT_NAME` is not a firmware constant: it is a DCS-BIOS protocol value (the
+  `MetadataStart` module) that DCS sends and the client reads from the DCS stream, so it is not
+  synced. It is defined once, as `ACFT_NAME` in `main/dcs/bios-protocol.ts`.
 
 ## The settings store
 

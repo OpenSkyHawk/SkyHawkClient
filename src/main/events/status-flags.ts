@@ -1,6 +1,7 @@
 // The node status-flag vocabulary (pure, no Node/Electron deps): the heartbeat / health flags and
 // fault labels that node rows and the Gateway's own row share (arch-phase0-v2 OQ4).
 import type { EventSeverity } from '@shared/events'
+import { unknownLabel } from '@shared/format'
 import type { NodeStatus } from '@shared/nodes'
 
 export type StatusFlag = 'boff' | 'epvf' | 'degraded' | 'overheat'
@@ -20,7 +21,10 @@ export const STATUS_FLAGS: Record<
   overheat: { key: 'overheat', label: 'overheat', severity: 'warn' }
 }
 
-/** The fault-dictionary label, else `Unknown fault (N)` for a code this client has no label for (#183). */
+/**
+ * The fault-dictionary label, else `Unknown fault (0xNN)` for a code this client has no label for
+ * (#183, #190).
+ */
 export function faultLabel(n: Pick<NodeStatus, 'faultId' | 'faultLabel'>): string {
-  return n.faultLabel ?? `Unknown fault (${n.faultId})`
+  return n.faultLabel ?? unknownLabel('fault', n.faultId)
 }

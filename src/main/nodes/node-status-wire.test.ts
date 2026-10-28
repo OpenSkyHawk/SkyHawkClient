@@ -469,8 +469,8 @@ describe('nodeFaultTag', () => {
     })
     expect(nodeFaultTag(n)).toBe('I2C')
   })
-  it('falls back to `UNKNOWN FAULT (N)` for an unknown/reserved id (no enrichment, #183)', () => {
+  it('falls back to `UNKNOWN FAULT (0xNN)` for an unknown/reserved id (no enrichment, #183)', () => {
     const n = node({ degraded: true, faultId: 0x99 })
-    expect(nodeFaultTag(n)).toBe('UNKNOWN FAULT (153)')
+    expect(nodeFaultTag(n)).toBe('UNKNOWN FAULT (0x99)')
   })
 })

@@ -1,12 +1,12 @@
 import { USB_IDENTITY } from '@shared/firmware'
+import { hex4 } from '@shared/format'
 import { useNav } from '../app/kit'
 import { useGatewayStore } from './store'
 import { deviceView, linkButton } from './link-view'
 import { gatewayFirmwareView } from './gateway-view'
 
-/** `0x2E8A`: a USB id as the device card prints it, four upper-case hex digits. */
-const usbId = (n: number) => '0x' + n.toString(16).toUpperCase().padStart(4, '0')
-const VID_PID = `${usbId(USB_IDENTITY.vid)} / ${usbId(USB_IDENTITY.pid)}`
+/** `0x2E8A / 0x4134`: the USB ids as the device card prints them. */
+const VID_PID = `${hex4(USB_IDENTITY.vid)} / ${hex4(USB_IDENTITY.pid)}`
 
 /**
  * The Connection tab's device card. `autoConnect` is Settings' (the Connection tab hands it in).

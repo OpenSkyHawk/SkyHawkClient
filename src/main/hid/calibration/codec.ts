@@ -30,6 +30,7 @@ import {
   CAL_SESSION_OPEN_FIELD,
   CAL_TYPES
 } from '@shared/firmware'
+import { hexCode, unknownLabel } from '@shared/format'
 import type { GatewayDiag } from '@shared/gateway'
 
 /**
@@ -78,11 +79,12 @@ export const CAL_NACK = byName(CAL_NACK_REASONS)
 
 /**
  * A NACK reason's name (X11): the synced firmware table's name for any reason it lists, the five
- * reachable ones and the three that never reach a client alike; anything else as `Unknown reason (N)` (#183).
+ * reachable ones and the three that never reach a client alike; anything else as
+ * `Unknown reason (0xNN)` (#183, #190).
  * The one name both CalLink's refusal message and a calibration failure's `reasonName` carry.
  */
 export function nackName(reason: number): string {
-  return CAL_NACK_REASONS[reason]?.name ?? `Unknown reason (${reason})`
+  return CAL_NACK_REASONS[reason]?.name ?? unknownLabel('reason', reason)
 }
 
 /**
@@ -154,10 +156,10 @@ export interface CalFrame {
 export function buildFrame(type: number, seq: number, payload?: Uint8Array): Uint8Array {
   const body = payload ?? new Uint8Array(0)
   const want = CAL_PAYLOAD_LEN[type]
-  if (want === undefined) throw new Error(`calibration: unknown frame type 0x${type.toString(16)}`)
+  if (want === undefined) throw new Error(`calibration: unknown frame type ${hexCode(type)}`)
   if (body.length !== want) {
     throw new Error(
-      `calibration: type 0x${type.toString(16)} takes exactly ${want} payload bytes, got ${body.length}`
+      `calibration: type ${hexCode(type)} takes exactly ${want} payload bytes, got ${body.length}`
     )
   }
 
