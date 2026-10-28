@@ -129,7 +129,9 @@ export class UpdateHost {
    * Stops, and reports none, while the link is up.
    */
   private watchDrives(): void {
-    const on = !this.deps.linkUp() && this.open?.phase !== 'run'
+    // A run cut off from its Gateway looks too: it may come back in its update drive (#187).
+    const o = this.open
+    const on = !this.deps.linkUp() && (o?.phase !== 'run' || !!o.flow.detachable?.())
     if (on && !this.watch) {
       void this.lookForDrives()
       this.watch = setInterval(() => void this.lookForDrives(), DRIVE_WATCH_MS)
@@ -217,6 +219,7 @@ export class UpdateHost {
                   100
               ),
       ...(o.note && o.phase === 'run' && { note: o.note }),
+      ...(o.phase === 'run' && flow.detachable?.() && { closable: true as const }),
       ...(r && !r.ok && o.phase === 'fail' && { failure: r.failure }),
       ...(r && !r.ok && o.phase === 'fail' && r.after && { after: r.after }),
       ...(r?.ok && {
@@ -293,10 +296,21 @@ export class UpdateHost {
     await this.run(Math.max(this.open.retryFrom, this.open.flow.first()))
   }
 
-  /** Close the dialog; never while it runs. */
+  /**
+   * Close the dialog; never while it runs — except while the run waits for a Gateway it lost
+   * (#187): then the run is left to the Gateway, which finishes on its own.
+   */
   close(): void {
     const o = this.open
-    if (!o || o.phase === 'run') return
+    if (!o) return
+    if (o.phase === 'run') {
+      if (!o.flow.detachable?.()) return
+      o.flow.detach?.()
+      this.open = undefined
+      this.watchDrives()
+      this.push()
+      return
+    }
     // What the run held goes back: the port after a failure (USB side), the staged image (#187).
     o.flow.close(o.phase)
     this.open = undefined
@@ -323,9 +337,12 @@ export class UpdateHost {
       },
       note: (note) => {
         o.note = note
+        this.watchDrives()
         this.push()
       }
     })
+    // Closed while cut off (#187): nobody waits for this result.
+    if (this.open !== o) return
     o.result = result
     if (result.ok) {
       o.phase = 'done'

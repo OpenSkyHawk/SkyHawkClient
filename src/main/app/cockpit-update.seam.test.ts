@@ -60,11 +60,20 @@ function gateway(app: Services, sim: Sim, bundle?: string) {
   let n = 0
   /** Roster replies on; off: the test drives the bus itself. */
   let roster = true
+  /** The next UPL_FLASH is taken, and the cable comes out before its ACK gets back. */
+  let cutOnFlash = false
   const answer = () => {
     const out = app.serial.written()
     for (; n < out.length; n++) {
       const w = out[n]!
       if (unplugged) continue
+      if (cutOnFlash && MAGIC.every((m, k) => w[k] === m) && w[4] === UPL_TYPE.UPL_FLASH) {
+        cutOnFlash = false
+        unplugged = true // the ACK and everything after it is lost
+        uploader.receive(w)
+        app.serial.close()
+        continue
+      }
       uploader.receive(w)
       if (w.toString('latin1') === REQUEST) {
         if (roster && sim.bridge && uploader.state !== UPL_STATE.FLASHING) {
@@ -99,6 +108,10 @@ function gateway(app: Services, sim: Sim, bundle?: string) {
     plug() {
       unplugged = false
       app.serial.open()
+    },
+    /** Lose the link the moment the Gateway takes the next UPL_FLASH, before its ACK. */
+    cutOnFlash() {
+      cutOnFlash = true
     },
     /** Stop or resume answering the roster (the test sends its own lines). */
     roster(on: boolean) {
@@ -474,6 +487,80 @@ describe('#187 the Gateway cockpit side, updated through its uploader', { timeou
     await gw.run(5_000, 50)
     await done
     expect(update(app)).toMatchObject({ phase: 'done', done: { reports: '0.3.0' } })
+  })
+
+  it('bridge.cut-off-close: Close while cut off leaves the Gateway to finish; a later update follows it', async () => {
+    const { app, gw } = await launch({ bridge: '0.2.9' })
+    gw.uploader.stepMs = 2_000
+    app.invoke(CTRL.updateOpen, { kind: 'cockpit' })
+    const done = app.invoke(CTRL.updateStart)
+    await gw.run(2_000)
+    gw.unplug()
+    await gw.run(6_000, 100)
+    expect(update(app)).toMatchObject({ phase: 'run', note: { kind: 'cut-off' }, closable: true })
+    // The drive watch runs while cut off: a Gateway back in its update drive shows.
+    app.serial.listed(false)
+    app.drive.mounted = '/Volumes/RPI-RP2'
+    await gw.run(6_000, 250)
+    expect(fwRow(app, 'usb').status).toBe('in-drive')
+    app.drive.mounted = undefined
+    app.serial.listed(true)
+    // Close: the run is left; the cockpit's pause and the roster hold end with it.
+    app.invoke(CTRL.updateClose)
+    await gw.run(100)
+    await done
+    expect(update(app)).toBeNull()
+    expect(snap(app).cockpitUpdating).toBe(false)
+    // Back, still flashing: a new update reads UPL_INFO and follows it, never aborting it.
+    gw.plug()
+    await gw.run(3_000, 50)
+    app.invoke(CTRL.updateOpen, { kind: 'cockpit' })
+    const again = app.invoke(CTRL.updateStart)
+    await gw.run(14_000, 50)
+    await again
+    expect(update(app)).toMatchObject({ phase: 'done', done: { reports: '0.3.0' } })
+    expect(gw.asked()).toEqual(['UPL_FLASH'])
+  })
+
+  it('bridge.flash-ack-lost: the link goes as UPL_FLASH is taken; the run waits and follows', async () => {
+    const { app, gw } = await launch({ bridge: '0.2.9' })
+    gw.uploader.stepMs = 1_000
+    gw.cutOnFlash()
+    app.invoke(CTRL.updateOpen, { kind: 'cockpit' })
+    const done = app.invoke(CTRL.updateStart)
+    await gw.run(5_000, 100)
+    // Not a failure: whether it started is unknown, so the run waits for the Gateway.
+    expect(update(app)).toMatchObject({ phase: 'run', note: { kind: 'cut-off' } })
+    gw.plug()
+    await gw.run(2_000, 50)
+    // Back while it flashes: still paused, the roster held, no red Gateway.
+    expect(snap(app).cockpitUpdating).toBe(true)
+    expect(health(app)?.kind).not.toBe('not-responding')
+    await gw.run(10_000, 50)
+    await done
+    expect(update(app)).toMatchObject({ phase: 'done', done: { reports: '0.3.0' } })
+    expect(gw.asked()).toEqual(['UPL_FLASH'])
+  })
+
+  it('bridge.write-failed-unseen-erase: WRITE_FAILED is after the erase even when ERASING wasn’t seen', async () => {
+    const { app, gw, sim } = await launch({ bridge: '0.2.9' })
+    // Statuses missed: only the bootloader's entry reached the client before the result.
+    gw.uploader.next = {
+      steps: [{ phase: 'ENTERING_BOOT' }, { phase: 'CONNECTED' }],
+      result: 'WRITE_FAILED'
+    }
+    app.invoke(CTRL.updateOpen, { kind: 'cockpit' })
+    await runUpdate(app, gw)
+    expect(update(app)).toMatchObject({
+      phase: 'fail',
+      failure: { kind: 'write-failed' },
+      after: 'erased'
+    })
+    expect(sim.bridge).toBeUndefined() // erased: it waits in its bootloader
+    app.invoke(CTRL.updateClose)
+    // Its silence isn't muted for 30 s: it is not responding now.
+    await gw.run(14_000, 250)
+    expect(fwRow(app, 'cockpit')).toMatchObject({ status: 'not-responding', action: 'retry' })
   })
 
   describe('bridge.usb-power-cycle: the result is lost; the cockpit side’s row decides', () => {

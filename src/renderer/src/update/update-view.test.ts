@@ -113,7 +113,13 @@ describe('update dialog words: the Gateway cockpit side (#187)', () => {
       'Don’t unplug the Gateway. Closing the client is fine — the Gateway finishes on its own.'
     )
     const cut = updateView({ ...COCKPIT, phase: 'run', steps: steps(1), note: { kind: 'cut-off' } })
-    expect(cut.foot).toBe('The client can’t reach the Gateway — it finishes this board by itself.')
+    expect(cut.foot).toBe(
+      'The client can’t reach the Gateway — it finishes this board by itself. You can close this; the Firmware sheet shows what it runs once it’s back.'
+    )
+    expect(cut.canClose).toBe(false)
+    expect(updateView({ ...COCKPIT, phase: 'run', steps: steps(1), closable: true }).canClose).toBe(
+      true
+    )
     expect(
       updateView({ ...COCKPIT, phase: 'run', steps: steps(0), note: { kind: 'press-reset' } })
         .runNote?.title

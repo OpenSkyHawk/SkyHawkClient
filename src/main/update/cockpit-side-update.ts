@@ -25,7 +25,7 @@ import type { ReleaseTarget } from '@shared/releases'
 import type { UpdateCheck, UpdateFailure, UpdateRefusal, UpdateStepKey } from '@shared/update'
 import { checkImageFor, parseIdentity, type ImageIdentity } from './firmware-image'
 import type { FlowView, RunResult, StepReport, UpdateFlow } from './update-flow'
-import type { UplOutcome, UplStatus } from './uploader/upl-codec'
+import type { UplInfo, UplOutcome, UplStatus } from './uploader/upl-codec'
 import {
   UplNoAnswer,
   UplRefused,
@@ -143,6 +143,11 @@ export class CockpitSideUpdate implements UpdateFlow {
     | { ok: false; message: string }
   /** The last run ended with no answer from the board: a Retry says to press its reset button. */
   private pressReset = false
+  /**
+   * The run lost the Gateway and waits for it: Close may leave it (`detach`), and the Gateway
+   * finishes on its own; a later update reads UPL_INFO and follows it.
+   */
+  private leave?: () => void
 
   constructor(
     private readonly open: CockpitSideOpen,
@@ -221,6 +226,16 @@ export class CockpitSideUpdate implements UpdateFlow {
     }
   }
 
+  /** The run waits for a Gateway it lost: Close may leave it to finish on its own. */
+  detachable(): boolean {
+    return !!this.leave
+  }
+
+  /** Close while cut off: stop waiting; the cockpit's pause and the roster hold end with the run. */
+  detach(): void {
+    this.leave?.()
+  }
+
   /** The dialog closed after a result or a failure: drop what is staged (`BUSY` while flashing). */
   close(phase: 'confirm' | 'fail' | 'done'): void {
     if (phase === 'confirm') return
@@ -261,6 +276,7 @@ export class CockpitSideUpdate implements UpdateFlow {
     // for its result.
     if (info.state === 'FLASHING') {
       report.step(this.at('boot'))
+      watch.partial = true // joined mid-flash: its earlier statuses were never seen
       return this.settle(await up.follow(watch.status), watch, report)
     }
     // Something staged that isn't this run's (a board's image, #175) would be flashed in place of
@@ -277,7 +293,7 @@ export class CockpitSideUpdate implements UpdateFlow {
     report.step(this.at('boot'))
     let end: FlashEnd
     try {
-      end = await up.flash(UPL_TARGET.bridge, UPL_TARGET.nodeIdKeep, watch.status)
+      end = await this.flash(watch)
     } catch (e) {
       // The bundle is gone (a dev USB side) or was never there: stage the release's image instead.
       if (e instanceof UplRefused && e.reason === 'NOT_STAGED' && !staged) {
@@ -286,7 +302,7 @@ export class CockpitSideUpdate implements UpdateFlow {
         if (r) return r
         report.step(this.at('boot'))
         try {
-          end = await up.flash(UPL_TARGET.bridge, UPL_TARGET.nodeIdKeep, watch.status)
+          end = await this.flash(watch)
         } catch (again) {
           return this.refusedAtFlash(again)
         }
@@ -298,12 +314,24 @@ export class CockpitSideUpdate implements UpdateFlow {
     return this.settle(end, watch, report)
   }
 
-  /** UPL_FLASH refused, or unanswered with nothing running: nothing started. */
+  /**
+   * UPL_FLASH 0. With no answer to it nor to the UPL_INFO after it (the link went as it was sent),
+   * whether it started is unknown: the run waits for the Gateway and reads UPL_INFO, as after any
+   * loss of contact — it may be flashing.
+   */
+  private async flash(watch: FlashWatch): Promise<FlashEnd> {
+    try {
+      return await this.uploader.flash(UPL_TARGET.bridge, UPL_TARGET.nodeIdKeep, watch.status)
+    } catch (e) {
+      if (e instanceof UplNoAnswer) return { lost: true }
+      throw e
+    }
+  }
+
+  /** UPL_FLASH refused: nothing started. */
   private refusedAtFlash(e: unknown): RunResult {
     if (e instanceof UplRefused && e.reason === 'BUSY') return this.fail({ kind: 'busy' }, 0)
-    if (e instanceof UplRefused || e instanceof UplNoAnswer) {
-      return this.fail({ kind: 'no-answer' }, this.at('boot'))
-    }
+    if (e instanceof UplRefused) return this.fail({ kind: 'no-answer' }, this.at('boot'))
     throw e
   }
 
@@ -358,8 +386,12 @@ export class CockpitSideUpdate implements UpdateFlow {
         outcome = end.outcome.result === 'NONE' ? 'power-cycled' : end.outcome
         break
       }
+      watch.partial = true // statuses sent meanwhile never reached the client
+      const back = this.reconnect() // Close may leave it from the push below on
       report.note?.({ kind: 'cut-off' })
-      const info = await this.reconnect()
+      const info = await back
+      // Closed meanwhile: the Gateway finishes on its own; nobody reads this result.
+      if (!info) return this.fail({ kind: 'no-answer' }, watch.furthest)
       report.note?.({ kind: 'back' })
       if (info.state === 'FLASHING') {
         end = await this.uploader.follow(watch.status)
@@ -381,13 +413,22 @@ export class CockpitSideUpdate implements UpdateFlow {
     return this.outcome(outcome, watch)
   }
 
-  /** Wait for the link and an uploader that answers: no limit, the link keeps looking. */
-  private async reconnect(): Promise<NonNullable<Awaited<ReturnType<UploaderClient['info']>>>> {
-    for (;;) {
-      await sleep(this.timing.pollMs)
-      if (!this.ports.linkUp()) continue
-      const info = await this.uploader.info()
-      if (info) return info
+  /**
+   * Wait for the link and an uploader that answers: no limit of its own, the link keeps looking —
+   * until Close leaves it (undefined).
+   */
+  private async reconnect(): Promise<UplInfo | undefined> {
+    const left = new Promise<'left'>((resolve) => (this.leave = () => resolve('left')))
+    try {
+      for (;;) {
+        if ((await Promise.race([sleep(this.timing.pollMs), left])) === 'left') return undefined
+        if (!this.ports.linkUp()) continue
+        const info = await Promise.race([this.uploader.info(), left])
+        if (info === 'left') return undefined
+        if (info) return info
+      }
+    } finally {
+      this.leave = undefined
     }
   }
 
@@ -401,8 +442,9 @@ export class CockpitSideUpdate implements UpdateFlow {
     }
     if (version === this.to) return { ok: true, reports: version }
     if (version) return this.fail({ kind: 'interrupted' }, watch.furthest, 'refused')
-    // No row: written into, it waits in its bootloader; else it returns to its app by itself.
-    return watch.erased
+    // No row: written into — or maybe, with statuses missed — it waits in its bootloader; else it
+    // returns to its app by itself.
+    return watch.mayBeErased
       ? this.fail({ kind: 'not-responding' }, watch.furthest, 'erased')
       : this.fail({ kind: 'interrupted' }, watch.furthest, 'refused')
   }
@@ -410,7 +452,7 @@ export class CockpitSideUpdate implements UpdateFlow {
   /** A result, for node 0. */
   private outcome(o: UplOutcome, watch: FlashWatch): RunResult {
     const at = watch.furthest
-    const after = watch.erased ? ('erased' as const) : ('refused' as const)
+    const after = watch.mayBeErased ? ('erased' as const) : ('refused' as const)
     switch (o.result) {
       case 'OK':
         return { ok: true, reports: o.fw ?? this.to }
@@ -438,7 +480,8 @@ export class CockpitSideUpdate implements UpdateFlow {
       }
       case 'WRITE_FAILED':
       case 'VERIFY_FAILED':
-        return this.fail({ kind: 'write-failed' }, at, after)
+        // Only ever after the erase began (Uploader.cpp): it waits in its bootloader.
+        return this.fail({ kind: 'write-failed' }, at, 'erased')
       case 'TIMEOUT':
         return this.fail({ kind: 'no-confirmation' }, at)
       case 'VERSION_MISMATCH':
@@ -456,6 +499,8 @@ export class CockpitSideUpdate implements UpdateFlow {
 class FlashWatch {
   furthest = 0
   erased = false
+  /** Statuses may have been missed: the client was cut off, or joined a flash mid-way. */
+  partial = false
   private pct = 0
   /** The retry the note names (0: none yet), and whether its write is through. */
   private attempt = 0
@@ -465,6 +510,11 @@ class FlashWatch {
     private readonly flow: { steps(): readonly UpdateStepKey[] },
     private readonly report: StepReport
   ) {}
+
+  /** The erase may have happened: seen, or not seen but statuses were missed. */
+  get mayBeErased(): boolean {
+    return this.erased || this.partial
+  }
 
   readonly status = (s: UplStatus): void => {
     if (!s.phase) return

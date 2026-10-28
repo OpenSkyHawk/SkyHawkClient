@@ -239,17 +239,11 @@ function failView(
     case 'refused':
       return { ...REFUSED[f.why], foot: left }
     case 'write-failed':
-      return after === 'erased'
-        ? {
-            title: 'Stuck in its bootloader',
-            text: `writing failed after ${RETRIES} automatic retries. Its bootloader is intact and waits for an image — nothing is lost. Retry finishes it.`,
-            foot: left
-          }
-        : {
-            title: 'Write failed',
-            text: `the board couldn’t be written after ${RETRIES} automatic retries.`,
-            foot: left
-          }
+      return {
+        title: 'Stuck in its bootloader',
+        text: `writing failed after ${RETRIES} automatic retries. Its bootloader is intact and waits for an image — nothing is lost. Retry finishes it.`,
+        foot: left
+      }
     case 'no-confirmation':
       return {
         title: 'No confirmation',
@@ -353,7 +347,7 @@ export function updateView(s: UpdateState): UpdateView {
             ? `${s.name} didn’t update`
             : 'Update finished',
     sub: done ? `${s.name} reports ${done.reports}` : sub,
-    canClose: s.phase !== 'run',
+    canClose: s.phase !== 'run' || !!s.closable,
     board: {
       name: s.name,
       sub: `${from} → ${s.to}`,
@@ -402,7 +396,7 @@ export function updateView(s: UpdateState): UpdateView {
           : about
         : s.phase === 'run'
           ? s.note?.kind === 'cut-off'
-            ? 'The client can’t reach the Gateway — it finishes this board by itself.'
+            ? 'The client can’t reach the Gateway — it finishes this board by itself. You can close this; the Firmware sheet shows what it runs once it’s back.'
             : cockpit
               ? 'Don’t unplug the Gateway. Closing the client is fine — the Gateway finishes on its own.'
               : 'Keep the Gateway plugged in — it restarts and reconnects by itself.'

@@ -57,6 +57,12 @@ export interface UpdateFlow {
   prepare?(): Promise<void>
   /** Run from step `from`; resolves with the result or the failure and where Retry may restart. */
   run(from: number, report: StepReport): Promise<RunResult>
+  /**
+   * The run waits for a board it lost contact with (#187): Close may leave it to finish on its own
+   * (`detach`).
+   */
+  detachable?(): boolean
+  detach?(): void
   /** The dialog closed in `phase` (never while it runs): give back what the run held. */
   close(phase: Exclude<UpdateState['phase'], 'run'>): void
 }

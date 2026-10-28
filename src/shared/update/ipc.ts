@@ -173,6 +173,11 @@ export interface UpdateState {
   pct: number
   /** The run's line above its steps, while it runs (#187). */
   note?: UpdateNote
+  /**
+   * The run lost the Gateway and waits for it (#187): Close is offered, and leaves the Gateway to
+   * finish on its own; the Firmware sheet shows what it runs once it is back.
+   */
+  closable?: true
   failure?: UpdateFailure
   /**
    * What a failure through the uploader left behind (#187): nothing written (`refused`), or the
