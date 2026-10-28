@@ -167,6 +167,21 @@ describe('UsbSideUpdate (#173)', () => {
     expect(h.steps).toEqual([1, 2, 3])
   })
 
+  it('close after a failure gives the port back only if the run took it', async () => {
+    const took = harness({ driveOnTouch: false })
+    await took.run()
+    took.flow.close()
+    expect(took.calls.at(-1)).toBe('handBack')
+    // Started from the drive (no take): the link stays as the user left it.
+    const fromDrive = harness({ port: undefined, copyOk: false })
+    fromDrive.mount()
+    const p = fromDrive.flow.run(1, { step: () => {}, pct: () => {} })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect((await p).ok).toBe(false)
+    fromDrive.flow.close()
+    expect(fromDrive.calls).not.toContain('handBack')
+  })
+
   it('no Gateway port and two update drives: never guesses which is the Gateway', async () => {
     const atCopy = harness({ port: undefined, stray: `${DRIVE} 1` })
     atCopy.mount()

@@ -286,9 +286,12 @@ export class GatewayConnection {
     return touchForBootloader(path)
   }
 
-  /** The update is done with the port: look for the board again, as Connect does. */
+  /**
+   * The update is done with the port: look for the board again, as Connect does — also when the
+   * link was disconnected before the update began (one started from the Gateway's update drive):
+   * the update has to see the Gateway come back to confirm its version.
+   */
   handBack(): void {
-    if (!this.held) return
     this.held = false
     this.connect()
   }

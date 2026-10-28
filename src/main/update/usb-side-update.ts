@@ -89,6 +89,8 @@ export class UsbSideUpdate {
    * came. Cleared whenever the port is taken.
    */
   private lastHello?: string
+  /** This run took the port from the link (and owes it back if the dialog closes on a failure). */
+  private took = false
   /** The Gateway's update drive, once one appeared for it. */
   private root?: string
   /**
@@ -140,6 +142,7 @@ export class UsbSideUpdate {
           // Take the port first: every RP2040 in BOOTSEL mounts the same drive, so the Gateway's
           // is the one that appears after its own touch, never one already there.
           const path = await this.ports.link.take()
+          this.took = true
           this.lastHello = undefined
           this.root = undefined
           if (path) {
@@ -193,10 +196,11 @@ export class UsbSideUpdate {
 
   /**
    * The dialog closed (#173): if a failure left the port taken — no drive, or a failed copy — the
-   * link gets it back and looks for the Gateway again. A no-op once the run handed it back.
+   * link gets it back and looks for the Gateway again. A run that never took it (one started from
+   * the update drive) leaves the link as the user set it.
    */
   close(): void {
-    this.ports.link.handBack()
+    if (this.took) this.ports.link.handBack()
   }
 
   /**
@@ -216,7 +220,10 @@ export class UsbSideUpdate {
     }
   }
 
-  /** Give the port back and wait for the Gateway's HELLO: its version, or undefined. */
+  /**
+   * Give the port back — or, from the update drive, start the link looking even if it was
+   * disconnected — and wait for the Gateway's HELLO: its version, or undefined.
+   */
   private reconnect(): Promise<string | undefined> {
     // It came back after an earlier wait gave up (Retry): its HELLO is already in.
     if (this.lastHello) {

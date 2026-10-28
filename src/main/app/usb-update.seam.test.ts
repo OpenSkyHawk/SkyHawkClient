@@ -316,4 +316,42 @@ describe('#173 the Gateway USB side, updated from the saved release', { timeout:
     await app.invoke(CTRL.updateStart)
     expect(app.drive.files).toEqual([])
   })
+
+  it('from the update drive with the link disconnected: after the copy the link looks again', async () => {
+    const { app, gw } = await launch([0, 2, 0], true)
+    await app.invoke(CTRL.deviceDisconnect)
+    expect(app.lastPush('device:status')?.state).toBe('disconnected')
+    await gw.run(5_000, 250)
+    expect(app.lastPush('cockpit:snapshot')!.firmware.rows[0]).toMatchObject({ status: 'in-drive' })
+    await app.invoke(CTRL.updateOpen, { kind: 'usb' })
+    app.drive.onCopied = () => {
+      gw.boot([0, 3, 0], { ...AXIS0 })
+      app.serial.listed(true)
+    }
+    const started = app.invoke(CTRL.updateStart)
+    await pastImageRead(() => expect(app.drive.files).toHaveLength(1))
+    await gw.run(500)
+    expect(app.lastPush('device:status')?.state).toBe('scanning') // looking again, Disconnect or not
+    app.serial.open()
+    await gw.run(4_000)
+    await started
+    expect(update(app)).toMatchObject({ phase: 'done', done: { reports: '0.3.0' } })
+  })
+
+  it('closing a failed update that never took the port leaves a disconnected link alone', async () => {
+    const { app, gw } = await launch([0, 2, 0], true)
+    await app.invoke(CTRL.deviceDisconnect)
+    await gw.run(5_000, 250)
+    await app.invoke(CTRL.updateOpen, { kind: 'usb' })
+    app.drive.failWrites = true
+    const started = app.invoke(CTRL.updateStart)
+    await vi.waitFor(() => expect(update(app)?.phase).toBe('fail'), {
+      timeout: 10_000,
+      interval: 5
+    })
+    await started
+    expect(update(app)?.failure).toEqual({ kind: 'copy-failed' })
+    await app.invoke(CTRL.updateClose)
+    expect(app.lastPush('device:status')?.state).toBe('disconnected')
+  })
 })
