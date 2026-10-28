@@ -17,7 +17,7 @@ import type {
   NodeView
 } from '@shared/nodes'
 import type { ReleaseTarget } from '@shared/releases'
-import { reportedVersion } from '../../gateway'
+import { noBootloader, reportedVersion } from '../../gateway'
 
 /** What the snapshot reads besides the node views and the link. */
 export interface FirmwareInputs {
@@ -69,6 +69,7 @@ function cockpitRow(live: boolean, device: DeviceStatus, f: FirmwareInputs): Fir
   if (!live || !fw) return row({ ...base, status: 'not-reported' })
   if (!fw.version) return row({ ...base, status: 'not-reported', notReported: true })
   const version = text(fw.version)
+  if (fw.noBootloader) return row({ ...base, version, status: 'manual' })
   return row({ ...base, version, status: againstRelease(version, f.release, { nodeId: 0 }) })
 }
 
@@ -90,9 +91,7 @@ function boardRow(v: NodeView, live: boolean, f: FirmwareInputs): FirmwareRow {
       ...(v.firmware.notReported && { notReported: true })
     })
   }
-  // #175's rule: `bootloader` 00 also means "not reported", so it counts only on a row that
-  // reports a version (READY_n carries both).
-  if (e.status!.bootloader === 0) return row({ ...base, version, status: 'manual' })
+  if (noBootloader(e.status)) return row({ ...base, version, status: 'manual' })
   if (v.firmware.mismatch) {
     return row({ ...base, version, status: 'mismatch', gatewayMajor: v.firmware.mismatch.gateway })
   }
@@ -122,7 +121,7 @@ export function firmwareSheet(
     ...(f.release && { target: f.release.version }),
     rows,
     attention: rows.filter((r) => r.attention).length,
-    allCurrent: !!f.release && rows.every((r) => r.status === 'ok' || r.status === 'newer')
+    allCurrent: !!f.release && rows.every((r) => r.status === 'ok')
   }
 }
 

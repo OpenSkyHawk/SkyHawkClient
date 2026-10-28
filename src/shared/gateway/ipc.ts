@@ -109,6 +109,8 @@ export interface GatewayFirmware {
   tooNew: boolean
   /** The firmware major this client supports: `SUPPORTED_FIRMWARE_MAJOR` (gateway/firmware.ts). */
   supportedMajor: number
+  /** Its cockpit side runs with no bootloader: only a programmer updates it (#173, #175's rule). */
+  noBootloader?: true
 }
 
 /**

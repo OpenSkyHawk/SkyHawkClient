@@ -44,12 +44,21 @@ const board = (nodeId: number, fw: string, over: Partial<NodeModelEntry> = {}, b
 const pdu = (nodeId: number, fw: string, over: Partial<NodeModelEntry> = {}) =>
   board(nodeId, fw, { kind: 'pdu', name: `PDU_${nodeId}`, ...over })
 
-/** The link up, the Gateway's cockpit side reporting `cockpit` (none = no node-0 row yet). */
-const connected = (cockpit?: string): DeviceStatus => {
+/**
+ * The link up, the Gateway's cockpit side reporting `cockpit` (none = no node-0 row yet) with its
+ * bootloader (unless `bootloader: 0`).
+ */
+const connected = (cockpit?: string, bootloader = 1): DeviceStatus => {
   const f = cockpit && v(cockpit)
   const gateway = gatewayStatus(
     f
-      ? nodeStatus(0, { nodeKind: 3, fwMajor: f.major, fwMinor: f.minor, fwPatch: f.patch })
+      ? nodeStatus(0, {
+          nodeKind: 3,
+          fwMajor: f.major,
+          fwMinor: f.minor,
+          fwPatch: f.patch,
+          bootloader
+        })
       : undefined,
     false
   )
@@ -207,14 +216,34 @@ describe('Firmware sheet rows (#173)', () => {
     expect(s.allCurrent).toBe(false)
   })
 
-  it('all current: every row up to date or newer; new boards on the bus are not rows', () => {
-    const s = sheet([pdu(3, '1.0.1'), pdu(4, '1.0.2'), board(20, '0.1.0', { source: 'new' })], {
+  it('all current: every row runs the release; new boards on the bus are not rows', () => {
+    const s = sheet([pdu(3, '1.0.1'), pdu(4, '1.0.1'), board(20, '0.1.0', { source: 'new' })], {
       usb: v('1.0.1'),
       release: R
     })
     expect(s.rows.map((r) => r.key)).toEqual(['usb', 'cockpit', '3', '4'])
     expect(s.allCurrent).toBe(true)
     expect(s.attention).toBe(0)
+  })
+
+  it('a board newer than the release isn’t "every board runs it", and needs no attention', () => {
+    const s = sheet([pdu(3, '1.0.1'), pdu(4, '1.0.2')], { usb: v('1.0.1'), release: R })
+    expect(byKey(s.rows, '4').status).toBe('newer')
+    expect(s.allCurrent).toBe(false)
+    expect(s.attention).toBe(0)
+  })
+
+  it('the cockpit side with no bootloader: manual update only, never "can update"', () => {
+    const s = sheet([], { usb: v('1.0.1'), release: R }, connected('1.0.0', 0))
+    expect(byKey(s.rows, 'cockpit')).toMatchObject({
+      status: 'manual',
+      version: '1.0.0',
+      attention: true
+    })
+    expect(firmwareBanner(s, R)).toMatchObject({ gateway: false, manual: 1 })
+    // 0.0.0 with bootloader 00 is not reported, never manual.
+    const zero = sheet([], { usb: v('1.0.1'), release: R }, connected('0.0.0', 0))
+    expect(byKey(zero.rows, 'cockpit')).toMatchObject({ status: 'not-reported', notReported: true })
   })
 })
 

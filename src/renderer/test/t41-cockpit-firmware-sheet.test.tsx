@@ -48,7 +48,7 @@ const usb = (v: string) => {
 
 /** The bench in the design: the Gateway behind, two PDUs behind, one at the release, custom ones. */
 const BENCH = {
-  device: connected(gateway({ fwMajor: 1, fwMinor: 0, fwPatch: 1 })),
+  device: connected(gateway({ fwMajor: 1, fwMinor: 0, fwPatch: 1, bootloader: 1 })),
   model: model([
     pdu(3, 'PDU_Left', { status: fw(3, 2, '1.0.0') }),
     pdu(4, 'PDU_Right', { status: fw(4, 2, '1.0.0') }),
@@ -140,17 +140,28 @@ describe('T41 the Firmware button and sheet (#173)', () => {
     expect(screen.getByRole('dialog', { name: /PDU_Left/ })).toBeInTheDocument()
   })
 
-  it('newer than the release, and every board current', async () => {
+  it('newer than the release: nothing needs attention, and it doesn’t say every board runs it', async () => {
     const { sheet, user } = await openSheet({
-      device: connected(gateway({ fwMajor: 1, fwMinor: 0, fwPatch: 1 })),
+      device: connected(gateway({ fwMajor: 1, fwMinor: 0, fwPatch: 1, bootloader: 1 })),
       model: model([pdu(3, 'PDU_Left', { status: fw(3, 2, '1.0.2') })]),
       releases: CHECKED,
       firmware: { usb: usb('1.0.1'), release: savedRelease('1.0.1') }
     })
-    expect(within(sheet).getByText('Every board runs the latest release.')).toBeInTheDocument()
+    expect(within(sheet).getByText('Nothing needs attention.')).toBeInTheDocument()
     await user.click(within(sheet).getByRole('button', { name: 'All · 3' }))
     expect(rows()[2]).toBe('PDU_Left · #3NEWER THAN RELEASE1.0.2 · the release is 1.0.1')
     expect(button()).toHaveTextContent(/^Firmware$/)
+    expect(button()).toHaveAttribute('title', 'Nothing needs attention · latest release 1.0.1')
+  })
+
+  it('every board on the release', async () => {
+    const { sheet } = await openSheet({
+      device: connected(gateway({ fwMajor: 1, fwMinor: 0, fwPatch: 1, bootloader: 1 })),
+      model: model([pdu(3, 'PDU_Left', { status: fw(3, 2, '1.0.1') })]),
+      releases: CHECKED,
+      firmware: { usb: usb('1.0.1'), release: savedRelease('1.0.1') }
+    })
+    expect(within(sheet).getByText('Every board runs the latest release.')).toBeInTheDocument()
     expect(button()).toHaveAttribute('title', 'Every board runs 1.0.1')
   })
 
@@ -197,7 +208,7 @@ describe('T41 the Overview firmware banner (#173)', () => {
 
   it('only manual boards behind', async () => {
     await renderScenario(<Overview />, {
-      device: connected(gateway({ fwMajor: 1, fwMinor: 0, fwPatch: 1 })),
+      device: connected(gateway({ fwMajor: 1, fwMinor: 0, fwPatch: 1, bootloader: 1 })),
       model: model([panel(10, 'Left_Throttle', { status: fw(10, 1, '1.0.0', { bootloader: 0 }) })]),
       firmware: { usb: usb('1.0.1'), release: savedRelease('1.0.1') }
     })

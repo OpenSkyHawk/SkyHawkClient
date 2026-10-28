@@ -11,7 +11,13 @@ export { SerialTrafficMonitor } from './serial-traffic-monitor'
 export { isLinkUp } from './link-state'
 export { GatewayWatch, RECOVERED_FLAG, shownHealth } from './gateway-health'
 export { diagLogRow, gatewayRecovery, type GatewayDiag, type GatewayRecovery } from './gateway-diag'
-export { majorMismatch, newerThanClient, reportedVersion, versionNotReported } from './firmware'
+export {
+  majorMismatch,
+  newerThanClient,
+  noBootloader,
+  reportedVersion,
+  versionNotReported
+} from './firmware'
 export { encodeExportFrame } from './link-framing'
 export { deviceEvent } from './link-events'
 export { listSerialPorts } from './serial-bridge'

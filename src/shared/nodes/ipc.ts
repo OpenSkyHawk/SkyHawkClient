@@ -832,7 +832,7 @@ export interface FirmwareSheet {
   rows: FirmwareRow[]
   /** *Needs attention · n*, and the button's count. */
   attention: number
-  /** Every row is up to date or newer than the release. */
+  /** Every row runs the release itself: "Every board runs T". A newer row isn't. */
   allCurrent: boolean
 }
 
