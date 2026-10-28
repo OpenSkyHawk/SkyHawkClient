@@ -12,7 +12,7 @@ import type {
   NodeView,
   PduReadings
 } from '@shared/nodes'
-import { majorMismatch, reportedVersion } from '../../gateway'
+import { majorMismatch, reportedVersion, versionNotReported } from '../../gateway'
 import { nodeFlagChips, pduAlertFlags } from '../faults'
 import { newReason } from '../node-model'
 
@@ -51,7 +51,11 @@ export const FW_MISMATCH = 'FW MISMATCH'
 export function boardFirmware(e: NodeModelEntry, gateway?: GatewayFirmware): BoardFirmware {
   const version = reportedVersion(e.status)
   const mismatch = majorMismatch(version, gateway)
-  return mismatch ? { version, mismatch } : { version }
+  return {
+    version,
+    ...(versionNotReported(e.status) && { notReported: true as const }),
+    ...(mismatch && { mismatch })
+  }
 }
 
 /**

@@ -5,7 +5,14 @@ import { FIRMWARE_RELEASE } from '@shared/firmware'
 import type { GatewayFirmware } from '@shared/gateway'
 import type { NodeModelEntry } from '@shared/nodes'
 import { modelNode as node, nodeModel as model, nodeStatus } from '../../../test-fixtures/nodes'
-import { gatewayFirmware, majorMismatch, reportedVersion } from '../../gateway/firmware'
+import {
+  SUPPORTED_FIRMWARE_MAJOR,
+  gatewayFirmware,
+  majorMismatch,
+  newerThanClient,
+  reportedVersion,
+  versionNotReported
+} from '../../gateway/firmware'
 import { attentionItems } from './attention'
 import { healthBand } from './band'
 import { boardFirmwareRows, nodeFaultBoxes, nodeStatusRows } from './panels'
@@ -30,17 +37,37 @@ describe('firmware releases (gateway/firmware.ts)', () => {
     })
     expect(reportedVersion(nodeStatus(1))).toBeNull()
     expect(reportedVersion(undefined)).toBeNull()
+    // 0.0.0 in a row is "not reported"; no row is no data.
+    expect(versionNotReported(nodeStatus(1))).toBe(true)
+    expect(versionNotReported(undefined)).toBe(false)
+    expect(versionNotReported(nodeStatus(1, { fwMajor: 1, fwMinor: 2, fwPatch: 3 }))).toBe(false)
   })
 
-  it('the Gateway is "too new" only past the major this client was synced against', () => {
-    const m = FIRMWARE_RELEASE.major
-    expect(gw(m, 9, 9)).toEqual({
-      version: { major: m, minor: 9, patch: 9 },
+  it('the Gateway is "too new" only past the supported major', () => {
+    expect(SUPPORTED_FIRMWARE_MAJOR).toBe(1)
+    expect(gw(0, 3, 0)).toEqual({
+      version: { major: 0, minor: 3, patch: 0 },
       tooNew: false,
-      supportedMajor: m
+      supportedMajor: 1
     })
-    expect(gw(m + 1).tooNew).toBe(true)
-    expect(gw(0, 0, 0)).toEqual({ version: null, tooNew: false, supportedMajor: m })
+    expect(gw(1, 9, 9)).toEqual({
+      version: { major: 1, minor: 9, patch: 9 },
+      tooNew: false,
+      supportedMajor: 1
+    })
+    expect(gw(2).tooNew).toBe(true)
+    expect(gw(0, 0, 0)).toEqual({ version: null, tooNew: false, supportedMajor: 1 })
+  })
+
+  it('the synced firmware is never on a newer major than the client supports', () => {
+    // A re-sync to firmware on a newer major fails here until the constant is raised on purpose.
+    expect(FIRMWARE_RELEASE.major).toBeLessThanOrEqual(SUPPORTED_FIRMWARE_MAJOR)
+  })
+
+  it('newerThanClient: only a major past the supported one', () => {
+    expect(newerThanClient({ major: 0, minor: 3, patch: 0 })).toBe(false)
+    expect(newerThanClient({ major: 1, minor: 9, patch: 9 })).toBe(false)
+    expect(newerThanClient({ major: 2, minor: 0, patch: 0 })).toBe(true)
   })
 
   it('a mismatch is a different major, never while either side is 0.0.0', () => {
@@ -71,6 +98,12 @@ describe('a board on another major than the Gateway (#171)', () => {
   ])
   const views = nodeViews(m, [], gw(1))
   const view = (id: number) => views.find((v) => v.entry.nodeId === id)!
+  /** A board in your cockpit not seen since the bridge booted: no row, so no data. */
+  const noRow = nodeViews(
+    model([node(5, { availability: 'offline', notSeen: true, status: undefined })]),
+    [],
+    gw(1)
+  )[0]!
 
   it('each view carries its release, and the mismatch when there is one', () => {
     expect(view(1).firmware).toEqual({ version: { major: 1, minor: 0, patch: 1 } })
@@ -78,7 +111,8 @@ describe('a board on another major than the Gateway (#171)', () => {
       version: { major: 0, minor: 2, patch: 0 },
       mismatch: { board: 0, gateway: 1 }
     })
-    expect(view(4).firmware).toEqual({ version: null })
+    expect(view(4).firmware).toEqual({ version: null, notReported: true })
+    expect(noRow.firmware).toEqual({ version: null })
   })
 
   it('a gold ! on the tile and a warning in the ring; a board fault keeps its own flag too', () => {
@@ -114,12 +148,13 @@ describe('a board on another major than the Gateway (#171)', () => {
     expect(nodeStatusRows(view(2))[0]).toEqual({ k: 'Status', v: 'healthy' })
   })
 
-  it('the sheet’s Firmware section: the release, or "version not reported" with why', () => {
+  it('the sheet’s Firmware section: the release, "version not reported", or a dash with no row', () => {
     expect(boardFirmwareRows(view(1))).toEqual({ installed: '1.0.1' })
     expect(boardFirmwareRows(view(4))).toEqual({
       installed: 'version not reported',
-      hint: expect.stringMatching(/^The board was already running when the Gateway started/)
+      hint: 'This board hasn’t reported its firmware version yet.'
     })
+    expect(boardFirmwareRows(noRow)).toEqual({ installed: '—' })
   })
 
   it('no Gateway release (not reported, or no row yet): nothing to compare, no mismatch', () => {

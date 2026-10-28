@@ -157,15 +157,17 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
 }
 
 /**
- * The Firmware section of the Status tab (#171): the release the board reports, or "version not
- * reported" with why. It shows what the board says; a mismatch is the box at the top.
+ * The Firmware section of the Status tab (#171): the release the board reports, "version not
+ * reported" when its row reads 0.0.0, or a dash with no row. It shows what the board says; a
+ * mismatch is the box at the top.
  */
 export function boardFirmwareRows(v: NodeView): BoardPanel['firmware'] {
-  const fw = v.firmware.version
-  if (fw) return { installed: versionText(fw) }
+  const { version, notReported } = v.firmware
+  if (version) return { installed: versionText(version) }
+  if (!notReported) return { installed: DASH }
   return {
     installed: 'version not reported',
-    hint: 'The board was already running when the Gateway started, so it hasn’t reported its version yet. It will after its next restart. Firmware older than 0.2.0 doesn’t report one.'
+    hint: 'This board hasn’t reported its firmware version yet.'
   }
 }
 

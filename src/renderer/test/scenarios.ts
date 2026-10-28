@@ -341,12 +341,12 @@ export const serialFrame = (dir: SerialFrame['dir'], hex: string, t = 0): Serial
 
 const CAL_SERIAL = 'E6614103E7452D2F'
 
-/** HELLO_ACK from today's SimGateway firmware. */
+/** HELLO_ACK from firmware 0.3.0. */
 const CAL_HELLO: CalHello = {
   proto: CAL_PROTO.version,
   blobVersion: CAL_PROTO.blobVersion,
   axisSlots: CAL_PROTO.axisSlots,
-  fw: { major: 0, minor: 2, patch: 0 }
+  fw: { major: 0, minor: 3, patch: 0 }
 }
 
 export interface CalAxis {

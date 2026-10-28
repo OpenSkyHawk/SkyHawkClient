@@ -172,6 +172,9 @@ firmware commit and writes `src/shared/firmware/*.generated.ts`.
 - DCS-BIOS `_ACFT_NAME` is not a firmware constant: it is a DCS-BIOS protocol value (the
   `MetadataStart` module) that DCS sends and the client reads from the DCS stream, so it is not
   synced. It is defined once, as `ACFT_NAME` in `main/dcs/bios-protocol.ts`.
+- `SUPPORTED_FIRMWARE_MAJOR` is not a firmware constant: it is the client's own claim of the major
+  its parser is written for (D22), an upper limit only. It is defined once, in
+  `main/gateway/firmware.ts`. A test keeps the synced `FIRMWARE_RELEASE` at or below it.
 
 ## The settings store
 

@@ -79,11 +79,11 @@ export interface FirmwareVersion {
 
 /** The Gateway's firmware as main judges it (#171). */
 export interface GatewayFirmware {
-  /** null: not reported (0.0.0) — it was running before the bridge restarted, or it is older. */
+  /** null: the row reports 0.0.0. No released build does. */
   version: FirmwareVersion | null
-  /** Its major is newer than the release this client was synced against: some status may be missing or wrong. */
+  /** Its major is newer than the major this client supports: some status may be missing or wrong. */
   tooNew: boolean
-  /** The firmware major this client supports (the release it was synced against). */
+  /** The firmware major this client supports: `SUPPORTED_FIRMWARE_MAJOR` (gateway/firmware.ts). */
   supportedMajor: number
 }
 

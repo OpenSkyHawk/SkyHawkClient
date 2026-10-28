@@ -47,7 +47,7 @@ export function gatewayFirmwareView(
   if (!f) return undefined
   if (!f.version) {
     return {
-      card: 'not reported · shows after the Gateway’s next restart',
+      card: 'not reported',
       pop: 'not reported',
       warn: false
     }

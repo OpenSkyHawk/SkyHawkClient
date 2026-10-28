@@ -4,7 +4,7 @@
 
 /**
  * The firmware release this client was synced against. Boards report their own release in their
- * status rows; a Gateway on a newer major than this one runs firmware this client may not read
- * right (within a major, firmware only appends).
+ * status rows. The supported major is `SUPPORTED_FIRMWARE_MAJOR` (main/gateway/firmware.ts), the
+ * client's own claim, not this.
  */
 export const FIRMWARE_RELEASE = { major: 0, minor: 1, patch: 0 } as const

@@ -302,7 +302,7 @@ export class CalDemux {
 const u16 = (p: Uint8Array, off: number) => p[off]! | (p[off + 1]! << 8)
 
 export interface HelloAck {
-  /** Gate on this, not on `fw` — there has been no firmware release. */
+  /** Gate on `proto`, never on `fw`: `fw` is the release, for display (#173). */
   proto: number
   blobVersion: number
   axisSlots: number
