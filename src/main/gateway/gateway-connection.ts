@@ -281,6 +281,19 @@ export class GatewayConnection {
     }
   }
 
+  /**
+   * A Gateway serial port enumerates now, open or not (#173): an update drive mounted while one
+   * does belongs to another RP2040, never to the Gateway.
+   */
+  async gatewayPresent(): Promise<boolean> {
+    if (isLinkUp(this.status.state)) return true
+    try {
+      return !!(await findSimGatewayPort())
+    } catch {
+      return false
+    }
+  }
+
   /** The 1200-baud touch on the held port: the Gateway restarts into its UF2 drive (#173). */
   touchForUpdate(path: string): Promise<void> {
     return touchForBootloader(path)

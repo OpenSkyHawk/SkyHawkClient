@@ -142,7 +142,11 @@ describe('T42 the Gateway USB side’s update (#173)', () => {
       update: {
         ...IN_DRIVE,
         canStart: false,
-        checks: [IN_DRIVE.checks[0]!, { kind: 'drive', ok: false }, IN_DRIVE.checks[2]!]
+        checks: [
+          IN_DRIVE.checks[0]!,
+          { kind: 'drive', ok: false, problem: 'many' },
+          IN_DRIVE.checks[2]!
+        ]
       }
     })
     await settle()
@@ -151,6 +155,22 @@ describe('T42 the Gateway USB side’s update (#173)', () => {
       '✕More than one update drive is mounted — unplug the other RP2040 board.'
     )
     expect(within(d).getByRole('button', { name: 'Update to 1.0.1' })).toBeDisabled()
+    // The Gateway left its drive (running again, or unplugged): it says so, not "unplug".
+    sky.emitScenario({
+      update: {
+        ...IN_DRIVE,
+        canStart: false,
+        checks: [
+          IN_DRIVE.checks[0]!,
+          { kind: 'drive', ok: false, problem: 'none' },
+          IN_DRIVE.checks[2]!
+        ]
+      }
+    })
+    await settle()
+    expect(within(dialog()).getByLabelText('Checks')).toHaveTextContent(
+      '✕The Gateway left its update drive — close and update it from its row.'
+    )
     // The run starts at the copy.
     sky.emitScenario({
       update: {
@@ -213,6 +233,11 @@ describe('T42 the Gateway USB side’s update (#173)', () => {
     [
       { kind: 'many-drives' },
       'More than one update drive — another RP2040 board is waiting in its update drive too. Unplug it, then Retry.',
+      'Nothing was written.'
+    ],
+    [
+      { kind: 'left-drive' },
+      'Not in its update drive — the Gateway is running again, so there is nothing to copy to. Close, and update it from its row.',
       'Nothing was written.'
     ],
     [

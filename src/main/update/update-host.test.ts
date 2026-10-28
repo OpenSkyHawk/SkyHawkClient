@@ -24,7 +24,7 @@ function host(
   } = {}
 ) {
   const pushes: (UpdateState | null)[] = []
-  const inputs = { relay: opts.relay ?? false, link: opts.link ?? true }
+  const inputs = { relay: opts.relay ?? false, link: opts.link ?? true, present: false }
   let mounted: string | undefined
   const others = [...(opts.strays ?? [])]
   const drives: number[] = []
@@ -36,7 +36,8 @@ function host(
         if (opts.drive !== false) mounted = '/Volumes/RPI-RP2'
         return Promise.resolve()
       },
-      handBack: () => setTimeout(() => ref.h!.usbFirmware({ major: 1, minor: 0, patch: 1 }), 1_000)
+      handBack: () => setTimeout(() => ref.h!.usbFirmware({ major: 1, minor: 0, patch: 1 }), 1_000),
+      present: () => Promise.resolve(inputs.present)
     },
     drive: {
       list: () => Promise.resolve([...others, ...(mounted ? [mounted] : [])]),
@@ -62,6 +63,7 @@ function host(
   const h = (ref.h = new UpdateHost((_c, p) => void pushes.push(p), {
     relayRunning: () => inputs.relay,
     linkUp: () => inputs.link,
+    gatewayPresent: () => Promise.resolve(inputs.link || inputs.present),
     cockpitMajor: () => opts.cockpit,
     release: () => ('release' in opts ? opts.release : release()),
     usb,
@@ -210,5 +212,72 @@ describe('UpdateHost (#173)', () => {
     await vi.advanceTimersByTimeAsync(5_000)
     await run
     expect(last()).toMatchObject({ phase: 'done', pct: 100, done: { reports: '1.0.1' } })
+  })
+
+  it('the drive check says why: the Gateway left its drive, or more than one is mounted', async () => {
+    const { h, last, others, inputs } = host({ link: false, strays: ['/Volumes/RPI-RP2'] })
+    h.inputsChanged()
+    await vi.advanceTimersByTimeAsync(0)
+    h.openUpdate({ kind: 'usb' })
+    others.length = 0
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(last()?.checks[1]).toEqual({ kind: 'drive', ok: false, problem: 'none' })
+    others.push('/Volumes/RPI-RP2', '/Volumes/RPI-RP2 1')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(last()?.checks[1]).toEqual({ kind: 'drive', ok: false, problem: 'many' })
+    // The Gateway comes back as a port: that update no longer applies; the dialog closes.
+    inputs.link = true
+    h.inputsChanged()
+    expect(last()).toBeNull()
+  })
+
+  it('a Gateway port enumerating (Disconnect, a busy port): no drive is its, and no drive scan', async () => {
+    const { h, inputs, drives } = host({ link: false, strays: ['/Volumes/RPI-RP2'] })
+    inputs.present = true
+    h.inputsChanged()
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(drives).toEqual([])
+    h.openUpdate({ kind: 'usb' })
+    expect(h.state()).toMatchObject({ checks: [{}, { kind: 'link', ok: false }, {}] })
+    expect(h.state()?.inDrive).toBeUndefined()
+  })
+
+  it('a slow drive look never stacks: one in flight at a time', async () => {
+    const { h, inputs } = host({ link: false })
+    let calls = 0
+    const slow = new Promise<boolean>(() => {}) // a dead network share, say
+    ;(h as unknown as { deps: { gatewayPresent: () => Promise<boolean> } }).deps.gatewayPresent =
+      () => {
+        calls++
+        return slow
+      }
+    inputs.link = false
+    h.inputsChanged()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(calls).toBe(1)
+  })
+
+  it('from the drive, Retry after a wrong version starts at the copy; progress never goes negative', async () => {
+    const { h, last, pushes, others } = host({ link: false, strays: ['/Volumes/RPI-RP2'] })
+    ;(h as unknown as { deps: { usb: UsbSidePorts } }).deps.usb.link.handBack = () =>
+      setTimeout(() => h.usbFirmware({ major: 1, minor: 0, patch: 0 }), 1_000)
+    h.inputsChanged()
+    await vi.advanceTimersByTimeAsync(0)
+    h.openUpdate({ kind: 'usb' })
+    const run = h.start()
+    await vi.advanceTimersByTimeAsync(5_000)
+    await run
+    expect(last()).toMatchObject({
+      phase: 'fail',
+      failure: { kind: 'wrong-version', reported: '1.0.0' }
+    })
+    others.push('/Volumes/RPI-RP2') // still in its drive: the copy didn't take
+    const retry = h.retry()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(last()?.steps.map((st) => st.key)).toEqual(['copy', 'rec', 'ver'])
+    expect(last()?.steps[0]?.state).not.toBe('waiting')
+    await vi.advanceTimersByTimeAsync(5_000)
+    await retry
+    expect(pushes.every((p) => !p || p.pct >= 0)).toBe(true)
   })
 })

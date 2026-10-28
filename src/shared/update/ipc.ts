@@ -21,10 +21,11 @@ export type UpdateCheck =
   | { kind: 'link'; ok: boolean }
   /**
    * The Gateway waits in its update drive with no port (an interrupted copy, or BOOTSEL held): it
-   * takes the copy as it is. Not ok while more than one update drive is mounted — no guessing which
-   * board is the Gateway.
+   * takes the copy as it is. Not ok when it has left the drive (`none`: it is running again, or was
+   * unplugged) or while more than one update drive is mounted (`many`: no guessing which board is
+   * the Gateway).
    */
-  | { kind: 'drive'; ok: boolean }
+  | { kind: 'drive'; ok: boolean; problem?: 'none' | 'many' }
   /** The target release is saved on this computer, with an image for this board. */
   | { kind: 'image'; ok: boolean; version: string }
 
@@ -48,6 +49,8 @@ export type UpdateFailure =
   | { kind: 'copy-failed' }
   /** With no Gateway port, more than one update drive is mounted: another RP2040 board's too. */
   | { kind: 'many-drives' }
+  /** Started from the update drive, but the Gateway runs as a port again: nothing to copy to. */
+  | { kind: 'left-drive' }
   /** The Gateway didn't come back, or didn't report its version, after the copy. */
   | { kind: 'no-reconnect' }
   /** It came back on another version than the target. */

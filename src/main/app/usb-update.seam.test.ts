@@ -354,4 +354,23 @@ describe('#173 the Gateway USB side, updated from the saved release', { timeout:
     await app.invoke(CTRL.updateClose)
     expect(app.lastPush('device:status')?.state).toBe('disconnected')
   })
+
+  it('Disconnect with the Gateway running and a Pico in BOOTSEL: the drive is not the Gateway’s', async () => {
+    const { app, gw } = await launch([0, 3, 0])
+    await app.invoke(CTRL.deviceDisconnect)
+    app.drive.mounted = DRIVE // another RP2040 in BOOTSEL; the Gateway's port still enumerates
+    await gw.run(10_000, 250)
+    expect(app.lastPush('cockpit:snapshot')!.firmware.rows[0]).toMatchObject({
+      status: 'not-reported'
+    })
+    expect(app.lastPush('cockpit:snapshot')!.firmware.rows[0]).not.toHaveProperty('action')
+    await app.invoke(CTRL.updateOpen, { kind: 'usb' })
+    expect(update(app)).toMatchObject({
+      canStart: false,
+      checks: [{}, { kind: 'link', ok: false }, {}]
+    })
+    expect(update(app)?.inDrive).toBeUndefined()
+    await app.invoke(CTRL.updateStart)
+    expect(app.drive.files).toEqual([])
+  })
 })

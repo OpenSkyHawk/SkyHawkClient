@@ -34,10 +34,15 @@ function checkView(c: UpdateCheck): CheckView {
     case 'drive':
       return c.ok
         ? { ok: true, text: 'Gateway waiting in its update drive' }
-        : {
-            ok: false,
-            text: 'More than one update drive is mounted — unplug the other RP2040 board.'
-          }
+        : c.problem === 'many'
+          ? {
+              ok: false,
+              text: 'More than one update drive is mounted — unplug the other RP2040 board.'
+            }
+          : {
+              ok: false,
+              text: 'The Gateway left its update drive — close and update it from its row.'
+            }
     case 'image':
       return c.ok
         ? { ok: true, text: `Firmware ${c.version} · saved on this computer, checked` }
@@ -84,6 +89,12 @@ function failView(f: UpdateFailure, to: string): { title: string; text: string; 
       return {
         title: 'More than one update drive',
         text: 'another RP2040 board is waiting in its update drive too. Unplug it, then Retry.',
+        foot: 'Nothing was written.'
+      }
+    case 'left-drive':
+      return {
+        title: 'Not in its update drive',
+        text: 'the Gateway is running again, so there is nothing to copy to. Close, and update it from its row.',
         foot: 'Nothing was written.'
       }
     case 'no-reconnect':

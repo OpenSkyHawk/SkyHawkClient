@@ -30,6 +30,8 @@ export interface UpdateHostDeps {
   relayRunning(): boolean
   /** The Gateway link is up. */
   linkUp(): boolean
+  /** A Gateway serial port enumerates now, open or not (gateway's `gatewayPresent`). */
+  gatewayPresent(): Promise<boolean>
   /** The Gateway's cockpit side's major, from its own row; undefined when it reports none. */
   cockpitMajor(): number | undefined
   /** The release the Firmware sheet compares with (releases' `target()`). */
@@ -67,6 +69,8 @@ export class UpdateHost {
   /** Update drives mounted while the link is down, as last looked for. */
   private drives = 0
   private watch?: ReturnType<typeof setInterval>
+  /** A look is in flight: a slow drive (a dead network share on Windows) never stacks them. */
+  private looking = false
   /** The USB side's release from HELLO this connect: the dialog's "from". */
   private usbVersion?: string
 
@@ -84,6 +88,13 @@ export class UpdateHost {
   /** The relay, the link or the saved releases changed: the checks may have. */
   inputsChanged(): void {
     this.watchDrives()
+    // The Gateway came back as a port while the dialog waited to copy to its drive: that update no
+    // longer applies; its row offers the ordinary one.
+    if (this.open?.inDrive && this.open.phase === 'confirm' && this.deps.linkUp()) {
+      this.open = undefined
+      this.push()
+      return
+    }
     if (this.open?.phase === 'confirm' || this.open?.phase === 'done') this.push()
   }
 
@@ -109,9 +120,21 @@ export class UpdateHost {
     }
   }
 
+  /**
+   * One look: none while a Gateway port enumerates (the Gateway runs, so a drive is another
+   * RP2040's — and no drive scan at all), else the update drives mounted now.
+   */
   private async lookForDrives(): Promise<void> {
-    const count = (await this.deps.usb.drive.list()).length
-    if (this.watch) this.setDrives(count)
+    if (this.looking) return
+    this.looking = true
+    try {
+      const count = (await this.deps.gatewayPresent())
+        ? 0
+        : (await this.deps.usb.drive.list()).length
+      if (this.watch) this.setDrives(count)
+    } finally {
+      this.looking = false
+    }
   }
 
   private setDrives(count: number): void {
@@ -132,7 +155,13 @@ export class UpdateHost {
     const checks: UpdateCheck[] = [
       { kind: 'relay', ok: !this.deps.relayRunning() },
       o.inDrive
-        ? { kind: 'drive', ok: this.drives === 1 }
+        ? {
+            kind: 'drive',
+            ok: this.drives === 1,
+            ...(this.drives !== 1 && {
+              problem: this.drives ? ('many' as const) : ('none' as const)
+            })
+          }
         : { kind: 'link', ok: this.deps.linkUp() },
       {
         kind: 'image',
@@ -231,7 +260,8 @@ export class UpdateHost {
   /** Retry a failure from where it said Retry may start. */
   async retry(): Promise<void> {
     if (this.open?.phase !== 'fail') return
-    await this.run(this.open.retryFrom)
+    // From the drive the update never restarts the Gateway: Retry starts at the copy at the latest.
+    await this.run(this.open.inDrive ? Math.max(this.open.retryFrom, 1) : this.open.retryFrom)
   }
 
   /** Close the dialog; never while it runs. */

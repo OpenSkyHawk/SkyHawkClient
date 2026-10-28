@@ -45,6 +45,8 @@ function harness(
     gatewayDrive?: string
     /** The HELLO after the copy lands this late (ms after the hand-back). */
     helloAfterMs?: number
+    /** A Gateway serial port enumerates (it runs, not in its drive). */
+    present?: boolean
   } = {}
 ) {
   let mounted: string | undefined
@@ -64,6 +66,7 @@ function harness(
         if (board.driveOnTouch !== false) mounted = board.gatewayDrive ?? DRIVE
         return Promise.resolve()
       },
+      present: () => Promise.resolve(!!board.present),
       handBack: () => {
         calls.push('handBack')
         if (board.comesBackOn === 'never') return
@@ -165,6 +168,29 @@ describe('UsbSideUpdate (#173)', () => {
     expect(await p).toEqual({ ok: true, reports: '1.0.1' })
     expect(h.calls).toEqual([`write ${DRIVE} gateway-1.0.1.uf2`, 'handBack'])
     expect(h.steps).toEqual([1, 2, 3])
+  })
+
+  it('from the drive, a Gateway running as a port again has left it: left-drive, nothing written', async () => {
+    const h = harness({ port: undefined, present: true })
+    h.mount() // another RP2040's drive, say
+    const p = h.flow.run(1, { step: () => {}, pct: () => {} })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(await p).toEqual({ ok: false, failure: { kind: 'left-drive' }, at: 1, retryFrom: 1 })
+    expect(h.calls.some((c) => c.startsWith('write'))).toBe(false)
+  })
+
+  it('a HELLO from before the take or the copy is never taken as the new version', async () => {
+    // Before the take: the old firmware's HELLO.
+    const taken = harness()
+    taken.flow.helloAnswered({ major: 1, minor: 0, patch: 0 })
+    expect(await taken.run()).toEqual({ ok: true, reports: '1.0.1' })
+    // From the drive (no take): a stale one is cleared when the copy begins.
+    const drive = harness({ port: undefined })
+    drive.mount()
+    drive.flow.helloAnswered({ major: 1, minor: 0, patch: 0 })
+    const p = drive.flow.run(1, { step: () => {}, pct: () => {} })
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(await p).toEqual({ ok: true, reports: '1.0.1' })
   })
 
   it('close after a failure gives the port back only if the run took it', async () => {

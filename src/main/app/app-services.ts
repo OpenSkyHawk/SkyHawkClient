@@ -117,13 +117,15 @@ export class AppServices {
     this.update = new UpdateHost(emit, {
       relayRunning: () => this.relay.relaying,
       linkUp: () => isLinkUp(this.connection.deviceStatus().state),
+      gatewayPresent: () => this.connection.gatewayPresent(),
       cockpitMajor: () => this.connection.deviceStatus().gateway?.firmware?.version?.major,
       release: () => this.releases.target(),
       usb: {
         link: {
           take: () => this.connection.takeForUpdate(),
           touch: (path) => this.connection.touchForUpdate(path),
-          handBack: () => this.connection.handBack()
+          handBack: () => this.connection.handBack(),
+          present: () => this.connection.gatewayPresent()
         },
         drive: uf2Drive({ platform: process.platform, user: userInfo().username }),
         image: (version) => this.releases.usbImage(version),

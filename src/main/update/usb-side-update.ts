@@ -20,6 +20,8 @@ export interface UsbSidePorts {
     touch(path: string): Promise<void>
     /** Give the port back: the link looks for the board again. */
     handBack(): void
+    /** A Gateway serial port enumerates now: the Gateway runs, so no update drive is its. */
+    present(): Promise<boolean>
   }
   drive: Uf2Drive
   /** The USB side's image of `version` from the release cache (#192 getFile, SHA-256 checked). */
@@ -161,10 +163,15 @@ export class UsbSideUpdate {
           break
         }
         case 'copy': {
-          // Started here (the Gateway waits in its drive) with no drive chosen: never guess
-          // between several.
-          if (!this.root && (await this.ports.drive.list()).length > 1) {
-            return fail({ kind: 'many-drives' }, at, at)
+          // Only a HELLO after this copy says what it runs now.
+          this.lastHello = undefined
+          if (!this.root) {
+            // Started here (the Gateway waits in its drive): a Gateway running as a port has left
+            // it, and any drive mounted now is another board's. Never guess between several.
+            if (await this.ports.link.present()) return fail({ kind: 'left-drive' }, at, at)
+            if ((await this.ports.drive.list()).length > 1) {
+              return fail({ kind: 'many-drives' }, at, at)
+            }
           }
           // After a failed copy the drive may come back only through BOOTSEL: wait for it again.
           const root = await this.waitForDrive()
