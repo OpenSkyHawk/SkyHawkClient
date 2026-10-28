@@ -21,6 +21,7 @@ import {
   SerialBridge,
   SIMGATEWAY_PID,
   SIMGATEWAY_VID,
+  touchForBootloader,
   type Log
 } from './serial-bridge'
 
@@ -116,6 +117,8 @@ export class GatewayConnection {
   private readonly linkDown = new LinkDownClock()
   private autoConnect = true
   private started = false
+  /** A firmware update holds the port (#173): nothing reopens it until handBack(). */
+  private held = false
   private timers: ReturnType<typeof setInterval>[] = []
   /** In the order added: see LinkRider. */
   private readonly riders: LinkRider[] = []
@@ -197,7 +200,7 @@ export class GatewayConnection {
   setAutoConnect(on: boolean): void {
     const was = this.autoConnect
     this.autoConnect = on
-    if (this.started && on && !was && !this.serial) this.connect()
+    if (this.started && on && !was && !this.serial && !this.held) this.connect()
   }
 
   /**
@@ -205,6 +208,7 @@ export class GatewayConnection {
    * — except after an error, where it is the Retry: start over with a fresh port.
    */
   connect(): void {
+    if (this.held) return // a firmware update has the port; handBack() reconnects
     if (this.serial && this.status.state !== 'error') return
     // The Retry: the boards on the bus were last seen now, as on Disconnect (M7, #93).
     if (this.serial) for (const r of this.riders) r.closing?.()
@@ -253,6 +257,40 @@ export class GatewayConnection {
     for (const r of this.riders) r.closing?.() // nodes: when the boards were last seen (#93)
     this.teardown()
     this.setStatus({ state: 'disconnected' })
+  }
+
+  /**
+   * A firmware update takes the port (#173): the link comes down as on Disconnect, and nothing
+   * reopens it — not the retry loop, not Connect — until handBack(). Resolves once the port is
+   * released, with the board's port path (the open one, else the one enumerated), or undefined
+   * when no Gateway is plugged in.
+   */
+  async takeForUpdate(): Promise<string | undefined> {
+    const open = isLinkUp(this.status.state) ? this.status.portPath : undefined
+    this.held = true
+    const serial = this.serial
+    if (serial) for (const r of this.riders) r.closing?.() // nodes: last seen now (#93)
+    this.teardown()
+    await serial?.whenReleased()
+    this.setStatus({ state: 'reconnecting' })
+    if (open) return open
+    try {
+      return await findSimGatewayPort()
+    } catch {
+      return undefined
+    }
+  }
+
+  /** The 1200-baud touch on the held port: the Gateway restarts into its UF2 drive (#173). */
+  touchForUpdate(path: string): Promise<void> {
+    return touchForBootloader(path)
+  }
+
+  /** The update is done with the port: look for the board again, as Connect does. */
+  handBack(): void {
+    if (!this.held) return
+    this.held = false
+    this.connect()
   }
 
   /** Release the serial port and what rides on it. */

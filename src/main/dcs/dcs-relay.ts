@@ -98,6 +98,7 @@ export class DcsRelay {
   private aircraft: AircraftStatus = AIRCRAFT_NONE
   /** The `relay:facts` last pushed, to push only a change. */
   private factsKey?: string
+  private readonly stateCbs = new Set<(relay: RelayState) => void>()
   private readonly device: RelayDevice
   private readonly dcs: DcsConnection
   private readonly stats: Stats
@@ -326,5 +327,16 @@ export class DcsRelay {
     this.relay = relay
     this.emit('relay:state', relay)
     this.pushFacts()
+    for (const cb of this.stateCbs) cb(relay)
+  }
+
+  /** After every `relay:state` push (the update dialog's relay check, #173). */
+  onState(cb: (relay: RelayState) => void): void {
+    this.stateCbs.add(cb)
+  }
+
+  /** Relaying now. */
+  get relaying(): boolean {
+    return this.running
   }
 }

@@ -9,6 +9,7 @@
 // The device link is not started or stopped by the relay. It is up whenever the board is plugged
 // in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
+import { userInfo } from 'node:os'
 import type { Emit, RelayStatus } from '@shared/app'
 import { app, net } from 'electron'
 import { DcsConnection, DcsRelay, SessionRecorder, Stats, StreamLog } from '../dcs'
@@ -18,6 +19,7 @@ import {
   deviceEvent,
   DeviceLineTap,
   GatewayConnection,
+  isLinkUp,
   newerThanClient,
   SerialTrafficMonitor
 } from '../gateway'
@@ -25,6 +27,7 @@ import { HidService } from '../hid'
 import { HidCalibrationService } from '../hid/calibration'
 import { NodeHub, NodeRoster } from '../nodes'
 import { Releases } from '../releases'
+import { uf2Drive, UpdateHost } from '../update'
 import { debugLog, setDebugEnabled } from './debug-log'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
 
@@ -51,6 +54,8 @@ export class AppServices {
   readonly recorder: SessionRecorder
   /** The firmware release check and the releases saved on this computer (#192). */
   readonly releases: Releases
+  /** The firmware update the client runs, one at a time, and its dialog (#173). */
+  readonly update: UpdateHost
   /** The relay's network end: the link to DCS-BIOS. */
   private readonly dcs: DcsConnection
   /** The Log tab's stream rows and their flush. */
@@ -79,7 +84,10 @@ export class AppServices {
       cacheEvents: this.journal,
       log: debugLog,
       recovered: (recovery) => this.nodes.gatewayRecovered(recovery),
-      usbFirmware: (fw) => this.nodes.gatewayUsbFirmware(fw)
+      usbFirmware: (fw) => {
+        this.nodes.gatewayUsbFirmware(fw)
+        this.update.usbFirmware(fw)
+      }
     })
     this.hid = new HidService(emit, debugLog)
     this.connection = new GatewayConnection(emit, {
@@ -104,6 +112,30 @@ export class AppServices {
       events: this.journal,
       newerThanClient,
       log: debugLog
+    })
+    // The Gateway USB side's update (#173): every outside thing it needs, from its owner.
+    this.update = new UpdateHost(emit, {
+      relayRunning: () => this.relay.relaying,
+      linkUp: () => isLinkUp(this.connection.deviceStatus().state),
+      cockpitMajor: () => this.connection.deviceStatus().gateway?.firmware?.version?.major,
+      release: () => this.releases.target(),
+      usb: {
+        link: {
+          take: () => this.connection.takeForUpdate(),
+          touch: (path) => this.connection.touchForUpdate(path),
+          handBack: () => this.connection.handBack()
+        },
+        drive: uf2Drive({ platform: process.platform, user: userInfo().username }),
+        image: (version) => this.releases.usbImage(version),
+        calibration: {
+          snapshot: () => this.calibration.calSnapshot(),
+          regressed: () => this.calibration.regressedNow(),
+          hasCopy: (axes) => this.calibration.hasSavedCopy(axes),
+          restore: (axes) => this.calibration.restoreSaved(axes)
+        },
+        events: (rows) => this.journal.report(rows),
+        now: () => Date.now()
+      }
     })
     this.lines = new DeviceLineTap(this.nodes)
     this.recorder = new SessionRecorder()
@@ -194,6 +226,10 @@ export class AppServices {
     // The Firmware sheet compares every board with the newest saved release (#173): after every
     // `releases:state` push, the first of which follows the start scan.
     this.releases.onState(() => this.nodes.releaseChanged(this.releases.target()))
+    // The update dialog's checks follow the relay, the link and the saved releases (#173).
+    this.releases.onState(() => this.update.inputsChanged())
+    this.relay.onState(() => this.update.inputsChanged())
+    this.connection.onStatus(() => this.update.inputsChanged())
     // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
     this.settings.store.subscribe((config, prev) => {
       if (prev.autoConnect !== config.autoConnect) {

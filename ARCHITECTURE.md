@@ -60,6 +60,7 @@ sides:
 | `events`          | The event log                                                                                                  |
 | `config`          | The settings, and configuration export and import                                                              |
 | `releases`        | The firmware release check on GitHub and the releases saved on this computer                                   |
+| `update`          | The firmware update the client runs, one at a time, and the shared update dialog                               |
 
 The renderer also has `app/kit/`: UI primitives (`Dialog`, `Sheet`, `Row`, icons) and the nav
 store. It is a leaf that every renderer topic may use.
@@ -75,17 +76,18 @@ files import each other freely.
 A topic may import only the topics in its row, plus the shared contracts, `shared/firmware`,
 `shared/format` and (in the renderer) `app/kit`. The table is the same in main and the renderer.
 
-| From              | May import                 |
-| ----------------- | -------------------------- |
-| `app`             | every topic                |
-| `config`          | `nodes`, `hid/calibration` |
-| `releases`        | `events`                   |
-| `nodes`           | `gateway`, `events`        |
-| `dcs`             | `gateway`, `events`        |
-| `hid/calibration` | `hid`, `gateway`           |
-| `hid`             | `gateway`                  |
-| `gateway`         | `events`                   |
-| `events`          | nothing                    |
+| From              | May import                   |
+| ----------------- | ---------------------------- |
+| `app`             | every topic                  |
+| `config`          | `nodes`, `hid/calibration`   |
+| `releases`        | `events`                     |
+| `update`          | nothing (app hands it ports) |
+| `nodes`           | `gateway`, `events`          |
+| `dcs`             | `gateway`, `events`          |
+| `hid/calibration` | `hid`, `gateway`             |
+| `hid`             | `gateway`                    |
+| `gateway`         | `events`                     |
+| `events`          | nothing                      |
 
 There are no import cycles anywhere, type-only imports included. When two topics need the same
 thing, it belongs to the lower one, or to a contract.
@@ -122,6 +124,7 @@ same field of the same push.
 | `events`          | `EventJournal`                                                                                                                                          | `events:batch`                                                                                | `useEventsStore`        |
 | `config`          | `SettingsService` (the settings), `ConfigTransfer` (export / import), `BackupFolder` (automatic backups)                                                | `config:changed`, `config:backups`                                                            | `useConfigStore`        |
 | `releases`        | `Releases` (the release check, the saved releases under `<userData>/firmware`, and `getFile` / `imageFor` for the update flows)                         | `releases:state`                                                                              | `useReleasesStore`      |
+| `update`          | `UpdateHost` (the open update: its checks, steps, failure and Retry) and `UsbSideUpdate` (the Gateway USB side's flow), over ports app hands in         | `update:state`                                                                                | `useUpdateStore`        |
 | `app`             | `AppServices` (builds and wires the services; no rules, no state)                                                                                       | —                                                                                             | `useNav` (in `app/kit`) |
 
 ## How a screen gets its data

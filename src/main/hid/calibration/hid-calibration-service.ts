@@ -31,7 +31,7 @@ import {
 } from '../../gateway'
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
 import { loadCalCache, saveCalCache, type CacheFileEvents, type CacheFileIO } from './cache-store'
-import { boardFor, dropAxis, regressedAxes, storeAxes } from './cache-rules'
+import { boardFor, dropAxis, regressedAxes, storeAxes, storedAsWritten } from './cache-rules'
 import { CAL_AXIS_NONE, nackName } from './codec'
 import { CalibrationWorkflowHost } from './workflow-host'
 
@@ -367,6 +367,42 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
       await l.closeSession()
       return null
     })
+  }
+
+  /** This computer has a saved copy of every one of `axes` for the attached Gateway (#173). */
+  hasSavedCopy(axes: number[]): boolean {
+    const board = boardFor(this.loadCache(), this.calSerialNumber)
+    return !!board && axes.every((idx) => board.axes[idx])
+  }
+
+  /** The saved axes the Gateway now reports present but uncalibrated (regressedAxes, #173). */
+  regressedNow(): number[] {
+    return regressedAxes(this.loadCache(), this.lastCal)
+  }
+
+  /**
+   * After a firmware update cleared the Gateway's calibration (#173): write this computer's copy
+   * back for `axes`, with no dialog and no prompt. One session streaming nothing, one COMMIT per
+   * axis, each read back and judged by the dialog's own rule (storedAsWritten). True when every
+   * axis stored; false at the first that didn't, or with no copy for this board.
+   */
+  async restoreSaved(axes: number[]): Promise<boolean> {
+    const board = boardFor(this.loadCache(), this.calSerialNumber)
+    if (!board || !this.hasSavedCopy(axes)) return false
+    const open = await this.calSessionOpen(CAL_AXIS_NONE)
+    if (!open.ok) return false
+    try {
+      for (const idx of axes) {
+        const a = board.axes[idx]!
+        const commit = await this.calCommit({ idx, min: a.min, centre: a.centre, max: a.max })
+        if (!commit.ok) return false
+        const read = await this.calRead()
+        if (!read.ok || !storedAsWritten(read.value.axes[idx], a)) return false
+      }
+      return true
+    } finally {
+      await this.calSessionClose()
+    }
   }
 
   private flushCalRaw(): void {

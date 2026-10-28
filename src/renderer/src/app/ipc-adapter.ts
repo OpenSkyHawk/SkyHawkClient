@@ -23,6 +23,7 @@ import { hidFromMain } from '../hid'
 import { bindCalibration, calibrationFromMain } from '../hid/calibration'
 import { bindNodes, nodesFromMain } from '../nodes'
 import { bindReleases, releasesFromMain } from '../releases'
+import { bindUpdate, updateFromMain } from '../update'
 
 /** Main, read at each call: outside Electron there is none, and every intent is a no-op. */
 const skyhawk = () => window.skyhawk
@@ -34,6 +35,7 @@ bindCalibration(skyhawk)
 bindEvents(skyhawk)
 bindConfig(skyhawk)
 bindReleases(skyhawk)
+bindUpdate(skyhawk)
 
 // Guards against duplicate IPC subscriptions (React StrictMode double-mounts the
 // init effect in dev; without this every push — and every log row — lands twice).
@@ -57,6 +59,8 @@ export function initBridge(): (() => void) | void {
 
   // The release check and the saved releases live in main; a reloaded renderer asks for them.
   void api.getReleases().then((r) => releasesFromMain.state(r))
+  // So does an update in progress (#173): the dialog comes back over the reloaded page.
+  void api.getUpdate().then((u) => updateFromMain.state(u))
 
   // Rehydrate from the live session: a dev reload resets the renderer but the
   // main-process session keeps running, so the UI must not assume "stopped".
@@ -82,7 +86,8 @@ export function initBridge(): (() => void) | void {
     api.on('stats:tick', (st) => dcsFromMain.stats(st)),
     api.on('events:batch', (rows) => eventsFromMain.batch(rows)),
     api.on('log:batch', (rows) => dcsFromMain.logBatch(rows)),
-    api.on('releases:state', (r) => releasesFromMain.state(r))
+    api.on('releases:state', (r) => releasesFromMain.state(r)),
+    api.on('update:state', (u) => updateFromMain.state(u))
   ]
 
   return () => {

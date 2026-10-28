@@ -146,6 +146,14 @@
 // gained `firmware` (FirmwareSheet: every board against the newest saved release) and
 // `OverviewSummary` gained `firmware` (FirmwareBanner | null). No channel, intent or method changed.
 //
+// #173 PR 2 (the Gateway USB side's update and the shared update dialog): the new topic `update`
+// added the push `update:state` (IPC.updateState) → `UpdateState | null` — the dialog as main runs
+// it, pushed after every change — and six intents: `update:get` (getUpdate, the renderer's pull on
+// load), `update:open` (updateOpen), `update:ack` (updateAck, *I understand*), `update:start`
+// (updateStart), `update:retry` (updateRetry) and `update:close` (updateClose). `FirmwareRow` gained
+// `action` and `GatewayFirmware` `noBootloader` (type changes only). No other channel, intent or
+// method changed.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -202,6 +210,7 @@ import type {
 } from '../nodes/ipc'
 import type { LogEvent } from '../events/ipc'
 import type { ReleasesState } from '../releases/ipc'
+import type { UpdateState, UpdateTargetRef } from '../update/ipc'
 
 /** Exact type equality (mutual assignability is not enough: it misses optional/readonly drift). */
 type Equal<X, Y> =
@@ -252,6 +261,7 @@ interface OldPushChannels {
   'relay:facts': RelayFacts
   'config:backups': BackupList
   'releases:state': ReleasesState
+  'update:state': UpdateState | null
 }
 
 type OldPushChannel = keyof OldPushChannels
@@ -273,6 +283,7 @@ interface OldIPC {
   readonly relayFacts: 'relay:facts'
   readonly configBackups: 'config:backups'
   readonly releasesState: 'releases:state'
+  readonly updateState: 'update:state'
 }
 
 interface OldCTRL {
@@ -326,6 +337,12 @@ interface OldCTRL {
   readonly releasesGet: 'releases:get'
   readonly releasesCheck: 'releases:check'
   readonly releasesClear: 'releases:clear'
+  readonly updateGet: 'update:get'
+  readonly updateOpen: 'update:open'
+  readonly updateAck: 'update:ack'
+  readonly updateStart: 'update:start'
+  readonly updateRetry: 'update:retry'
+  readonly updateClose: 'update:close'
 }
 
 interface OldSkyhawkApi {
@@ -384,6 +401,12 @@ interface OldSkyhawkApi {
   getReleases(): Promise<ReleasesState>
   checkReleases(): Promise<void>
   clearReleases(): Promise<void>
+  getUpdate(): Promise<UpdateState | null>
+  updateOpen(target: UpdateTargetRef): Promise<void>
+  updateAck(on: boolean): Promise<void>
+  updateStart(): Promise<void>
+  updateRetry(): Promise<void>
+  updateClose(): Promise<void>
 }
 
 /** R3.4c: one `push:batch` message — main's pushes of one turn, in order. */

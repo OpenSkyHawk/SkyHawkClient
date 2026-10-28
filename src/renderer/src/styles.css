@@ -4091,3 +4091,137 @@ select.input {
 .fw__row > .cog {
   flex: none;
 }
+
+/* ── firmware update dialog (#173; #187 and #175 reuse it), from the design's CockpitMap and power.css ── */
+.ad--up {
+  width: min(640px, calc(100% - 32px));
+}
+.ad > .up__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.up__body {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.up__body > * {
+  flex: none;
+}
+.up__q {
+  max-height: 170px;
+  overflow-y: auto;
+}
+/* the confirm step's checks (✓ / ✕), warnings as rows, notes as quiet tips */
+.up__chk {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.up__chk div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.up__chk i {
+  width: 14px;
+  font-style: normal;
+  text-align: center;
+}
+.up__yes {
+  color: var(--green);
+}
+.up__no {
+  color: #ff9a9a;
+}
+.up__flags {
+  gap: 6px;
+}
+.up__flags i {
+  font-weight: 700;
+}
+.up__flag--warn {
+  color: var(--gold);
+}
+.up__flag--warn b {
+  color: #ffd27a;
+  font-weight: 600;
+}
+.up__ack {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text);
+}
+.up__ack .im__chk {
+  margin-top: 0;
+}
+.up__tips {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted-2);
+}
+.up__tips > div {
+  display: flex;
+  gap: 10px;
+}
+.up__tips i {
+  width: 14px;
+  flex: none;
+  text-align: center;
+  font-style: normal;
+  font-family: var(--mono);
+}
+.up__tips b {
+  color: var(--muted);
+  font-weight: 600;
+}
+/* the run: the board, its steps, the bar */
+.up__cur {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--disp);
+  font-size: 14px;
+  font-weight: 600;
+}
+.up__ph {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.up__p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted-3);
+}
+.up__p i {
+  width: 14px;
+  text-align: center;
+  font-style: normal;
+}
+.up__p--on {
+  color: var(--text);
+}
+.up__p--done {
+  color: var(--green);
+}
+.up__p--bad {
+  color: #ff9a9a;
+}
+.fw__row > .toolbtn {
+  flex: none;
+}

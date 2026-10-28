@@ -22,6 +22,7 @@ import type { AppConfig, ConfigEdit } from '@shared/config'
 import type { RecordState, ReplayLoad } from '@shared/dcs'
 import type { AdoptRequest, AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes'
 import type { FetchPort } from '../releases'
+import type { UpdateTargetRef } from '@shared/update'
 
 // ── the outside world, faked ─────────────────────────────────────────────────
 
@@ -41,6 +42,18 @@ const world = {
   dialogs: {
     saveCapture: undefined as string | undefined,
     openCapture: undefined as string | undefined
+  },
+  /** Every 1200-baud touch, by port path, in order (#173). */
+  touches: [] as string[],
+  /** The Gateway's update drive (#173): where it is mounted now, and what was copied onto it. */
+  drive: {
+    mounted: undefined as string | undefined,
+    files: [] as { root: string; name: string; bytes: Uint8Array }[],
+    /** The next copies fail (the drive goes away during them). */
+    failWrites: false,
+    /** What the board does on a touch, and after a copy lands: a test's script. */
+    onTouch: undefined as (() => void) | undefined,
+    onCopied: undefined as (() => void) | undefined
   }
 }
 
@@ -71,6 +84,9 @@ class FakeSerial {
   start() {}
   stop() {
     this.stopped = true
+  }
+  whenReleased() {
+    return Promise.resolve()
   }
   write(d: Buffer) {
     world.serialOut.push(Buffer.from(d))
@@ -140,10 +156,29 @@ vi.doMock('../gateway/serial-bridge', () => ({
   SIMGATEWAY_VID: 0x2e8a,
   SIMGATEWAY_PID: 0x4134,
   findSimGatewayPort: () => Promise.resolve(world.portPath),
+  touchForBootloader: (path: string) => {
+    world.touches.push(path)
+    world.drive.onTouch?.()
+    return Promise.resolve()
+  },
   listSerialPorts: () =>
     Promise.resolve([{ path: world.portPath, serialNumber: world.serialNumber }])
 }))
 vi.doMock('../dcs/transports', () => ({ createTransport: () => new FakeTransport() }))
+// The update drive (#173): mounted where the test says, copies recorded, never the real disk.
+vi.doMock('../update/uf2-drive', () => ({
+  uf2Drive: () => ({
+    find: () => Promise.resolve(world.drive.mounted),
+    write: (root: string, name: string, bytes: Uint8Array, pct: (n: number) => void) => {
+      if (world.drive.failWrites || world.drive.mounted !== root) return Promise.resolve(false)
+      world.drive.files.push({ root, name, bytes })
+      pct(100)
+      world.drive.mounted = undefined // the board restarts as the last block lands
+      world.drive.onCopied?.()
+      return Promise.resolve(true)
+    }
+  })
+}))
 vi.doMock('../hid/hid-reader', () => ({ HidReader: FakeHid }))
 
 const { AppServices } = await import('../app/app-services')
@@ -212,7 +247,15 @@ function launch(opts: ServicesOptions) {
     dcsOut: [],
     transportConnectsOnStart: opts.transport?.connectOnStart ?? false,
     github: opts.github ?? (() => Promise.reject(new Error('offline'))),
-    dialogs: { saveCapture: undefined, openCapture: undefined }
+    dialogs: { saveCapture: undefined, openCapture: undefined },
+    touches: [],
+    drive: {
+      mounted: undefined,
+      files: [],
+      failWrites: false,
+      onTouch: undefined,
+      onCopied: undefined
+    }
   })
   FakeSerial.last = undefined
   FakeTransport.last = undefined
@@ -280,7 +323,13 @@ function launch(opts: ServicesOptions) {
     [CTRL.eventsClear]: () => services.journal.clear(),
     [CTRL.releasesGet]: () => services.releases.state(),
     [CTRL.releasesCheck]: () => services.releases.checkNow(),
-    [CTRL.releasesClear]: () => services.releases.clear()
+    [CTRL.releasesClear]: () => services.releases.clear(),
+    [CTRL.updateGet]: () => services.update.state(),
+    [CTRL.updateOpen]: (target: UpdateTargetRef) => services.update.openUpdate(target),
+    [CTRL.updateAck]: (on: boolean) => services.update.ack(on),
+    [CTRL.updateStart]: () => services.update.start(),
+    [CTRL.updateRetry]: () => services.update.retry(),
+    [CTRL.updateClose]: () => services.update.close()
   }
   type Intents = typeof intents
 
@@ -361,6 +410,14 @@ function launch(opts: ServicesOptions) {
         world.serialOut.length = 0
       }
     },
+
+    /** The 1200-baud touches main made, by port path (#173). */
+    touches(): string[] {
+      return [...world.touches]
+    },
+
+    /** The Gateway's update drive (#173): mount it, script the board, read what was copied. */
+    drive: world.drive,
 
     /** DCS's end of the relay. */
     transport: {

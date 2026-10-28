@@ -4,6 +4,7 @@
 //
 // A leaf: nothing in this folder imports anything else in src (L-format-leaf), so a helper that
 // needs a contract type, a model rule or a firmware table stays with that owner.
+export * from './duration'
 export * from './events'
 export * from './file-errors'
 export * from './psu'

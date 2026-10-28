@@ -12,6 +12,7 @@ import {
   retrySweep,
   tick
 } from './axis-capture'
+import { storedAsWritten } from './cache-rules'
 import type {
   CachedBoard,
   CalCacheEntry,
@@ -462,12 +463,7 @@ export class CalibrationWorkflow {
       }
 
       const axis = read.value.axes[idx]
-      if (
-        !axis?.calibrated ||
-        axis.min !== d.min ||
-        axis.centre !== d.centre ||
-        axis.max !== d.max
-      ) {
+      if (!axis || !storedAsWritten(axis, d)) {
         await this.failWrite(
           {
             kind: 'error',

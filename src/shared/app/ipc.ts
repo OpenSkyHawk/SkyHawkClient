@@ -65,6 +65,13 @@ import {
   type ReleasesPushChannels,
   type ReleasesState
 } from '../releases/ipc'
+import {
+  UPDATE_CTRL,
+  UPDATE_PUSH,
+  type UpdatePushChannels,
+  type UpdateState,
+  type UpdateTargetRef
+} from '../update/ipc'
 
 /** Live session state so a freshly (re)loaded renderer can rehydrate. */
 export interface RelayStatus {
@@ -121,7 +128,8 @@ export interface PushChannels
     NodesPushChannels,
     CalibrationPushChannels,
     ConfigPushChannels,
-    ReleasesPushChannels {}
+    ReleasesPushChannels,
+    UpdatePushChannels {}
 
 export type PushChannel = keyof PushChannels
 
@@ -183,7 +191,8 @@ export const IPC = {
   ...NODES_PUSH,
   ...CALIBRATION_PUSH,
   ...CONFIG_PUSH,
-  ...RELEASES_PUSH
+  ...RELEASES_PUSH,
+  ...UPDATE_PUSH
 } as const
 
 /** Intents this contract owns: the rehydrate bundle and the debug-log tools. */
@@ -204,7 +213,8 @@ export const CTRL = {
   ...HID_CTRL,
   ...NODES_CTRL,
   ...CALIBRATION_CTRL,
-  ...RELEASES_CTRL
+  ...RELEASES_CTRL,
+  ...UPDATE_CTRL
 } as const
 
 /** An intent channel: any CTRL value. */
@@ -356,4 +366,17 @@ export interface SkyhawkApi {
   checkReleases(): Promise<void>
   /** *Clear*: remove every saved release (refused while none is saved or an update reads one). */
   clearReleases(): Promise<void>
+  // ── firmware updates (#173) ───────────────────────────────────────────────
+  // The update dialog's actions. Main runs the update and answers each by pushing `update:state`.
+  /** The dialog as main holds it (null: none open): a reloaded renderer's pull. */
+  getUpdate(): Promise<UpdateState | null>
+  /** Open the confirm step for `target`; refused while another update runs. */
+  updateOpen(target: UpdateTargetRef): Promise<void>
+  /** Tick or untick *I understand*. */
+  updateAck(on: boolean): Promise<void>
+  updateStart(): Promise<void>
+  /** Run again from where the failure said it safely can. */
+  updateRetry(): Promise<void>
+  /** Close the dialog; refused while the update runs. */
+  updateClose(): Promise<void>
 }

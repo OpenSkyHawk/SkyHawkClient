@@ -29,6 +29,7 @@ const ALLOW = {
   gateway: ['events'],
   config: ['nodes', 'hid/calibration'],
   releases: ['events'],
+  update: [],
   events: []
 }
 

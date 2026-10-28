@@ -112,6 +112,8 @@ function fakeApi() {
     getConfigBackups: () => Promise.resolve(BACKUP_LIST_DEFAULT),
     // The firmware releases (`releases:get`, #192): nothing checked or saved yet.
     getReleases: () => Promise.resolve(RELEASES_STATE_DEFAULT),
+    // The firmware update dialog (`update:get`, #173): none open.
+    getUpdate: () => Promise.resolve(null),
     getHidAvailability: () => Promise.resolve({ axes: [0, 1], hats: [], buttons: [] }),
     setConfig: (patch: unknown) => Promise.resolve(patch),
     editConfig: (edit: unknown) => Promise.resolve(edit),

@@ -29,7 +29,16 @@ const RING_C = 289.03 // 2π × 46, the ring's circumference
  * The Cockpit tab. `psuView` is the PSU setting as main resolves it, and `releaseCard` the Firmware
  * sheet's release card (releases, #192); the app hands both in.
  */
-export function Cockpit({ psuView, releaseCard }: { psuView: PsuView; releaseCard?: ReactNode }) {
+export function Cockpit({
+  psuView,
+  releaseCard,
+  onUpdate = () => {}
+}: {
+  psuView: PsuView
+  releaseCard?: ReactNode
+  /** A Firmware sheet row's *Update*, by row key (the app opens the update dialog, #173). */
+  onUpdate?: (row: string) => void
+}) {
   /** Everything the tab decides, as main built it (cockpit:snapshot, R3.2). */
   const snap = useNodesStore((s) => s.cockpit)
   const live = snap.live
@@ -214,6 +223,7 @@ export function Cockpit({ psuView, releaseCard }: { psuView: PsuView; releaseCar
           sheet={snap.firmware}
           releaseCard={releaseCard}
           onOpen={openBoard}
+          onUpdate={onUpdate}
           onClose={() => setFirmwareOpen(false)}
         />
       )}

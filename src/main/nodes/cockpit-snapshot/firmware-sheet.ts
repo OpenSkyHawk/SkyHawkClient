@@ -56,7 +56,14 @@ function usbRow(live: boolean, f: FirmwareInputs): FirmwareRow {
   if (!live || !f.usb) return row({ ...base, status: 'not-reported' })
   if (isZero(f.usb)) return row({ ...base, status: 'not-reported', notReported: true })
   const version = text(f.usb)
-  return row({ ...base, version, status: againstRelease(version, f.release, { side: 'usb' }) })
+  const status = againstRelease(version, f.release, { side: 'usb' })
+  // Behind the saved release, which has its image: the USB side's own update (#173).
+  return row({
+    ...base,
+    version,
+    status,
+    ...(status === 'update' && { action: 'update' as const })
+  })
 }
 
 /**

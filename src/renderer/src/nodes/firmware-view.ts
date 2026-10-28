@@ -17,6 +17,8 @@ export interface FirmwareRowView {
   sub: string
   /** The board it opens (its panel); a Gateway side opens nothing yet (#177's Gateway sheet). */
   opens?: number
+  /** Its *Update* (#173: the Gateway's USB side), as main offers it. */
+  update?: true
 }
 
 const CHIP: Record<Exclude<FirmwareStatus, 'no-release'>, [string, string, string, string]> = {
@@ -58,7 +60,10 @@ function sub(r: FirmwareRow, target: string | undefined): string {
 
 export function firmwareRowView(r: FirmwareRow, target: string | undefined): FirmwareRowView {
   const name = r.nodeId === undefined ? r.name : `${r.name} · #${r.nodeId}`
-  const opens = r.nodeId === undefined ? {} : { opens: r.nodeId }
+  const opens = {
+    ...(r.nodeId !== undefined && { opens: r.nodeId }),
+    ...(r.action === 'update' && { update: true as const })
+  }
   if (r.status === 'no-release')
     return { key: r.key, name, dot: '', sym: '', sub: sub(r, target), ...opens }
   const [chip, chipCls, dot, sym] = CHIP[r.status]

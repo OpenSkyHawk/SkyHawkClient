@@ -14,6 +14,7 @@ import { registerHidIpc } from '../hid'
 import { registerCalibrationIpc } from '../hid/calibration'
 import { registerNodesIpc } from '../nodes'
 import { registerReleasesIpc } from '../releases'
+import { registerUpdateIpc } from '../update'
 import type { AppServices } from './app-services'
 import { debugLog, debugLogPath } from './debug-log'
 import type { Dialogs } from './dialogs'
@@ -74,7 +75,14 @@ const IPC_ORDER = [
   // The firmware releases (#192), after every channel that was here before them.
   'releases:get',
   'releases:check',
-  'releases:clear'
+  'releases:clear',
+  // The firmware update dialog (#173), after every channel that was here before them.
+  'update:get',
+  'update:open',
+  'update:ack',
+  'update:start',
+  'update:retry',
+  'update:close'
 ] as const satisfies readonly CtrlChannel[]
 
 /** IPC_ORDER's type when it lists every channel; otherwise the channels it leaves out. */
@@ -114,6 +122,7 @@ export function registerIpc(ipcMain: IpcRegistrar, deps: IpcDeps): void {
   registerCalibrationIpc(ipc, { calibration: services.calibration })
   registerEventsIpc(ipc, { journal: services.journal, dialogs })
   registerReleasesIpc(ipc, { releases: services.releases })
+  registerUpdateIpc(ipc, { update: services.update })
 
   ipc.handle(APP_CTRL.relayStatus, () => {
     // A renderer's first pull on (re)load: a calibration view from before it went with the old

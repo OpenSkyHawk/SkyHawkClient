@@ -30,6 +30,7 @@ import type {
   ResetPreview
 } from '@shared/nodes'
 import type { ReleasesState } from '@shared/releases'
+import type { UpdateState, UpdateTargetRef } from '@shared/update'
 
 // Each push channel's subscribers, in the order they subscribed.
 const subscribers = new Map<PushChannel, Set<(data: never) => void>>()
@@ -121,7 +122,14 @@ const api: SkyhawkApi = {
   calAttach: (on: boolean) => ipcRenderer.invoke(CTRL.calAttach, on) as Promise<void>,
   getReleases: () => ipcRenderer.invoke(CTRL.releasesGet) as Promise<ReleasesState>,
   checkReleases: () => ipcRenderer.invoke(CTRL.releasesCheck) as Promise<void>,
-  clearReleases: () => ipcRenderer.invoke(CTRL.releasesClear) as Promise<void>
+  clearReleases: () => ipcRenderer.invoke(CTRL.releasesClear) as Promise<void>,
+  getUpdate: () => ipcRenderer.invoke(CTRL.updateGet) as Promise<UpdateState | null>,
+  updateOpen: (target: UpdateTargetRef) =>
+    ipcRenderer.invoke(CTRL.updateOpen, target) as Promise<void>,
+  updateAck: (on: boolean) => ipcRenderer.invoke(CTRL.updateAck, on) as Promise<void>,
+  updateStart: () => ipcRenderer.invoke(CTRL.updateStart) as Promise<void>,
+  updateRetry: () => ipcRenderer.invoke(CTRL.updateRetry) as Promise<void>,
+  updateClose: () => ipcRenderer.invoke(CTRL.updateClose) as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('skyhawk', api)

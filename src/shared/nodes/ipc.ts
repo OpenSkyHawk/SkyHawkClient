@@ -822,6 +822,11 @@ export interface FirmwareRow {
   gatewayMajor?: number
   /** Counted in *Needs attention*: update available, major mismatch, manual update only. */
   attention: boolean
+  /**
+   * The row's *Update* (#173: the Gateway's USB side, while it is behind the saved release). The
+   * cockpit side's (#187) and the boards' (#175) come with their update flows.
+   */
+  action?: 'update'
 }
 
 /** The Cockpit's Firmware button and sheet (#173): every board against the release. */

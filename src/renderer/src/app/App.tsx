@@ -11,6 +11,7 @@ import { Cockpit } from './cockpit/Cockpit'
 import { Log } from './log/Log'
 import { HidTab } from './hid/HidTab'
 import { Settings } from './settings/Settings'
+import { FirmwareUpdate } from './update/FirmwareUpdate'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -74,6 +75,8 @@ export function App() {
         {tab === 'hid' && <HidTab />}
         {tab === 'settings' && <Settings />}
       </main>
+      {/* A firmware update in progress (#173), whichever tab is open. */}
+      <FirmwareUpdate />
     </div>
   )
 }
