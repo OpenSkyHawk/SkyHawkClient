@@ -10,7 +10,9 @@ import {
   pad,
   pad3,
   seenAgo,
-  stamp
+  stamp,
+  ago,
+  dayMonth
 } from './time'
 
 /** 16 Oct 2026, 21:14:07.412 local time. */
@@ -64,6 +66,20 @@ describe('dates', () => {
   it('stamp: the UTC ISO time, safe for a file name', () => {
     expect(stamp(new Date(Date.UTC(2026, 9, 16, 10, 0, 0)))).toBe('2026-10-16T10-00-00-000Z')
     expect(stamp(new Date(Date.UTC(2026, 9, 16, 21, 14, 7, 412)))).toBe('2026-10-16T21-14-07-412Z')
+  })
+})
+
+describe('ago / dayMonth', () => {
+  it('just now, minutes, hours, then days', () => {
+    expect(ago(0, 59_000)).toBe('just now')
+    expect(ago(0, 2 * 60_000 + 5_000)).toBe('2 min ago')
+    expect(ago(0, 3 * 3_600_000)).toBe('3 h ago')
+    expect(ago(0, 50 * 3_600_000)).toBe('2 d ago')
+    expect(ago(10_000, 0)).toBe('just now')
+  })
+
+  it('a release date as "29 Nov"', () => {
+    expect(dayMonth(new Date(2026, 10, 29, 20, 35).getTime())).toBe('29 Nov')
   })
 })
 

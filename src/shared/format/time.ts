@@ -46,14 +46,24 @@ export function lastSeenLabel(t: number): string {
   })
 }
 
+/** "29 Nov": a release's date (#192). */
+export const dayMonth = (t: number): string =>
+  new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short' })
+
+/** How long ago `t` was: "just now", "2 min ago", "3 h ago", "2 d ago". */
+export function ago(t: number, now: number): string {
+  const s = Math.max(0, Math.round((now - t) / 1000))
+  if (s < 60) return 'just now'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} min ago`
+  const h = Math.floor(m / 60)
+  return h < 24 ? `${h} h ago` : `${Math.floor(h / 24)} d ago`
+}
+
 /** "first seen 2 min ago" — this session's first sighting (it is not persisted). */
 export function seenAgo(firstSeenAt: number | undefined, now: number): string {
   if (firstSeenAt === undefined) return 'first seen this session'
-  const s = Math.max(0, Math.round((now - firstSeenAt) / 1000))
-  if (s < 60) return 'first seen just now'
-  const m = Math.floor(s / 60)
-  if (m < 60) return `first seen ${m} min ago`
-  return `first seen ${Math.floor(m / 60)} h ago`
+  return `first seen ${ago(firstSeenAt, now)}`
 }
 
 /** Seconds as `HH:MM:SS`; hours keep counting past 99. */

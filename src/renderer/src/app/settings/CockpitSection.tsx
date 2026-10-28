@@ -4,6 +4,7 @@ import { parsePsuLimit, type PsuLimits } from '@shared/nodes'
 import { useConfigStore } from '../../config'
 import { useNodesStore } from '../../nodes'
 import { Row, SectionHead } from '../kit'
+import { FirmwareUpdates } from './FirmwareUpdates'
 import { ResetDialog } from './ResetDialog'
 import { hiddenRow, resetPreviewKey, resetRowDesc, unhideError } from './settings-view'
 import { useNodesPulled } from './useNodesPulled'
@@ -197,6 +198,7 @@ export function CockpitSection() {
         </Row>
       </div>
       <PowerSupply key={formsReset} />
+      <FirmwareUpdates />
       <HiddenNodes />
       {resetOpen && <ResetDialog inputs={previewKey} onClose={() => setResetOpen(false)} />}
     </>
