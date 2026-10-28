@@ -117,6 +117,12 @@ describe('uploader.messages: decoded at the synced offsets', () => {
     p[RESULT.TARGET] = 3
     p[RESULT.ATTEMPTS] = 3
     p.set([7, 0], RESULT.SECONDS)
-    expect(decodeResult(p)).toEqual({ result: 'WRITE_FAILED', target: 3, attempts: 3, seconds: 7 })
+    expect(decodeResult(p)).toEqual({
+      via: 'result',
+      result: 'WRITE_FAILED',
+      target: 3,
+      attempts: 3,
+      seconds: 7
+    })
   })
 })

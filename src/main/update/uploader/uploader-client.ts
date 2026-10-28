@@ -11,11 +11,15 @@
 //   session is open, and a calibration session while anything is staged. A flow sends UPL_ABORT
 //   when its dialog closes.
 // - While flashing, a frame from the client at least every few seconds keeps UPL_STATUS and
-//   UPL_RESULT coming (the Gateway's CLIENT_GONE_MS, 5 s): KEEPALIVE every second. Without them
-//   the Gateway still finishes and keeps the result for UPL_INFO_ACK.
+//   UPL_RESULT coming (the Gateway's CLIENT_GONE_MS, 5 s). Without them the Gateway still
+//   finishes and keeps the result for UPL_INFO_ACK.
+// - UPL_RESULT is sent once, and can be lost (a full USB buffer drops a whole frame, or the PC
+//   naps). So the client's frame is UPL_INFO every second, not a bare KEEPALIVE: its answer is the
+//   liveness check, and once it no longer reads FLASHING the flash has ended and its result is in
+//   it. The Gateway sends UPL_RESULT before it answers any later UPL_INFO, so a result that did
+//   arrive is always seen first.
 // - UPL_STATUS comes on each phase and every 250 ms while writing, but entering the bootloader and
-//   confirming can each run 10 s with none: the client's liveness check is the KEEPALIVE's ACK,
-//   never the status spacing.
+//   confirming can each run 10 s with none: liveness is never read from the status spacing.
 // - Staged images are dropped after 30 s with no client frame (SESSION_IDLE_MS), so a later Retry
 //   reads UPL_INFO first.
 import { UPL_PROTO } from '@shared/firmware'
@@ -55,15 +59,15 @@ export interface UploaderLink {
 
 /** The client's own pacing. Not firmware values: the Gateway's limits are in the comments. */
 export interface UploaderTiming {
-  /** KEEPALIVE while flashing: well inside the Gateway's 5 s CLIENT_GONE_MS. */
-  keepaliveMs: number
-  /** KEEPALIVEs in a row with no ACK before contact is lost. */
+  /** UPL_INFO while flashing: well inside the Gateway's 5 s CLIENT_GONE_MS. */
+  probeMs: number
+  /** UPL_INFOs in a row with no answer before contact is lost. */
   lostAfter: number
   /** Sends of one UPL_DATA chunk before staging gives up (the bench client's figure). */
   chunkTries: number
 }
 
-const TIMING: UploaderTiming = { keepaliveMs: 1000, lostAfter: 3, chunkTries: 3 }
+const TIMING: UploaderTiming = { probeMs: 1000, lostAfter: 3, chunkTries: 3 }
 
 /** The uploader's requests, by name: what a refusal or a silence was an answer to. */
 export type UplRequest =
@@ -96,6 +100,17 @@ export class UplNoAnswer extends Error {
     this.name = 'UplNoAnswer'
   }
 }
+
+/**
+ * A flash's result as UPL_INFO_ACK keeps it, for when UPL_RESULT never arrived. `NONE` there means
+ * the Gateway's USB side restarted during the flash and lost it (it is kept in RAM only).
+ */
+const outcomeOf = (info: UplInfo): UplOutcome => ({
+  via: 'info',
+  result: info.lastResult,
+  target: info.lastTarget,
+  ...(info.lastFw && { fw: info.lastFw })
+})
 
 /** How a flash ended for the client: the Gateway's result, or contact lost before it came. */
 export type FlashEnd = { lost: false; outcome: UplOutcome } | { lost: true }
@@ -162,40 +177,75 @@ export class UploaderClient {
   /**
    * Flash `target`: the staged image, or for UPL_TARGET.bridge with nothing staged the bundled one
    * (#367). `newNodeId` is UPL_TARGET.nodeIdKeep, or the NODE_ID to set first (#177). `status`
-   * gets every UPL_STATUS. Resolves with the result, or `lost` when KEEPALIVE goes unanswered
-   * (the port closed, or the Gateway went): the Gateway finishes on its own, and UPL_INFO tells.
+   * gets every UPL_STATUS. Resolves with the result — from UPL_RESULT, or from UPL_INFO_ACK when
+   * that frame was lost — or `lost` when UPL_INFO goes unanswered (the port closed, or the Gateway
+   * went): the Gateway finishes on its own, and `info()` / `follow()` pick it up again.
+   *
+   * A lost UPL_FLASH ACK can leave the Gateway flashing: with no answer, UPL_INFO is read, and a
+   * Gateway that reads FLASHING is followed rather than reported as not started.
    * @throws UplRefused (BUSY, NOT_STAGED, NO_SESSION, BAD_INDEX) or UplNoAnswer: nothing started.
    */
-  async flash(
-    target: number,
-    newNodeId: number,
-    status: (s: UplStatus) => void
+  flash(target: number, newNodeId: number, status: (s: UplStatus) => void): Promise<FlashEnd> {
+    return this.watch(status, async () => {
+      try {
+        await this.ask('UPL_FLASH', encodeFlash(target, newNodeId))
+      } catch (e) {
+        if (!(e instanceof UplNoAnswer) || (await this.info())?.state !== 'FLASHING') throw e
+      }
+    })
+  }
+
+  /**
+   * Rejoin a flash that is already running (UPL_INFO_ACK `state` FLASHING): after the client lost
+   * contact and came back, or a restart of the client. UPL_ABORT can't end it (BUSY), so a flow
+   * waits it out here: its statuses, then its result, as `flash()` resolves.
+   */
+  follow(status: (s: UplStatus) => void): Promise<FlashEnd> {
+    return this.watch(status)
+  }
+
+  /** Watch a flash after `start` (UPL_FLASH) until its result, or until contact is lost. */
+  private async watch(
+    status: (s: UplStatus) => void,
+    start?: () => Promise<void>
   ): Promise<FlashEnd> {
     let finish!: (end: FlashEnd) => void
     const ended = new Promise<FlashEnd>((resolve) => (finish = resolve))
     // Listen before asking: the first UPL_STATUS follows the ACK at once.
     const off = this.link.onUnsolicited((f) => {
       if (f.type === UPL_TYPE.UPL_STATUS) status(decodeStatus(f.payload))
-      else if (f.type === UPL_TYPE.UPL_RESULT)
+      else if (f.type === UPL_TYPE.UPL_RESULT) {
         finish({ lost: false, outcome: decodeResult(f.payload) })
+      }
     })
     try {
-      await this.ask('UPL_FLASH', encodeFlash(target, newNodeId))
+      await start?.()
     } catch (e) {
       off()
       throw e
     }
     let missed = 0
-    const keepalive = setInterval(() => {
-      void this.link.exchange(UPL_TYPE.KEEPALIVE).then((r) => {
-        missed = r.ok ? 0 : missed + 1
-        if (missed >= this.timing.lostAfter) finish({ lost: true })
-      })
-    }, this.timing.keepaliveMs)
+    const miss = () => {
+      if (++missed >= this.timing.lostAfter) finish({ lost: true })
+    }
+    const probe = setInterval(() => {
+      this.link
+        .exchange(UPL_TYPE.UPL_INFO)
+        .then((r) => {
+          if (!r.ok) return miss()
+          missed = 0
+          const info = decodeInfoAck(r.frame.payload)
+          // Not flashing any more, and no UPL_RESULT came first: it was lost; the answer holds it.
+          if (info.state !== 'FLASHING') finish({ lost: false, outcome: outcomeOf(info) })
+        })
+        // Any other failure of the channel (not a NACK or a silence) is a miss too, never an
+        // unhandled rejection.
+        .catch(miss)
+    }, this.timing.probeMs)
     try {
       return await ended
     } finally {
-      clearInterval(keepalive)
+      clearInterval(probe)
       off()
     }
   }

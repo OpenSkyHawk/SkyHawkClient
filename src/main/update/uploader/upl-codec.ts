@@ -138,23 +138,26 @@ export function decodeStatus(p: Uint8Array): UplStatus {
   }
 }
 
-/** How a flash ended (UPL_RESULT). */
+/** How a flash ended (UPL_RESULT, or UPL_INFO_ACK's last result when that frame was lost). */
 export interface UplOutcome {
+  /** Where it was read: UPL_RESULT, or UPL_INFO_ACK (which has no tries or time). */
+  via: 'result' | 'info'
   /** undefined: a result this client's sync doesn't list. */
   result: UplResultName | undefined
   /** The NODE_ID flashed: for an unconfigured board, the one it took. */
   target: number
   /** The version the board reported; undefined when none. */
   fw?: string
-  /** Tries used: 1 = the first. */
-  attempts: number
-  /** From UPL_FLASH to the result. */
-  seconds: number
+  /** Tries used: 1 = the first. UPL_RESULT only. */
+  attempts?: number
+  /** From UPL_FLASH to the result. UPL_RESULT only. */
+  seconds?: number
 }
 
 export function decodeResult(p: Uint8Array): UplOutcome {
   const fw = version(p, RESULT.MAJOR)
   return {
+    via: 'result',
     result: nameOf(UPL_RESULT, p[RESULT.RESULT]!),
     target: p[RESULT.TARGET]!,
     ...(fw && { fw }),

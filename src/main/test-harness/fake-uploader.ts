@@ -41,7 +41,12 @@ export const FAKE_CLIENT_GONE_MS = 5_000
 export interface FlashStep {
   phase: UplPhaseName
   attempt?: number
-  /** WRITING's blocks acknowledged so far; 0 elsewhere. */
+  /**
+   * WRITING only: the blocks acknowledged so far. Every other phase reports the count as the
+   * firmware holds it (Uploader.cpp `_acked`): zeroed at UPL_FLASH and at BEGUN (the erase), so
+   * VERIFYING to CONFIRMING read every block, and a retry's ENTERING_BOOT to ERASING still read
+   * the failed attempt's count.
+   */
   block?: number
 }
 
@@ -97,6 +102,8 @@ export class FakeUploader {
   private lastFw: [number, number, number] = [0, 0, 0]
   private timers: ReturnType<typeof setTimeout>[] = []
   private rx = new Uint8Array(0)
+  /** Blocks acknowledged, as UPL_STATUS reports them (Uploader.cpp `_acked`). */
+  private acked = 0
 
   constructor(
     /** Bytes the Gateway sends to the client. */
@@ -229,6 +236,7 @@ export class FakeUploader {
 
   private startFlash(target: number): void {
     this.state = UPL_STATE.FLASHING
+    this.acked = 0
     const script = this.next
     this.next = {}
     const blocks = Math.ceil(this.len / BOOT.blockBytes)
@@ -265,7 +273,10 @@ export class FakeUploader {
     p[STATUS.PHASE] = UPL_PHASE[s.phase]
     p[STATUS.TARGET] = target
     p[STATUS.ATTEMPT] = s.attempt ?? 0
-    put16(p, STATUS.BLOCK, s.block ?? 0)
+    // The erase's BEGUN zeroes the count after ERASING's own status went out; each WRITING status
+    // then carries the count reached. Every other phase reports whatever it holds.
+    if (s.phase === 'WRITING') this.acked = s.block ?? 0
+    put16(p, STATUS.BLOCK, this.acked)
     put16(p, STATUS.BLOCKS, blocks)
     this.reply(UPL_TYPE.UPL_STATUS, 0, p)
   }

@@ -23,9 +23,16 @@ const ID = (() => {
   return r.id
 })()
 
-/** A Gateway on the wire: `cut` stops every byte both ways; `drop` loses the next frame of a type. */
+/**
+ * A Gateway on the wire: `cut` stops every byte both ways; `drop` loses the next client frame of a
+ * type, `dropIn` the next Gateway frame of a type.
+ */
 function rig(opts: { bundle?: Uint8Array; uploader?: boolean } = {}) {
-  const wire = { cut: false, drop: undefined as number | undefined }
+  const wire = {
+    cut: false,
+    drop: undefined as number | undefined,
+    dropIn: undefined as number | undefined
+  }
   const link = new CalLink(
     (d) => {
       if (wire.cut || opts.uploader === false) return
@@ -39,7 +46,12 @@ function rig(opts: { bundle?: Uint8Array; uploader?: boolean } = {}) {
   )
   // Declared after the link that writes to it: nothing is written before both exist.
   const fake: FakeUploader = new FakeUploader((b) => {
-    if (!wire.cut) link.ingest(Buffer.from(b))
+    if (wire.cut) return
+    if (wire.dropIn !== undefined && b[4] === wire.dropIn) {
+      wire.dropIn = undefined
+      return
+    }
+    link.ingest(Buffer.from(b))
   }, opts.bundle)
   const client = new UploaderClient(uploaderLink(link))
   const count = (type: number) => fake.requests.filter((t) => t === type).length
@@ -194,17 +206,17 @@ describe('uploader client: flashing', () => {
     await expect(end).resolves.toMatchObject({ outcome: { result: 'NO_RESPONSE' } })
   })
 
-  it('KEEPALIVE about every second while the flash runs, and none after', async () => {
+  it('UPL_INFO about every second while the flash runs (it keeps the Gateway reporting), none after', async () => {
     const { client, fake, count } = rig({ bundle: BRIDGE_030 })
     fake.stepMs = 1000 // ten phases: about 10 s, like entering + confirming at their slowest
     const end = client.flash(0, UPL_TARGET.nodeIdKeep, () => {})
     await vi.advanceTimersByTimeAsync(10_000)
     await end
-    const during = count(UPL_TYPE.KEEPALIVE)
+    const during = count(UPL_TYPE.UPL_INFO)
     expect(during).toBeGreaterThanOrEqual(9)
     expect(during).toBeLessThanOrEqual(10)
     await vi.advanceTimersByTimeAsync(5000)
-    expect(count(UPL_TYPE.KEEPALIVE)).toBe(during)
+    expect(count(UPL_TYPE.UPL_INFO)).toBe(during)
   })
 
   it('contact lost mid-flash: resolves lost; the Gateway finishes and keeps the result', async () => {
@@ -226,6 +238,79 @@ describe('uploader client: flashing', () => {
       lastResult: 'OK',
       lastFw: '0.3.0'
     })
+  })
+
+  it('UPL_RESULT lost on the way: the result is read from UPL_INFO_ACK', async () => {
+    const { client, wire } = rig({ bundle: BRIDGE_030 })
+    wire.dropIn = UPL_TYPE.UPL_RESULT
+    const end = client.flash(0, UPL_TARGET.nodeIdKeep, () => {})
+    await vi.advanceTimersByTimeAsync(3000)
+    await expect(end).resolves.toEqual({
+      lost: false,
+      outcome: { via: 'info', result: 'OK', target: 0, fw: '0.3.0' }
+    })
+  })
+
+  it('the UPL_FLASH ACK lost: the Gateway reads FLASHING, so the flash is followed', async () => {
+    const { client, fake, wire } = rig({ bundle: BRIDGE_030 })
+    fake.stepMs = 1000
+    wire.dropIn = UPL_TYPE.ACK
+    const end = client.flash(0, UPL_TARGET.nodeIdKeep, () => {})
+    await vi.advanceTimersByTimeAsync(12_000)
+    await expect(end).resolves.toMatchObject({ lost: false, outcome: { result: 'OK' } })
+  })
+
+  it('follow(): rejoins a flash still running after contact came back', async () => {
+    const { client, fake, wire } = rig({ bundle: BRIDGE_030 })
+    fake.stepMs = 1000
+    const first = client.flash(0, UPL_TARGET.nodeIdKeep, () => {})
+    await vi.advanceTimersByTimeAsync(1500)
+    wire.cut = true
+    // Three probes unanswered, each after its own 2 s: lost at 6 s, the flash still running.
+    await vi.advanceTimersByTimeAsync(5000)
+    await expect(first).resolves.toEqual({ lost: true })
+    wire.cut = false
+    expect((await client.info())?.state).toBe('FLASHING')
+    const s = statuses()
+    const end = client.follow(s.cb)
+    await vi.advanceTimersByTimeAsync(6000)
+    await expect(end).resolves.toMatchObject({
+      lost: false,
+      outcome: { result: 'OK', fw: '0.3.0' }
+    })
+    expect(s.seen.map((x) => x.phase)).toContain('CONFIRMING')
+  })
+
+  it('UPL_STATUS.block is the firmware’s count: full after writing, stale on a retry until it writes', async () => {
+    const { client, fake } = rig({ bundle: BRIDGE_030 })
+    fake.next = { steps: [...flashSteps(539).slice(0, 5), ...flashSteps(539, 1)] }
+    const s = statuses()
+    const end = client.flash(0, UPL_TARGET.nodeIdKeep, s.cb)
+    await vi.advanceTimersByTimeAsync(3000)
+    await end
+    const at = (phase: string, attempt: number) =>
+      s.seen.find((x) => x.phase === phase && x.attempt === attempt)?.block
+    expect(at('ENTERING_BOOT', 0)).toBe(0)
+    // The retry starts where the failed attempt stopped (270), not at 0: progress can't be read
+    // from `block` alone until WRITING starts again.
+    expect(at('ENTERING_BOOT', 1)).toBe(270)
+    expect(at('ERASING', 1)).toBe(270)
+    expect(at('VERIFYING', 1)).toBe(539)
+    expect(at('CONFIRMING', 1)).toBe(539)
+  })
+
+  it('a channel failure on the probe is a miss, never an unhandled rejection', async () => {
+    const ack = { type: UPL_TYPE.ACK, payload: Uint8Array.of(UPL_TYPE.UPL_FLASH) }
+    const client = new UploaderClient({
+      exchange: (type) =>
+        type === UPL_TYPE.UPL_FLASH
+          ? Promise.resolve({ ok: true as const, frame: ack })
+          : Promise.reject(new Error('port write failed')),
+      onUnsolicited: () => () => {}
+    })
+    const end = client.flash(0, UPL_TARGET.nodeIdKeep, () => {})
+    await vi.advanceTimersByTimeAsync(3000)
+    await expect(end).resolves.toEqual({ lost: true })
   })
 
   it('the USB side power-cycled: the session and the last result are gone', async () => {
