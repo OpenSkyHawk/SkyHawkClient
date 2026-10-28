@@ -1,7 +1,6 @@
 // SESSION-seam tests for #171 through the services harness: the Gateway's status rows carry each
 // board's firmware release (v4); the test reads only the pushes.
 import { describe, expect, it } from 'vitest'
-import { FIRMWARE_RELEASE } from '@shared/firmware'
 import { makeServices, type Services } from '../test-harness/services'
 
 /** Board 1 is in your cockpit. */
@@ -30,35 +29,52 @@ function connect(gw: [number, number, number], board: [number, number, number]) 
 
 describe('#171 firmware releases, wire to pushes', () => {
   it('the Gateway’s release rides on device:status; each board’s is in the snapshot', () => {
-    const m = FIRMWARE_RELEASE.major
-    const app = connect([m, 1, 0], [m, 0, 3])
+    const app = connect([1, 1, 0], [1, 0, 3])
     expect(gateway(app)?.firmware).toEqual({
-      version: { major: m, minor: 1, patch: 0 },
+      version: { major: 1, minor: 1, patch: 0 },
       tooNew: false,
-      supportedMajor: m
+      supportedMajor: 1
     })
-    expect(snapshot(app).panels[1]!.firmware).toEqual({ installed: `${m}.0.3` })
+    expect(snapshot(app).panels[1]!.firmware).toEqual({ installed: '1.0.3' })
     expect(snapshot(app).attention.items).toEqual([])
   })
 
   it('a board on another major: an Attention item and a box; a reflash clears it in place', () => {
-    const m = FIRMWARE_RELEASE.major
-    const app = connect([m + 1, 0, 0], [m, 2, 0])
+    const app = connect([2, 0, 0], [1, 2, 0])
     expect(gateway(app)?.firmware?.tooNew).toBe(true)
     expect(snapshot(app).attention.items.map((i) => i.flag)).toEqual([
-      `runs firmware ${m}.x, Gateway runs ${m + 1}.x — reflash it`
+      'runs firmware 1.x, Gateway runs 2.x — reflash it'
     ])
     expect(snapshot(app).panels[1]!.faults[0]!.title).toBe('Firmware mismatch')
     // The board is reflashed: the bridge pushes its row with the new release.
-    app.serial.receive(row(1, 1, [m + 1, 0, 0]))
+    app.serial.receive(row(1, 1, [2, 0, 0]))
     app.clock.advance(250)
     expect(snapshot(app).attention.items).toEqual([])
-    expect(snapshot(app).panels[1]!.firmware).toEqual({ installed: `${m + 1}.0.0` })
+    expect(snapshot(app).panels[1]!.firmware).toEqual({ installed: '2.0.0' })
   })
 
   it('a board that hasn’t reported (0.0.0) is never a mismatch', () => {
-    const app = connect([FIRMWARE_RELEASE.major + 1, 0, 0], [0, 0, 0])
+    const app = connect([2, 0, 0], [0, 0, 0])
     expect(snapshot(app).attention.items).toEqual([])
     expect(snapshot(app).panels[1]!.firmware.installed).toBe('version not reported')
+  })
+
+  it('0.1.0 boards under a 0.3.0 Gateway: no banner, no mismatch, no Attention item', () => {
+    const app = connect([0, 3, 0], [0, 1, 0])
+    expect(gateway(app)?.firmware).toEqual({
+      version: { major: 0, minor: 3, patch: 0 },
+      tooNew: false,
+      supportedMajor: 1
+    })
+    expect(snapshot(app).panels[1]!.firmware).toEqual({ installed: '0.1.0' })
+    expect(snapshot(app).attention.items).toEqual([])
+  })
+
+  it('a 0.3.0 board under a 1.0.0 Gateway: no banner; the board is a major mismatch', () => {
+    const app = connect([1, 0, 0], [0, 3, 0])
+    expect(gateway(app)?.firmware?.tooNew).toBe(false)
+    expect(snapshot(app).attention.items.map((i) => i.flag)).toEqual([
+      'runs firmware 0.x, Gateway runs 1.x — reflash it'
+    ])
   })
 })

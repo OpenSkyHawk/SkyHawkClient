@@ -1142,8 +1142,8 @@ export const USB_IDENTITY = {
 // ── firmware release ─────────────────────────────────────────────────────────
 
 /**
- * The firmware release this client is synced against (FirmwareVersion.h). Its major is the one the
- * client supports: within a major firmware only appends (D22), so a newer major may not read right.
+ * The firmware release this client is synced against (FirmwareVersion.h). The major the client
+ * supports is its own claim, `SUPPORTED_FIRMWARE_MAJOR` (main/gateway/firmware.ts), not this.
  */
 function genFirmwareRelease(h: string): string {
   const part = (name: string): number => {
@@ -1161,8 +1161,8 @@ function genFirmwareRelease(h: string): string {
     `
 /**
  * The firmware release this client was synced against. Boards report their own release in their
- * status rows; a Gateway on a newer major than this one runs firmware this client may not read
- * right (within a major, firmware only appends).
+ * status rows. The supported major is \`SUPPORTED_FIRMWARE_MAJOR\` (main/gateway/firmware.ts), the
+ * client's own claim, not this.
  */
 export const FIRMWARE_RELEASE = { major: ${major}, minor: ${minor}, patch: ${patch} } as const
 `

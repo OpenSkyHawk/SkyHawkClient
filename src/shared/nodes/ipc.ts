@@ -22,7 +22,8 @@ export interface NodeStatus {
    * unknown future value passes through and is never adoptable. */
   nodeKind: number
   /** Firmware release the board reported in READY_n (v4); 0.0.0 = not reported (no READY since the
-   * bridge booted, or older firmware). The node-0 row carries the bridge's own build. Shown by #171. */
+   * bridge booted, or an empty READY from older firmware). A board with no row is no data, not "not
+   * reported". The node-0 row carries the bridge's own build. Shown by #171. */
   fwMajor: number
   fwMinor: number
   fwPatch: number
@@ -481,13 +482,16 @@ export interface NodeView {
   readings: PduReadings
   /** PDUs: online but no fresh telemetry. */
   noReadings: boolean
-  /** Its firmware release (#171): null = not reported (0.0.0). */
+  /** Its firmware release (#171): a version, not reported (its row reads 0.0.0), or no row. */
   firmware: BoardFirmware
 }
 
 /** A board's firmware as main judges it (#171). */
 export interface BoardFirmware {
+  /** null: not reported (0.0.0) or no row; `notReported` tells them apart. */
   version: FirmwareVersion | null
+  /** Its row reads 0.0.0. Unset for a reported version and for a board with no row. */
+  notReported?: true
   /** It runs another major than the Gateway (neither side 0.0.0): reflash it. */
   mismatch?: { board: number; gateway: number }
 }

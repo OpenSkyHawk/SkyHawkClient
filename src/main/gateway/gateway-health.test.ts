@@ -8,7 +8,6 @@ import {
   shownHealth,
   shownStatus
 } from './gateway-health'
-import { FIRMWARE_RELEASE } from '@shared/firmware'
 import { eventText } from '@shared/format'
 import type { LogEventInput } from '@shared/events'
 import type { NodeStatus } from '@shared/nodes'
@@ -34,7 +33,7 @@ describe('gatewayStatus — the one place the Gateway’s health is decided', ()
       severity: 'ok',
       kind: 'ok',
       label: 'OK · 42 °C',
-      firmware: { version: null, tooNew: false, supportedMajor: FIRMWARE_RELEASE.major }
+      firmware: { version: null, tooNew: false, supportedMajor: 1 }
     })
     expect(st({ dieTempC: null }).label).toBe('OK')
   })
@@ -82,7 +81,7 @@ describe('gatewayStatus — the one place the Gateway’s health is decided', ()
       kind: 'fault',
       label: 'I2C peripheral',
       note: undefined,
-      firmware: { version: null, tooNew: false, supportedMajor: FIRMWARE_RELEASE.major }
+      firmware: { version: null, tooNew: false, supportedMajor: 1 }
     })
     expect(st({ faultId: 0x2a }).label).toBe('Unknown fault (0x2A)')
   })

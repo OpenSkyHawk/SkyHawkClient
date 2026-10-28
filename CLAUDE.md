@@ -37,6 +37,9 @@ DCS-BIOS `_ACFT_NAME` is not a firmware value: it is a DCS-BIOS protocol value r
 stream, so the sync does not carry it. See
 [Firmware values come from `npm run sync`](./ARCHITECTURE.md#firmware-values-come-from-npm-run-sync).
 
+`SUPPORTED_FIRMWARE_MAJOR` is not a firmware value either: it is the client's own claim of the
+major its parser is written for (D22), so this rule does not apply to it.
+
 ## Ticket closure
 
 Before a ticket closes, tick each box with its evidence ("— #PR") or move it to a named
