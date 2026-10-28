@@ -1,0 +1,218 @@
+// The client side of the Gateway's firmware uploader (#366), with the board to flash as a
+// parameter: the Gateway's own cockpit side (UPL_TARGET.bridge, #187), a board on the bus (1-63,
+// #175) or the one unconfigured bootloader (UPL_TARGET.unconfigured, #177). Bench reference:
+// OpenSkyhawk Firmware/Bootloader/tools/upload_gateway.py. Behaviour: FirmwarePlan/07 § Uploader.
+//
+// It drives the messages and nothing else. Which image, which target, what a result means for the
+// board and what the dialog shows are the update flows' (main/update). The channel is a port app
+// hands in over the calibration link, so this imports no other topic.
+//
+// - One session at a time: the Gateway refuses UPL_BEGIN / UPL_FLASH with BUSY while a calibration
+//   session is open, and a calibration session while anything is staged. A flow sends UPL_ABORT
+//   when its dialog closes.
+// - While flashing, a frame from the client at least every few seconds keeps UPL_STATUS and
+//   UPL_RESULT coming (the Gateway's CLIENT_GONE_MS, 5 s): KEEPALIVE every second. Without them
+//   the Gateway still finishes and keeps the result for UPL_INFO_ACK.
+// - UPL_STATUS comes on each phase and every 250 ms while writing, but entering the bootloader and
+//   confirming can each run 10 s with none: the client's liveness check is the KEEPALIVE's ACK,
+//   never the status spacing.
+// - Staged images are dropped after 30 s with no client frame (SESSION_IDLE_MS), so a later Retry
+//   reads UPL_INFO first.
+import { UPL_PROTO } from '@shared/firmware'
+import {
+  UPL_TYPE,
+  decodeInfoAck,
+  decodeResult,
+  decodeStatus,
+  encodeBegin,
+  encodeData,
+  encodeFlash,
+  nackReasonName,
+  type UplInfo,
+  type UplOutcome,
+  type UplStatus
+} from './upl-codec'
+
+/** One frame on the calibration channel, past its envelope. */
+export interface UplFrame {
+  type: number
+  payload: Uint8Array
+}
+
+/** A request's answer: the reply frame, the Gateway's refusal (its NACK reason), or no answer. */
+export type UplReply =
+  | { ok: true; frame: UplFrame }
+  | { ok: false; nack: number }
+  | { ok: false; timeout: true }
+
+/** The calibration channel, as app hands it in (app/uploader-link over hid's CalLink). */
+export interface UploaderLink {
+  /** Send a request and await its reply; `timeoutMs` overrides the channel's default. */
+  exchange(type: number, payload?: Uint8Array, timeoutMs?: number): Promise<UplReply>
+  /** UPL_STATUS / UPL_RESULT as they arrive; returns the unsubscribe. */
+  onUnsolicited(cb: (f: UplFrame) => void): () => void
+}
+
+/** The client's own pacing. Not firmware values: the Gateway's limits are in the comments. */
+export interface UploaderTiming {
+  /** KEEPALIVE while flashing: well inside the Gateway's 5 s CLIENT_GONE_MS. */
+  keepaliveMs: number
+  /** KEEPALIVEs in a row with no ACK before contact is lost. */
+  lostAfter: number
+  /** Sends of one UPL_DATA chunk before staging gives up (the bench client's figure). */
+  chunkTries: number
+}
+
+const TIMING: UploaderTiming = { keepaliveMs: 1000, lostAfter: 3, chunkTries: 3 }
+
+/** The uploader's requests, by name: what a refusal or a silence was an answer to. */
+export type UplRequest =
+  | 'UPL_INFO'
+  | 'UPL_BEGIN'
+  | 'UPL_DATA'
+  | 'UPL_END'
+  | 'UPL_FLASH'
+  | 'UPL_ABORT'
+
+/**
+ * The Gateway refused a request (NACK). `reason` is the synced name, or the raw code for one this
+ * client doesn't list: BUSY, TOO_LARGE, BAD_OFFSET, IMAGE_CRC, BAD_IMAGE, NOT_STAGED, NO_SESSION,
+ * BAD_INDEX.
+ */
+export class UplRefused extends Error {
+  constructor(
+    readonly request: UplRequest,
+    readonly reason: string
+  ) {
+    super(`uploader: ${request} refused (${reason})`)
+    this.name = 'UplRefused'
+  }
+}
+
+/** A request got no answer: no Gateway, a Gateway without the uploader, or the link went. */
+export class UplNoAnswer extends Error {
+  constructor(readonly request: UplRequest) {
+    super(`uploader: no answer to ${request}`)
+    this.name = 'UplNoAnswer'
+  }
+}
+
+/** How a flash ended for the client: the Gateway's result, or contact lost before it came. */
+export type FlashEnd = { lost: false; outcome: UplOutcome } | { lost: true }
+
+export class UploaderClient {
+  private readonly timing: UploaderTiming
+
+  constructor(
+    private readonly link: UploaderLink,
+    timing?: Partial<UploaderTiming>
+  ) {
+    this.timing = { ...TIMING, ...timing }
+  }
+
+  /** Send `request`; its reply frame, or a typed refusal / silence. */
+  private async ask(request: UplRequest, payload?: Uint8Array): Promise<UplFrame> {
+    const r = await this.link.exchange(UPL_TYPE[request], payload)
+    if (r.ok) return r.frame
+    if ('nack' in r) throw new UplRefused(request, nackReasonName(r.nack) ?? String(r.nack))
+    throw new UplNoAnswer(request)
+  }
+
+  /**
+   * The uploader's state, its last result and the bundled cockpit-side version. undefined when
+   * nothing answers: no Gateway, or one older than the uploader (it relays the unknown type).
+   */
+  async info(): Promise<UplInfo | undefined> {
+    try {
+      return decodeInfoAck((await this.ask('UPL_INFO')).payload)
+    } catch (e) {
+      if (e instanceof UplNoAnswer) return undefined
+      throw e
+    }
+  }
+
+  /**
+   * Stage an image: UPL_BEGIN with its identity block's length and CRC, every chunk in order (one
+   * outstanding; a chunk with no answer is sent again, by its offset), then UPL_END, where the
+   * Gateway checks the CRC and the identity block. `progress` gets 0-100 as chunks are taken.
+   * @throws UplRefused (BUSY during calibration, TOO_LARGE, IMAGE_CRC, BAD_IMAGE…) or UplNoAnswer.
+   */
+  async stage(
+    image: Uint8Array,
+    id: { imageLength: number; imageCrc: number },
+    progress?: (pct: number) => void
+  ): Promise<void> {
+    await this.ask('UPL_BEGIN', encodeBegin(id.imageLength, id.imageCrc))
+    const chunk = UPL_PROTO.chunkBytes
+    for (let off = 0; off < id.imageLength; off += chunk) {
+      const data = encodeData(image, id.imageLength, off)
+      for (let tryNo = 1; ; tryNo++) {
+        try {
+          await this.ask('UPL_DATA', data)
+          break
+        } catch (e) {
+          if (!(e instanceof UplNoAnswer) || tryNo >= this.timing.chunkTries) throw e
+        }
+      }
+      progress?.(Math.round((Math.min(off + chunk, id.imageLength) / id.imageLength) * 100))
+    }
+    await this.ask('UPL_END')
+  }
+
+  /**
+   * Flash `target`: the staged image, or for UPL_TARGET.bridge with nothing staged the bundled one
+   * (#367). `newNodeId` is UPL_TARGET.nodeIdKeep, or the NODE_ID to set first (#177). `status`
+   * gets every UPL_STATUS. Resolves with the result, or `lost` when KEEPALIVE goes unanswered
+   * (the port closed, or the Gateway went): the Gateway finishes on its own, and UPL_INFO tells.
+   * @throws UplRefused (BUSY, NOT_STAGED, NO_SESSION, BAD_INDEX) or UplNoAnswer: nothing started.
+   */
+  async flash(
+    target: number,
+    newNodeId: number,
+    status: (s: UplStatus) => void
+  ): Promise<FlashEnd> {
+    let finish!: (end: FlashEnd) => void
+    const ended = new Promise<FlashEnd>((resolve) => (finish = resolve))
+    // Listen before asking: the first UPL_STATUS follows the ACK at once.
+    const off = this.link.onUnsolicited((f) => {
+      if (f.type === UPL_TYPE.UPL_STATUS) status(decodeStatus(f.payload))
+      else if (f.type === UPL_TYPE.UPL_RESULT)
+        finish({ lost: false, outcome: decodeResult(f.payload) })
+    })
+    try {
+      await this.ask('UPL_FLASH', encodeFlash(target, newNodeId))
+    } catch (e) {
+      off()
+      throw e
+    }
+    let missed = 0
+    const keepalive = setInterval(() => {
+      void this.link.exchange(UPL_TYPE.KEEPALIVE).then((r) => {
+        missed = r.ok ? 0 : missed + 1
+        if (missed >= this.timing.lostAfter) finish({ lost: true })
+      })
+    }, this.timing.keepaliveMs)
+    try {
+      return await ended
+    } finally {
+      clearInterval(keepalive)
+      off()
+    }
+  }
+
+  /**
+   * Drop whatever is staged or staging: before flashing the bundle (a board's leftover image would
+   * be flashed instead), and when the dialog closes. While flashing the Gateway refuses it (BUSY):
+   * a flash can't be stopped. `refused` / `no-answer` are told, never thrown.
+   */
+  async abort(): Promise<'ok' | 'busy' | 'no-answer'> {
+    try {
+      await this.ask('UPL_ABORT')
+      return 'ok'
+    } catch (e) {
+      if (e instanceof UplNoAnswer) return 'no-answer'
+      if (e instanceof UplRefused) return 'busy'
+      throw e
+    }
+  }
+}
