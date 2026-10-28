@@ -87,10 +87,13 @@ function gateway(app: Services, fw: [number, number, number], axis0?: SimAxis) {
       sim.axis0 = axis
       sim.seen = Buffer.concat(app.serial.written()).length
     },
-    /** Let main run for `ms`, answering whatever it asks on the way. */
-    async run(ms: number) {
-      for (let t = 0; t < ms; t += 10) {
-        await vi.advanceTimersByTimeAsync(10)
+    /**
+     * Let main run for `ms`, answering whatever it asks on the way, every `step` ms (coarser for a
+     * long wait with nothing to answer, such as the drive wait).
+     */
+    async run(ms: number, step = 10) {
+      for (let t = 0; t < ms; t += step) {
+        await vi.advanceTimersByTimeAsync(step)
         answer()
       }
     }
@@ -184,7 +187,7 @@ describe('#173 the Gateway USB side, updated from the saved release', () => {
     const { app, gw } = await launch([0, 2, 0])
     await app.invoke(CTRL.updateOpen, { kind: 'usb' })
     const started = app.invoke(CTRL.updateStart)
-    await gw.run(11_000) // past the drive wait
+    await gw.run(11_000, 250) // past the drive wait
     await started
     expect(update(app)).toMatchObject({ phase: 'fail', failure: { kind: 'no-drive' } })
     expect(app.drive.files).toEqual([])
@@ -205,7 +208,7 @@ describe('#173 the Gateway USB side, updated from the saved release', () => {
     const { app, gw } = await launch([0, 2, 0])
     await app.invoke(CTRL.updateOpen, { kind: 'usb' })
     const started = app.invoke(CTRL.updateStart)
-    await gw.run(11_000)
+    await gw.run(11_000, 250)
     await started
     expect(update(app)?.failure).toEqual({ kind: 'no-drive' })
     expect(app.lastPush('device:status')?.state).toBe('reconnecting') // held by the update
