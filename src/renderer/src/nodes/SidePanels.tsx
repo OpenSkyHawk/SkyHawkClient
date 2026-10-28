@@ -13,7 +13,7 @@ import {
   type NodeView,
   type ZoneChoices
 } from '@shared/nodes'
-import { Chevron, Sheet } from '../app/kit'
+import { Chevron, Sheet, useNow } from '../app/kit'
 import { useNodesStore } from './store'
 import { mappingPatch, reportAge, zoneOptions } from './panel-view'
 import { Dot } from './Dot'
@@ -286,17 +286,6 @@ function BoardFooter(props: {
 }
 
 const pv = (live: boolean, mv?: number) => (mv !== undefined && live ? voltsValue(mv) : DASH)
-
-/** The clock, once a second while `on` — for "updated N s ago". */
-function useNow(on: boolean): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!on) return
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [on])
-  return now
-}
 
 // ── panel group ─────────────────────────────────────────────────────────────
 

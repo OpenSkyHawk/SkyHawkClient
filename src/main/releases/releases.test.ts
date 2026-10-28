@@ -255,6 +255,19 @@ describe('the check', () => {
     expect(app.cached()).toEqual(['0.3.0'])
   })
 
+  it('Check now before the start scan has finished waits for it: no re-download of a saved version', async () => {
+    const first = await withSaved(['0.3.0'])
+    let scan!: () => void
+    const gate = new Promise<void>((r) => (scan = r))
+    const app = first.relaunch(failing({ readdir: (p) => (p === first.fw() ? gate : undefined) }))
+    const launched = app.releases.open(false)
+    const checking = app.releases.checkNow()
+    scan()
+    await Promise.all([launched, checking])
+    expect(app.github.requests).toEqual([RELEASES_URL])
+    expect(app.check()).toEqual({ kind: 'ok' })
+  })
+
   it('check.setting-off: no request on launch; Check now still checks', async () => {
     const app = launch()
     app.github.publish(buildRelease('0.3.0'))
@@ -687,6 +700,17 @@ describe('retention and Clear', () => {
     release()
     await reading
     expect(app.pushes.at(-1)?.canClear).toBe(true)
+  })
+
+  it('Clear racing a read that starts after it was allowed: the version being read stays', async () => {
+    const app = await withSaved(['0.3.0', '0.4.0'])
+    const clearing = app.releases.clear()
+    const reading = app.releases.getFile({ kind: 'release', version: '0.3.0' }, USB_UF2)
+    expect(await clearing).toBe(true)
+    expect((await reading).ok).toBe(true)
+    expect(app.cached()).toEqual(['0.3.0'])
+    expect(app.onDisk()).toEqual(['0.3.0'])
+    expect(app.releases.state()).toMatchObject({ emptied: false, canClear: true })
   })
 
   it('cachedVersions: version, release date and size on disk, newest first', async () => {

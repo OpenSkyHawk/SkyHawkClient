@@ -424,10 +424,14 @@ export class ReleaseCache {
     return this.serial(() => this.prune())
   }
 
-  /** *Clear*: remove every saved version. A folder that can't be deleted stays. */
+  /**
+   * *Clear*: remove every saved version. A version an update started reading stays (its read
+   * began after Clear was allowed), and so does a folder that can't be deleted.
+   */
   clear(): Promise<void> {
     return this.serial(async () => {
       for (const version of [...this.saved.keys()]) {
+        if (this.reading.has(version)) continue
         try {
           await this.fs.rm(join(this.deps.dir(), version), { recursive: true, force: true })
           this.saved.delete(version)

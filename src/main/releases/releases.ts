@@ -129,6 +129,8 @@ export class Releases {
   private last?: LastCheck
   private emptied = false
   private running?: Promise<void>
+  /** The start scan: a check waits for it, so it never re-downloads a version already saved. */
+  private scanned: Promise<unknown> = Promise.resolve()
   /** A repair per version in progress: a second read of a damaged file joins it. */
   private readonly repairs = new Map<string, Promise<InstallResult | 'unreachable'>>()
   private readonly sources: { [K in ImageSourceRef['kind']]: ImageSource<ImageSourceRef> }
@@ -151,7 +153,9 @@ export class Releases {
   async open(checkOnLaunch: boolean): Promise<void> {
     this.last = this.loadLastCheck()
     if (this.last) this.check = this.last.latest ? { kind: 'ok' } : { kind: 'no-release' }
-    const { droppedAll } = await this.cache.scan()
+    const scan = this.cache.scan()
+    this.scanned = scan
+    const { droppedAll } = await scan
     if (droppedAll) this.emptied = true
     this.push()
     if (checkOnLaunch) await this.checkNow()
@@ -242,6 +246,7 @@ export class Releases {
     }
     const checkedAt = Date.now()
     const pick = pickReleases(readReleaseList(raw), this.deps.newerThanClient)
+    await this.scanned
     const newest = this.cache.newest()
 
     // The highest candidate wins. One no newer than the newest saved costs no asset request; a

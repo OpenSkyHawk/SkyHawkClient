@@ -10,7 +10,7 @@ type SettingsSectionId = 'connection' | 'cockpit' | 'config' | 'diag' | 'about'
 
 const SECTIONS: { id: SettingsSectionId; label: string; sub: string }[] = [
   { id: 'connection', label: 'Connection', sub: 'DCS link, ports' },
-  { id: 'cockpit', label: 'Cockpit', sub: 'PSU, mapping, alerts' },
+  { id: 'cockpit', label: 'Cockpit', sub: 'PSU, mapping, alerts, firmware' },
   { id: 'config', label: 'Configuration', sub: 'export / import' },
   { id: 'diag', label: 'Diagnostics', sub: 'logs' },
   { id: 'about', label: 'About', sub: 'version, registry' }
