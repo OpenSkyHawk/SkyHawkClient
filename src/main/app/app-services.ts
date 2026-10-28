@@ -78,7 +78,8 @@ export class AppServices {
       cacheFile,
       cacheEvents: this.journal,
       log: debugLog,
-      recovered: (recovery) => this.nodes.gatewayRecovered(recovery)
+      recovered: (recovery) => this.nodes.gatewayRecovered(recovery),
+      usbFirmware: (fw) => this.nodes.gatewayUsbFirmware(fw)
     })
     this.hid = new HidService(emit, debugLog)
     this.connection = new GatewayConnection(emit, {
@@ -190,6 +191,9 @@ export class AppServices {
     this.connection.onStatus(() => this.nodes.linkStatus())
     // So do the relay's facts (waiting for the Gateway, the Link tile), R3.3.
     this.connection.onStatus(() => this.relay.inputsChanged())
+    // The Firmware sheet compares every board with the newest saved release (#173): after every
+    // `releases:state` push, the first of which follows the start scan.
+    this.releases.onState(() => this.nodes.releaseChanged(this.releases.target()))
     // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
     this.settings.store.subscribe((config, prev) => {
       if (prev.autoConnect !== config.autoConnect) {

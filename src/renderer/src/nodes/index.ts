@@ -4,3 +4,4 @@ export { bindNodes, nodesFromMain, useNodesStore, type NodesState } from './stor
 export { Cockpit as CockpitTab } from './Cockpit'
 export { NodesCard } from './NodesCard'
 export { Dot } from './Dot'
+export { firmwareBannerText } from './firmware-view'

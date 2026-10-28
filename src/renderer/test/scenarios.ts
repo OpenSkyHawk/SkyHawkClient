@@ -25,6 +25,7 @@ import type {
   ResetPreview
 } from '@shared/nodes'
 import type { LogEvent } from '@shared/events'
+import type { ReleaseTarget } from '@shared/releases'
 import type { StreamRow, StatsSnapshot, TelemetryReadout } from '@shared/dcs'
 import type { SerialFrame } from '@shared/gateway'
 import type { CalCache, CalHello, CalRawSample, CalSnapshot } from '@shared/hid/calibration'
@@ -445,4 +446,22 @@ export function sweeps(
     from = rest !== undefined ? rest + 10 : b + 10
   }
   return out
+}
+
+// ── the Firmware sheet's release (#173) ─────────────────────────────────────
+
+/**
+ * The newest release saved on this computer, as releases' `target()` answers it: `version`, the
+ * version order, and images for the USB side and `nodes` (0.3.0's: the cockpit side and PDUs 3–5).
+ */
+export function savedRelease(version: string, nodes = [0, 3, 4, 5]): ReleaseTarget {
+  const n = (t: string) => t.split('.').map(Number)
+  return {
+    version,
+    compare: (reported) => {
+      const [a, b] = [n(reported), n(version)]
+      return a[0]! - b[0]! || a[1]! - b[1]! || a[2]! - b[2]!
+    },
+    hasImage: (of) => ('side' in of ? true : nodes.includes(of.nodeId))
+  }
 }

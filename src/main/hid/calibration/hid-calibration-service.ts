@@ -20,7 +20,7 @@ import type {
   CalSnapshot
 } from '@shared/hid/calibration'
 import type { Emit } from '@shared/app'
-import type { DeviceState } from '@shared/gateway'
+import type { DeviceState, FirmwareVersion } from '@shared/gateway'
 import {
   diagLogRow,
   gatewayRecovery,
@@ -56,6 +56,11 @@ export interface HidCalibrationDeps {
    * the Gateway topic decides what it means (gateway-diag).
    */
   recovered?: (recovery: GatewayRecovery) => void
+  /**
+   * The release the Gateway's USB side reports in HELLO_ACK (#173), once per connect; undefined
+   * when HELLO went unanswered. NodeHub shows it on the Firmware sheet.
+   */
+  usbFirmware?: (fw: FirmwareVersion | undefined) => void
 }
 
 export class HidCalibrationService implements LinkRider, CalFrameFilter {
@@ -194,9 +199,11 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
     const hello = await this.calHello()
     if (!hello.ok) {
       this.deps.log('cal.absent', `no calibration channel: ${hello.message}`)
+      this.deps.usbFirmware?.(undefined)
       return
     }
     const { proto, blobVersion, fw } = hello.value
+    this.deps.usbFirmware?.(fw)
     this.deps.log('cal.hello', {
       proto,
       blobVersion,

@@ -16,7 +16,7 @@ import {
   type NodeRegistryInfo,
   type NodeTelemSnapshot
 } from '@shared/nodes'
-import { buildCockpitSnapshot, sessionPeakW } from './cockpit-snapshot'
+import { buildCockpitSnapshot, sessionPeakW, type FirmwareInputs } from './cockpit-snapshot'
 
 /** The renderer's stray timer fired this long after `nextAt` (the Cockpit tab's, before R3.2). */
 export const STRAY_RECHECK_MS = 50
@@ -49,6 +49,8 @@ export class CockpitSnapshotHost {
   private model?: NodeModel
   private telemetry: NodeTelemSnapshot[] = []
   private peakW = 0
+  /** The USB side's release and the release to compare with (#173). */
+  private firmware: FirmwareInputs = {}
   private rev = 0
   private current: CockpitSnapshot = COCKPIT_IDLE
   /** The `nextAt` the stray timer is set for (React's effect dependency before R3.2). */
@@ -83,6 +85,16 @@ export class CockpitSnapshotHost {
     this.telemetry = telemetry
     this.peakW = sessionPeakW(this.peakW, this.model, telemetry)
     this.publish()
+  }
+
+  /**
+   * The Firmware sheet's inputs changed (#173): the USB side's HELLO_ACK release, or the release to
+   * compare with. `publish: false` only records it, for a port opening or going: the link's own
+   * push follows, and while it is down the rows read nothing from the USB side.
+   */
+  firmwareChanged(patch: Partial<FirmwareInputs>, publish = true): void {
+    this.firmware = { ...this.firmware, ...patch }
+    if (publish) this.publish()
   }
 
   /** `device:status` went out: the link's state or the Gateway's health changed. */
@@ -123,6 +135,7 @@ export class CockpitSnapshotHost {
       device: this.source.device(),
       peakW: this.peakW,
       registry: this.source.registry?.(),
+      firmware: this.firmware,
       now: this.strayClock,
       rev: ++this.rev
     })

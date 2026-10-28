@@ -775,6 +775,77 @@ export interface OverviewSummary {
   banner: AttentionSummary | null
   /** null = nothing to show, including while the link is down. */
   newDevices: NewDevices | null
+  /** The firmware banner (#173): null while nothing is behind the release, or the link is down. */
+  firmware: FirmwareBanner | null
+}
+
+// ── firmware (#173) ──────────────────────────────────────────────────────────
+
+/**
+ * A Firmware sheet row against the release (#173), first match in this order (`fwInfo`):
+ * - `off`: offline; `version` is what it last reported, if anything;
+ * - `not-reported`: link down, no row yet, or its row reads 0.0.0 (`notReported`);
+ * - `manual`: no bootloader (#175's rule: `bootloader` 00 on a row that reports a version);
+ * - `mismatch`: another major than the Gateway (#171);
+ * - `no-release`: nothing saved on this computer to compare with;
+ * - `custom`: the release has no image for it;
+ * - `update` / `newer` / `ok`: older than, newer than or the same as the release.
+ */
+export type FirmwareStatus =
+  | 'off'
+  | 'not-reported'
+  | 'manual'
+  | 'mismatch'
+  | 'no-release'
+  | 'custom'
+  | 'update'
+  | 'newer'
+  | 'ok'
+
+/** One Firmware sheet row: a Gateway side or a board in your cockpit. */
+export interface FirmwareRow {
+  /** `usb`, `cockpit` (the Gateway's two sides) or the board's NODE_ID as text. */
+  key: string
+  /** A Gateway side; absent for a board. */
+  side?: 'usb' | 'cockpit'
+  /** A board's NODE_ID; absent for a Gateway side. */
+  nodeId?: number
+  name: string
+  /** A board's kind, for its wording (a panel group installs its own build). */
+  kind?: NodeKind
+  status: FirmwareStatus
+  /** The release it reports, `x.y.z`; absent when there is none. */
+  version?: string
+  /** Its row reads 0.0.0. */
+  notReported?: true
+  /** `mismatch`: the Gateway's major. */
+  gatewayMajor?: number
+  /** Counted in *Needs attention*: update available, major mismatch, manual update only. */
+  attention: boolean
+}
+
+/** The Cockpit's Firmware button and sheet (#173): every board against the release. */
+export interface FirmwareSheet {
+  /** The release the rows compare with: the newest saved on this computer (#192); absent = none. */
+  target?: string
+  /** Gateway USB side, Gateway cockpit side, then the boards: attention first, then by NODE_ID. */
+  rows: FirmwareRow[]
+  /** *Needs attention · n*, and the button's count. */
+  attention: number
+  /** Every row is up to date or newer than the release. */
+  allCurrent: boolean
+}
+
+/** The Overview's firmware banner (#173): what can update to `version`, by kind. */
+export interface FirmwareBanner {
+  version: string
+  /** Either Gateway side can update. */
+  gateway: boolean
+  pdus: number
+  /** Other boards with a release image that can update. */
+  boards: number
+  /** Boards with no bootloader that are behind the release. */
+  manual: number
 }
 
 export interface SummaryRow {
@@ -883,6 +954,8 @@ export interface CockpitSnapshot {
   nodesCard: NodesSummary
   /** Settings › Cockpit and About (R3.2b). */
   settings: SettingsNodes
+  /** The Firmware button and sheet (#173). */
+  firmware: FirmwareSheet
 }
 
 /** Connected nodes' line while the bus reports nothing at all (NodesSummary `empty`). */
@@ -927,7 +1000,8 @@ export const COCKPIT_IDLE: CockpitSnapshot = {
   overview: {
     tile: { value: '—', sub: 'no live node status', tone: 'none' },
     banner: null,
-    newDevices: null
+    newDevices: null,
+    firmware: null
   },
   nodesCard: {
     known: 0,
@@ -943,7 +1017,27 @@ export const COCKPIT_IDLE: CockpitSnapshot = {
     newCount: 0,
     empty: NO_NODES
   },
-  settings: { differing: 0, canReset: false, hidden: [], registry: { summary: '', rows: [] } }
+  settings: { differing: 0, canReset: false, hidden: [], registry: { summary: '', rows: [] } },
+  firmware: {
+    rows: [
+      {
+        key: 'usb',
+        side: 'usb',
+        name: 'Gateway · USB side',
+        status: 'not-reported',
+        attention: false
+      },
+      {
+        key: 'cockpit',
+        side: 'cockpit',
+        name: 'Gateway · cockpit side',
+        status: 'not-reported',
+        attention: false
+      }
+    ],
+    attention: 0,
+    allCurrent: false
+  }
 }
 
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */

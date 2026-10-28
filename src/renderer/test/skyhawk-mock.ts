@@ -100,6 +100,7 @@ import {
 import type { CalibrationCommands } from '../../main/hid/calibration/calibration-workflow'
 import { CalibrationWorkflowHost } from '../../main/hid/calibration/workflow-host'
 import { CockpitSnapshotHost } from '../../main/nodes/cockpit-host'
+import type { FirmwareInputs } from '../../main/nodes/cockpit-snapshot'
 import { isLinkUp, LinkDownClock, linkFacts } from '../../main/gateway/link-state'
 import { shownStatus } from '../../main/gateway/gateway-health'
 import { captureView, relayFacts, replayView } from '../../main/dcs/relay-rules'
@@ -135,6 +136,11 @@ export interface Scenario {
   events?: LogEvent[]
   /** The release check and the saved releases (`releases:state`; `getReleases` answers it too). */
   releases?: ReleasesState
+  /**
+   * The Firmware sheet's inputs (#173), into the Cockpit snapshot host; not pushed: the USB side's
+   * HELLO_ACK release and the newest saved release (releases' `target()`).
+   */
+  firmware?: FirmwareInputs
   /** Calibration the device confirmed (GET_CAL's answer, handed to the workflow; not pushed). */
   cal?: CalSnapshot
   /** The latest HID report (`hid:report`). */
@@ -227,6 +233,7 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel | null } = {
   telemetry: null,
   events: 'events:batch',
   releases: 'releases:state',
+  firmware: null,
   cal: null,
   hid: 'hid:report',
   stream: 'log:batch',
@@ -694,6 +701,7 @@ export function installSkyhawkMock(): SkyhawkMock {
           if (key === 'device' || key === 'relay') pushFacts()
           if (key === 'model') cockpit.modelPushed(s.model!)
           if (key === 'telemetry') cockpit.telemetryPushed(s.telemetry!)
+          if (key === 'firmware') cockpit.firmwareChanged(s.firmware!)
           if (key === 'cal') host.reported(s.cal!)
         }
         // RAW: main's 50 ms batches, into the workflow (main-internal since R3.1).

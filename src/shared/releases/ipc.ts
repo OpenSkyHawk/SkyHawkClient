@@ -52,6 +52,20 @@ export interface CachedVersion {
   bytes: number
 }
 
+/**
+ * The release the Firmware sheet compares every board with (#173): main-side only, never pushed.
+ * `Releases.target()` answers it with releases' own rules (the version order, `imageFor`); app hands
+ * it to the Cockpit snapshot, which can't import releases.
+ */
+export interface ReleaseTarget {
+  /** The newest release saved on this computer, at or below the latest the last check found. */
+  version: string
+  /** A reported `x.y.z` against `version`: negative when older, 0 when the same. */
+  compare(reported: string): number
+  /** The release has an image for the Gateway's USB side, or for this NODE_ID. */
+  hasImage(of: { side: 'usb' } | { nodeId: number }): boolean
+}
+
 /** `releases:state`: everything the firmware-update surfaces show about releases. */
 export interface ReleasesState {
   check: ReleaseCheck
