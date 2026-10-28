@@ -12,7 +12,7 @@ import type {
   StrayItem
 } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
-import { shownHealth } from '../../gateway'
+import { RECOVERED_FLAG, shownHealth } from '../../gateway'
 import { isReportableNew, newState, strayKind } from '../node-model'
 import { FW_MISMATCH } from './views'
 
@@ -138,6 +138,8 @@ export function strayFlag(e: NodeModelEntry): string {
 /**
  * The Gateway's own problem (#94), as its Attention item: none while the link is down (the link
  * state says it all — gateway-health's shownHealth) or while it is healthy; err → off, else warn.
+ * It recovered itself this boot (#169): the item says so when its cockpit side reports nothing
+ * worse; any problem it reports takes the flag.
  */
 function gatewayAttention(
   gateway: GatewayStatus | undefined,
@@ -145,7 +147,8 @@ function gatewayAttention(
 ): CockpitAttention['gateway'] {
   const g = shownHealth(gateway, linkUp)
   if (!g || g.severity === 'ok') return undefined
-  return { flag: g.label, state: g.severity === 'err' ? 'off' : 'warn' }
+  const flag = g.problem ? g.label : RECOVERED_FLAG
+  return { flag, state: g.severity === 'err' ? 'off' : 'warn' }
 }
 
 /**

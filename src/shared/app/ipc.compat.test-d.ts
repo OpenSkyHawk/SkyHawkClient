@@ -125,13 +125,15 @@
 // method was added, removed or renamed. `RelaySurfaces.startBlocked` was removed: Start is never
 // refused for want of the board; the relay runs and waits for it (`waiting: 'device'`).
 //
-// #169 (the Gateway's link health): the intent `device:diag-refresh` (refreshGatewayDiag) was
-// added — GET_DIAG again while the link is up. `DeviceStatus` (`device:status`) gained
-// `linkHealth`, the record and what main concludes from it (an additive field).
-//
 // #172 (the aircraft from _ACFT_NAME only): a type change only — no channel, intent or method was
 // added, removed or renamed. `AircraftStatus` (`aircraft:changed`, the rehydrate bundle) lost
 // `inferred`: the client no longer guesses the aircraft from export addresses.
+//
+// #169 (the Gateway's link health): #181 added a refresh intent (refreshGatewayDiag, GET_DIAG
+// again while the link is up) and `linkHealth` on `DeviceStatus` (`device:status`); both are gone
+// again — DIAG is read once per connect, and no surface shows the counters. `GatewayStatus` gained
+// `recovered` (it re-plugged or restarted itself this boot) and `GatewayKind` gained `unreported`
+// (a type change only).
 //
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
@@ -287,7 +289,6 @@ interface OldCTRL {
   readonly nodeRegistry: 'nodes:registry'
   readonly nodeMappingHide: 'node-mapping:hide'
   readonly serialMonitor: 'serial:monitor'
-  readonly deviceDiagRefresh: 'device:diag-refresh'
   readonly debugDumpPorts: 'debug:dump-ports'
   readonly debugReveal: 'debug:reveal'
   readonly calOpen: 'cal:open'
@@ -331,7 +332,6 @@ interface OldSkyhawkApi {
   getStatus(): Promise<OldRelayStatus>
   connectDevice(): Promise<void>
   disconnectDevice(): Promise<void>
-  refreshGatewayDiag(): Promise<void>
   exportLog(text: string): Promise<ExportResult>
   getEvents(): Promise<LogEvent[]>
   clearEvents(): Promise<void>

@@ -8,7 +8,8 @@ import { gatewayFirmwareView, gatewayView } from './gateway-view'
  * The title-bar Device indicator (#69) and its popover: the link state at a glance on every tab,
  * with the same Connect / Disconnect / Retry as the Connection tab's device card. While connected
  * it also shows the Gateway's own health (#94): gold "!" when it reports a problem but still works,
- * red "!" when panel input can't reach DCS. `autoConnect` is Settings' (the title bar hands it in).
+ * or recovered itself this boot (#169, a gold line under Health), red "!" when panel input can't
+ * reach DCS. `autoConnect` is Settings' (the title bar hands it in).
  */
 export function DevicePopover({ autoConnect }: { autoConnect: boolean }) {
   const deviceState = useGatewayStore((s) => s.deviceState)
@@ -80,7 +81,7 @@ export function DevicePopover({ autoConnect }: { autoConnect: boolean }) {
               {gw.title ?? dev.chip}
             </div>
             {meta && <div className="devpop__meta">{meta}</div>}
-            {(gw.health || fw) && (
+            {(gw.health || gw.recovery || fw) && (
               <div className="gw">
                 {gw.health && (
                   <div className="gw__row">
@@ -90,6 +91,7 @@ export function DevicePopover({ autoConnect }: { autoConnect: boolean }) {
                     </span>
                   </div>
                 )}
+                {gw.recovery && <div className="gw__note gw--warn">{gw.recovery}</div>}
                 {gw.health?.note && <div className="gw__note">{gw.health.note}</div>}
                 {fw && (
                   <div className="gw__row">

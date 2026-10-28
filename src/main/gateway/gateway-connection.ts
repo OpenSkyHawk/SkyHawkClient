@@ -10,12 +10,7 @@
 // (device-line-tap.ts) subscribe to it. Export goes in through write(). That split is the point.
 // Bundled together, there was no node status, PDU telemetry, HID or calibration unless DCS was
 // being relayed, and stopping the relay tore the port down with it.
-import type {
-  DeviceStatus,
-  DeviceStatusPush,
-  GatewayLinkHealth,
-  GatewayStatus
-} from '@shared/gateway'
+import type { DeviceStatus, DeviceStatusPush, GatewayStatus } from '@shared/gateway'
 import type { Emit } from '@shared/app'
 import { shownStatus } from './gateway-health'
 import { isLinkUp, LinkDownClock, linkFacts } from './link-state'
@@ -102,11 +97,6 @@ export interface GatewayConnectionDeps {
   frames: CalFrameFilter
   health: () => GatewayStatus | undefined
   serialMonitor?: () => boolean
-  /**
-   * Read the Gateway's link health now (#169): GET_DIAG on the calibration channel, which hands
-   * the result back through pushLinkHealth. Absent: nothing to read it with.
-   */
-  readLinkHealth?: () => Promise<void>
 }
 
 /** The link's push tick: node status, node model and the HID snapshot. */
@@ -401,21 +391,6 @@ export class GatewayConnection {
   pushGatewayHealth(gateway: GatewayStatus | undefined): void {
     this.status = { ...this.status, gateway }
     this.emitStatus(this.status)
-  }
-
-  /**
-   * The Gateway's link health was read (#169). It rides on `device:status` while the link is up;
-   * a read that lands after the link went is dropped, as it may describe another board.
-   */
-  pushLinkHealth(linkHealth: GatewayLinkHealth): void {
-    if (!isLinkUp(this.status.state)) return
-    this.status = { ...this.status, linkHealth }
-    this.emitStatus(this.status)
-  }
-
-  /** `device:diag-refresh`: read the link health again; the answer comes on `device:status`. */
-  async refreshLinkHealth(): Promise<void> {
-    if (isLinkUp(this.status.state)) await this.deps.readLinkHealth?.()
   }
 
   private setStatus(status: DeviceStatus): void {

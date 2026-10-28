@@ -34,11 +34,6 @@ export interface DeviceStatus {
    * while the link is down (main/gateway/gateway-health.ts shownStatus, R3.4a).
    */
   gateway?: GatewayStatus
-  /**
-   * The Gateway's link-health record (#169), read with GET_DIAG on connect and on refresh. Only
-   * while `connected`: a link that drops or reopens starts without one (it may be another board).
-   */
-  linkHealth?: GatewayLinkHealth
 }
 
 export type GatewayKind =
@@ -48,10 +43,25 @@ export type GatewayKind =
   | 'overheat'
   | 'error-passive'
   | 'fault'
+  /**
+   * Its cockpit side hasn't reported its health yet, but it recovered itself (#169), which is
+   * enough for a status. No surface of its own: no Health row (`noHealth`), the event log reads
+   * it as `ok`.
+   */
+  | 'unreported'
+
+/**
+ * How the Gateway recovered itself this boot (#169, from its DIAG record): a watchdog reset, a
+ * recovery-ladder reboot, or a software re-plug of its link to this computer.
+ */
+export type GatewayRecoveredHow = 'watchdog' | 'recovery' | 're-plug'
 
 /** What the client shows about the Gateway. Carried on `DeviceStatus` while connected. */
 export interface GatewayStatus {
-  /** err: panel input can't reach DCS. warn: it reports a problem but still works. */
+  /**
+   * err: panel input can't reach DCS. warn: it reports a problem but still works, or it recovered
+   * itself this boot. The worse of the two when both.
+   */
   severity: 'ok' | 'warn' | 'err'
   /** The worst thing it reports; only that one is shown. */
   kind: GatewayKind
@@ -68,6 +78,20 @@ export interface GatewayStatus {
   aboutLink?: true
   /** The Gateway's own firmware release, from its own status row (#171). */
   firmware?: GatewayFirmware
+  /**
+   * What it reports is a problem (`kind` neither `ok` nor `unreported`): the pill's tooltip says
+   * so, and Cockpit Attention shows its label. Absent beside a recovery alone (#169).
+   */
+  problem?: true
+  /** Its cockpit side has reported nothing yet (`unreported`, #169): the popover has no Health row. */
+  noHealth?: true
+  /**
+   * It re-plugged or restarted itself this boot (#169): evidence, not a fault. A second fact
+   * beside `kind`, so neither hides the other; on its own it makes the status `warn`, never `err`
+   * and never the alert. `note` is the popover's line. Shown on every connection to that boot,
+   * until a power-on (a replug) clears it.
+   */
+  recovered?: { how: GatewayRecoveredHow; note: string }
 }
 
 /** A firmware release as a board reports it (`_NODE_STATUS` v4). */
@@ -86,58 +110,6 @@ export interface GatewayFirmware {
   /** The firmware major this client supports: `SUPPORTED_FIRMWARE_MAJOR` (gateway/firmware.ts). */
   supportedMajor: number
 }
-
-/**
- * The Gateway's link-health record (#169): `DIAG`, the reply to `GET_DIAG` on the calibration
- * channel (AxisCal.h CalDiagField). Times are the device's `millis()` since its boot, 0 = never;
- * counters are u16 and saturate at 0xFFFF; the reboot and watchdog counts are u8 and survive a
- * warm reboot.
- */
-export interface GatewayDiag {
-  /** Device `millis()` when the reply was built: the reference for every time below. */
-  uptimeMs: number
-  firstUartErrMs: number
-  lastUartErrMs: number
-  /** Healthy → unhealthy USB-link edges. */
-  firstUsbLossMs: number
-  lastUsbLossMs: number
-  uartOverrun: number
-  uartFraming: number
-  uartBreak: number
-  uartParity: number
-  uartRxOverflow: number
-  linesDropped: number
-  linesCorrupt: number
-  linesOverlong: number
-  framesDropped: number
-  uartRestarts: number
-  usbReattaches: number
-  cdcStalls: number
-  recoveryReboots: number
-  watchdogResets: number
-  /** CalDiagResetReason, raw: a value this client does not know is kept, never an error. */
-  resetReason: number
-}
-
-/** Why the Gateway's current boot happened; `unknown` for a reason newer than this client. */
-export type GatewayResetReason = 'power-on' | 'watchdog' | 'recovery' | 'unknown'
-
-/**
- * What the client knows of the Gateway's link health, read on connect and on demand (#169).
- * `supported: false`: no `DIAG` within the request timeout — firmware older than #355, not a fault.
- */
-export type GatewayLinkHealth =
-  | { at: number; supported: false }
-  | {
-      at: number
-      supported: true
-      diag: GatewayDiag
-      resetReason: GatewayResetReason
-      /** Which happened first this boot, a UART error or a USB loss; null when neither did. */
-      firstFault: 'uart' | 'usb' | null
-      /** It re-plugged or rebooted itself this boot: the evidence #355 needs. */
-      selfRecovered: boolean
-    }
 
 /**
  * The link's one action, for the state it is in (R3.4a): which button the device card and the
@@ -216,6 +188,5 @@ export const GATEWAY_PUSH = {
 export const GATEWAY_CTRL = {
   deviceConnect: 'device:connect',
   deviceDisconnect: 'device:disconnect',
-  serialMonitor: 'serial:monitor',
-  deviceDiagRefresh: 'device:diag-refresh'
+  serialMonitor: 'serial:monitor'
 } as const

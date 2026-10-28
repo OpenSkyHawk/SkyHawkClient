@@ -12,6 +12,7 @@ import { eventText } from '@shared/format'
 import type { LogEventInput } from '@shared/events'
 import type { NodeStatus } from '@shared/nodes'
 import { nodeStatus } from '../../test-fixtures/nodes'
+import type { GatewayRecovery } from './gateway-diag'
 
 const node0 = (over: Partial<NodeStatus> = {}): NodeStatus =>
   nodeStatus(0, { rxCount: 5, dieTempC: 42, nodeKind: 3, ...over })
@@ -81,6 +82,7 @@ describe('gatewayStatus — the one place the Gateway’s health is decided', ()
       kind: 'fault',
       label: 'I2C peripheral',
       note: undefined,
+      problem: true,
       firmware: { version: null, tooNew: false, supportedMajor: 1 }
     })
     expect(st({ faultId: 0x2a }).label).toBe('Unknown fault (0x2A)')
@@ -329,5 +331,174 @@ describe('what the surfaces may show (R3.4a: gateway-view.ts before)', () => {
     })
     const none = { state: 'no-device' as const }
     expect(shownStatus(none)).toBe(none)
+  })
+})
+
+// ── it recovered itself this boot (#169) ────────────────────────────────────
+
+/** A recovery as the connect read hands it on: one re-plug, booted at 1 000 000 (client clock). */
+const rec = (over: Partial<GatewayRecovery> = {}): GatewayRecovery => ({
+  how: 're-plug',
+  bootAt: 1_000_000,
+  reattaches: 1,
+  serial: 'GW1',
+  ...over
+})
+
+describe('gateway-health.recovered-alone', () => {
+  it('beside a healthy cockpit side: warn, its line, the row as it is — never err, no alert', () => {
+    const g = gatewayStatus(node0(), false, 're-plug')!
+    expect(g).toMatchObject({ severity: 'warn', kind: 'ok', label: 'OK · 42 °C' })
+    expect(g.alert).toBeUndefined()
+    expect(g.problem, 'a recovery is never "a problem"').toBeUndefined()
+    expect(g.noHealth).toBeUndefined()
+    expect(g.recovered).toEqual({
+      how: 're-plug',
+      note: 'Recovered itself since it was plugged in — re-plugged itself to recover its link to this computer.'
+    })
+  })
+
+  it('each way reads as itself, and never names the transport', () => {
+    expect(gatewayStatus(node0(), false, 'recovery')!.recovered!.note).toBe(
+      'Recovered itself since it was plugged in — restarted itself to recover its link to this computer.'
+    )
+    expect(gatewayStatus(node0(), false, 'watchdog')!.recovered!.note).toBe(
+      'Recovered itself since it was plugged in — its watchdog restarted it.'
+    )
+    for (const how of ['recovery', 're-plug', 'watchdog'] as const) {
+      expect(gatewayStatus(node0(), false, how)!.recovered!.note).not.toMatch(/USB|UART|CAN|CDC/)
+    }
+  })
+
+  it('enough for a status before its cockpit side reports: unreported, warn', () => {
+    expect(gatewayStatus(undefined, false, 'recovery')).toMatchObject({
+      severity: 'warn',
+      kind: 'unreported',
+      noHealth: true
+    })
+    expect(gatewayStatus(undefined, false, 'recovery')?.problem).toBeUndefined()
+    expect(gatewayStatus(node0({ nodeKind: 0 }), false, 'recovery')).toMatchObject({
+      severity: 'warn',
+      kind: 'unreported',
+      firmware: expect.anything()
+    })
+  })
+
+  it('a milder problem beside it keeps its own severity and label', () => {
+    expect(gatewayStatus(node0({ epvf: true }), false, 're-plug')).toMatchObject({
+      severity: 'warn',
+      kind: 'error-passive',
+      recovered: { how: 're-plug' }
+    })
+  })
+})
+
+describe('gateway-health.recovered-with-fault', () => {
+  it('bus-off and a recovery: err and the alert from bus-off, the recovery still on the status', () => {
+    const g = gatewayStatus(node0({ boff: true }), false, 'recovery')!
+    expect(g).toMatchObject({
+      severity: 'err',
+      kind: 'bus-off',
+      problem: true,
+      recovered: { how: 'recovery' }
+    })
+    expect(g.alert).toEqual(st({ boff: true }).alert)
+  })
+
+  it('not responding and a recovery: about the link, the recovery still on the status', () => {
+    expect(gatewayStatus(undefined, true, 'watchdog')).toMatchObject({
+      severity: 'err',
+      kind: 'not-responding',
+      aboutLink: true,
+      recovered: { how: 'watchdog' }
+    })
+  })
+})
+
+describe('events: one Log › Events row per new recovery', () => {
+  /** The watch for one open port, its cockpit side healthy. */
+  const opened = (w: GatewayWatch): void => {
+    w.reset()
+    w.report(node0(), 'r', 1)
+  }
+
+  it('events.first-recovery: the first connect that reads a recovery writes one warn row', () => {
+    const w = new GatewayWatch()
+    opened(w)
+    const es = w.recovered(rec({ how: 'recovery', reattaches: 0 }), 5)
+    expect(short(es)).toEqual([
+      'Gateway: recovered itself · restarted itself to recover its link to this computer [warn]'
+    ])
+    expect(es[0]).toMatchObject({
+      t: 5,
+      source: 'client',
+      raw: 'device: recovered itself · restarted to recover its link'
+    })
+    expect(w.status()?.recovered?.how).toBe('recovery')
+  })
+
+  it('events.no-duplicate-on-reconnect: same Gateway, same boot, same counts → shown again, no row', () => {
+    const w = new GatewayWatch()
+    opened(w)
+    expect(w.recovered(rec(), 5)).toHaveLength(1)
+    opened(w) // the port closes and opens again
+    expect(w.status()?.recovered).toBeUndefined() // dropped with the link
+    expect(w.recovered(rec({ bootAt: 1_000_300 }), 9)).toEqual([])
+    expect(w.status()).toMatchObject({ severity: 'warn', recovered: { how: 're-plug' } })
+  })
+
+  it('events.new-reattach-same-boot: one more re-plug in the same boot → one new row', () => {
+    const w = new GatewayWatch()
+    opened(w)
+    w.recovered(rec(), 5)
+    opened(w)
+    expect(short(w.recovered(rec({ reattaches: 2 }), 9))).toEqual([
+      'Gateway: recovered itself · re-plugged itself to recover its link to this computer [warn]'
+    ])
+  })
+
+  it('events.new-boot: a later boot → a new row, even with the same count', () => {
+    const w = new GatewayWatch()
+    opened(w)
+    w.recovered(rec(), 5)
+    opened(w)
+    expect(w.recovered(rec({ bootAt: 5_000_000 }), 9)).toHaveLength(1)
+  })
+
+  it('events.per-gateway: two serials keep separate memory; none reported shares one key', () => {
+    const w = new GatewayWatch()
+    opened(w)
+    expect(w.recovered(rec({ serial: 'GW1' }), 5)).toHaveLength(1)
+    opened(w)
+    expect(w.recovered(rec({ serial: 'GW2' }), 6)).toHaveLength(1)
+    opened(w)
+    expect(w.recovered(rec({ serial: 'GW1' }), 7)).toEqual([])
+    opened(w)
+    expect(w.recovered(rec({ serial: undefined }), 8)).toHaveLength(1)
+    opened(w)
+    expect(w.recovered(rec({ serial: undefined }), 9)).toEqual([])
+  })
+
+  it('no "cleared" row and no status row for it: the cockpit side reporting later is quiet', () => {
+    const w = new GatewayWatch()
+    w.reset()
+    expect(short(w.recovered(rec(), 5))).toEqual([
+      'Gateway: recovered itself · re-plugged itself to recover its link to this computer [warn]'
+    ])
+    expect(w.status()?.kind).toBe('unreported')
+    expect(w.report(node0(), 'r', 6)).toEqual([])
+    expect(w.status()).toMatchObject({ kind: 'ok', severity: 'warn' })
+    w.reset()
+    expect(w.status()).toBeUndefined()
+  })
+
+  it('a problem beside it is logged as before, at its own severity', () => {
+    const w = new GatewayWatch()
+    opened(w)
+    w.recovered(rec(), 5)
+    expect(short(w.report(node0({ epvf: true }), 'r', 6))).toEqual([
+      'Gateway: error-passive · TEC 0 · REC 0 [warn]'
+    ])
+    expect(short(w.report(node0(), 'r', 7))).toEqual(['Gateway: error-passive cleared [info]'])
   })
 })

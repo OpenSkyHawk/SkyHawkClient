@@ -10,7 +10,7 @@ import {
 } from '../../main/config/config-file'
 import { DEFAULT_CONFIG, type ConfigSnapshot, type ImportPreview } from '@shared/config'
 import { gatewayStatus } from '../../main/gateway/gateway-health'
-import type { DeviceState, DeviceStatus, GatewayStatus } from '@shared/gateway'
+import type { DeviceState, DeviceStatus, GatewayRecoveredHow, GatewayStatus } from '@shared/gateway'
 import type {
   NodeDefaults,
   NodeMappingFile,
@@ -65,6 +65,15 @@ export function gateway(row: Partial<NodeStatus> = {}): GatewayStatus {
 
 /** A roster request went unanswered for 5 s while the port was open. */
 export const gatewayNotResponding = (): GatewayStatus => gatewayStatus(undefined, true)!
+
+/** It recovered itself this boot (#169, its DIAG record), beside `row` as in gateway(). */
+export function gatewayRecovered(
+  how: GatewayRecoveredHow,
+  row: Partial<NodeStatus> = {}
+): GatewayStatus {
+  const st = nodeStatus(0, { nodeKind: NODE_KIND.BRIDGE, dieTempC: 42, ...row })
+  return gatewayStatus(st, false, how)!
+}
 
 // ── node model entries (`nodes:model`) ──────────────────────────────────────
 

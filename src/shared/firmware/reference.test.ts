@@ -323,8 +323,37 @@ describe('axis-cal.generated', () => {
     expect(CAL_PAYLOAD_LEN[cal.CAL_TYPE.COMMIT]).toBe(9)
   })
 
-  // codec.decodeDiag reads DIAG by these names (#169). Pinned at the layout it was written for:
-  // a relayout fails here; a counter added in the reserved bytes does not (bytes 0–46 stay put).
+  // codec.decodeDiag reads DIAG by these names (#169), each at its offset. Only those are pinned,
+  // plus RESERVED staying at or past the end of the last one: a counter added in the reserved bytes
+  // is a firmware minor (FP03, AxisCal.h CalDiagField) and must not fail CI; moving a field the
+  // decoder reads must.
+  const DIAG_READ = {
+    UPTIME_MS: 0,
+    FIRST_UART_ERR_MS: 4,
+    LAST_UART_ERR_MS: 8,
+    FIRST_USB_LOSS_MS: 12,
+    LAST_USB_LOSS_MS: 16,
+    UART_OVERRUN: 20,
+    UART_FRAMING: 22,
+    UART_BREAK: 24,
+    UART_PARITY: 26,
+    UART_RX_OVERFLOW: 28,
+    LINES_DROPPED: 30,
+    LINES_CORRUPT: 32,
+    LINES_OVERLONG: 34,
+    FRAMES_DROPPED: 36,
+    UART_RESTARTS: 38,
+    USB_REATTACHES: 40,
+    CDC_STALLS: 42,
+    RECOVERY_REBOOTS: 44,
+    WATCHDOG_RESETS: 45,
+    RESET_REASON: 46
+  }
+  const pinDiagLayout = (fields: Readonly<Record<string, number>>): void => {
+    expect(fields).toMatchObject(DIAG_READ)
+    expect(fields.RESERVED).toBeGreaterThanOrEqual(47)
+  }
+
   it('pins GET_DIAG / DIAG and the DIAG layout the decoder reads', () => {
     expect(cal.CAL_TYPE.GET_DIAG).toBe(0x09)
     expect(cal.CAL_TYPE.DIAG).toBe(0x87)
@@ -332,29 +361,14 @@ describe('axis-cal.generated', () => {
     expect(CAL_DIAG_BYTES).toBe(64)
     expect(CAL_PAYLOAD_LEN[0x87]).toBe(CAL_DIAG_BYTES)
     expect(CAL_DIAG_BYTES).toBeLessThanOrEqual(CAL_PROTO.maxPayload) // fits the receiver's carry
-    expect(CAL_DIAG_FIELD).toEqual({
-      UPTIME_MS: 0,
-      FIRST_UART_ERR_MS: 4,
-      LAST_UART_ERR_MS: 8,
-      FIRST_USB_LOSS_MS: 12,
-      LAST_USB_LOSS_MS: 16,
-      UART_OVERRUN: 20,
-      UART_FRAMING: 22,
-      UART_BREAK: 24,
-      UART_PARITY: 26,
-      UART_RX_OVERFLOW: 28,
-      LINES_DROPPED: 30,
-      LINES_CORRUPT: 32,
-      LINES_OVERLONG: 34,
-      FRAMES_DROPPED: 36,
-      UART_RESTARTS: 38,
-      USB_REATTACHES: 40,
-      CDC_STALLS: 42,
-      RECOVERY_REBOOTS: 44,
-      WATCHDOG_RESETS: 45,
-      RESET_REASON: 46,
-      RESERVED: 47
-    })
+    pinDiagLayout(CAL_DIAG_FIELD)
     expect(CAL_DIAG_RESET_REASONS).toEqual({ POWER_ON: 0, WATCHDOG: 1, RECOVERY: 2 })
+  })
+
+  it('reference.diag-pin: a counter added in the reserved bytes passes; a moved field fails', () => {
+    const { RESERVED: _end, ...read } = CAL_DIAG_FIELD
+    pinDiagLayout({ ...read, NEW_COUNTER: 47, RESERVED: 49 })
+    expect(() => pinDiagLayout({ ...CAL_DIAG_FIELD, USB_REATTACHES: 41 })).toThrow()
+    expect(() => pinDiagLayout({ ...CAL_DIAG_FIELD, RESERVED: 46 })).toThrow()
   })
 })

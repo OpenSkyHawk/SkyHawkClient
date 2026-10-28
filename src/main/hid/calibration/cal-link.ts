@@ -29,7 +29,7 @@ import {
   type RawSample
 } from './codec'
 import { CAL_PROTO } from '@shared/firmware'
-import type { GatewayDiag } from '@shared/gateway'
+import type { GatewayDiag } from '../../gateway'
 
 /** Port: the debug log, handed in by app (debug.log lives in app). */
 export type Log = (tag: string, data?: unknown) => void

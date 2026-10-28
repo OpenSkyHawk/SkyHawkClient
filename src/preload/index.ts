@@ -75,7 +75,6 @@ const api: SkyhawkApi = {
   getStatus: () => ipcRenderer.invoke(CTRL.relayStatus) as Promise<RelayStatus>,
   connectDevice: () => ipcRenderer.invoke(CTRL.deviceConnect) as Promise<void>,
   disconnectDevice: () => ipcRenderer.invoke(CTRL.deviceDisconnect) as Promise<void>,
-  refreshGatewayDiag: () => ipcRenderer.invoke(CTRL.deviceDiagRefresh) as Promise<void>,
   exportLog: (text: string) => ipcRenderer.invoke(CTRL.logExport, text) as Promise<ExportResult>,
   getEvents: () => ipcRenderer.invoke(CTRL.eventsGet) as Promise<LogEvent[]>,
   clearEvents: () => ipcRenderer.invoke(CTRL.eventsClear) as Promise<void>,

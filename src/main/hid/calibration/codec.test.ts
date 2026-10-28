@@ -15,13 +15,22 @@ import {
   decodeNack,
   decodeRaw,
   decodeSessionAck,
+  diagWidths,
+  CAL_DIAG_WIDTH,
   encodeCommit,
   encodeHello,
   encodeReset,
   encodeSessionOpen,
   nackName
 } from './codec'
-import { CAL_DIAG_FIELD, CAL_NACK_REASONS, CAL_PROTO } from '@shared/firmware'
+import {
+  CAL_DIAG_BYTES,
+  CAL_DIAG_FIELD,
+  CAL_DIAG_RESET_REASONS,
+  CAL_NACK_REASONS,
+  CAL_PROTO
+} from '@shared/firmware'
+import { diagPayload, type DiagFieldName } from '../../../test-fixtures/diag'
 
 const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((b) => parseInt(b, 16)))
 const cat = (...parts: Uint8Array[]) => {
@@ -391,18 +400,11 @@ describe('decoders', () => {
 })
 
 describe('decodeDiag (#169)', () => {
-  /** A DIAG payload with these fields set, little-endian at their CalDiagField offsets. */
-  const diag = (set: Partial<Record<keyof typeof CAL_DIAG_FIELD, number>> = {}) => {
-    const p = new Uint8Array(64)
-    const v = new DataView(p.buffer)
-    for (const [k, n] of Object.entries(set) as [keyof typeof CAL_DIAG_FIELD, number][]) {
-      const at = CAL_DIAG_FIELD[k]
-      if (at < CAL_DIAG_FIELD.UART_OVERRUN) v.setUint32(at, n, true)
-      else if (at < CAL_DIAG_FIELD.RECOVERY_REBOOTS) v.setUint16(at, n, true)
-      else p[at] = n
-    }
-    return p
-  }
+  const diag = diagPayload
+  /** Every field this client reads, by its CalDiagField name. */
+  const FIELDS = Object.keys(CAL_DIAG_WIDTH) as DiagFieldName[]
+  /** The largest value a field of this width holds: what a saturated counter reads. */
+  const full = (f: DiagFieldName) => 2 ** (8 * CAL_DIAG_WIDTH[f]) - 1
 
   it('decodes every field at its offset, little-endian', () => {
     const p = diag({
@@ -425,7 +427,7 @@ describe('decodeDiag (#169)', () => {
       CDC_STALLS: 12,
       RECOVERY_REBOOTS: 13,
       WATCHDOG_RESETS: 14,
-      RESET_REASON: 2
+      RESET_REASON: CAL_DIAG_RESET_REASONS.RECOVERY
     })
     expect(decodeDiag(p)).toEqual({
       uptimeMs: 3_600_000,
@@ -447,34 +449,59 @@ describe('decodeDiag (#169)', () => {
       cdcStalls: 12,
       recoveryReboots: 13,
       watchdogResets: 14,
-      resetReason: 2
+      resetReason: CAL_DIAG_RESET_REASONS.RECOVERY
     })
   })
 
+  it('codec.diag-widths: each field it reads runs to the next offset and is read at that width', () => {
+    // The fields it reads tile the record from 0 with no gap and no overlap, and end at or before
+    // RESERVED: a counter a later firmware adds there is no field this client reads.
+    const tiled = FIELDS.map((f) => [CAL_DIAG_FIELD[f], CAL_DIAG_WIDTH[f]] as const).sort(
+      (a, b) => a[0] - b[0]
+    )
+    let end = 0
+    for (const [at, width] of tiled) {
+      expect(at).toBe(end)
+      end = at + width
+    }
+    expect(end).toBeLessThanOrEqual(CAL_DIAG_FIELD.RESERVED)
+    // A field with every byte of its width set reads as its largest value, and spills into no
+    // other field: the decoder reads exactly the derived width.
+    const all = decodeDiag(diag())
+    for (const f of FIELDS) {
+      const d = decodeDiag(diag({ [f]: full(f) }))
+      const changed = (Object.keys(d) as (keyof typeof d)[]).filter((k) => d[k] !== all[k])
+      expect(changed, f).toHaveLength(1)
+      expect(d[changed[0]!], f).toBe(full(f))
+    }
+  })
+
+  it('diagWidths: each field to the next offset; a layout must end at RESERVED', () => {
+    expect(diagWidths({ A: 0, B: 4, RESERVED: 7 })).toEqual({ A: 4, B: 3 })
+    expect(() => diagWidths({ A: 0, RESERVED: 2, B: 4 })).toThrow(/end at RESERVED/)
+  })
+
   it('times of 0 mean never; an uptime past 2^31 ms stays unsigned', () => {
-    const d = decodeDiag(diag({ UPTIME_MS: 0xfffffff0 }))
-    expect(d.uptimeMs).toBe(0xfffffff0) // ~49.7 days, not a negative number
+    const d = decodeDiag(diag({ UPTIME_MS: full('UPTIME_MS') - 0xf }))
+    expect(d.uptimeMs).toBe(full('UPTIME_MS') - 0xf) // ~49.7 days, not a negative number
     expect([d.firstUartErrMs, d.lastUartErrMs, d.firstUsbLossMs, d.lastUsbLossMs]).toEqual([
       0, 0, 0, 0
     ])
   })
 
-  it('saturated counters read 0xFFFF (u16) and 0xFF (u8)', () => {
-    const d = decodeDiag(
-      diag({
-        LINES_DROPPED: 0xffff,
-        CDC_STALLS: 0xffff,
-        RECOVERY_REBOOTS: 0xff,
-        WATCHDOG_RESETS: 0xff
-      })
+  it("saturated counters read their width's largest value", () => {
+    const sat = ['LINES_DROPPED', 'CDC_STALLS', 'RECOVERY_REBOOTS', 'WATCHDOG_RESETS'] as const
+    const d = decodeDiag(diag(Object.fromEntries(sat.map((f) => [f, full(f)]))))
+    expect([d.linesDropped, d.cdcStalls, d.recoveryReboots, d.watchdogResets]).toEqual(
+      sat.map(full)
     )
-    expect([d.linesDropped, d.cdcStalls, d.recoveryReboots, d.watchdogResets]).toEqual([
-      0xffff, 0xffff, 0xff, 0xff
-    ])
   })
 
   it('keeps every reset reason raw, a newer one too', () => {
-    for (const r of [0, 1, 2, 9]) expect(decodeDiag(diag({ RESET_REASON: r })).resetReason).toBe(r)
+    const newer = Math.max(...Object.values(CAL_DIAG_RESET_REASONS)) + 1
+    for (const r of [...Object.values(CAL_DIAG_RESET_REASONS), newer]) {
+      expect(decodeDiag(diag({ RESET_REASON: r })).resetReason).toBe(r)
+    }
   })
 
   it('ignores the reserved bytes, so a later counter there changes nothing it reads', () => {
@@ -484,9 +511,10 @@ describe('decodeDiag (#169)', () => {
     expect(decodeDiag(q)).toEqual(decodeDiag(p))
   })
 
-  it('rejects any length but CAL_DIAG_BYTES (64), the 47-byte pre-#359 one too', () => {
-    expect(() => decodeDiag(new Uint8Array(47))).toThrow(/64/)
-    expect(() => decodeDiag(new Uint8Array(65))).toThrow(/64/)
+  it('rejects any length but CAL_DIAG_BYTES, the pre-#359 one (up to RESERVED) too', () => {
+    const want = new RegExp(String(CAL_DIAG_BYTES))
+    expect(() => decodeDiag(new Uint8Array(CAL_DIAG_FIELD.RESERVED))).toThrow(want)
+    expect(() => decodeDiag(new Uint8Array(CAL_DIAG_BYTES + 1))).toThrow(want)
   })
 
   it('a DIAG frame passes the demux whole; it fits the carry', () => {
@@ -494,6 +522,25 @@ describe('decodeDiag (#169)', () => {
     const r = x.push(buildFrame(CAL_TYPE.DIAG, 3, diag({ UPTIME_MS: 7 })))
     expect(r.frames).toHaveLength(1)
     expect(decodeDiag(r.frames[0]!.payload).uptimeMs).toBe(7)
+  })
+
+  it('codec.diag-047: a firmware 0.2.0 DIAG (the bytes up to RESERVED) on the wire is not a frame', () => {
+    // 0.2.0 sent DIAG without the reserved tail. Its envelope is well formed, but LEN doesn't
+    // match the type, so the demux hands every byte back to the stream and no reply arrives.
+    const payload = diag({ UPTIME_MS: 7 }).slice(0, CAL_DIAG_FIELD.RESERVED)
+    const body = Uint8Array.of(
+      CAL_TYPE.DIAG,
+      3,
+      payload.length & 0xff,
+      payload.length >> 8,
+      ...payload
+    )
+    const c = crc16(body)
+    const wire = cat(CAL_MAGIC, body, Uint8Array.of(c & 0xff, c >> 8))
+    const x = new CalDemux()
+    const r = x.push(wire)
+    expect(r.frames).toEqual([])
+    expect(cat(r.passthrough, x.flush())).toEqual(wire)
   })
 })
 
