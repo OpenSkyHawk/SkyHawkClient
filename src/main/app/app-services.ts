@@ -104,7 +104,7 @@ export class AppServices {
       log: debugLog,
       link: this.connection,
       // Whose is the roster's silence, the cockpit side's or the whole Gateway's (#187)?
-      probeUsbSide: () => this.update.cockpit?.probe() ?? Promise.resolve(false)
+      probeUsbSide: async () => (await this.update.cockpit?.probe()) ?? false
     })
     this.serialMonitor = new SerialTrafficMonitor(emit)
     // GitHub through Electron's net (P6: only app asks electron); the newer-major rule is gateway's.
