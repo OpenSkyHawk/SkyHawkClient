@@ -68,15 +68,14 @@ export class AppServices {
       cacheFile,
       cacheEvents: this.journal,
       log: debugLog,
-      linkHealth: (health) => this.connection.pushLinkHealth(health)
+      recovered: (recovery) => this.nodes.gatewayRecovered(recovery)
     })
     this.hid = new HidService(emit, debugLog)
     this.connection = new GatewayConnection(emit, {
       log: debugLog,
       frames: this.calibration,
       health: () => this.nodes.gatewayHealth(),
-      serialMonitor: () => this.serialMonitor.shown,
-      readLinkHealth: () => this.calibration.readGatewayDiag()
+      serialMonitor: () => this.serialMonitor.shown
     })
     this.nodes = new NodeHub(emit, new NodeRoster(), (events) => this.journal.report(events), {
       mappingFile,

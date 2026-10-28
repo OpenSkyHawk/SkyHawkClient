@@ -393,6 +393,10 @@ button.devind[aria-expanded='true'] {
   line-height: 1.45;
   color: var(--muted);
 }
+/* #169: it recovered itself this boot — evidence, gold, never red */
+.gw__note.gw--warn {
+  color: var(--gold);
+}
 .devnote a,
 .devnote__link {
   appearance: none;

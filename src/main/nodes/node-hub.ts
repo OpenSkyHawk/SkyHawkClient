@@ -26,7 +26,13 @@ import type {
 import type { Emit } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
 import type { DeviceStatus, GatewayStatus } from '@shared/gateway'
-import { GatewayWatch, type LinkRider, type NodeLineSink } from '../gateway'
+import {
+  GatewayWatch,
+  isLinkUp,
+  type GatewayRecovery,
+  type LinkRider,
+  type NodeLineSink
+} from '../gateway'
 import {
   adoptNode,
   clearReportedHidden,
@@ -275,6 +281,16 @@ export class NodeHub implements NodeLineSink {
   /** The Gateway's health as it stands, for the connected status. */
   gatewayHealth(): GatewayStatus | undefined {
     return this.gateway.status()
+  }
+
+  /**
+   * The connect read found the Gateway recovered itself this boot (#169; hid/calibration reads
+   * DIAG). It joins the Gateway's health, pushed on the next tick. A read that lands after the
+   * link went is dropped: it may describe another board.
+   */
+  gatewayRecovered(recovery: GatewayRecovery): void {
+    if (!isLinkUp(this.link.deviceStatus().state)) return
+    this.onEvents(this.gateway.recovered(recovery, Date.now()))
   }
 
   /**

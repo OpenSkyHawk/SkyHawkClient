@@ -15,5 +15,4 @@ export function registerGatewayIpc(ipc: IpcRegistrar, deps: GatewayIpcDeps): voi
   ipc.handle(GATEWAY_CTRL.deviceConnect, () => connection.connect())
   ipc.handle(GATEWAY_CTRL.deviceDisconnect, () => connection.disconnect())
   ipc.handle(GATEWAY_CTRL.serialMonitor, (_e, on: boolean) => serialMonitor.setSerialMonitor(on))
-  ipc.handle(GATEWAY_CTRL.deviceDiagRefresh, () => connection.refreshLinkHealth())
 }

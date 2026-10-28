@@ -20,11 +20,12 @@ import type {
   CalSnapshot
 } from '@shared/hid/calibration'
 import type { Emit } from '@shared/app'
-import type { DeviceState, GatewayLinkHealth } from '@shared/gateway'
+import type { DeviceState } from '@shared/gateway'
 import {
-  linkHealth,
-  unsupportedLinkHealth,
+  diagLogRow,
+  gatewayRecovery,
   type CalFrameFilter,
+  type GatewayRecovery,
   type LinkRider,
   type LinkTimer
 } from '../../gateway'
@@ -50,10 +51,11 @@ export interface HidCalibrationDeps {
   cacheEvents?: CacheFileEvents
   log: Log
   /**
-   * Where a link-health read goes (#169): GatewayConnection.pushLinkHealth, which carries it on
-   * `device:status`. This service only reads it on the wire; the Gateway topic owns it.
+   * Where the connect read's conclusion goes when the Gateway recovered itself this boot (#169):
+   * NodeHub, which shows it with the Gateway's health. This service only reads DIAG on the wire;
+   * the Gateway topic decides what it means (gateway-diag).
    */
-  linkHealth?: (health: GatewayLinkHealth) => void
+  recovered?: (recovery: GatewayRecovery) => void
 }
 
 export class HidCalibrationService implements LinkRider, CalFrameFilter {
@@ -201,7 +203,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
       fw: `${fw.major}.${fw.minor}.${fw.patch}`,
       serial: this.calSerialNumber ?? null
     })
-    // Every connect leaves the link-health record in the debug log (#169), right after HELLO.
+    // Every connect reads the link-health record (#169), right after HELLO.
     await this.readGatewayDiag()
     const read = await this.calRead()
     if (!read.ok) {
@@ -247,30 +249,24 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
   }
 
   /**
-   * Read the Gateway's link health (#169): GET_DIAG, logged and handed to the Gateway topic. Asked
-   * once on connect (after HELLO) and on refresh, never in a loop: a timeout is older firmware
-   * ("not supported"), not a fault to retry.
+   * Read the Gateway's link health (#169): GET_DIAG, once per connect (after HELLO), never again
+   * while the link stays up: any self-recovery drops the port, so the next connect's read finds
+   * it. The whole record goes to the debug log (opt-in); only a recovery is handed on. A timeout
+   * is older firmware ("not supported"), not a fault to retry.
    */
-  async readGatewayDiag(): Promise<void> {
-    if (!this.cal) return
+  private async readGatewayDiag(): Promise<void> {
     const r = await this.calRun((l) => l.getDiag())
     if (!r.ok && r.kind !== 'timeout') {
       this.deps.log('cal.diag', `read failed: ${r.message}`)
       return
     }
-    const health = r.ok ? linkHealth(r.value, Date.now()) : unsupportedLinkHealth(Date.now())
-    this.deps.log(
-      'cal.diag',
-      health.supported
-        ? {
-            ...health.diag,
-            resetReason: health.resetReason,
-            firstFault: health.firstFault,
-            selfRecovered: health.selfRecovered
-          }
-        : { supported: false }
-    )
-    this.deps.linkHealth?.(health)
+    if (!r.ok) {
+      this.deps.log('cal.diag', { supported: false })
+      return
+    }
+    this.deps.log('cal.diag', diagLogRow(r.value))
+    const recovery = gatewayRecovery(r.value, Date.now(), this.calSerialNumber)
+    if (recovery) this.deps.recovered?.(recovery)
   }
 
   /** Read stored calibration and report it to the workflow, so badges follow the device. */

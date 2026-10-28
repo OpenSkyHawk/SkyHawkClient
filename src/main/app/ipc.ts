@@ -69,9 +69,7 @@ const IPC_ORDER = [
   // The automatic backups (#136), after every channel that was here before them.
   'config:backups-get',
   'config:backup-restore',
-  'config:backups-reveal',
-  // The Gateway's link health (#169), after every channel that was here before it.
-  'device:diag-refresh'
+  'config:backups-reveal'
 ] as const satisfies readonly CtrlChannel[]
 
 /** IPC_ORDER's type when it lists every channel; otherwise the channels it leaves out. */

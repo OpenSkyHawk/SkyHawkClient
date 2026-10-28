@@ -5,7 +5,7 @@ import type { DeviceState } from '@shared/gateway'
 import { DevicePopover } from '../src/app/titlebar/DevicePopover'
 import { App } from '../src/app/App'
 import { renderScenario } from './render'
-import { PORT, connected, gateway, gatewayNotResponding, link } from './scenarios'
+import { PORT, connected, gateway, gatewayNotResponding, gatewayRecovered, link } from './scenarios'
 
 /** The indicator: the button that opens the Device link popover. */
 const pill = () => screen.getByRole('button', { expanded: false })
@@ -148,6 +148,42 @@ describe('T6 DevicePopover: link states and Gateway Health (B44, B42, B40)', () 
     ).toBeInTheDocument()
     expect(within(dlg).queryByText('Connected')).toBeNull()
     expect(within(dlg).queryByText('Health')).toBeNull()
+  })
+
+  it('it recovered itself (#169): gold "!", its own tooltip, the line under Health — never "a problem"', async () => {
+    const { user } = await renderScenario(<DevicePopover />, {
+      device: connected(gatewayRecovered('recovery'))
+    })
+    expect(pill()).toHaveTextContent('!Gateway')
+    expect(pill()).toHaveClass('devind--warn')
+    expect(pill()).toHaveAttribute(
+      'title',
+      'The Gateway recovered itself since it was plugged in — click for details'
+    )
+    await user.click(pill())
+    const dlg = popover()
+    expect(within(dlg).getByText('OK · 42 °C')).not.toHaveClass('gw--warn')
+    const line = within(dlg).getByText(
+      'Recovered itself since it was plugged in — restarted itself to recover its link to this computer.'
+    )
+    expect(line).toHaveClass('gw__note', 'gw--warn')
+  })
+
+  it('bus-off and a recovery: red "!", both lines — Health, recovery, its note, Firmware', async () => {
+    const { container, user } = await renderScenario(<DevicePopover />, {
+      device: connected(gatewayRecovered('re-plug', { boff: true }))
+    })
+    expect(pill()).toHaveClass('devind--err')
+    await user.click(pill())
+    const order = [...container.querySelectorAll('.gw > *')].map((el) =>
+      el.classList.contains('gw__row') ? el.querySelector('.gw__k')!.textContent : el.textContent
+    )
+    expect(order).toEqual([
+      'Health',
+      'Recovered itself since it was plugged in — re-plugged itself to recover its link to this computer.',
+      'It stopped transmitting after too many CAN errors and recovers by itself in about 40 s.',
+      'Firmware'
+    ])
   })
 
   it('nothing about the Gateway while the link is down', async () => {

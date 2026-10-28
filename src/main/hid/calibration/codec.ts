@@ -31,7 +31,7 @@ import {
   CAL_TYPES
 } from '@shared/firmware'
 import { hexCode, unknownLabel } from '@shared/format'
-import type { GatewayDiag } from '@shared/gateway'
+import type { GatewayDiag } from '../../gateway'
 
 /**
  * Constants from the generated firmware reference (shared/firmware, AxisCal.h), under the names
@@ -411,12 +411,48 @@ export function decodeRaw(p: Uint8Array): RawSample {
   return { idx: p[F.IDX]!, raw: u16(p, F.RAW), cal: u16(p, F.CAL) }
 }
 
-/** u32 little-endian, unsigned: `millis()` passes 2^31 after ~25 days up. */
-const u32 = (p: Uint8Array, off: number) => u16(p, off) + u16(p, off + 2) * 0x10000
+type DiagField = Exclude<keyof typeof CAL_DIAG_FIELD, 'RESERVED'>
 
 /**
- * DIAG (#169): the Gateway's link-health record. Reads the fields this client knows; bytes from
- * CAL_DIAG_FIELD.RESERVED on are sent as 0 and ignored, so a later firmware can fill them.
+ * Each field's width in bytes, from a CalDiagField-shaped offset table (#169): a field runs to the
+ * next one's offset, the last to RESERVED. Nothing is restated, so a field is read at the width
+ * the firmware lays it out.
+ * @throws on a table whose RESERVED isn't last, or a width this client can't read (1, 2 or 4).
+ */
+export function diagWidths<K extends string>(
+  fields: Readonly<Record<K | 'RESERVED', number>>
+): Record<K, number> {
+  const byOffset = (Object.entries(fields) as [K | 'RESERVED', number][]).sort(
+    (a, b) => a[1] - b[1]
+  )
+  const last = byOffset[byOffset.length - 1]
+  if (last?.[0] !== 'RESERVED') throw new Error('calibration: DIAG layout must end at RESERVED')
+  const widths = {} as Record<K, number>
+  for (let i = 0; i < byOffset.length - 1; i++) {
+    const [name, at] = byOffset[i]!
+    const width = byOffset[i + 1]![1] - at
+    if (width !== 1 && width !== 2 && width !== 4) {
+      throw new Error(`calibration: DIAG field ${name} is ${width} bytes wide`)
+    }
+    widths[name as K] = width
+  }
+  return widths
+}
+
+/** The DIAG fields' widths, from the synced offsets (CAL_DIAG_FIELD). */
+export const CAL_DIAG_WIDTH: Readonly<Record<DiagField, number>> = diagWidths(CAL_DIAG_FIELD)
+
+/** Unsigned little-endian of `width` bytes: a u32 `millis()` passes 2^31 after ~25 days up. */
+const uint = (p: Uint8Array, off: number, width: number): number => {
+  let v = 0
+  for (let i = width - 1; i >= 0; i--) v = v * 0x100 + p[off + i]!
+  return v
+}
+
+/**
+ * DIAG (#169): the Gateway's link-health record. Reads the fields this client knows, each at its
+ * synced offset and derived width; bytes from CAL_DIAG_FIELD.RESERVED on are sent as 0 and
+ * ignored, so a later firmware can fill them.
  * @throws on any length but CAL_DIAG_BYTES — the demux only hands over that one, so this is a
  *         programming error, never wire noise.
  */
@@ -424,28 +460,28 @@ export function decodeDiag(p: Uint8Array): GatewayDiag {
   if (p.length !== CAL_DIAG_BYTES) {
     throw new Error(`calibration: DIAG takes ${CAL_DIAG_BYTES} payload bytes, got ${p.length}`)
   }
-  const F = CAL_DIAG_FIELD
+  const at = (f: DiagField) => uint(p, CAL_DIAG_FIELD[f], CAL_DIAG_WIDTH[f])
   return {
-    uptimeMs: u32(p, F.UPTIME_MS),
-    firstUartErrMs: u32(p, F.FIRST_UART_ERR_MS),
-    lastUartErrMs: u32(p, F.LAST_UART_ERR_MS),
-    firstUsbLossMs: u32(p, F.FIRST_USB_LOSS_MS),
-    lastUsbLossMs: u32(p, F.LAST_USB_LOSS_MS),
-    uartOverrun: u16(p, F.UART_OVERRUN),
-    uartFraming: u16(p, F.UART_FRAMING),
-    uartBreak: u16(p, F.UART_BREAK),
-    uartParity: u16(p, F.UART_PARITY),
-    uartRxOverflow: u16(p, F.UART_RX_OVERFLOW),
-    linesDropped: u16(p, F.LINES_DROPPED),
-    linesCorrupt: u16(p, F.LINES_CORRUPT),
-    linesOverlong: u16(p, F.LINES_OVERLONG),
-    framesDropped: u16(p, F.FRAMES_DROPPED),
-    uartRestarts: u16(p, F.UART_RESTARTS),
-    usbReattaches: u16(p, F.USB_REATTACHES),
-    cdcStalls: u16(p, F.CDC_STALLS),
-    recoveryReboots: p[F.RECOVERY_REBOOTS]!,
-    watchdogResets: p[F.WATCHDOG_RESETS]!,
-    resetReason: p[F.RESET_REASON]!
+    uptimeMs: at('UPTIME_MS'),
+    firstUartErrMs: at('FIRST_UART_ERR_MS'),
+    lastUartErrMs: at('LAST_UART_ERR_MS'),
+    firstUsbLossMs: at('FIRST_USB_LOSS_MS'),
+    lastUsbLossMs: at('LAST_USB_LOSS_MS'),
+    uartOverrun: at('UART_OVERRUN'),
+    uartFraming: at('UART_FRAMING'),
+    uartBreak: at('UART_BREAK'),
+    uartParity: at('UART_PARITY'),
+    uartRxOverflow: at('UART_RX_OVERFLOW'),
+    linesDropped: at('LINES_DROPPED'),
+    linesCorrupt: at('LINES_CORRUPT'),
+    linesOverlong: at('LINES_OVERLONG'),
+    framesDropped: at('FRAMES_DROPPED'),
+    uartRestarts: at('UART_RESTARTS'),
+    usbReattaches: at('USB_REATTACHES'),
+    cdcStalls: at('CDC_STALLS'),
+    recoveryReboots: at('RECOVERY_REBOOTS'),
+    watchdogResets: at('WATCHDOG_RESETS'),
+    resetReason: at('RESET_REASON')
   }
 }
 

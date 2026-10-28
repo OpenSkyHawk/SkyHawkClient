@@ -10,13 +10,18 @@
 // the port opened, a roster request unanswered for GATEWAY_NO_ANSWER_MS while the port is open.
 // The re-ask that goes with it lives here too (G1): an unanswered request is asked again every
 // GATEWAY_REASK_MS, so one lost reply is answered long before the deadline and never trips it.
+//
+// It also shows that the Gateway recovered itself this boot (#169): gateway-diag decides whether
+// and how, from its DIAG record; this module words it, beside what its cockpit side reports.
+// Evidence, not a fault: warn at most, never the alert, never "a problem".
 import type { LogEventInput } from '@shared/events'
 import { NODE_FAULT_CODES, type NodeFaultName } from '@shared/firmware'
-import { title } from '@shared/format'
+import { DASH, title } from '@shared/format'
 import type { NodeStatus } from '@shared/nodes'
-import type { DeviceStatus, GatewayKind, GatewayStatus } from '@shared/gateway'
+import type { DeviceStatus, GatewayKind, GatewayRecoveredHow, GatewayStatus } from '@shared/gateway'
 import { faultLabel, STATUS_FLAGS, type StatusFlag } from '../events'
 import { gatewayFirmware } from './firmware'
+import { isNewRecovery, type GatewayRecovery, type RecoveryMark } from './gateway-diag'
 import { isLinkUp } from './link-state'
 
 /** How long a roster request may go unanswered, with the port open, before the Gateway is "not responding". */
@@ -56,19 +61,69 @@ const withTemp = (label: string, n: NodeStatus): string =>
   n.dieTempC === null ? label : `${label} · ${n.dieTempC} °C`
 
 /**
- * The Gateway's health from its own row (node 0) and the roster timeout. undefined = nothing to
- * say yet: nothing is judged before it reports. Bus-off and error-passive come from its CAN
- * controller and are live in every row; overheat, the fault code and the temperature come from its
- * own health frame (HEALTH_0, ~1/s; none with NODE_HEALTH_TELEM=0), which a row has only once its
- * kind is set. Worst first: not responding, bus-off, overheat, error-passive, a fault code.
+ * How each way of recovering itself reads (#169): the popover line, the Events detail and its raw
+ * text. Never the transport's name: "its link to this computer".
+ */
+const RECOVERED: Record<GatewayRecoveredHow, { detail: string; raw: string }> = {
+  recovery: {
+    detail: 'restarted itself to recover its link to this computer',
+    raw: 'device: recovered itself · restarted to recover its link'
+  },
+  're-plug': {
+    detail: 're-plugged itself to recover its link to this computer',
+    raw: 'device: recovered itself · re-plugged to recover its link'
+  },
+  watchdog: {
+    detail: 'its watchdog restarted it',
+    raw: 'device: recovered itself · restarted by its watchdog'
+  }
+}
+
+/** The Events row's event, for any way it recovered itself. */
+const RECOVERED_EVENT = 'recovered itself'
+
+/** The Cockpit Attention item's flag when the recovery is all there is to show. */
+export const RECOVERED_FLAG = 'RECOVERED ITSELF'
+
+/** The popover's line: shown until a power-on, which on the Gateway is a replug. */
+const recoveredNote = (how: GatewayRecoveredHow): string =>
+  `Recovered itself since it was plugged in — ${RECOVERED[how].detail}.`
+
+/** A recovery with nothing reported by its cockpit side yet: no Health row (`unreported`). */
+const UNREPORTED: GatewayStatus = { severity: 'ok', kind: 'unreported', label: DASH }
+
+const SEVERITY_RANK = { ok: 0, warn: 1, err: 2 } as const
+
+/** Its cockpit side reports a problem: `kind` is something to show (not ok, not unreported). */
+export const reportsProblem = (g: GatewayStatus | undefined): boolean =>
+  g !== undefined && g.kind !== 'ok' && g.kind !== 'unreported'
+
+/**
+ * The Gateway's health from its own row (node 0), the roster timeout, and whether it recovered
+ * itself this boot (#169). undefined = nothing to say yet: nothing is judged before it reports.
+ * Bus-off and error-passive come from its CAN controller and are live in every row; overheat, the
+ * fault code and the temperature come from its own health frame (HEALTH_0, ~1/s; none with
+ * NODE_HEALTH_TELEM=0), which a row has only once its kind is set. Worst first: not responding,
+ * bus-off, overheat, error-passive, a fault code. A recovery is a second fact beside the worst
+ * problem, never in its place: severity is the worse of the two, and it alone is warn.
  */
 export function gatewayStatus(
   row: NodeStatus | undefined,
-  notResponding: boolean
+  notResponding: boolean,
+  recovered?: GatewayRecoveredHow
 ): GatewayStatus | undefined {
-  const s = healthOf(row, notResponding)
+  // A recovery is enough for a status before its cockpit side reports.
+  const h = healthOf(row, notResponding) ?? (recovered ? UNREPORTED : undefined)
+  if (!h) return undefined
+  const s: GatewayStatus = recovered
+    ? {
+        ...h,
+        severity: SEVERITY_RANK[h.severity] >= SEVERITY_RANK.warn ? h.severity : 'warn',
+        recovered: { how: recovered, note: recoveredNote(recovered) }
+      }
+    : h
   // Its own firmware release rides along whenever there is a status to carry it (#171).
-  return s && row ? { ...s, firmware: gatewayFirmware(row) } : s
+  return row ? { ...s, firmware: gatewayFirmware(row) } : s
 }
 
 function healthOf(row: NodeStatus | undefined, notResponding: boolean): GatewayStatus | undefined {
@@ -161,8 +216,13 @@ const RANK: Record<GatewayKind, number> = {
   overheat: 3,
   'error-passive': 2,
   fault: 1,
-  ok: 0
+  ok: 0,
+  unreported: 0
 }
+
+/** The problem it shows, if any: `unreported` reads as `ok` here (nothing reported is no news). */
+const problemOf = (s: GatewayStatus | undefined): GatewayStatus | undefined =>
+  reportsProblem(s) ? s : undefined
 
 /** The node rows' wording for each kind: event name and detail. */
 function said(s: GatewayStatus, row: NodeStatus | undefined): { event: string; detail?: string } {
@@ -188,28 +248,42 @@ const sameProblem = (a?: GatewayStatus, b?: GatewayStatus): boolean =>
  * Rows for a change in what the Gateway shows (worst problem only, as every surface shows it): the
  * new problem raised (error / warn), or the old one cleared (info) — `responding again` after not
  * responding. A milder problem taking over says the worse one cleared, then names itself.
+ * `newRecovery`: it recovered itself, and no row has said so for this boot yet (#169,
+ * gateway-diag isNewRecovery) — one warn row. There is no "cleared" row for a recovery.
  */
 export function gatewayEvents(
   prev: GatewayStatus | undefined,
   next: GatewayStatus | undefined,
   row: NodeStatus | undefined,
   raw: string,
-  now: number
+  now: number,
+  newRecovery?: GatewayRecoveredHow
 ): LogEventInput[] {
-  if (sameProblem(prev, next)) return []
   const out: LogEventInput[] = []
-  const ev = (severity: LogEventInput['severity'], event: string, detail?: string): void => {
-    out.push({ t: now, source: 'client', name: 'Gateway', severity, event, detail, raw })
+  const ev = (
+    severity: LogEventInput['severity'],
+    event: string,
+    detail?: string,
+    text = raw
+  ): void => {
+    out.push({ t: now, source: 'client', name: 'Gateway', severity, event, detail, raw: text })
   }
-  const was = prev && prev.kind !== 'ok' ? prev : undefined
-  const is = next && next.kind !== 'ok' ? next : undefined
-  if (was && (!is || RANK[is.kind] < RANK[was.kind] || was.kind === is.kind)) {
-    if (was.kind === 'not-responding') ev('info', 'responding again')
-    else if (!is || is.kind !== was.kind) ev('info', `${said(was, row).event} cleared`)
+  const was = problemOf(prev)
+  const is = problemOf(next)
+  if (!sameProblem(was, is)) {
+    if (was && (!is || RANK[is.kind] < RANK[was.kind] || was.kind === is.kind)) {
+      if (was.kind === 'not-responding') ev('info', 'responding again')
+      else if (!is || is.kind !== was.kind) ev('info', `${said(was, row).event} cleared`)
+    }
+    if (is) {
+      const s = said(is, row)
+      // A problem is warn or err itself, so a recovery beside it never changes its severity.
+      ev(is.severity === 'err' ? 'error' : 'warn', s.event, s.detail)
+    }
   }
-  if (is) {
-    const s = said(is, row)
-    ev(is.severity === 'err' ? 'error' : 'warn', s.event, s.detail)
+  if (newRecovery) {
+    const r = RECOVERED[newRecovery]
+    ev('warn', RECOVERED_EVENT, r.detail, r.raw)
   }
   return out
 }
@@ -217,9 +291,10 @@ export function gatewayEvents(
 // ── the watch ───────────────────────────────────────────────────────────────
 
 /**
- * Follows the Gateway for one open port: its own row, and whether it still answers roster
- * requests. Driven by the device link (asked / answered / report / tick); hands back log rows for
- * what changed, says when the status worth pushing changed, and when to ask again (reaskDue).
+ * Follows the Gateway for one open port: its own row, whether it still answers roster requests,
+ * and whether it recovered itself this boot (#169). Driven by the device link (asked / answered /
+ * report / recovered / tick); hands back log rows for what changed, says when the status worth
+ * pushing changed, and when to ask again (reaskDue).
  */
 export class GatewayWatch {
   /** The oldest roster request still unanswered. */
@@ -233,6 +308,14 @@ export class GatewayWatch {
    * answers (built without node status, PANELBRIDGE_NODE_STATUS off) is not "not responding".
    */
   private answeredOnce = false
+  /** How it recovered itself this boot, from this port's connect read (#169). */
+  private recovery?: GatewayRecoveredHow
+  /**
+   * The last recovery each Gateway got an Events row for, by USB serial ('' for one that reports
+   * none). Held for this app run only, never on disk, and kept through reset(): a reconnect to the
+   * same boot with nothing new writes no second row (gateway-diag isNewRecovery).
+   */
+  private readonly logged = new Map<string, RecoveryMark>()
   private current?: GatewayStatus
   private changed = true
 
@@ -243,6 +326,7 @@ export class GatewayWatch {
     this.row = undefined
     this.noAnswer = false
     this.answeredOnce = false
+    this.recovery = undefined
     this.current = undefined
     this.changed = true
   }
@@ -284,6 +368,18 @@ export class GatewayWatch {
   }
 
   /**
+   * This port's connect read found it recovered itself this boot (#169). Shown until the link
+   * goes (reset); an Events row only when it's new since the last row for this Gateway.
+   */
+  recovered(r: GatewayRecovery, now: number): LogEventInput[] {
+    const key = r.serial ?? ''
+    const fresh = isNewRecovery(this.logged.get(key), r)
+    if (fresh) this.logged.set(key, { bootAt: r.bootAt, reattaches: r.reattaches })
+    this.recovery = r.how
+    return this.update(RECOVERED[r.how].raw, now, fresh ? r.how : undefined)
+  }
+
+  /**
    * Called on the link's flush tick while the port is open. `paused`: a calibration exchange holds
    * the link, and a roster request going unanswered then is not news, so the clock starts over.
    * Clock only: "not responding" ends with an answer, never with a pause. Armed by its first
@@ -298,13 +394,14 @@ export class GatewayWatch {
     return this.update(`device: no roster reply for ${SECS} s`, now)
   }
 
-  private update(raw: string, now: number): LogEventInput[] {
+  private update(raw: string, now: number, newRecovery?: GatewayRecoveredHow): LogEventInput[] {
     const prev = this.current
-    const next = gatewayStatus(this.row, this.noAnswer)
-    if (JSON.stringify(prev) === JSON.stringify(next)) return []
-    this.current = next
-    this.changed = true
-    return gatewayEvents(prev, next, this.row, raw, now)
+    const next = gatewayStatus(this.row, this.noAnswer, this.recovery)
+    if (JSON.stringify(prev) !== JSON.stringify(next)) {
+      this.current = next
+      this.changed = true
+    } else if (!newRecovery) return []
+    return gatewayEvents(prev, next, this.row, raw, now, newRecovery)
   }
 
   status(): GatewayStatus | undefined {
