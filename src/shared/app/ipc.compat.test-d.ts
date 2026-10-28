@@ -135,6 +135,13 @@
 // `recovered` (it re-plugged or restarted itself this boot) and `GatewayKind` gained `unreported`
 // (a type change only).
 //
+// #192 (the firmware release check and the saved releases): the new topic `releases` added the
+// push `releases:state` (IPC.releasesState) → `ReleasesState` — the check's state, the last check,
+// the saved releases and whether *Clear* can run, pushed after every change — and three intents:
+// `releases:get` (getReleases → ReleasesState, the renderer's pull on load), `releases:check`
+// (checkReleases, *Check now*, joining a check already running) and `releases:clear`
+// (clearReleases, *Clear*). No other channel, intent or method changed.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator
@@ -190,6 +197,7 @@ import type {
   ResetPreview
 } from '../nodes/ipc'
 import type { LogEvent } from '../events/ipc'
+import type { ReleasesState } from '../releases/ipc'
 
 /** Exact type equality (mutual assignability is not enough: it misses optional/readonly drift). */
 type Equal<X, Y> =
@@ -239,6 +247,7 @@ interface OldPushChannels {
   'config:changed': ConfigChanged
   'relay:facts': RelayFacts
   'config:backups': BackupList
+  'releases:state': ReleasesState
 }
 
 type OldPushChannel = keyof OldPushChannels
@@ -259,6 +268,7 @@ interface OldIPC {
   readonly configChanged: 'config:changed'
   readonly relayFacts: 'relay:facts'
   readonly configBackups: 'config:backups'
+  readonly releasesState: 'releases:state'
 }
 
 interface OldCTRL {
@@ -309,6 +319,9 @@ interface OldCTRL {
   readonly configBackupsGet: 'config:backups-get'
   readonly configBackupRestore: 'config:backup-restore'
   readonly configBackupsReveal: 'config:backups-reveal'
+  readonly releasesGet: 'releases:get'
+  readonly releasesCheck: 'releases:check'
+  readonly releasesClear: 'releases:clear'
 }
 
 interface OldSkyhawkApi {
@@ -364,6 +377,9 @@ interface OldSkyhawkApi {
   calDeleteAxis(idx: number): Promise<void>
   calSetRestoreOpen(open: boolean): Promise<void>
   calAttach(on: boolean): Promise<void>
+  getReleases(): Promise<ReleasesState>
+  checkReleases(): Promise<void>
+  clearReleases(): Promise<void>
 }
 
 /** R3.4c: one `push:batch` message — main's pushes of one turn, in order. */

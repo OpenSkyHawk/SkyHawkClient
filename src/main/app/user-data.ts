@@ -31,20 +31,25 @@ export function storePaths(userData: () => string) {
   return {
     configFile: (): string => join(userData(), 'config.json'),
     calibrationCacheFile: (): string => join(userData(), 'calibration-cache.json'),
-    nodeMappingFile: (): string => join(userData(), 'node-mapping.json')
+    nodeMappingFile: (): string => join(userData(), 'node-mapping.json'),
+    /** The saved firmware releases, a folder per version (#192). */
+    firmwareDir: (): string => join(userData(), 'firmware'),
+    /** The last firmware release check that reached GitHub (#192). */
+    releaseCheckFile: (): string => join(userData(), 'release-check.json')
   }
 }
 
 export type StorePaths = ReturnType<typeof storePaths>
 
 /**
- * The two <userData> files other topics reach through a port, each under the JSON store's one set
- * of rules: satisfies nodes' MappingFileIO and hid/calibration's CacheFileIO. config.json is
- * config's own, so settings-service builds its file itself.
+ * The <userData> files other topics reach through a port, each under the JSON store's one set
+ * of rules: satisfies nodes' MappingFileIO, hid/calibration's CacheFileIO and releases'
+ * CheckFileIO. config.json is config's own, so settings-service builds its file itself.
  */
 export function storeFiles(paths: StorePaths) {
   return {
     mappingFile: jsonFile(() => paths.nodeMappingFile()),
-    cacheFile: jsonFile(() => paths.calibrationCacheFile())
+    cacheFile: jsonFile(() => paths.calibrationCacheFile()),
+    releaseCheckFile: jsonFile(() => paths.releaseCheckFile())
   }
 }

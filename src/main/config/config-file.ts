@@ -110,7 +110,10 @@ function checkImportedApp(raw: unknown): Checked<AppSettings> {
   if (!isPlainObject(raw)) return { ok: false, reason: 'it is not a settings section' }
   const read = appSettings(sanitizeConfig({ ...raw, psu: undefined }))
   for (const f of APP_FIELDS) {
-    if (!(f.key in raw)) return { ok: false, reason: `it has no “${f.label}” setting` }
+    if (!(f.key in raw)) {
+      if (f.optional) continue
+      return { ok: false, reason: `it has no “${f.label}” setting` }
+    }
     if (raw[f.key] !== read[f.key]) {
       return { ok: false, reason: `its “${f.label}” setting is not valid` }
     }
@@ -193,7 +196,16 @@ function readBackupBefore(raw: unknown): BackupBefore | undefined {
 
 // ── review: what applying a section would change ─────────────────────────────
 
-const APP_FIELDS: { key: keyof AppSettings; label: string; show?: (v: never) => string }[] = [
+/**
+ * The app section's settings. `optional`: added after files were first exported, so a file without
+ * it still imports, with that setting's default.
+ */
+const APP_FIELDS: {
+  key: keyof AppSettings
+  label: string
+  show?: (v: never) => string
+  optional?: true
+}[] = [
   { key: 'sourceMode', label: 'Source mode' },
   { key: 'transport', label: 'DCS transport' },
   { key: 'host', label: 'DCS host' },
@@ -202,7 +214,13 @@ const APP_FIELDS: { key: keyof AppSettings; label: string; show?: (v: never) => 
   { key: 'autoConnect', label: 'Connect automatically', show: onOff },
   { key: 'replayDriveSerial', label: 'Replay drives the Gateway', show: onOff },
   { key: 'debugMode', label: 'Debug logging', show: onOff },
-  { key: 'attentionBanner', label: 'Attention banner', show: onOff }
+  { key: 'attentionBanner', label: 'Attention banner', show: onOff },
+  {
+    key: 'checkFirmwareOnLaunch',
+    label: 'Check for updates on launch',
+    show: onOff,
+    optional: true
+  }
 ]
 
 function diffApp(cur: AppSettings, next: AppSettings): DiffRow[] {

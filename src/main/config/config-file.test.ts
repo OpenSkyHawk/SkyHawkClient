@@ -180,6 +180,17 @@ describe('parseConfigFile: strict import validation (C1)', () => {
     expect(verdict('app', { ...app, futureSetting: 1, psu: { mode: 'custom' } })).toEqual(app)
   })
 
+  it('app: a file from before #192 has no firmware-check setting and still imports, with its default', () => {
+    const { checkFirmwareOnLaunch: _c, ...before192 } = DEFAULT_APP_SETTINGS
+    expect(verdict('app', { ...before192, debugMode: true })).toEqual({
+      ...DEFAULT_APP_SETTINGS,
+      debugMode: true
+    })
+    expect(verdict('app', { ...DEFAULT_APP_SETTINGS, checkFirmwareOnLaunch: 'no' })).toBe(
+      'its “Check for updates on launch” setting is not valid'
+    )
+  })
+
   it('nodeMapping: its markers are `version` and `nodes`; `{}` is not an empty cockpit', () => {
     expect(verdict('nodeMapping', {})).toBe('it has no version')
     expect(verdict('nodeMapping', { nodes: {} })).toBe('it has no version')

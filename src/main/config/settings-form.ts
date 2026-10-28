@@ -37,6 +37,7 @@ export function formOf(cfg: AppConfig): ConfigForm {
     replayDriveSerial: cfg.replayDriveSerial,
     debugMode: cfg.debugMode,
     attentionBanner: cfg.attentionBanner,
+    checkFirmwareOnLaunch: cfg.checkFirmwareOnLaunch,
     psu: cfg.psu
   }
 }
@@ -52,6 +53,7 @@ export function buildConfig(s: ConfigForm): Partial<AppConfig> {
     replayDriveSerial: s.replayDriveSerial,
     debugMode: s.debugMode,
     attentionBanner: s.attentionBanner,
+    checkFirmwareOnLaunch: s.checkFirmwareOnLaunch,
     psu: s.psu
   }
 }

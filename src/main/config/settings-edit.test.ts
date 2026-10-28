@@ -31,6 +31,7 @@ describe('the forms’ save (buildConfig)', () => {
       [
         'attentionBanner',
         'autoConnect',
+        'checkFirmwareOnLaunch',
         'commandPort',
         'debugMode',
         'host',

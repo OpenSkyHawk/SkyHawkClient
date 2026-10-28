@@ -29,6 +29,7 @@ import type {
   NodeSnapshot,
   ResetPreview
 } from '@shared/nodes'
+import type { ReleasesState } from '@shared/releases'
 
 // Each push channel's subscribers, in the order they subscribed.
 const subscribers = new Map<PushChannel, Set<(data: never) => void>>()
@@ -117,7 +118,10 @@ const api: SkyhawkApi = {
   calDeleteAxis: (idx: number) => ipcRenderer.invoke(CTRL.calDeleteAxis, idx) as Promise<void>,
   calSetRestoreOpen: (open: boolean) =>
     ipcRenderer.invoke(CTRL.calSetRestoreOpen, open) as Promise<void>,
-  calAttach: (on: boolean) => ipcRenderer.invoke(CTRL.calAttach, on) as Promise<void>
+  calAttach: (on: boolean) => ipcRenderer.invoke(CTRL.calAttach, on) as Promise<void>,
+  getReleases: () => ipcRenderer.invoke(CTRL.releasesGet) as Promise<ReleasesState>,
+  checkReleases: () => ipcRenderer.invoke(CTRL.releasesCheck) as Promise<void>,
+  clearReleases: () => ipcRenderer.invoke(CTRL.releasesClear) as Promise<void>
 }
 
 contextBridge.exposeInMainWorld('skyhawk', api)

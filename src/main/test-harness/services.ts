@@ -9,6 +9,7 @@
 //   - IPC intents (renderer → main requests, by their CTRL channel name),
 //   - the files main writes under <userData>,
 //   - bytes on the fake serial port and the fake DCS socket,
+//   - requests to a fake GitHub (the firmware release check),
 //   - a clock it advances.
 // Never the objects inside. The harness wraps `AppServices` (R2.3c): when the services moved, only
 // this file changed, and the tests written against it kept passing as they are.
@@ -20,6 +21,7 @@ import { CTRL, type IpcListener, type PushChannel, type PushChannels } from '@sh
 import type { AppConfig, ConfigEdit } from '@shared/config'
 import type { RecordState, ReplayLoad } from '@shared/dcs'
 import type { AdoptRequest, AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes'
+import type { FetchPort } from '../releases'
 
 // ── the outside world, faked ─────────────────────────────────────────────────
 
@@ -33,6 +35,8 @@ const world = {
   /** Every byte sent to DCS, in order, across relay restarts. */
   dcsOut: [] as Buffer[],
   transportConnectsOnStart: false,
+  /** GitHub, as Electron's net.fetch reaches it: unreachable unless a test serves one. */
+  github: (() => Promise.reject(new Error('offline'))) as FetchPort,
   /** What the file dialogs answer: a file name in <userData>, or none (cancelled). */
   dialogs: {
     saveCapture: undefined as string | undefined,
@@ -127,7 +131,8 @@ vi.doMock('electron', () => ({
     getPath: () => world.userData,
     getVersion: () => '0.0.0-test',
     isPackaged: false
-  }
+  },
+  net: { fetch: (url: string, init: Parameters<FetchPort>[1]) => world.github(url, init) }
 }))
 vi.doMock('../gateway/serial-bridge', () => ({
   SerialBridge: FakeSerial,
@@ -160,6 +165,8 @@ export interface ServicesOptions {
    * as is, anything else as JSON). `config.json` is what the app launches with.
    */
   paths?: { files?: Record<string, unknown> }
+  /** GitHub, for the firmware release check (src/test-fixtures/releases.ts). Default: offline. */
+  github?: FetchPort
 }
 
 type Push = { [C in PushChannel]: { channel: C; payload: PushChannels[C] } }[PushChannel]
@@ -204,6 +211,7 @@ function launch(opts: ServicesOptions) {
     serialOut: [],
     dcsOut: [],
     transportConnectsOnStart: opts.transport?.connectOnStart ?? false,
+    github: opts.github ?? (() => Promise.reject(new Error('offline'))),
     dialogs: { saveCapture: undefined, openCapture: undefined }
   })
   FakeSerial.last = undefined
@@ -269,7 +277,10 @@ function launch(opts: ServicesOptions) {
     [CTRL.nodeMappingUnhide]: (ids: number[]) => services.nodes.unhide(ids),
     [CTRL.serialMonitor]: (on: boolean) => services.serialMonitor.setSerialMonitor(on),
     [CTRL.eventsGet]: () => services.journal.snapshot(),
-    [CTRL.eventsClear]: () => services.journal.clear()
+    [CTRL.eventsClear]: () => services.journal.clear(),
+    [CTRL.releasesGet]: () => services.releases.state(),
+    [CTRL.releasesCheck]: () => services.releases.checkNow(),
+    [CTRL.releasesClear]: () => services.releases.clear()
   }
   type Intents = typeof intents
 

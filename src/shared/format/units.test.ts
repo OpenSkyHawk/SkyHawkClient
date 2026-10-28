@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amps, fmtBytes, fmtPct, hex2, hex4, hexCode, volts, voltsValue } from './units'
+import { amps, fmtBytes, fmtPct, hex2, hex4, hexCode, megabytes, volts, voltsValue } from './units'
 
 describe('volts / amps', () => {
   it('volts: millivolts as "12.00 V"', () => {
@@ -27,6 +27,14 @@ describe('fmtBytes', () => {
     expect(fmtBytes(1023.9)).toBe('1024 B/s')
     expect(fmtBytes(1024)).toBe('1.0 KB/s')
     expect(fmtBytes(2048.4)).toBe('2.0 KB/s')
+  })
+})
+
+describe('megabytes', () => {
+  it('decimal MB with one decimal', () => {
+    expect(megabytes(2_018_230)).toBe('2.0 MB')
+    expect(megabytes(1_470_165)).toBe('1.5 MB')
+    expect(megabytes(0)).toBe('0.0 MB')
   })
 })
 

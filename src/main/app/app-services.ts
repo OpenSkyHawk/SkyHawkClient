@@ -1,7 +1,8 @@
 // The main process's services, built and wired: the Gateway link (gateway/), the nodes (nodes/),
 // HID and calibration (hid/), and the DCS side — the relay, its network end, the stream log, the
-// stats and the recorder (dcs/), the settings (config/) and the event log (events/). Each lives
-// with its owner; AppServices only builds and connects them, and answers the rehydrate bundle.
+// stats and the recorder (dcs/), the settings (config/), the event log (events/) and the firmware
+// releases (releases/). Each lives with its owner; AppServices only builds and connects them, and
+// answers the rehydrate bundle.
 // It holds no rules and no state (UD-F): it is the seam the contract tests build with the edges
 // faked (test-harness/services.ts).
 //
@@ -9,14 +10,21 @@
 // in (gateway/gateway-connection.ts); a source mode only chooses where the stream comes from and
 // whether it reaches the device.
 import type { Emit, RelayStatus } from '@shared/app'
-import { app } from 'electron'
+import { app, net } from 'electron'
 import { DcsConnection, DcsRelay, SessionRecorder, Stats, StreamLog } from '../dcs'
 import { SettingsService } from '../config'
 import { EventJournal } from '../events'
-import { deviceEvent, DeviceLineTap, GatewayConnection, SerialTrafficMonitor } from '../gateway'
+import {
+  deviceEvent,
+  DeviceLineTap,
+  GatewayConnection,
+  newerThanClient,
+  SerialTrafficMonitor
+} from '../gateway'
 import { HidService } from '../hid'
 import { HidCalibrationService } from '../hid/calibration'
 import { NodeHub, NodeRoster } from '../nodes'
+import { Releases } from '../releases'
 import { debugLog, setDebugEnabled } from './debug-log'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
 
@@ -41,6 +49,8 @@ export class AppServices {
   readonly relay: DcsRelay
   /** Recording a live session to a capture file. */
   readonly recorder: SessionRecorder
+  /** The firmware release check and the releases saved on this computer (#192). */
+  readonly releases: Releases
   /** The relay's network end: the link to DCS-BIOS. */
   private readonly dcs: DcsConnection
   /** The Log tab's stream rows and their flush. */
@@ -52,7 +62,7 @@ export class AppServices {
    * the same way, for callers that build an AppServices on its own.
    */
   constructor(emit: Emit, paths: StorePaths = storePaths(() => app.getPath('userData'))) {
-    const { mappingFile, cacheFile } = storeFiles(paths)
+    const { mappingFile, cacheFile, releaseCheckFile } = storeFiles(paths)
     // The event log first (no constructor here has a side effect): the three <userData> files
     // report their problems to it (#136).
     this.journal = new EventJournal(emit, debugLog)
@@ -84,6 +94,16 @@ export class AppServices {
       link: this.connection
     })
     this.serialMonitor = new SerialTrafficMonitor(emit)
+    // GitHub through Electron's net (P6: only app asks electron); the newer-major rule is gateway's.
+    this.releases = new Releases(emit, {
+      fetch: (url, init) => net.fetch(url, init),
+      userAgent: () => `OpenSkyhawk-Client/${app.getVersion()}`,
+      dir: () => paths.firmwareDir(),
+      checkFile: releaseCheckFile,
+      events: this.journal,
+      newerThanClient,
+      log: debugLog
+    })
     this.lines = new DeviceLineTap(this.nodes)
     this.recorder = new SessionRecorder()
     this.streamLog = new StreamLog(emit, this.stats, this.journal)
@@ -181,10 +201,14 @@ export class AppServices {
     })
   }
 
-  /** App launch: bring up the device link and the log, independent of any relay. */
+  /**
+   * App launch: bring up the device link and the log, independent of any relay; then the saved
+   * firmware releases, and a release check if *Check for updates on launch* is on.
+   */
   open(): void {
     if (!this.streamLog.open()) return
     this.connection.start(this.settings.get().autoConnect)
+    void this.releases.open(this.settings.get().checkFirmwareOnLaunch)
   }
 
   /** App quit. */

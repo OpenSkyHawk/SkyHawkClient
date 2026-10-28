@@ -49,6 +49,8 @@ export interface ConfigState {
 
   // Cockpit options (#67)
   attentionBanner: boolean
+  /** Settings › Cockpit › Firmware updates (#192). */
+  checkFirmwareOnLaunch: boolean
   psu: PsuSetting
   /** What the PSU setting comes to — preset, limits, name — as main resolves it (R3.3). */
   psuView: PsuView
@@ -121,6 +123,7 @@ function configState(cfg: AppConfig): ConfigFields & Pick<ConfigState, 'portErro
     replayDriveSerial: cfg.replayDriveSerial,
     debugMode: cfg.debugMode,
     attentionBanner: cfg.attentionBanner,
+    checkFirmwareOnLaunch: cfg.checkFirmwareOnLaunch,
     psu: cfg.psu
   }
 }
@@ -136,6 +139,7 @@ type ConfigFields = Pick<
   | 'replayDriveSerial'
   | 'debugMode'
   | 'attentionBanner'
+  | 'checkFirmwareOnLaunch'
   | 'psu'
 >
 
