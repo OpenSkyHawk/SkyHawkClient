@@ -81,7 +81,7 @@ describe('T39 firmware version and major mismatch (#171)', () => {
   })
 
   it('the device card and the popover show the Gateway’s own release', async () => {
-    await renderScenario(
+    const { user } = await renderScenario(
       <>
         <Connection />
         <DevicePopover />
@@ -89,6 +89,11 @@ describe('T39 firmware version and major mismatch (#171)', () => {
       { device: connected(gw([0, 0, 0])) }
     )
     expect(screen.getByText('Firmware').parentElement).toHaveTextContent(/^Firmwarenot reported$/)
+    await user.click(screen.getByRole('button', { expanded: false }))
+    const pop = screen.getByRole('dialog', { name: 'Device link' })
+    expect(within(pop).getByText('Firmware').parentElement).toHaveTextContent(
+      /^Firmwarenot reported$/
+    )
   })
 
   it('popover: the release, and gold when it is newer than this client supports', async () => {

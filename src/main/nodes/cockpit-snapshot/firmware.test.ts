@@ -165,6 +165,15 @@ describe('a board on another major than the Gateway (#171)', () => {
     }
   })
 
+  it('an offline board keeps its last row: 0.0.0 still reads "version not reported", never a mismatch', () => {
+    const v = nodeViews(model([board(6, [0, 0, 0], { availability: 'offline' })]), [], gw(1))[0]!
+    expect(v.firmware).toEqual({ version: null, notReported: true })
+    expect(boardFirmwareRows(v)).toEqual({
+      installed: 'version not reported',
+      hint: 'This board hasn’t reported its firmware version yet.'
+    })
+  })
+
   it('an offline board shows no mismatch item: offline says it all', () => {
     const vs = nodeViews(model([board(2, [0, 2, 0], { availability: 'offline' })]), [], gw(1))
     expect(attentionItems(vs, []).map((i) => i.key)).toEqual(['n-2'])
