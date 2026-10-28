@@ -115,6 +115,7 @@ import {
   type SkyhawkApi
 } from '@shared/app'
 import type { LogEvent } from '@shared/events'
+import { RELEASES_STATE_DEFAULT, type ReleasesState } from '@shared/releases'
 
 /** What main knows right now. Every field is optional: absent = main's state at launch. */
 export interface Scenario {
@@ -132,6 +133,8 @@ export interface Scenario {
   backups?: BackupList
   /** The session's event log rows, oldest first (`events:batch`). */
   events?: LogEvent[]
+  /** The release check and the saved releases (`releases:state`; `getReleases` answers it too). */
+  releases?: ReleasesState
   /** Calibration the device confirmed (GET_CAL's answer, handed to the workflow; not pushed). */
   cal?: CalSnapshot
   /** The latest HID report (`hid:report`). */
@@ -223,6 +226,7 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel | null } = {
   backups: 'config:backups',
   telemetry: null,
   events: 'events:batch',
+  releases: 'releases:state',
   cal: null,
   hid: 'hid:report',
   stream: 'log:batch',
@@ -318,6 +322,9 @@ export function installSkyhawkMock(): SkyhawkMock {
       })
     ),
     revealConfigBackups: vi.fn(() => resolve(undefined)),
+    getReleases: vi.fn(() => resolve(state.releases ?? RELEASES_STATE_DEFAULT)),
+    checkReleases: vi.fn(() => resolve(undefined)),
+    clearReleases: vi.fn(() => resolve(undefined)),
     // An applied import: main's settings are what it answered, and its forms start over from them.
     applyConfigImport: after(
       vi.fn<SkyhawkApi['applyConfigImport']>(() => resolve({ ok: false as const, error: 'mock' })),

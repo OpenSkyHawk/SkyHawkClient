@@ -32,6 +32,11 @@ export interface AppConfig {
   debugMode: boolean // write diagnostics (serial enumeration, device events) to a local log file
   /** Show board-reported problems on the Overview tab (#65). Settings › Cockpit (#67). */
   attentionBanner: boolean
+  /**
+   * Check GitHub for a new firmware release on launch, and save it on this computer (#192).
+   * Settings › Cockpit › Firmware updates. Off: no check on launch; *Check now* still checks.
+   */
+  checkFirmwareOnLaunch: boolean
   /** Power supply limits for the Cockpit headroom (#63). Settings › Cockpit (#67). */
   psu: PsuSetting
 }
@@ -46,6 +51,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   replayDriveSerial: false,
   debugMode: false,
   attentionBanner: true,
+  checkFirmwareOnLaunch: true,
   psu: DEFAULT_PSU
 }
 
@@ -64,6 +70,7 @@ export interface ConfigEdit {
   replayDriveSerial?: boolean
   debugMode?: boolean
   attentionBanner?: boolean
+  checkFirmwareOnLaunch?: boolean
   psu?: PsuSetting
   /**
    * Settings › Cockpit's PSU switch (R3.4a): main switches the mode over the setting it holds,

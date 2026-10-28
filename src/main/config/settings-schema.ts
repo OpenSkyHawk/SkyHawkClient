@@ -34,6 +34,10 @@ export function sanitizeConfig(raw: unknown): AppConfig {
     debugMode: typeof r.debugMode === 'boolean' ? r.debugMode : DEFAULT_CONFIG.debugMode,
     attentionBanner:
       typeof r.attentionBanner === 'boolean' ? r.attentionBanner : DEFAULT_CONFIG.attentionBanner,
+    checkFirmwareOnLaunch:
+      typeof r.checkFirmwareOnLaunch === 'boolean'
+        ? r.checkFirmwareOnLaunch
+        : DEFAULT_CONFIG.checkFirmwareOnLaunch,
     psu: sanitizePsu(r.psu)
   }
 }

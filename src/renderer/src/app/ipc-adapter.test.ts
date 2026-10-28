@@ -12,6 +12,7 @@ import type { DeviceStatus, DeviceStatusPush } from '@shared/gateway'
 import type { HidSnapshot } from '@shared/hid'
 import { BACKUP_LIST_DEFAULT, DEFAULT_CONFIG, PSU_VIEW_DEFAULT } from '@shared/config'
 import { AIRCRAFT_NONE, TELEMETRY_IDLE } from '@shared/dcs'
+import { RELEASES_STATE_DEFAULT } from '@shared/releases'
 import { isLinkUp, LinkDownClock, linkFacts } from '../../../main/gateway/link-state'
 import { relayFacts } from '../../../main/dcs/relay-rules'
 import { hidFacts } from '../../../main/hid/hid-facts'
@@ -109,6 +110,8 @@ function fakeApi() {
       }),
     // The automatic backups (`config:backups-get`, #136): none.
     getConfigBackups: () => Promise.resolve(BACKUP_LIST_DEFAULT),
+    // The firmware releases (`releases:get`, #192): nothing checked or saved yet.
+    getReleases: () => Promise.resolve(RELEASES_STATE_DEFAULT),
     getHidAvailability: () => Promise.resolve({ axes: [0, 1], hats: [], buttons: [] }),
     setConfig: (patch: unknown) => Promise.resolve(patch),
     editConfig: (edit: unknown) => Promise.resolve(edit),

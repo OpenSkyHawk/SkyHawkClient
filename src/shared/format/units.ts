@@ -14,6 +14,9 @@ export function fmtBytes(n: number): string {
   return n >= 1024 ? (n / 1024).toFixed(1) + ' KB/s' : Math.round(n) + ' B/s'
 }
 
+/** A size on disk, in decimal megabytes with one decimal: `2.0 MB` (#192, saved firmware). */
+export const megabytes = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`
+
 /** `4.6%` under 10 %, `53%` from there. */
 export function fmtPct(pct: number): string {
   const one = Number(pct.toFixed(1))

@@ -20,6 +20,7 @@ describe('sanitizeConfig', () => {
       replayDriveSerial: true,
       debugMode: true,
       attentionBanner: false,
+      checkFirmwareOnLaunch: false,
       psu: { mode: 'custom', preset: 'nx650', custom: { a12: 40, w: 650 } }
     })
     expect(out).toEqual({
@@ -32,6 +33,7 @@ describe('sanitizeConfig', () => {
       replayDriveSerial: true,
       debugMode: true,
       attentionBanner: false,
+      checkFirmwareOnLaunch: false,
       psu: { mode: 'custom', preset: 'nx650', custom: { a12: 40, w: 650 } }
     })
   })
@@ -45,8 +47,11 @@ describe('sanitizeConfig', () => {
   })
 
   it('keeps the Cockpit options apart from junk', () => {
-    expect(sanitizeConfig({ attentionBanner: 'off', psu: 'NX650' })).toMatchObject({
+    expect(
+      sanitizeConfig({ attentionBanner: 'off', checkFirmwareOnLaunch: 'no', psu: 'NX650' })
+    ).toMatchObject({
       attentionBanner: true,
+      checkFirmwareOnLaunch: true,
       psu: DEFAULT_CONFIG.psu
     })
   })

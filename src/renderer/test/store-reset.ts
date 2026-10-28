@@ -10,6 +10,7 @@ import { useGatewayStore } from '../src/gateway'
 import { useHidStore } from '../src/hid'
 import { useCalibrationStore } from '../src/hid/calibration'
 import { useNodesStore } from '../src/nodes'
+import { useReleasesStore } from '../src/releases'
 
 interface Store<T> {
   getState(): T
@@ -24,7 +25,8 @@ const stores: Store<unknown>[] = [
   useHidStore,
   useCalibrationStore,
   useEventsStore,
-  useConfigStore
+  useConfigStore,
+  useReleasesStore
 ] as Store<unknown>[]
 
 const initial = stores.map((s) => s.getState())

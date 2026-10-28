@@ -13,6 +13,7 @@ import { listSerialPorts, registerGatewayIpc } from '../gateway'
 import { registerHidIpc } from '../hid'
 import { registerCalibrationIpc } from '../hid/calibration'
 import { registerNodesIpc } from '../nodes'
+import { registerReleasesIpc } from '../releases'
 import type { AppServices } from './app-services'
 import { debugLog, debugLogPath } from './debug-log'
 import type { Dialogs } from './dialogs'
@@ -69,7 +70,11 @@ const IPC_ORDER = [
   // The automatic backups (#136), after every channel that was here before them.
   'config:backups-get',
   'config:backup-restore',
-  'config:backups-reveal'
+  'config:backups-reveal',
+  // The firmware releases (#192), after every channel that was here before them.
+  'releases:get',
+  'releases:check',
+  'releases:clear'
 ] as const satisfies readonly CtrlChannel[]
 
 /** IPC_ORDER's type when it lists every channel; otherwise the channels it leaves out. */
@@ -108,6 +113,7 @@ export function registerIpc(ipcMain: IpcRegistrar, deps: IpcDeps): void {
   registerNodesIpc(ipc, { nodes: services.nodes })
   registerCalibrationIpc(ipc, { calibration: services.calibration })
   registerEventsIpc(ipc, { journal: services.journal, dialogs })
+  registerReleasesIpc(ipc, { releases: services.releases })
 
   ipc.handle(APP_CTRL.relayStatus, () => {
     // A renderer's first pull on (re)load: a calibration view from before it went with the old

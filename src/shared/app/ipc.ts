@@ -59,6 +59,12 @@ import {
   type ResetOptions,
   type ResetPreview
 } from '../nodes/ipc'
+import {
+  RELEASES_CTRL,
+  RELEASES_PUSH,
+  type ReleasesPushChannels,
+  type ReleasesState
+} from '../releases/ipc'
 
 /** Live session state so a freshly (re)loaded renderer can rehydrate. */
 export interface RelayStatus {
@@ -114,7 +120,8 @@ export interface PushChannels
     HidPushChannels,
     NodesPushChannels,
     CalibrationPushChannels,
-    ConfigPushChannels {}
+    ConfigPushChannels,
+    ReleasesPushChannels {}
 
 export type PushChannel = keyof PushChannels
 
@@ -175,7 +182,8 @@ export const IPC = {
   ...HID_PUSH,
   ...NODES_PUSH,
   ...CALIBRATION_PUSH,
-  ...CONFIG_PUSH
+  ...CONFIG_PUSH,
+  ...RELEASES_PUSH
 } as const
 
 /** Intents this contract owns: the rehydrate bundle and the debug-log tools. */
@@ -195,7 +203,8 @@ export const CTRL = {
   ...EVENTS_CTRL,
   ...HID_CTRL,
   ...NODES_CTRL,
-  ...CALIBRATION_CTRL
+  ...CALIBRATION_CTRL,
+  ...RELEASES_CTRL
 } as const
 
 /** An intent channel: any CTRL value. */
@@ -337,4 +346,14 @@ export interface SkyhawkApi {
    * the view, or disposes it.
    */
   calAttach(on: boolean): Promise<void>
+
+  // ── firmware releases (#192) ──────────────────────────────────────────────
+  // Main checks GitHub and keeps the releases on this computer; it pushes `releases:state` after
+  // every change, and these only ask.
+  /** The release check and the saved releases now, for a renderer (re)load. */
+  getReleases(): Promise<ReleasesState>
+  /** *Check now*: joins a check already running. Resolves once it has ended. */
+  checkReleases(): Promise<void>
+  /** *Clear*: remove every saved release (refused while none is saved or an update reads one). */
+  clearReleases(): Promise<void>
 }

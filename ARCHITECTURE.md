@@ -59,6 +59,7 @@ sides:
 | `hid/calibration` | Axis calibration: the protocol, the workflow and the restore cache                                             |
 | `events`          | The event log                                                                                                  |
 | `config`          | The settings, and configuration export and import                                                              |
+| `releases`        | The firmware release check on GitHub and the releases saved on this computer                                   |
 
 The renderer also has `app/kit/`: UI primitives (`Dialog`, `Sheet`, `Row`, icons) and the nav
 store. It is a leaf that every renderer topic may use.
@@ -78,6 +79,7 @@ A topic may import only the topics in its row, plus the shared contracts, `share
 | ----------------- | -------------------------- |
 | `app`             | every topic                |
 | `config`          | `nodes`, `hid/calibration` |
+| `releases`        | `events`                   |
 | `nodes`           | `gateway`, `events`        |
 | `dcs`             | `gateway`, `events`        |
 | `hid/calibration` | `hid`, `gateway`           |
@@ -119,6 +121,7 @@ same field of the same push.
 | `hid/calibration` | `HidCalibrationService` and the workflow it hosts                                                                                                       | `cal:workflow`                                                                                | `useCalibrationStore`   |
 | `events`          | `EventJournal`                                                                                                                                          | `events:batch`                                                                                | `useEventsStore`        |
 | `config`          | `SettingsService` (the settings), `ConfigTransfer` (export / import), `BackupFolder` (automatic backups)                                                | `config:changed`, `config:backups`                                                            | `useConfigStore`        |
+| `releases`        | `Releases` (the release check, the saved releases under `<userData>/firmware`, and `getFile` / `imageFor` for the update flows)                         | `releases:state`                                                                              | `useReleasesStore`      |
 | `app`             | `AppServices` (builds and wires the services; no rules, no state)                                                                                       | —                                                                                             | `useNav` (in `app/kit`) |
 
 ## How a screen gets its data
@@ -172,6 +175,10 @@ firmware commit and writes `src/shared/firmware/*.generated.ts`.
 - DCS-BIOS `_ACFT_NAME` is not a firmware constant: it is a DCS-BIOS protocol value (the
   `MetadataStart` module) that DCS sends and the client reads from the DCS stream, so it is not
   synced. It is defined once, as `ACFT_NAME` in `main/dcs/bios-protocol.ts`.
+- The firmware release package's facts (the repo, the `firmware-v` tag prefix, manifest schema 2,
+  the 0.3.0 minimum, the zip's top folder, the five releases kept) are not firmware wire values
+  either: they are named once, each citing the release workflow, in
+  `main/releases/release-rules.ts`.
 - `SUPPORTED_FIRMWARE_MAJOR` is not a firmware constant: it is the client's own claim of the major
   its parser is written for (D22), an upper limit only. It is defined once, in
   `main/gateway/firmware.ts`. A test keeps the synced `FIRMWARE_RELEASE` at or below it.
