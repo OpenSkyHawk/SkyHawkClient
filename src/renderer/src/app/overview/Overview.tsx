@@ -4,7 +4,7 @@ import type { GaugeTone, OverviewLink } from '@shared/dcs'
 import { useConfigStore, viewTransport } from '../../config'
 import { relaySide, useDcsStore } from '../../dcs'
 import { gatewayView, useGatewayStore } from '../../gateway'
-import { Dot, useNodesStore } from '../../nodes'
+import { Dot, firmwareBannerText, useNodesStore } from '../../nodes'
 import { useNav, type TabId } from '../kit'
 import { newDevicesText } from './overview-view'
 import logo from '../assets/logo.png'
@@ -118,6 +118,8 @@ export function Overview() {
   // board-problems setting.
   const gatewayAlert = gatewayView(gw.deviceGateway).alert
   const waitingText = summary.newDevices && newDevicesText(summary.newDevices)
+  // Boards behind the newest saved release (#173): main's count, by kind.
+  const firmwareText = summary.firmware && firmwareBannerText(summary.firmware)
 
   const tiles: {
     label: string
@@ -263,6 +265,20 @@ export function Overview() {
           {/* Opens the Cockpit with its Adopt dialog showing (#77). */}
           <button className="ib__link" onClick={() => nav.openAdopt()}>
             Open Cockpit →
+          </button>
+        </div>
+      )}
+      {firmwareText && (
+        <div className="info-banner" role="status">
+          <span className="node__dot new sym" aria-hidden="true">
+            ↑
+          </span>
+          <span>
+            <b>{firmwareText.head}</b> — {firmwareText.detail}
+          </span>
+          {/* The Cockpit's Firmware button lists every board against the release. */}
+          <button className="ib__link" onClick={() => nav.set({ tab: 'cockpit' })}>
+            Review in Cockpit →
           </button>
         </div>
       )}

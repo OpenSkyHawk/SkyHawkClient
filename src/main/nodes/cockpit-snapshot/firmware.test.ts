@@ -10,6 +10,7 @@ import {
   gatewayFirmware,
   majorMismatch,
   newerThanClient,
+  noBootloader,
   reportedVersion,
   versionNotReported
 } from '../../gateway/firmware'
@@ -26,7 +27,9 @@ const board = (nodeId: number, fw: [number, number, number], over: Partial<NodeM
   })
 
 const gw = (major: number, minor = 0, patch = 0): GatewayFirmware =>
-  gatewayFirmware(nodeStatus(0, { nodeKind: 3, fwMajor: major, fwMinor: minor, fwPatch: patch }))
+  gatewayFirmware(
+    nodeStatus(0, { nodeKind: 3, fwMajor: major, fwMinor: minor, fwPatch: patch, bootloader: 1 })
+  )
 
 describe('firmware releases (gateway/firmware.ts)', () => {
   it('a row reports x.y.z; 0.0.0 is "not reported"', () => {
@@ -41,6 +44,21 @@ describe('firmware releases (gateway/firmware.ts)', () => {
     expect(versionNotReported(nodeStatus(1))).toBe(true)
     expect(versionNotReported(undefined)).toBe(false)
     expect(versionNotReported(nodeStatus(1, { fwMajor: 1, fwMinor: 2, fwPatch: 3 }))).toBe(false)
+  })
+
+  it('no bootloader: 00 on a row that reports a version; 00 on 0.0.0 is "not reported" (#175)', () => {
+    expect(noBootloader(nodeStatus(1, { fwMajor: 0, fwMinor: 3, fwPatch: 0, bootloader: 0 }))).toBe(
+      true
+    )
+    expect(noBootloader(nodeStatus(1, { fwMajor: 0, fwMinor: 3, fwPatch: 0, bootloader: 1 }))).toBe(
+      false
+    )
+    expect(noBootloader(nodeStatus(1, { bootloader: 0 }))).toBe(false)
+    expect(noBootloader(undefined)).toBe(false)
+    expect(
+      gatewayFirmware(nodeStatus(0, { nodeKind: 3, fwMajor: 0, fwMinor: 3, bootloader: 0 }))
+        .noBootloader
+    ).toBe(true)
   })
 
   it('the Gateway is "too new" only past the supported major', () => {

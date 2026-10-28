@@ -40,6 +40,7 @@ import type {
 import { adoptRows } from './adopt'
 import { cockpitAttention, strayFlag, strayNew } from './attention'
 import { cockpitBand, totalWatts } from './band'
+import { firmwareBanner, firmwareSheet, type FirmwareInputs } from './firmware-sheet'
 import { boardZones } from '../power-zone'
 import { boardOpens, cockpitMembers } from './members'
 import { boardPanels, zoneChoices } from './panels'
@@ -47,6 +48,8 @@ import { planZones } from './plan-zones'
 import { settingsNodes } from './registry-rows'
 import { nodesSummary, overviewSummary } from './summaries'
 import { nodeViews } from './views'
+
+export type { FirmwareInputs }
 
 export interface CockpitSnapshotInput {
   /** The node model as last pushed (`nodes:model`); undefined before the first. */
@@ -59,6 +62,8 @@ export interface CockpitSnapshotInput {
   peakW: number
   /** The bundled NODE_IDS registry (`nodes:registry`), for Settings › About. */
   registry?: NodeRegistryInfo
+  /** The USB side's HELLO_ACK release and the release to compare with (#173). */
+  firmware?: FirmwareInputs
   now: number
   rev: number
 }
@@ -83,6 +88,7 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     nodeId: v.entry.nodeId,
     flag: strayFlag(v.entry)
   }))
+  const firmware = firmwareSheet(views, live, i.device, i.firmware ?? {})
   const snapshot: CockpitSnapshot = {
     rev: i.rev,
     live,
@@ -95,9 +101,13 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     opens: boardOpens(views, members),
     zones: zoneChoices(views, members),
     adopt: adoptRows(views, members),
-    overview: overviewSummary(views, outages, strays, live),
+    overview: {
+      ...overviewSummary(views, outages, strays, live),
+      firmware: firmwareBanner(firmware, i.firmware?.release)
+    },
     nodesCard: nodesSummary(views, outages, strays, zones, live),
-    settings: settingsNodes(i.model, i.registry, live)
+    settings: settingsNodes(i.model, i.registry, live),
+    firmware
   }
   return stray.nextAt === undefined ? { snapshot } : { snapshot, nextAt: stray.nextAt }
 }

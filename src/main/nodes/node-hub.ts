@@ -25,7 +25,8 @@ import type {
 } from '@shared/nodes'
 import type { Emit } from '@shared/app'
 import type { LogEventInput } from '@shared/events'
-import type { DeviceStatus, GatewayStatus } from '@shared/gateway'
+import type { DeviceStatus, FirmwareVersion, GatewayStatus } from '@shared/gateway'
+import type { ReleaseTarget } from '@shared/releases'
 import {
   GatewayWatch,
   isLinkUp,
@@ -233,12 +234,16 @@ export class NodeHub implements NodeLineSink {
     timers: (every) => every(NODES_POLL_MS, () => this.requestNodes()),
     // Shutdown, Disconnect, unplug: the boards on the bus were last seen now (#93).
     closing: () => this.linkClosed(),
-    released: () => this.gateway.reset(),
+    released: () => {
+      this.gateway.reset()
+      this.cockpit.firmwareChanged({ usb: undefined }, false)
+    },
     // A port open: the roster, the node data and the Gateway's health start over, together.
     opening: () => {
       this.roster.reset()
       this.reset()
       this.gateway.reset()
+      this.cockpit.firmwareChanged({ usb: undefined }, false)
       this.legacyNodesWarned = false
     },
     connected: () => {
@@ -291,6 +296,20 @@ export class NodeHub implements NodeLineSink {
   gatewayRecovered(recovery: GatewayRecovery): void {
     if (!isLinkUp(this.link.deviceStatus().state)) return
     this.onEvents(this.gateway.recovered(recovery, Date.now()))
+  }
+
+  /**
+   * The release the Gateway's USB side reports in HELLO_ACK (#173; hid/calibration reads it once per
+   * connect), for the Firmware sheet. A read that lands after the link went is dropped.
+   */
+  gatewayUsbFirmware(fw: FirmwareVersion | undefined): void {
+    if (!isLinkUp(this.link.deviceStatus().state)) return
+    this.cockpit.firmwareChanged({ usb: fw })
+  }
+
+  /** The release the Firmware sheet compares with changed (#173; releases' `target()`). */
+  releaseChanged(release: ReleaseTarget | undefined): void {
+    this.cockpit.firmwareChanged({ release })
   }
 
   /**

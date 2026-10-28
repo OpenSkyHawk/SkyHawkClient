@@ -124,14 +124,14 @@ export function newDevices(views: NodeView[], live: boolean): NewDevices | null 
 
 /**
  * The Overview's tile, banner and notice: the band and the items with the Cockpit's strays (X3),
- * the banner and the notice only while the link is up.
+ * the banner and the notice only while the link is up. The firmware banner is firmware-sheet.ts's.
  */
 export function overviewSummary(
   views: NodeView[],
   outages: PduOutage[],
   strays: StrayItem[],
   live: boolean
-): OverviewSummary {
+): Omit<OverviewSummary, 'firmware'> {
   const band = healthBand(views, strays.length)
   return {
     tile: cockpitTile(band, live),

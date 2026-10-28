@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import type { PsuView } from '@shared/config'
 import type { BoardOpens, CockpitAttention, CockpitBand, NodeView, PsuLimits } from '@shared/nodes'
 import { fmtPct, hhmm, voltsValue } from '@shared/format'
@@ -12,11 +20,16 @@ import { headroom, type Headroom } from './band-view'
 import { Dot } from './Dot'
 import { AdoptDialog } from './AdoptDialog'
 import { NodePanel, PduPanel } from './SidePanels'
+import { FirmwareSheet } from './FirmwareSheet'
+import { firmwareButton } from './firmware-view'
 
 const RING_C = 289.03 // 2π × 46, the ring's circumference
 
-/** The Cockpit tab. `psuView` is the PSU setting as main resolves it (the app hands it in). */
-export function Cockpit({ psuView }: { psuView: PsuView }) {
+/**
+ * The Cockpit tab. `psuView` is the PSU setting as main resolves it, and `releaseCard` the Firmware
+ * sheet's release card (releases, #192); the app hands both in.
+ */
+export function Cockpit({ psuView, releaseCard }: { psuView: PsuView; releaseCard?: ReactNode }) {
   /** Everything the tab decides, as main built it (cockpit:snapshot, R3.2). */
   const snap = useNodesStore((s) => s.cockpit)
   const live = snap.live
@@ -30,6 +43,8 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
   /** NODE_ID whose side panel is open: the node panel, or the PDU panel for a PDU. */
   const [open, setOpen] = useState<number | null>(null)
   const [adopting, setAdopting] = useState(false)
+  /** The Firmware sheet (#173). */
+  const [firmwareOpen, setFirmwareOpen] = useState(false)
   /** The Adopt dialog opened on this NODE_ID, else on the first in its queue. */
   const [adoptAt, setAdoptAt] = useState<number>()
   /**
@@ -44,6 +59,7 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
    */
   const openBoard = useCallback((nodeId: number) => {
     const to = useNodesStore.getState().cockpit.opens[nodeId]
+    setFirmwareOpen(false)
     if (to === 'panel') return setOpen(nodeId)
     if (to !== 'adopt') return
     setOpen(null)
@@ -84,6 +100,8 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
   useEffect(() => {
     if (open !== null && !openView) setOpen(null)
   }, [open, openView])
+
+  const fwButton = firmwareButton(snap.firmware)
 
   const filter = (q: string, issues: boolean) => {
     setQuery(q)
@@ -145,6 +163,18 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
                 Issues
               </button>
             </div>
+            <button
+              className="toolbtn fwbtn"
+              title={fwButton.title}
+              onClick={() => {
+                setOpen(null)
+                setFirmwareOpen(true)
+              }}
+            >
+              <span className={`node__dot ${fwButton.dot}`} aria-hidden="true" />
+              Firmware
+              {fwButton.count > 0 && <b>· {fwButton.count}</b>}
+            </button>
           </div>
           <Plan
             layout={layout}
@@ -179,6 +209,14 @@ export function Cockpit({ psuView }: { psuView: PsuView }) {
         </div>
       </div>
 
+      {firmwareOpen && (
+        <FirmwareSheet
+          sheet={snap.firmware}
+          releaseCard={releaseCard}
+          onOpen={openBoard}
+          onClose={() => setFirmwareOpen(false)}
+        />
+      )}
       {adopting && (
         <AdoptDialog
           key={adoptOpen}

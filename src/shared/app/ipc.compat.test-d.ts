@@ -142,6 +142,10 @@
 // (checkReleases, *Check now*, joining a check already running) and `releases:clear`
 // (clearReleases, *Clear*). No other channel, intent or method changed.
 //
+// #173 PR 1 (the Firmware button, sheet and Overview banner): type changes only. `CockpitSnapshot`
+// gained `firmware` (FirmwareSheet: every board against the newest saved release) and
+// `OverviewSummary` gained `firmware` (FirmwareBanner | null). No channel, intent or method changed.
+//
 // Type-only: never imported, never run, not matched by vitest (`*.test.ts`) or the build.
 import type { Mutate, StoreApi } from 'zustand/vanilla'
 import type {} from 'zustand/middleware' // registers the subscribeWithSelector store mutator

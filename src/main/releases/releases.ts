@@ -14,7 +14,8 @@ import type {
   ReleaseCheck,
   ReleaseInfo,
   ReleasesPushChannels,
-  ReleasesState
+  ReleasesState,
+  ReleaseTarget
 } from '@shared/releases'
 import { FetchFailed, GitHub, RateLimited, type FetchPort } from './github'
 import {
@@ -134,6 +135,7 @@ export class Releases {
   /** A repair per version in progress: a second read of a damaged file joins it. */
   private readonly repairs = new Map<string, Promise<InstallResult | 'unreachable'>>()
   private readonly sources: { [K in ImageSourceRef['kind']]: ImageSource<ImageSourceRef> }
+  private readonly stateCbs = new Set<() => void>()
 
   constructor(
     private readonly emit: Emit<keyof ReleasesPushChannels>,
@@ -198,6 +200,12 @@ export class Releases {
 
   private push(): void {
     this.emit('releases:state', this.state())
+    for (const cb of this.stateCbs) cb()
+  }
+
+  /** After every `releases:state` push: the saved releases or the last check may have changed. */
+  onState(cb: () => void): void {
+    this.stateCbs.add(cb)
   }
 
   private setCheck(check: ReleaseCheck): void {
@@ -222,6 +230,37 @@ export class Releases {
   /** The saved releases, newest first: the versions an update can install, online or not. */
   cachedVersions(): CachedVersion[] {
     return this.cache.list()
+  }
+
+  /**
+   * The release the Firmware sheet compares with (#173): the newest saved release at or below the
+   * latest the last check found, never on a newer major than this client supports. Saved, so
+   * "update available" always has an image to install: a latest that didn't download (a failed
+   * download, read back after a relaunch as `ok`) is never the target. None while nothing is saved,
+   * including before the start scan has listed what is.
+   */
+  target(): ReleaseTarget | undefined {
+    const latest = this.last?.latest?.version
+    const version = this.cache
+      .list()
+      .map((c) => c.version)
+      .find(
+        (v) =>
+          (!latest || compareVersions(v, latest) <= 0) &&
+          !this.deps.newerThanClient(parseVersion(v)!)
+      )
+    if (!version) return undefined
+    return {
+      version,
+      compare: (reported) => compareVersions(reported, version),
+      // The images the update flows install (#173 PR 2, #187, #175): the USB side's `.uf2`, a
+      // node's app `.bin`. The manifest only, never a file read.
+      hasImage: (of) =>
+        this.imageFor(
+          version,
+          'side' in of ? { side: 'usb', format: 'uf2' } : { nodeId: of.nodeId, format: 'bin' }
+        ).ok
+    }
   }
 
   // ── the check ──────────────────────────────────────────────────────────────

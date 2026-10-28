@@ -725,3 +725,60 @@ describe('retention and Clear', () => {
     expect(again.releases.state().cachedBytes).toBe(list[0].bytes + list[1].bytes)
   })
 })
+
+describe('the Firmware sheet’s target (#173)', () => {
+  it('the newest saved release; its images are the USB side’s .uf2 and the nodes’ .bin', async () => {
+    const app = await withSaved(['0.3.0', '0.4.0'])
+    const t = app.releases.target()!
+    expect(t.version).toBe('0.4.0')
+    expect(t.compare('0.3.0')).toBeLessThan(0)
+    expect(t.compare('0.4.0')).toBe(0)
+    expect(t.compare('1.0.0')).toBeGreaterThan(0)
+    expect(t.hasImage({ side: 'usb' })).toBe(true)
+    // 0.3.0's nodes: the cockpit side (0) and the three PDUs; no image for #6 or a panel group.
+    expect([0, 1, 2, 3, 4, 5, 6].filter((nodeId) => t.hasImage({ nodeId }))).toEqual([0, 3, 4, 5])
+  })
+
+  it('nothing saved: no target, before the start scan as after it', async () => {
+    const app = launch()
+    expect(app.releases.target()).toBeUndefined()
+    await app.releases.open(false)
+    expect(app.releases.target()).toBeUndefined()
+  })
+
+  it('a latest that didn’t download is never the target, after a relaunch too', async () => {
+    const app = await withSaved(['0.3.0'])
+    app.github.publish(
+      buildRelease('0.4.0', {
+        manifest: (m) => void ((m.zip as { sha256: string }).sha256 = '0'.repeat(64))
+      })
+    )
+    await app.releases.checkNow()
+    expect(app.check()).toEqual({ kind: 'download-failed', version: '0.4.0' })
+    expect(app.releases.target()?.version).toBe('0.3.0')
+    // Read back after a relaunch, the last check is `ok` with latest 0.4.0: still 0.3.0.
+    const again = app.relaunch()
+    await again.releases.open(false)
+    expect(again.releases.latest()?.version).toBe('0.4.0')
+    expect(again.check()).toEqual({ kind: 'ok' })
+    expect(again.releases.target()?.version).toBe('0.3.0')
+  })
+
+  it('a newer major is reported, never the target', async () => {
+    const app = await withSaved(['0.3.0'])
+    app.github.publish(buildRelease('2.0.0'))
+    await app.releases.checkNow()
+    expect(app.releases.checkState().newerMajor?.version).toBe('2.0.0')
+    expect(app.releases.target()?.version).toBe('0.3.0')
+  })
+
+  it('onState follows every push, the first after the start scan', async () => {
+    const first = await withSaved(['0.3.0'])
+    const app = first.relaunch()
+    const seen: (string | undefined)[] = []
+    app.releases.onState(() => seen.push(app.releases.target()?.version))
+    await app.releases.open(false)
+    expect(seen).toEqual(['0.3.0'])
+    expect(seen.length).toBe(app.pushes.length)
+  })
+})

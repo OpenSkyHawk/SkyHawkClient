@@ -3991,3 +3991,103 @@ select.input {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* ── firmware (#173): the Cockpit's Firmware button and sheet, from the design's power.css ── */
+/* status chips */
+.vchip {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.vchip--ok {
+  color: var(--green);
+  background: rgba(110, 231, 160, 0.12);
+}
+.vchip--upd {
+  color: var(--blue-2);
+  background: rgba(30, 143, 255, 0.16);
+}
+.vchip--warn {
+  color: var(--gold);
+  background: rgba(244, 179, 33, 0.14);
+}
+.vchip--mute {
+  color: var(--muted-2);
+  background: rgba(255, 255, 255, 0.06);
+}
+/* the plan toolbar's button: its dot, then *Firmware · n* */
+.fwbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.fwbtn b {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--blue-2);
+}
+/* the release card at the top of the sheet */
+.fw__rel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  margin-bottom: 12px;
+}
+.fw__rel > div {
+  flex: 1;
+  min-width: 0;
+}
+.fw__rel b {
+  font-family: var(--disp);
+  font-size: 14px;
+  color: var(--text);
+}
+.fw__rel span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted-2);
+}
+.fw__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+/* a row: the name on line 1, the chip and version on line 2, the board's chevron on the right */
+.fw__li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.fw__who {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fw__nm {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fw__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 11px;
+}
+.fw__row > .cog {
+  flex: none;
+}

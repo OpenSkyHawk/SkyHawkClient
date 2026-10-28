@@ -1,6 +1,6 @@
 import { useConfigStore } from '../../config'
 import { releaseRows, useReleasesStore } from '../../releases'
-import { Row, useNow } from '../kit'
+import { Row, useNav, useNow } from '../kit'
 
 /**
  * Settings › Cockpit › Firmware updates (#192): the launch check, the latest release and the
@@ -12,6 +12,7 @@ export function FirmwareUpdates() {
   const releases = useReleasesStore((s) => s.releases)
   const checkReleases = useReleasesStore((s) => s.checkReleases)
   const clearReleases = useReleasesStore((s) => s.clearReleases)
+  const nav = useNav()
   // "checked 2 min ago" moves on by itself.
   const now = useNow(!!releases.last, 30_000)
   const rows = releaseRows(releases, now)
@@ -21,6 +22,15 @@ export function FirmwareUpdates() {
       <div className="ig__head">
         <span className="section-h">Firmware updates</span>
         <span className="ig__n">{rows.header}</span>
+        {/* The Cockpit's Firmware button lists every board against the release (#173). */}
+        <button
+          className="toolbtn"
+          style={{ marginLeft: 'auto' }}
+          title="Opens the Cockpit tab — its Firmware button lists every board"
+          onClick={() => nav.set({ tab: 'cockpit' })}
+        >
+          Open Cockpit →
+        </button>
       </div>
       <div className="set-card">
         <Row

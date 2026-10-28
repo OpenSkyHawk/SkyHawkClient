@@ -32,13 +32,23 @@ export function newerThanClient(v: FirmwareVersion): boolean {
   return v.major > SUPPORTED_FIRMWARE_MAJOR
 }
 
+/**
+ * The board runs with no bootloader, so only a programmer updates it (#175's rule). `bootloader` 00
+ * also means "not reported", so it counts only on a row that reports a version: READY_n carries
+ * both. Every STM32 row: the boards and the Gateway's cockpit side.
+ */
+export function noBootloader(row: NodeStatus | undefined): boolean {
+  return !!row && reportedVersion(row) !== null && row.bootloader === 0
+}
+
 /** The Gateway's firmware from its own row, judged against the major this client supports. */
 export function gatewayFirmware(row: NodeStatus): GatewayFirmware {
   const version = reportedVersion(row)
   return {
     version,
     tooNew: !!version && newerThanClient(version),
-    supportedMajor: SUPPORTED_FIRMWARE_MAJOR
+    supportedMajor: SUPPORTED_FIRMWARE_MAJOR,
+    ...(noBootloader(row) && { noBootloader: true as const })
   }
 }
 
