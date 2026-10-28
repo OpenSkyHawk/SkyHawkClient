@@ -103,6 +103,13 @@ function gateway(app: Services, fw: [number, number, number], axis0?: SimAxis) {
 const update = (app: Services) => app.lastPush('update:state') as UpdateState | null
 
 /**
+ * The run reads its image from the release cache: real file I/O, in real time. Wait for `past` —
+ * a sign the run got beyond it — before moving the fake clock, or a slow disk leaves the run
+ * waiting on a fake timer nobody advances.
+ */
+const pastImageRead = (past: () => void) => vi.waitFor(past, { timeout: 10_000, interval: 5 })
+
+/**
  * Launch with 0.3.0 saved and this computer's calibration copy, the Gateway connected on `fw` —
  * or, with `inDrive`, waiting in its update drive: no port, its drive mounted.
  */
@@ -166,6 +173,7 @@ describe('#173 the Gateway USB side, updated from the saved release', { timeout:
     app.drive.onTouch = () => (app.drive.mounted = DRIVE)
     app.drive.onCopied = () => gw.boot([0, 3, 0], undefined)
     const started = app.invoke(CTRL.updateStart)
+    await pastImageRead(() => expect(app.touches()).toHaveLength(1))
     await gw.run(1_000)
     expect(app.touches()).toEqual(['/dev/fake'])
     expect(app.drive.files.map((f) => [f.root, f.name, f.bytes.length])).toEqual([
@@ -197,6 +205,7 @@ describe('#173 the Gateway USB side, updated from the saved release', { timeout:
     const { app, gw } = await launch([0, 2, 0])
     await app.invoke(CTRL.updateOpen, { kind: 'usb' })
     const started = app.invoke(CTRL.updateStart)
+    await pastImageRead(() => expect(app.touches()).toHaveLength(1))
     await gw.run(11_000, 250) // past the drive wait
     await started
     expect(update(app)).toMatchObject({ phase: 'fail', failure: { kind: 'no-drive' } })
@@ -223,6 +232,7 @@ describe('#173 the Gateway USB side, updated from the saved release', { timeout:
     app.drive.onTouch = () => (app.drive.mounted = DRIVE)
     app.drive.failWrites = true
     const started = app.invoke(CTRL.updateStart)
+    await pastImageRead(() => expect(app.touches()).toHaveLength(1))
     await gw.run(500)
     await started
     expect(update(app)?.failure).toEqual({ kind: 'copy-failed' })
@@ -278,6 +288,7 @@ describe('#173 the Gateway USB side, updated from the saved release', { timeout:
       app.serial.listed(true)
     }
     const started = app.invoke(CTRL.updateStart)
+    await pastImageRead(() => expect(app.drive.files).toHaveLength(1))
     await gw.run(500)
     expect(app.touches()).toEqual([]) // no port, no touch
     expect(app.drive.files.map((f) => f.root)).toEqual([DRIVE])
