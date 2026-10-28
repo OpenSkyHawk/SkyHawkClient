@@ -146,7 +146,8 @@ function gatewayAttention(
   linkUp: boolean
 ): CockpitAttention['gateway'] {
   const g = shownHealth(gateway, linkUp)
-  if (!g || g.severity === 'ok') return undefined
+  // The cockpit side not responding is its Firmware item instead (#187).
+  if (!g || g.severity === 'ok' || g.cockpitSide) return undefined
   const flag = g.problem ? g.label : RECOVERED_FLAG
   return { flag, state: g.severity === 'err' ? 'off' : 'warn' }
 }
@@ -166,14 +167,18 @@ export function cockpitAttention(
 ): CockpitAttention {
   const items = live ? attentionItems(views, outages, strays) : []
   const gateway = gatewayAttention(gatewayStatus, live)
-  const count = items.length + (gateway ? 1 : 0)
+  // The Gateway answers, its cockpit side doesn't (#187): Retry the update from the Firmware sheet.
+  const cockpitSide = live && shownHealth(gatewayStatus, live)?.cockpitSide
+  const first = (gateway ? 1 : 0) + (cockpitSide ? 1 : 0)
+  const count = items.length + first
   const out: CockpitAttention = {
     items,
-    shown: items.slice(0, ATTENTION_SHOWN - (gateway ? 1 : 0)),
+    shown: items.slice(0, ATTENTION_SHOWN - first),
     count,
     more: Math.max(0, count - ATTENTION_SHOWN),
     newCount: model ? newCount(model, live) : 0
   }
   if (gateway) out.gateway = gateway
+  if (cockpitSide) out.cockpitSide = { flag: 'NOT RESPONDING' }
   return out
 }

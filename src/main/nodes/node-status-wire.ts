@@ -186,6 +186,14 @@ export class NodeRoster {
   private dirty = false
   /** The last reply that ended short of its count, until taken (takeIncompleteReply). */
   private incomplete?: IncompleteReply
+  /**
+   * The Gateway's cockpit side updates (#187): it sends nothing until it restarts, then a short
+   * boot roster (its own row only) until the boards' heartbeats come in. No END reconciles an
+   * absence meanwhile; after `release`, only a reply to a request sent from `judgeFrom` on does.
+   * Kept through reset(): a reconnect during the update is still during it.
+   */
+  private held = false
+  private judgeFrom?: number
 
   reset(): void {
     this.nodes.clear()
@@ -197,6 +205,23 @@ export class NodeRoster {
     this.completeAt = undefined
     this.incomplete = undefined
     this.dirty = true
+  }
+
+  /** The cockpit side's update started (#187): no END reconciles an absence until `release`. */
+  hold(): void {
+    this.held = true
+    this.judgeFrom = undefined
+  }
+
+  /** It ended: the first whole reply to a request sent from `judgeFrom` on judges the boards. */
+  release(judgeFrom: number): void {
+    this.held = false
+    this.judgeFrom = judgeFrom
+  }
+
+  /** Held for the cockpit side's update (#187). */
+  get isHeld(): boolean {
+    return this.held
   }
 
   /**
@@ -254,6 +279,17 @@ export class NodeRoster {
     } else if (name === NODE_END_MSG) {
       // An older bridge's END completes nothing: its rows never reached the roster (M3).
       if (this.legacy !== undefined) return
+      // During the cockpit side's update, and until a reply to a request after it (#187): the
+      // short boot roster names only the bridge, so it judges nothing.
+      if (
+        this.held ||
+        (this.judgeFrom !== undefined &&
+          (this.burstAt === undefined || this.burstAt < this.judgeFrom))
+      ) {
+        this.endReply()
+        return
+      }
+      this.judgeFrom = undefined
       const inBurst = new Set(this.burst.map((n) => n.nodeId))
       const expected = endRowCount(arg)
       if (expected !== undefined && expected !== inBurst.size) {

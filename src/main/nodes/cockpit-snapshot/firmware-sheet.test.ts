@@ -334,3 +334,83 @@ describe('the Overview firmware banner (#173)', () => {
     })
   })
 })
+
+describe('the Gateway’s cockpit side (#187)', () => {
+  const R = release('1.0.1')
+  const bridge = { uploader: true, bundled: '1.0.1' }
+
+  it('compared with the bundle its USB side carries, not the release', () => {
+    const at = (cockpit: string, bundled = '1.0.1') =>
+      byKey(
+        sheet(
+          [],
+          { usb: v('1.0.1'), release: release('1.0.2'), bridge: { uploader: true, bundled } },
+          connected(cockpit)
+        ).rows,
+        'cockpit'
+      )
+    // The USB side is behind 1.0.2: its own update first, which brings a newer bundle.
+    expect(at('1.0.0')).toMatchObject({ status: 'update', to: '1.0.2', action: 'usb-first' })
+    const usbCurrent = (cockpit: string) =>
+      byKey(sheet([], { usb: v('1.0.1'), release: R, bridge }, connected(cockpit)).rows, 'cockpit')
+    expect(usbCurrent('1.0.0')).toMatchObject({
+      status: 'update',
+      to: '1.0.1',
+      bundled: true,
+      action: 'update'
+    })
+    expect(usbCurrent('1.0.1')).toMatchObject({ status: 'ok' })
+    expect(usbCurrent('1.0.2')).toMatchObject({ status: 'newer', to: '1.0.1' })
+  })
+
+  it('no bundle (a dev USB side): the release, as any board', () => {
+    const s = sheet(
+      [],
+      { usb: v('1.0.1'), release: R, bridge: { uploader: true } },
+      connected('1.0.0')
+    )
+    expect(byKey(s.rows, 'cockpit')).toMatchObject({
+      status: 'update',
+      to: '1.0.1',
+      action: 'update'
+    })
+    expect(byKey(s.rows, 'cockpit').bundled).toBeUndefined()
+  })
+
+  it('its update runs: UPDATING on its row, every board PAUSED; none needs attention for it', () => {
+    const s = sheet([board(2, '1.0.0'), pdu(3, '1.0.0')], {
+      usb: v('1.0.1'),
+      release: R,
+      bridge,
+      cockpitUpdating: { from: '1.0.0', to: '1.0.1' }
+    })
+    expect(byKey(s.rows, 'cockpit')).toMatchObject({
+      status: 'updating',
+      version: '1.0.0',
+      to: '1.0.1',
+      attention: false
+    })
+    expect(byKey(s.rows, 'cockpit').action).toBeUndefined()
+    expect(s.rows.filter((r) => r.nodeId !== undefined).map((r) => r.status)).toEqual([
+      'paused',
+      'paused'
+    ])
+    // The Overview banner counts what can update: the cockpit side drops out while it updates.
+    expect(firmwareBanner(s, R)).toBeNull()
+  })
+
+  it('not responding: its Retry, counted in Needs attention', () => {
+    const silent: DeviceStatus = {
+      state: 'connected',
+      gateway: gatewayStatus(undefined, false, undefined, true)!
+    }
+    const s = sheet([], { usb: v('1.0.1'), release: R, bridge }, silent)
+    expect(byKey(s.rows, 'cockpit')).toMatchObject({
+      status: 'not-responding',
+      to: '1.0.1',
+      action: 'retry',
+      attention: true
+    })
+    expect(s.attention).toBe(1)
+  })
+})

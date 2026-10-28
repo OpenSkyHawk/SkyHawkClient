@@ -458,6 +458,58 @@ describe('NodeRoster — an older bridge’s END completes nothing (M3)', () => 
   })
 })
 
+describe('NodeRoster — held while the Gateway’s cockpit side updates (#187)', () => {
+  const ROW = (id: number) =>
+    `${id.toString(16).padStart(2, '0')}010000000000000080000000000000000000`
+  /** Node 0 and board 1 on the bus, from a whole reply. */
+  function onBus(): NodeRoster {
+    const r = new NodeRoster()
+    r.beginBurst(0)
+    r.applyMessage(NODE_MSG, ROW(0), 1)
+    r.applyMessage(NODE_MSG, ROW(1), 2)
+    r.applyMessage(NODE_END_MSG, '2', 3)
+    return r
+  }
+  const board1 = (r: NodeRoster) => r.snapshot().find((n) => n.nodeId === 1)?.present
+
+  it('the restarted bridge’s short roster offlines no board while held', () => {
+    const r = onBus()
+    r.hold()
+    r.applyMessage(NODE_MSG, ROW(0), 100) // its boot roster: its own row only
+    r.applyMessage(NODE_END_MSG, '1', 101)
+    r.beginBurst(200)
+    r.applyMessage(NODE_MSG, ROW(0), 201)
+    r.applyMessage(NODE_END_MSG, '1', 202)
+    expect(board1(r)).toBe(true)
+    expect(r.isHeld).toBe(true)
+  })
+
+  it('after release, only a reply to a request from `judgeFrom` on judges the boards', () => {
+    const r = onBus()
+    r.hold()
+    r.release(5_000)
+    r.beginBurst(1_000) // asked too soon: the boards' heartbeats may not be in yet
+    r.applyMessage(NODE_MSG, ROW(0), 1_001)
+    r.applyMessage(NODE_END_MSG, '1', 1_002)
+    expect(board1(r)).toBe(true)
+    r.beginBurst(5_000)
+    r.applyMessage(NODE_MSG, ROW(0), 5_001)
+    r.applyMessage(NODE_END_MSG, '1', 5_002)
+    expect(board1(r)).toBe(false)
+  })
+
+  it('kept through a reconnect during the update', () => {
+    const r = onBus()
+    r.hold()
+    r.reset()
+    r.applyMessage(NODE_MSG, ROW(0), 10)
+    r.applyMessage(NODE_MSG, ROW(1), 11)
+    r.applyMessage(NODE_END_MSG, '1', 12) // a reply short of nothing, still held
+    expect(r.isHeld).toBe(true)
+    expect(r.rosterCompleteAt()).toBeUndefined()
+  })
+})
+
 describe('nodeFaultTag', () => {
   it('uses the enriched abbr', () => {
     const n = node({

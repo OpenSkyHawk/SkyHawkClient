@@ -18,7 +18,9 @@ export function DeviceCard({ autoConnect }: { autoConnect: boolean }) {
   const deviceDetail = useGatewayStore((x) => x.deviceDetail)
   const deviceBusy = useGatewayStore((x) => x.deviceBusy)
   const deviceAction = useGatewayStore((x) => x.deviceAction)
-  const firmware = useGatewayStore((x) => gatewayFirmwareView(x.deviceGateway?.firmware))
+  const firmware = useGatewayStore((x) =>
+    gatewayFirmwareView(x.deviceGateway?.firmware, x.deviceGateway?.cockpitSide)
+  )
   const connectDevice = useGatewayStore((x) => x.connectDevice)
   const disconnectDevice = useGatewayStore((x) => x.disconnectDevice)
   const set = useNav((x) => x.set)

@@ -32,7 +32,7 @@ import {
 import { CalLink, CalNackError, CalTimeoutError, type Log } from './cal-link'
 import { loadCalCache, saveCalCache, type CacheFileEvents, type CacheFileIO } from './cache-store'
 import { boardFor, dropAxis, regressedAxes, storeAxes, storedAsWritten } from './cache-rules'
-import { CAL_AXIS_NONE, nackName } from './codec'
+import { CAL_AXIS_NONE, nackName, type CalFrame } from './codec'
 import { CalibrationWorkflowHost } from './workflow-host'
 
 /** RAW batches (`cal:raw` before R3.1): the serial monitor's cadence, as before the split. */
@@ -61,6 +61,11 @@ export interface HidCalibrationDeps {
    * when HELLO went unanswered. NodeHub shows it on the Firmware sheet.
    */
   usbFirmware?: (fw: FirmwareVersion | undefined) => void
+  /**
+   * The connect read is over (HELLO, DIAG and the calibration read, answered or not): the channel
+   * is free for the uploader's own connect read (#187).
+   */
+  connectRead?: () => void
 }
 
 export class HidCalibrationService implements LinkRider, CalFrameFilter {
@@ -77,6 +82,8 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
   /** The calibration dialog's workflow, over this service's own commands. */
   readonly workflow: CalibrationWorkflowHost
   private readonly workflowCbs = new Set<(state: CalibrationState) => void>()
+  /** The uploader's unsolicited frames (#366), across port opens: each CalLink hands them here. */
+  private readonly unsolicitedCbs = new Set<(f: CalFrame) => void>()
 
   constructor(
     private readonly emit: Emit,
@@ -129,6 +136,32 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
       (sample) => this.calRawBuf.push({ t: Date.now(), ...sample }),
       this.deps.log
     )
+    this.cal.onUnsolicited((f) => {
+      for (const cb of this.unsolicitedCbs) cb(f)
+    })
+  }
+
+  // ── the Gateway's uploader's channel (#187) ────────────────────────────────
+
+  /**
+   * A request on this port's calibration channel, for the uploader (app/uploader-link): with no
+   * port open it times out at once, as an unanswered request does.
+   * @throws CalNackError, CalTimeoutError
+   */
+  exchange(type: number, payload?: Uint8Array, timeoutMs?: number): Promise<CalFrame> {
+    if (!this.cal) return Promise.reject(new CalTimeoutError(type, 0))
+    return this.cal.exchange(type, payload, timeoutMs)
+  }
+
+  /** The uploader's UPL_STATUS / UPL_RESULT, on whichever port is open; returns the unsubscribe. */
+  onUnsolicited(cb: (f: CalFrame) => void): () => void {
+    this.unsolicitedCbs.add(cb)
+    return () => this.unsolicitedCbs.delete(cb)
+  }
+
+  /** A calibration session is open on the Gateway: it refuses an update meanwhile (#187). */
+  get sessionOpen(): boolean {
+    return !!this.cal?.inSession
   }
 
   /** The port is released. */
@@ -144,7 +177,7 @@ export class HidCalibrationService implements LinkRider, CalFrameFilter {
 
   /** Badges, with no dialog open. */
   opened(): void {
-    void this.readCalibrationState()
+    void this.readCalibrationState().finally(() => this.deps.connectRead?.())
   }
 
   /** The port closed under the link. */

@@ -561,6 +561,11 @@ export interface CockpitBand {
 export interface CockpitAttention {
   /** The Gateway's own problem (#94): first, taking one of the shown slots. */
   gateway?: { flag: string; state: 'off' | 'warn' }
+  /**
+   * The Gateway's cockpit side doesn't respond (#187): its Firmware item, in place of the Gateway's
+   * own, taking a shown slot; its cog opens the Firmware sheet on *Needs attention*.
+   */
+  cockpitSide?: { flag: string }
   /** Every item, most severe first (without the Gateway's). */
   items: AttentionItem[]
   /** The items that fit before "+N more". */
@@ -792,8 +797,14 @@ export interface OverviewSummary {
  * - `update` / `newer` / `ok`: older than, newer than or the same as the release.
  * The Gateway's USB side also reads `in-drive`: no port, but an update drive is mounted (an
  * interrupted copy, or BOOTSEL held): *Update* finishes it (#173).
+ * Its cockpit side (#187), before all of these: `updating` while its update runs, and
+ * `not-responding` when the Gateway answers but its cockpit side sends nothing (*Retry the
+ * update*). Every board reads `paused` while the cockpit side updates.
  */
 export type FirmwareStatus =
+  | 'updating'
+  | 'paused'
+  | 'not-responding'
   | 'in-drive'
   | 'off'
   | 'not-reported'
@@ -824,16 +835,24 @@ export interface FirmwareRow {
   /** `mismatch`: the Gateway's major. */
   gatewayMajor?: number
   /**
+   * The cockpit side (#187): the version it is compared with or updated to — the one the USB side
+   * carries (`bundled`), else the saved release.
+   */
+  to?: string
+  /** The cockpit side's target is the one its USB side carries (#187). */
+  bundled?: true
+  /**
    * Counted in *Needs attention*: update available, major mismatch, manual update only, and the
    * Gateway waiting in its update drive.
    */
   attention: boolean
   /**
-   * The row's *Update* (#173: the Gateway's USB side, while it is behind the saved release or waits
-   * in its update drive). The
-   * cockpit side's (#187) and the boards' (#175) come with their update flows.
+   * The row's button (#173: the Gateway's USB side, while it is behind the saved release or waits
+   * in its update drive; #187: the cockpit side): *Update*, *Retry* (`retry`: the cockpit side
+   * doesn't respond), or *Update the USB side first* (`usb-first`: the USB side is behind the
+   * release, and its firmware carries the cockpit side's). The boards' (#175) come with their flow.
    */
-  action?: 'update'
+  action?: 'update' | 'retry' | 'usb-first'
 }
 
 /** The Cockpit's Firmware button and sheet (#173): every board against the release. */
@@ -968,6 +987,11 @@ export interface CockpitSnapshot {
   settings: SettingsNodes
   /** The Firmware button and sheet (#173). */
   firmware: FirmwareSheet
+  /**
+   * The Gateway's cockpit side updates (#187): every board is paused, not offline — the tiles show
+   * ↻ and the plan its hint.
+   */
+  cockpitUpdating: boolean
 }
 
 /** Connected nodes' line while the bus reports nothing at all (NodesSummary `empty`). */
@@ -1049,7 +1073,8 @@ export const COCKPIT_IDLE: CockpitSnapshot = {
     ],
     attention: 0,
     allCurrent: false
-  }
+  },
+  cockpitUpdating: false
 }
 
 /** This topic's main -> renderer pushes; shared/app assembles them into `PushChannels`. */

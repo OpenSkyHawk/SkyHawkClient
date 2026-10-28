@@ -15,8 +15,12 @@ export function Cockpit() {
     <CockpitTab
       psuView={psuView}
       releaseCard={<ReleaseCard />}
-      // The only row with an Update today is the Gateway's USB side (#173).
-      onUpdate={(row) => row === 'usb' && openUpdate({ kind: 'usb' })}
+      // The Gateway's USB side (#173) and its cockpit side (#187). The cockpit side's *Update*
+      // opens the USB side's first while that is behind the release: it carries the newer one.
+      onUpdate={(row, action) => {
+        if (row === 'usb' || action === 'usb-first') openUpdate({ kind: 'usb' })
+        else if (row === 'cockpit') openUpdate({ kind: 'cockpit' })
+      }}
     />
   )
 }

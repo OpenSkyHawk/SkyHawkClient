@@ -39,3 +39,14 @@ describe('the Gateway’s Attention item', () => {
     })
   })
 })
+
+describe('the cockpit side not responding (#187)', () => {
+  it('its Firmware item, in place of the Gateway’s own, counted and taking a shown slot', () => {
+    const silent = gatewayStatus(node0(), false, undefined, true)
+    const a = cockpitAttention(undefined, [], [], [], true, silent)
+    expect(a.cockpitSide).toEqual({ flag: 'NOT RESPONDING' })
+    expect(a.gateway).toBeUndefined()
+    expect(a.count).toBe(1)
+    expect(cockpitAttention(undefined, [], [], [], false, silent).cockpitSide).toBeUndefined()
+  })
+})

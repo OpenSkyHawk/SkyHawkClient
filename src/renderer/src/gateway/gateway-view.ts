@@ -50,10 +50,13 @@ export function gatewayView(g: GatewayStatus | undefined, port?: string): Gatewa
 /**
  * The Gateway's own firmware (#171), worded for the device card's row (`card`) and the popover's
  * (`pop`). Whether it is reported and whether it is newer than this client supports are main's.
+ * Its cockpit side not responding (#187, main's `cockpitSide`) reads so, in red (`err`).
  */
 export function gatewayFirmwareView(
-  f: GatewayFirmware | undefined
-): { card: string; pop: string; warn: boolean } | undefined {
+  f: GatewayFirmware | undefined,
+  cockpitSide?: boolean
+): { card: string; pop: string; warn: boolean; err?: true } | undefined {
+  if (cockpitSide) return { card: 'not responding', pop: 'not responding', warn: false, err: true }
   if (!f) return undefined
   if (!f.version) {
     return {

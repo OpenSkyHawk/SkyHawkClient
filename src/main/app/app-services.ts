@@ -29,6 +29,7 @@ import { NodeHub, NodeRoster } from '../nodes'
 import { Releases } from '../releases'
 import { uf2Drive, UpdateHost } from '../update'
 import { debugLog, setDebugEnabled } from './debug-log'
+import { uploaderLink } from './uploader-link'
 import { storeFiles, storePaths, type StorePaths } from './user-data'
 
 export class AppServices {
@@ -87,7 +88,8 @@ export class AppServices {
       usbFirmware: (fw) => {
         this.nodes.gatewayUsbFirmware(fw)
         this.update.usbFirmware(fw)
-      }
+      },
+      connectRead: () => this.update.connectRead()
     })
     this.hid = new HidService(emit, debugLog)
     this.connection = new GatewayConnection(emit, {
@@ -100,7 +102,9 @@ export class AppServices {
       mappingFile,
       mappingEvents: this.journal,
       log: debugLog,
-      link: this.connection
+      link: this.connection,
+      // Whose is the roster's silence, the cockpit side's or the whole Gateway's (#187)?
+      probeUsbSide: () => this.update.cockpit?.probe() ?? Promise.resolve(false)
     })
     this.serialMonitor = new SerialTrafficMonitor(emit)
     // GitHub through Electron's net (P6: only app asks electron); the newer-major rule is gateway's.
@@ -135,6 +139,22 @@ export class AppServices {
           hasCopy: (axes) => this.calibration.hasSavedCopy(axes),
           restore: (axes) => this.calibration.restoreSaved(axes)
         },
+        events: (rows) => this.journal.report(rows),
+        now: () => Date.now()
+      },
+      // The Gateway's cockpit side (#187): through its uploader, on the calibration channel.
+      cockpit: {
+        link: uploaderLink(this.calibration),
+        image: (version) => this.releases.nodeImage(version, 0),
+        bridgeVersion: () => {
+          const v = this.connection.deviceStatus().gateway?.firmware?.version
+          return v ? `${v.major}.${v.minor}.${v.patch}` : undefined
+        },
+        linkUp: () => isLinkUp(this.connection.deviceStatus().state),
+        calibrationOpen: () => this.calibration.sessionOpen,
+        notResponding: () => !!this.connection.deviceStatus().gateway?.cockpitSide,
+        // Nodes shows it: the Firmware row, the paused cockpit, the roster held.
+        publish: (state) => this.nodes.cockpitSide(state),
         events: (rows) => this.journal.report(rows),
         now: () => Date.now()
       },
@@ -230,10 +250,12 @@ export class AppServices {
     // The Firmware sheet compares every board with the newest saved release (#173): after every
     // `releases:state` push, the first of which follows the start scan.
     this.releases.onState(() => this.nodes.releaseChanged(this.releases.target()))
-    // The update dialog's checks follow the relay, the link and the saved releases (#173).
+    // The update dialog's checks follow the relay, the link and the saved releases (#173), and a
+    // calibration session (#187: the Gateway refuses an update during one).
     this.releases.onState(() => this.update.inputsChanged())
     this.relay.onState(() => this.update.inputsChanged())
     this.connection.onStatus(() => this.update.inputsChanged())
+    this.calibration.onWorkflow(() => this.update.inputsChanged())
     // A settings change, in one listener so its order is explicit: auto-connect, then the relay.
     this.settings.store.subscribe((config, prev) => {
       if (prev.autoConnect !== config.autoConnect) {

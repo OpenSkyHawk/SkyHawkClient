@@ -2,13 +2,13 @@
 // update dialog that shows it. Imported by main, preload and the renderer.
 //
 // Main decides every state: the checks, each step, the failure and the result. The renderer only
-// words them, by key. #173 brings the Gateway's USB side; the cockpit side (#187) and the boards
-// (#175) add their own targets, steps and failures here.
+// words them, by key. #173 brought the Gateway's USB side, #187 its cockpit side; the boards (#175)
+// add their own targets, steps and failures here.
 //
 // Versions travel as `x.y.z` text, never as a release tag.
 
-/** What an update is for. */
-export type UpdateTargetRef = { kind: 'usb' }
+/** What an update is for: the Gateway's USB side (#173) or its cockpit side, node 0 (#187). */
+export type UpdateTargetRef = { kind: 'usb' } | { kind: 'cockpit' }
 
 /** Where the dialog is: the confirm step, the run, a failure, or the result. */
 export type UpdatePhase = 'confirm' | 'run' | 'fail' | 'done'
@@ -26,18 +26,60 @@ export type UpdateCheck =
    * the Gateway).
    */
   | { kind: 'drive'; ok: boolean; problem?: 'none' | 'many' }
-  /** The target release is saved on this computer, with an image for this board. */
-  | { kind: 'image'; ok: boolean; version: string }
+  /**
+   * The target release is saved on this computer, with an image for this board. `bundle`: no image
+   * is sent, the Gateway's own firmware carries it (the cockpit side, #187). `checking`: the saved
+   * image is being read and checked against the board.
+   */
+  | { kind: 'image'; ok: boolean; version: string; bundle?: true; checking?: true }
+  /** The Gateway's USB side has the firmware uploader (it answers UPL_INFO): the cockpit side. */
+  | { kind: 'uploader'; ok: boolean }
+  /** No calibration session is open on the Gateway: it refuses an update meanwhile. */
+  | { kind: 'calibration'; ok: boolean }
+  /** The image to send was built for this board (its identity block): a staged image only. */
+  | { kind: 'built-for'; ok: boolean; nodeId: number }
+  /** The image fits a board's flash limit; the board checks its own before anything is erased. */
+  | { kind: 'fits'; ok: boolean; maxKb: number }
 
-/** One step of the run, by key. The Gateway's USB side: restart, copy, reconnect, confirm. */
-export type UpdateStepKey = 'uf2' | 'copy' | 'rec' | 'ver'
+/**
+ * One step of the run, by key. The Gateway's USB side: restart, copy, reconnect, confirm. A board
+ * through the Gateway's uploader (#187): stage (only when an image is sent), enter its bootloader,
+ * write, verify, restart, confirm.
+ */
+export type UpdateStepKey =
+  | 'uf2'
+  | 'copy'
+  | 'rec'
+  | 'stage'
+  | 'boot'
+  | 'write'
+  | 'verify'
+  | 'restart'
+  | 'ver'
 
 export interface UpdateStep {
   key: UpdateStepKey
   state: 'waiting' | 'on' | 'done' | 'bad'
-  /** The copy's progress, 0–100, while it runs. */
+  /** The copy's, staging's or writing's progress, 0–100, while it runs. */
   pct?: number
 }
+
+/**
+ * A line the run shows above its steps (#187): the whole cockpit is paused; a write was
+ * interrupted and is retried automatically (`n` of `of`); the retry went through; the client lost
+ * contact and the Gateway carries on; contact is back; press the board's reset button (a Retry
+ * after it didn't answer).
+ */
+export type UpdateNote =
+  | { kind: 'paused' }
+  | { kind: 'retrying'; n: number; of: number }
+  | { kind: 'recovered' }
+  | { kind: 'cut-off' }
+  | { kind: 'back' }
+  | { kind: 'press-reset' }
+
+/** Why the board refused an image before writing it. */
+export type UpdateRefusal = 'wrong-kind' | 'wrong-id' | 'too-big'
 
 /** Why the run stopped. Retry picks up where the failure says it safely can. */
 export type UpdateFailure =
@@ -55,7 +97,29 @@ export type UpdateFailure =
   | { kind: 'no-reconnect' }
   /** It came back on another version than the target. */
   | { kind: 'wrong-version'; reported: string }
-
+  // ── through the Gateway's uploader (#187) ──
+  /** The board didn't answer the request to enter its bootloader: nothing was written. */
+  | { kind: 'no-response' }
+  /** The board has no bootloader: only a programmer updates it. */
+  | { kind: 'no-bootloader' }
+  /** The board refused the image, before or after its erase (`after`). */
+  | { kind: 'refused'; why: UpdateRefusal }
+  /** Writing or verifying failed after the automatic retries. */
+  | { kind: 'write-failed' }
+  /** It restarted but didn't report its new version in time. */
+  | { kind: 'no-confirmation' }
+  /** The Gateway lost power during the update, and the board doesn't answer now. */
+  | { kind: 'not-responding' }
+  /** The Gateway lost power during the update, before anything was written. */
+  | { kind: 'interrupted' }
+  /** A calibration session is open on the Gateway: it refuses the update meanwhile. */
+  | { kind: 'busy' }
+  /** The Gateway's USB side has no uploader: it needs newer firmware first. */
+  | { kind: 'no-uploader' }
+  /** The Gateway didn't take the image, or didn't answer. */
+  | { kind: 'no-answer' }
+  /** A result this client doesn't know (a newer Gateway). */
+  | { kind: 'unknown-result' }
 /** What happened to the Gateway's axis calibration across the update (no prompt, ever). */
 export type UpdateCalibration =
   /** It was cleared, and this computer's copy was written back. */
@@ -72,6 +136,18 @@ export interface UpdateState {
   name: string
   /** The version it reports now; absent when it reports none. */
   from?: string
+  /**
+   * It reports no version because it doesn't respond (#187): the update is a retry, and the
+   * dialog shows the state in place of a version.
+   */
+  fromState?: 'not-responding'
+  /**
+   * No image is sent: the Gateway's own firmware carries the cockpit side's (#187). Absent: the
+   * image comes from a saved release.
+   */
+  bundle?: true
+  /** The image's size in KB, when one is sent and known. */
+  sizeKb?: number
   /**
    * It waits in its update drive (no port, no version): the update starts at the copy, and the
    * steps begin there.
@@ -95,7 +171,14 @@ export interface UpdateState {
   steps: UpdateStep[]
   /** The whole update's progress, 0–100. */
   pct: number
+  /** The run's line above its steps, while it runs (#187). */
+  note?: UpdateNote
   failure?: UpdateFailure
+  /**
+   * What a failure through the uploader left behind (#187): nothing written (`refused`), or the
+   * board waiting in its bootloader (`erased`).
+   */
+  after?: 'refused' | 'erased'
   /** The result: the version it reports, and what happened to its calibration. */
   done?: { reports: string; calibration?: UpdateCalibration }
   /** The DCS relay is running (the confirm check, and the done step's hint when it isn't). */

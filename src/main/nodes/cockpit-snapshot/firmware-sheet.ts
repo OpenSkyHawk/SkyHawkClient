@@ -6,8 +6,10 @@
 // #171). The release is the newest one saved on this computer (releases' `target()`): its version
 // order and its images are releases' rules, handed in with it.
 //
-// The chips are the design's `fwInfo` (CockpitMap.dc.html:817-858), in its order. Updating, stuck,
-// app unstable (#175) and not responding (#187) join it later.
+// The chips are the design's `fwInfo` (CockpitMap.dc.html:817-858), in its order. The cockpit side
+// (#187) is compared with the version its USB side carries (the bundle), else the release; it reads
+// *updating* while its update runs, every board *paused*, and *not responding* when the Gateway
+// answers but its cockpit side sends nothing. Stuck and app unstable (#175) join it later.
 import type { DeviceStatus, FirmwareVersion } from '@shared/gateway'
 import type {
   FirmwareBanner,
@@ -30,13 +32,26 @@ export interface FirmwareInputs {
    * in its drive. 0 or absent: none.
    */
   usbDrives?: number
+  /**
+   * The cockpit side's uploader this connect (#187): whether the USB side has one, and the
+   * cockpit-side version its firmware carries.
+   */
+  bridge?: { uploader: boolean; bundled?: string }
+  /** An update of the cockpit side runs (#187): from and to. */
+  cockpitUpdating?: { from?: string; to: string }
 }
 
 const text = (v: FirmwareVersion): string => `${v.major}.${v.minor}.${v.patch}`
 const isZero = (v: FirmwareVersion) => v.major === 0 && v.minor === 0 && v.patch === 0
 
 /** The statuses counted in *Needs attention* (the design's `need`). */
-const ATTENTION: ReadonlySet<FirmwareStatus> = new Set(['update', 'mismatch', 'manual', 'in-drive'])
+const ATTENTION: ReadonlySet<FirmwareStatus> = new Set([
+  'update',
+  'mismatch',
+  'manual',
+  'in-drive',
+  'not-responding'
+])
 
 /** A reported version against the release: no release, no image, or the version order. */
 function againstRelease(
@@ -81,17 +96,65 @@ function usbRow(live: boolean, f: FirmwareInputs): FirmwareRow {
 }
 
 /**
- * The Gateway's cockpit side: its own status row. Compared with the release like any board; the
- * bundle the USB side carries is #187's compare.
+ * The Gateway's cockpit side (#187): its own status row, against the version its USB side carries
+ * (the bundle), else the release. Its update runs: *updating*. The Gateway answers but it sends
+ * nothing: *not responding*, with Retry. With the USB side behind the release, its *Update* is the
+ * USB side's first: that firmware carries the newer cockpit side.
  */
 function cockpitRow(live: boolean, device: DeviceStatus, f: FirmwareInputs): FirmwareRow {
   const base = { key: 'cockpit', side: 'cockpit' as const, name: 'Gateway · cockpit side' }
+  const bundled = f.bridge?.bundled
+  const up = f.cockpitUpdating
+  if (live && up) {
+    return row({ ...base, status: 'updating', ...(up.from && { version: up.from }), to: up.to })
+  }
   const fw = device.gateway?.firmware
+  if (live && device.gateway?.cockpitSide) {
+    const to = bundled ?? f.release?.version
+    return row({
+      ...base,
+      status: 'not-responding',
+      ...(to && { to }),
+      ...(bundled && { bundled: true as const }),
+      ...(to && { action: 'retry' as const })
+    })
+  }
   if (!live || !fw) return row({ ...base, status: 'not-reported' })
   if (!fw.version) return row({ ...base, status: 'not-reported', notReported: true })
   const version = text(fw.version)
   if (fw.noBootloader) return row({ ...base, version, status: 'manual' })
-  return row({ ...base, version, status: againstRelease(version, f.release, { nodeId: 0 }) })
+  const usbBehind = !!f.release && !!f.usb && f.release.compare(text(f.usb)) < 0
+  if (!bundled) {
+    const status = againstRelease(version, f.release, { nodeId: 0 })
+    return row({
+      ...base,
+      version,
+      status,
+      ...(f.release && { to: f.release.version }),
+      ...(status === 'update' && {
+        action: usbBehind ? ('usb-first' as const) : ('update' as const)
+      })
+    })
+  }
+  // The bundle is the target; behind the release, the USB side updates first and brings a newer one.
+  const c = compareText(version, bundled)
+  const status: FirmwareStatus = usbBehind || c < 0 ? 'update' : c > 0 ? 'newer' : 'ok'
+  return row({
+    ...base,
+    version,
+    status,
+    to: usbBehind ? f.release!.version : bundled,
+    bundled: true,
+    ...(status === 'update' && { action: usbBehind ? ('usb-first' as const) : ('update' as const) })
+  })
+}
+
+/** `x.y.z` against `x.y.z`: negative when `a` is older. */
+function compareText(a: string, b: string): number {
+  const x = a.split('.').map(Number)
+  const y = b.split('.').map(Number)
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0)
+  return 0
 }
 
 /** A board in your cockpit, from its status row. */
@@ -101,6 +164,10 @@ function boardRow(v: NodeView, live: boolean, f: FirmwareInputs): FirmwareRow {
   const reported = reportedVersion(e.status)
   const version = reported ? text(reported) : undefined
   // While the link is down nothing on the bus is known: not reported, not offline (as drawn).
+  // While the cockpit side updates every board waits, its input paused (#187).
+  if (live && f.cockpitUpdating) {
+    return row({ ...base, status: 'paused', ...(version && { version }) })
+  }
   if (!live || e.availability === 'unknown') return row({ ...base, status: 'not-reported' })
   if (e.notSeen || e.availability === 'offline') {
     return row({ ...base, status: 'off', ...(version && { version }) })
