@@ -14,8 +14,8 @@
  *   Firmware/Libraries/PowerMonitor/TelemSchedule.h -> node-bus.generated.ts
  *   Firmware/NODE_IDS.md                         -> node-names.generated.ts
  *
- * The DCS-BIOS common-metadata address (_ACFT_NAME @ 0x0000) is NOT vendored in
- * the firmware repo, so it lives hand-curated in src/main/dcs/bios-protocol.ts.
+ * DCS-BIOS _ACFT_NAME is not synced: it is a DCS-BIOS protocol value (MetadataStart.lua) read
+ * from the DCS stream, not a firmware constant. ACFT_NAME in src/main/dcs/bios-protocol.ts.
  *
  * Source resolution:
  *   1. --local <path> | OPENSKYHAWK_REPO_LOCAL=<path>  read files from a local checkout (no fetch)

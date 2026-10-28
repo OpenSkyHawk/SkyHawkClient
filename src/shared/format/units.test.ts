@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { amps, fmtBytes, fmtPct, hex2, hex4, volts, voltsValue } from './units'
+import { amps, fmtBytes, fmtPct, hex2, hex4, hexCode, volts, voltsValue } from './units'
 
 describe('volts / amps', () => {
   it('volts: millivolts as "12.00 V"', () => {
@@ -54,5 +54,22 @@ describe('hex2 / hex4', () => {
     expect(hex4(0xabcd)).toBe('0xABCD')
     expect(hex4(0xff)).toBe('0x00FF')
     expect(hex4(0x12345)).toBe('0x2345')
+  })
+})
+
+describe('hexCode', () => {
+  it('a one-byte code as 0x + two upper-case digits', () => {
+    expect(hexCode(0xee)).toBe('0xEE')
+    expect(hexCode(7)).toBe('0x07')
+    expect(hexCode(0)).toBe('0x00')
+    expect(hexCode(0xff)).toBe('0xFF')
+  })
+
+  it('the low byte only', () => {
+    expect(hexCode(0x1ee)).toBe('0xEE')
+  })
+
+  it('? when there is no code', () => {
+    expect(hexCode(undefined)).toBe('?')
   })
 })

@@ -96,7 +96,7 @@ describe('T18 Node panel, Status tab (B70, B14, F11)', () => {
     expect(rows(sheet)[0]).toBe('Statusno status yet')
   })
 
-  it('degraded: the fault table’s label and description; an unknown code reads "Unknown fault (N)" (#183)', async () => {
+  it('degraded: the fault table’s label and description; an unknown code reads "Unknown fault (0xNN)" (#183, #190)', async () => {
     const known = await openStatus({ status: reported(2, { degraded: true, faultId: 1 }) })
     expect(boxes(known.sheet)).toEqual([
       'I2C peripheral — an I2C device (OLED/mux/expander) tripped its I2cHealth breaker'
@@ -106,7 +106,7 @@ describe('T18 Node panel, Status tab (B70, B14, F11)', () => {
 
     const unknown = await openStatus({ status: reported(2, { degraded: true, faultId: 200 }) })
     expect(boxes(unknown.sheet)).toEqual([
-      'Unknown fault (200) — reported by the node; this client has no description for this code.'
+      'Unknown fault (0xC8) — reported by the node; this client has no description for this code.'
     ])
   })
 

@@ -33,7 +33,8 @@ Every address, code, enum and layout value comes from `npm run sync` (generated,
 `scripts/sync-a4ec.ts` and run `npm run sync`; do not type the value by hand. Example:
 `NODE_FORGET_REQ_ADDR` (#188).
 
-The one documented exception is the DCS-BIOS `_ACFT_NAME` address; see
+DCS-BIOS `_ACFT_NAME` is not a firmware value: it is a DCS-BIOS protocol value read from the DCS
+stream, so the sync does not carry it. See
 [Firmware values come from `npm run sync`](./ARCHITECTURE.md#firmware-values-come-from-npm-run-sync).
 
 ## Ticket closure

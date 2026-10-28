@@ -171,7 +171,7 @@ describe('nodeFaultBoxes', () => {
 
   it('an unknown fault code still gets a box, named by its number', () => {
     expect(titles(node(2, { status: status(2, { degraded: true, faultId: 77 }) }))).toEqual([
-      'Unknown fault (77)'
+      'Unknown fault (0x4D)'
     ])
   })
 
@@ -203,7 +203,7 @@ describe('nodeFaultBoxes', () => {
 
   it('degraded and overheat both show', () => {
     const e = node(2, { status: status(2, { degraded: true, faultId: 3, overheat: true }) })
-    expect(titles(e)).toEqual(['Unknown fault (3)', 'Overheat'])
+    expect(titles(e)).toEqual(['Unknown fault (0x03)', 'Overheat'])
   })
 
   it('explains a node with no status yet', () => {
@@ -264,7 +264,7 @@ describe('pduFaultBoxes', () => {
       pdu(3, 'Left', { readings: 'none', status: status(3, { degraded: true, faultId: 7 }) })
     )
     expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual([
-      'Unknown fault (7)',
+      'Unknown fault (0x07)',
       'No readings received'
     ])
   })
@@ -273,7 +273,7 @@ describe('pduFaultBoxes', () => {
     const e = pdu(4, 'Right', { status: status(4, { degraded: true, faultId: 8, epvf: true }) })
     const v = view(e, [telem(4, { flags5: RAIL_FLAG.UNDER_V })])
     expect(pduFaultBoxes(v, false).map((b) => b.title)).toEqual([
-      'Unknown fault (8)',
+      'Unknown fault (0x08)',
       'Error-passive',
       '5V UNDER-V'
     ])

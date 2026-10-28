@@ -141,21 +141,21 @@ describe('adoptability', () => {
       fresh(44, { identified: 'other', status: status(44, { nodeKind: 7 }) })
     )
     expect(other).toMatchObject({ badge: 'UNKNOWN TYPE' })
-    expect(other.note).toMatch(/doesn’t know \(7\)/)
+    expect(other.note).toMatch(/doesn’t know \(0x07\)/)
   })
 
-  it('Detected as: an unknown board type says so, with its code (#183)', () => {
+  it('Detected as: an unknown board type says so, with its code in hex (#183, #190)', () => {
     const [v] = nodeViews(
       model([fresh(44, { identified: 'other', status: status(44, { nodeKind: 7 }) })]),
       []
     )
-    expect(adoptEvidence(v!).detected).toBe('Unknown board type (7), reported by the board')
+    expect(adoptEvidence(v!).detected).toBe('Unknown board type (0x07), reported by the board')
     // A fault code it has no label for reads the same way in the Reporting line.
     const [d] = nodeViews(
       model([fresh(45, { status: status(45, { nodeKind: 1, degraded: true, faultId: 238 }) })]),
       []
     )
-    expect(adoptEvidence(d!).reporting).toMatch(/· unknown fault \(238\)$/)
+    expect(adoptEvidence(d!).reporting).toMatch(/· unknown fault \(0xEE\)$/)
   })
 })
 

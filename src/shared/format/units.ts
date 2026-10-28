@@ -25,3 +25,6 @@ export const hex2 = (n: number) => (n & 0xff).toString(16).toUpperCase().padStar
 
 /** The low 16 bits as `0x` + four upper-case hex digits: `0x1A2B`. */
 export const hex4 = (n: number) => '0x' + (n & 0xffff).toString(16).toUpperCase().padStart(4, '0')
+
+/** A one-byte code as the firmware writes it (FP 04, D22): `0xEE`; `?` when there is none. */
+export const hexCode = (n: number | undefined): string => (n === undefined ? '?' : '0x' + hex2(n))

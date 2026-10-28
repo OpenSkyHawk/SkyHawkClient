@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DcsBiosProtocol, StringRegion, ACFT_NAME_ADDRESS } from './bios-protocol'
+import { DcsBiosProtocol, StringRegion, ACFT_NAME } from './bios-protocol'
 import { LineAssembler, parseCommand } from '../gateway/link-framing'
 
 /** Build a sync + one write block: addr, then count bytes of data words. */
@@ -45,7 +45,7 @@ describe('DcsBiosProtocol', () => {
 
 describe('StringRegion', () => {
   it('reassembles a null-terminated name from word writes', () => {
-    const r = new StringRegion(ACFT_NAME_ADDRESS, 24)
+    const r = new StringRegion(ACFT_NAME.address, 24)
     // "A-4E" packed two chars per 16-bit word: 'A'|'-'<<8, '4'|'E'<<8
     r.update(0x0000, 'A'.charCodeAt(0) | ('-'.charCodeAt(0) << 8))
     r.update(0x0002, '4'.charCodeAt(0) | ('E'.charCodeAt(0) << 8))

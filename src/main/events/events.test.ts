@@ -114,7 +114,7 @@ describe('NodeEventTracker — changes', () => {
     ])
   })
 
-  it('degraded carries the fault label (or Unknown fault (N)), once per episode (D8, #133)', () => {
+  it('degraded carries the fault label (or Unknown fault (0xNN)), once per episode (D8, #133)', () => {
     const t = live([st(2)])
     const deg = (faultId: number, faultLabel?: string) =>
       st(2, { degraded: true, faultId, faultLabel })
@@ -127,7 +127,7 @@ describe('NodeEventTracker — changes', () => {
       'Right_Navigation: degraded cleared [info]'
     ])
     expect(short(t.status([deg(9)], NODE_MSG, '', 37))).toEqual([
-      'Right_Navigation: degraded · Unknown fault (9) [warn]'
+      'Right_Navigation: degraded · Unknown fault (0x09) [warn]'
     ])
     expect(short(t.status([st(2)], NODE_MSG, '', 40))).toEqual([
       'Right_Navigation: degraded cleared [info]'

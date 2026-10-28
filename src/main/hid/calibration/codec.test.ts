@@ -310,7 +310,7 @@ describe('decoders', () => {
     expect(decodeNack(hex('050503'))).toEqual({ type: CAL_TYPE.COMMIT, reason: 0x05, detail: 3 })
   })
 
-  it('names every NACK reason the firmware table lists, and an unknown one as `Unknown reason (N)` (X11, #183)', () => {
+  it('names every NACK reason the firmware table lists, and an unknown one as `Unknown reason (0xNN)` (X11, #183, #190)', () => {
     // One name for the refusal message and the failure's reasonName, from the synced table: the
     // calibration reasons, the three the framing layer stops, and the firmware-upload ones alike.
     const named = Object.keys(CAL_NACK_REASONS).map((k) => [Number(k), nackName(Number(k))])
@@ -330,9 +330,9 @@ describe('decoders', () => {
       [0xd, 'BAD_IMAGE'],
       [0xe, 'NOT_STAGED']
     ])
-    expect(nackName(0xf)).toBe('Unknown reason (15)')
-    expect(nackName(0x0)).toBe('Unknown reason (0)')
-    expect(nackName(0xff)).toBe('Unknown reason (255)')
+    expect(nackName(0xf)).toBe('Unknown reason (0x0F)')
+    expect(nackName(0x0)).toBe('Unknown reason (0x00)')
+    expect(nackName(0xff)).toBe('Unknown reason (0xFF)')
   })
 
   it('decodes RAW, keeping raw and cal distinct — and both unsigned', () => {
