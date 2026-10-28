@@ -167,6 +167,17 @@ describe('T41 the Firmware button and sheet (#173)', () => {
     expect(button()).toHaveAttribute('title', 'Every board runs 1.0.1')
   })
 
+  it('the Gateway waiting in its update drive (link down): its row, in Needs attention, with Update', async () => {
+    const { sheet } = await openSheet({
+      ...BENCH,
+      device: link('reconnecting'),
+      firmware: { release: savedRelease('1.0.1'), usbDrives: 1 }
+    })
+    expect(rows()[0]).toBe('!Gateway · USB sideIN UPDATE DRIVEwaiting in its update driveUpdate')
+    expect(within(sheet).getByRole('button', { name: 'Needs attention · 1' })).toBeInTheDocument()
+    expect(button()).toHaveTextContent('Firmware· 1')
+  })
+
   it('link down: every row not reported; nothing needs attention, and it doesn’t say every board runs it', async () => {
     const { sheet } = await openSheet({ ...BENCH, device: link('disconnected') })
     expect(within(sheet).getByText('Nothing needs attention.')).toBeInTheDocument()

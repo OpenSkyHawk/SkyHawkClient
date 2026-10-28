@@ -102,8 +102,11 @@ function gateway(app: Services, fw: [number, number, number], axis0?: SimAxis) {
 
 const update = (app: Services) => app.lastPush('update:state') as UpdateState | null
 
-/** Launch with 0.3.0 saved and this computer's calibration copy, the Gateway connected on `fw`. */
-async function launch(fw: [number, number, number]) {
+/**
+ * Launch with 0.3.0 saved and this computer's calibration copy, the Gateway connected on `fw` —
+ * or, with `inDrive`, waiting in its update drive: no port, its drive mounted.
+ */
+async function launch(fw: [number, number, number], inDrive = false) {
   const github = new FakeGitHub()
   github.publish(buildRelease('0.3.0'))
   const app = makeServices({
@@ -125,6 +128,12 @@ async function launch(fw: [number, number, number]) {
   })
   await vi.waitFor(() => expect(app.lastPush('releases:state')?.cached).toHaveLength(1))
   const gw = gateway(app, fw, AXIS0)
+  if (inDrive) {
+    app.serial.listed(false)
+    app.drive.mounted = DRIVE
+    await gw.run(5_000, 250) // the drive watch's first looks
+    return { app, gw }
+  }
   app.serial.open()
   await gw.run(2_500) // HELLO, the DIAG timeout, GET_CAL
   return { app, gw }
@@ -240,5 +249,60 @@ describe('#173 the Gateway USB side, updated from the saved release', { timeout:
       canStart: true,
       checks: [{ kind: 'relay', ok: true }, {}, {}]
     })
+  })
+
+  it('the Gateway left in its update drive: the row offers Update, the copy, reconnect, done', async () => {
+    const { app, gw } = await launch([0, 2, 0], true)
+    expect(app.lastPush('cockpit:snapshot')!.firmware.rows[0]).toEqual({
+      key: 'usb',
+      side: 'usb',
+      name: 'Gateway · USB side',
+      status: 'in-drive',
+      attention: true,
+      action: 'update'
+    })
+    await app.invoke(CTRL.updateOpen, { kind: 'usb' })
+    expect(update(app)).toMatchObject({
+      inDrive: true,
+      canStart: true,
+      checks: [
+        { kind: 'relay', ok: true },
+        { kind: 'drive', ok: true },
+        { kind: 'image', ok: true }
+      ],
+      steps: [{ key: 'copy' }, { key: 'rec' }, { key: 'ver' }]
+    })
+    // The copy lands; it restarts into 0.3.0, its calibration cleared, and is a port again.
+    app.drive.onCopied = () => {
+      gw.boot([0, 3, 0], undefined)
+      app.serial.listed(true)
+    }
+    const started = app.invoke(CTRL.updateStart)
+    await gw.run(500)
+    expect(app.touches()).toEqual([]) // no port, no touch
+    expect(app.drive.files.map((f) => f.root)).toEqual([DRIVE])
+    app.serial.open()
+    await gw.run(4_000)
+    await started
+    // No before-reading: the saved axis it now reports uncalibrated is restored (regressedAxes).
+    expect(update(app)).toMatchObject({
+      phase: 'done',
+      done: { reports: '0.3.0', calibration: 'restored' }
+    })
+    expect(gw.sim.axis0).toEqual(AXIS0)
+    expect(app.lastPush('cockpit:snapshot')!.firmware.rows[0]).toMatchObject({ status: 'ok' })
+  })
+
+  it('with no port and two update drives mounted, it refuses to guess', async () => {
+    const { app, gw } = await launch([0, 2, 0], true)
+    app.drive.others = [`${DRIVE} 1`]
+    await gw.run(5_000, 250)
+    await app.invoke(CTRL.updateOpen, { kind: 'usb' })
+    expect(update(app)).toMatchObject({
+      canStart: false,
+      checks: [{}, { kind: 'drive', ok: false }, {}]
+    })
+    await app.invoke(CTRL.updateStart)
+    expect(app.drive.files).toEqual([])
   })
 })

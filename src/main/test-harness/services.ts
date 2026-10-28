@@ -50,6 +50,8 @@ const world = {
   /** The Gateway's update drive (#173): where it is mounted now, and what was copied onto it. */
   drive: {
     mounted: undefined as string | undefined,
+    /** Other RP2040s' update drives, mounted too. */
+    others: [] as string[],
     files: [] as { root: string; name: string; bytes: Uint8Array }[],
     /** The next copies fail (the drive goes away during them). */
     failWrites: false,
@@ -170,7 +172,11 @@ vi.doMock('../dcs/transports', () => ({ createTransport: () => new FakeTransport
 // The update drive (#173): mounted where the test says, copies recorded, never the real disk.
 vi.doMock('../update/uf2-drive', () => ({
   uf2Drive: () => ({
-    list: () => Promise.resolve(world.drive.mounted ? [world.drive.mounted] : []),
+    list: () =>
+      Promise.resolve([
+        ...world.drive.others,
+        ...(world.drive.mounted ? [world.drive.mounted] : [])
+      ]),
     write: (root: string, name: string, bytes: Uint8Array, pct: (n: number) => void) => {
       if (world.drive.failWrites || world.drive.mounted !== root) return Promise.resolve(false)
       world.drive.files.push({ root, name, bytes })
@@ -254,6 +260,7 @@ function launch(opts: ServicesOptions) {
     touches: [],
     drive: {
       mounted: undefined,
+      others: [],
       files: [],
       failWrites: false,
       onTouch: undefined,

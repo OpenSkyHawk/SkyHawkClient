@@ -112,6 +112,59 @@ describe('T42 the Gateway USB side’s update (#173)', () => {
     expect(skyhawk().checkReleases).toHaveBeenCalledTimes(1)
   })
 
+  it('the Gateway waiting in its update drive: its own sub, chip, check and note; the steps from the copy', async () => {
+    const IN_DRIVE = at({
+      from: undefined,
+      inDrive: true,
+      checks: [
+        { kind: 'relay', ok: true },
+        { kind: 'drive', ok: true },
+        { kind: 'image', ok: true, version: '1.0.1' }
+      ],
+      steps: steps(['waiting', 'waiting', 'waiting', 'waiting']).slice(1)
+    })
+    const { dialog, sky } = await open(IN_DRIVE)
+    let d = dialog()
+    expect(within(d).getByText('in its update drive → 1.0.1 · firmware 1.0.1')).toBeInTheDocument()
+    expect(within(d).getByRole('list', { name: 'Board' })).toHaveTextContent(
+      '1Gateway · USB sidein its update drive → 1.0.1IN UPDATE DRIVE'
+    )
+    expect(within(d).getByLabelText('Checks')).toHaveTextContent(
+      '✓DCS relay stopped✓Gateway waiting in its update drive✓Firmware 1.0.1 · saved on this computer, checked'
+    )
+    expect(
+      within(d).getByText(
+        /it restarts by itself once the copy lands, and reconnects\. Keep it plugged in\./
+      )
+    ).toBeInTheDocument()
+    // Another RP2040 in BOOTSEL too: blocked, no guessing.
+    sky.emitScenario({
+      update: {
+        ...IN_DRIVE,
+        canStart: false,
+        checks: [IN_DRIVE.checks[0]!, { kind: 'drive', ok: false }, IN_DRIVE.checks[2]!]
+      }
+    })
+    await settle()
+    d = dialog()
+    expect(within(d).getByLabelText('Checks')).toHaveTextContent(
+      '✕More than one update drive is mounted — unplug the other RP2040 board.'
+    )
+    expect(within(d).getByRole('button', { name: 'Update to 1.0.1' })).toBeDisabled()
+    // The run starts at the copy.
+    sky.emitScenario({
+      update: {
+        ...IN_DRIVE,
+        phase: 'run',
+        steps: steps(['done', 'on', 'waiting', 'waiting'], 10).slice(1)
+      }
+    })
+    await settle()
+    expect(within(dialog()).getByLabelText('Steps')).toHaveTextContent(
+      '›Copying the firmware · 10%·Reconnecting·Confirming the version it reports'
+    )
+  })
+
   it('halves on different majors: the warning row and I understand', async () => {
     const { user, dialog } = await open(at({ halves: { usb: 1, cockpit: 0 }, canStart: false }))
     const d = dialog()
@@ -156,6 +209,11 @@ describe('T42 the Gateway USB side’s update (#173)', () => {
       { kind: 'copy-failed' },
       'Copy failed — the Gateway’s drive went away during the copy. Retry copies the whole file again; if the Gateway doesn’t come back, hold BOOTSEL while plugging it in.',
       'The Gateway waits in its update drive until a copy goes through.'
+    ],
+    [
+      { kind: 'many-drives' },
+      'More than one update drive — another RP2040 board is waiting in its update drive too. Unplug it, then Retry.',
+      'Nothing was written.'
     ],
     [
       { kind: 'no-reconnect' },

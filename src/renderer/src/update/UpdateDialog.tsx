@@ -67,7 +67,7 @@ function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
                     <br />
                     <span style={{ fontSize: 11 }}>{v.board.sub}</span>
                   </span>
-                  <span className="vchip vchip--upd">UPDATE AVAILABLE</span>
+                  <span className={`vchip ${v.board.chipCls}`}>{v.board.chip}</span>
                 </li>
               </ul>
               <div className="up__chk" aria-label="Checks">

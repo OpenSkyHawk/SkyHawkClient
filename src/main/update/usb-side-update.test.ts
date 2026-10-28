@@ -157,6 +157,33 @@ describe('UsbSideUpdate (#173)', () => {
     expect(h.calls).toEqual(['take', `write ${DRIVE} gateway-1.0.1.uf2`, 'handBack'])
   })
 
+  it('the Gateway waiting in its drive (no port): the update starts at the copy, no take, no touch', async () => {
+    const h = harness({ port: undefined })
+    h.mount()
+    const p = h.flow.run(1, { step: (n) => h.steps.push(n), pct: () => {} })
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(await p).toEqual({ ok: true, reports: '1.0.1' })
+    expect(h.calls).toEqual([`write ${DRIVE} gateway-1.0.1.uf2`, 'handBack'])
+    expect(h.steps).toEqual([1, 2, 3])
+  })
+
+  it('no Gateway port and two update drives: never guesses which is the Gateway', async () => {
+    const atCopy = harness({ port: undefined, stray: `${DRIVE} 1` })
+    atCopy.mount()
+    const p = atCopy.flow.run(1, { step: () => {}, pct: () => {} })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(await p).toEqual({ ok: false, failure: { kind: 'many-drives' }, at: 1, retryFrom: 1 })
+    const atStart = harness({ port: undefined, stray: `${DRIVE} 1` })
+    atStart.mount()
+    expect(await atStart.run()).toEqual({
+      ok: false,
+      failure: { kind: 'many-drives' },
+      at: 0,
+      retryFrom: 0
+    })
+    expect([...atCopy.calls, ...atStart.calls].some((c) => c.startsWith('write'))).toBe(false)
+  })
+
   it('another RP2040 already in BOOTSEL never gets the firmware: the Gateway is touched, its new drive used', async () => {
     // macOS mounts the Gateway's drive beside the stray one as `RPI-RP2 1`.
     const h = harness({ stray: DRIVE, gatewayDrive: `${DRIVE} 1` })

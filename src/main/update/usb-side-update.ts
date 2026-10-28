@@ -147,16 +147,25 @@ export class UsbSideUpdate {
             await this.ports.link.touch(path).catch(() => {})
           } else {
             // No Gateway port: a blank Gateway, or one plugged in holding BOOTSEL. Its drive is
-            // the one mounted now.
+            // the one mounted now — unless there are several, and no telling which.
             this.strays = []
+            if ((await this.ports.drive.list()).length > 1) {
+              return fail({ kind: 'many-drives' }, at, at)
+            }
           }
           this.root = await this.waitForDrive()
           if (!this.root) return fail({ kind: 'no-drive' }, at, at)
           break
         }
         case 'copy': {
+          // Started here (the Gateway waits in its drive) with no drive chosen: never guess
+          // between several.
+          if (!this.root && (await this.ports.drive.list()).length > 1) {
+            return fail({ kind: 'many-drives' }, at, at)
+          }
           // After a failed copy the drive may come back only through BOOTSEL: wait for it again.
           const root = await this.waitForDrive()
+          this.root = root
           const img = this.image
           const ok =
             !!root &&

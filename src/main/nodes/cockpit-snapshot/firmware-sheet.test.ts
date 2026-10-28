@@ -203,6 +203,30 @@ describe('Firmware sheet rows (#173)', () => {
     expect(s.allCurrent).toBe(false)
   })
 
+  it('the Gateway waiting in its update drive (link down, a drive mounted): in-drive, Update (#173)', () => {
+    const down = (f: FirmwareInputs) =>
+      byKey(sheet([], f, { state: 'reconnecting' }, false).rows, 'usb')
+    expect(down({ release: R, usbDrives: 1 })).toEqual({
+      key: 'usb',
+      side: 'usb',
+      name: 'Gateway · USB side',
+      status: 'in-drive',
+      attention: true,
+      action: 'update'
+    })
+    // Two drives: still waiting; the dialog refuses to guess.
+    expect(down({ release: R, usbDrives: 2 }).status).toBe('in-drive')
+    // Nothing saved, or no USB image: the state, no Update.
+    expect(down({ usbDrives: 1 })).not.toHaveProperty('action')
+    expect(down({ release: release('1.0.1', [], false), usbDrives: 1 })).not.toHaveProperty(
+      'action'
+    )
+    // No drive: not reported, as before. The link up: a drive (another board's) changes nothing.
+    expect(down({ release: R, usbDrives: 0 }).status).toBe('not-reported')
+    const up = sheet([], { usb: v('1.0.1'), release: R, usbDrives: 1 })
+    expect(byKey(up.rows, 'usb').status).toBe('ok')
+  })
+
   it('nothing saved: no compare, only the chips that need no release', () => {
     const s = sheet([pdu(3, '1.0.0'), pdu(4, '0.3.0'), board(5, '1.0.0', {}, 0)], {
       usb: v('1.0.0')

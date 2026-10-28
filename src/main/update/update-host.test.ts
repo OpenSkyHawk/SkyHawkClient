@@ -19,11 +19,15 @@ function host(
     cockpit?: number
     release?: ReleaseTarget
     drive?: boolean
+    /** Update drives mounted from the start (the Gateway waiting in one, another board's). */
+    strays?: string[]
   } = {}
 ) {
   const pushes: (UpdateState | null)[] = []
   const inputs = { relay: opts.relay ?? false, link: opts.link ?? true }
   let mounted: string | undefined
+  const others = [...(opts.strays ?? [])]
+  const drives: number[] = []
   const ref: { h?: UpdateHost } = {}
   const usb: UsbSidePorts = {
     link: {
@@ -35,10 +39,11 @@ function host(
       handBack: () => setTimeout(() => ref.h!.usbFirmware({ major: 1, minor: 0, patch: 1 }), 1_000)
     },
     drive: {
-      list: () => Promise.resolve(mounted ? [mounted] : []),
-      write: (_r, _n, _b, pct) => {
+      list: () => Promise.resolve([...others, ...(mounted ? [mounted] : [])]),
+      write: (root, _n, _b, pct) => {
         pct(100)
         mounted = undefined
+        others.splice(others.indexOf(root), 1)
         return Promise.resolve(true)
       }
     },
@@ -59,9 +64,10 @@ function host(
     linkUp: () => inputs.link,
     cockpitMajor: () => opts.cockpit,
     release: () => ('release' in opts ? opts.release : release()),
-    usb
+    usb,
+    drivesChanged: (n) => drives.push(n)
   }))
-  return { h, pushes, inputs, last: () => pushes.at(-1) }
+  return { h, pushes, inputs, drives, others, last: () => pushes.at(-1) }
 }
 
 beforeEach(() => void vi.useFakeTimers())
@@ -157,5 +163,52 @@ describe('UpdateHost (#173)', () => {
       steps: [{ state: 'bad' }, { state: 'waiting' }, { state: 'waiting' }, { state: 'waiting' }]
     })
     expect(last()?.done).toBeUndefined()
+  })
+
+  it('link down: looks for update drives, reports them; link up: stops and reports none', async () => {
+    const { h, inputs, drives, others } = host({ link: false, strays: ['/Volumes/RPI-RP2'] })
+    h.inputsChanged()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(drives).toEqual([1])
+    others.push('/Volumes/RPI-RP2 1')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(drives).toEqual([1, 2])
+    inputs.link = true
+    h.inputsChanged()
+    expect(drives).toEqual([1, 2, 0])
+    others.length = 0
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(drives).toEqual([1, 2, 0]) // no looking while the link is up
+  })
+
+  it('the Gateway waiting in its drive: the drive check, the steps from the copy, the run from there', async () => {
+    const { h, last, others } = host({ link: false, strays: ['/Volumes/RPI-RP2'] })
+    h.inputsChanged()
+    await vi.advanceTimersByTimeAsync(0)
+    h.openUpdate({ kind: 'usb' })
+    expect(last()).toMatchObject({
+      inDrive: true,
+      canStart: true,
+      checks: [
+        { kind: 'relay', ok: true },
+        { kind: 'drive', ok: true },
+        { kind: 'image', ok: true }
+      ],
+      steps: [{ key: 'copy' }, { key: 'rec' }, { key: 'ver' }]
+    })
+    expect(last()?.from).toBeUndefined()
+    // A second drive appears: the check fails, no guessing.
+    others.push('/Volumes/RPI-RP2 1')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(last()).toMatchObject({
+      canStart: false,
+      checks: [{}, { kind: 'drive', ok: false }, {}]
+    })
+    others.pop()
+    await vi.advanceTimersByTimeAsync(5_000)
+    const run = h.start()
+    await vi.advanceTimersByTimeAsync(5_000)
+    await run
+    expect(last()).toMatchObject({ phase: 'done', pct: 100, done: { reports: '1.0.1' } })
   })
 })

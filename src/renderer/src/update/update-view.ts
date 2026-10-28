@@ -31,6 +31,13 @@ function checkView(c: UpdateCheck): CheckView {
       return c.ok
         ? { ok: true, text: 'Gateway connected' }
         : { ok: false, text: 'The Gateway isn’t connected — connect it first.' }
+    case 'drive':
+      return c.ok
+        ? { ok: true, text: 'Gateway waiting in its update drive' }
+        : {
+            ok: false,
+            text: 'More than one update drive is mounted — unplug the other RP2040 board.'
+          }
     case 'image':
       return c.ok
         ? { ok: true, text: `Firmware ${c.version} · saved on this computer, checked` }
@@ -73,6 +80,12 @@ function failView(f: UpdateFailure, to: string): { title: string; text: string; 
         text: 'the Gateway’s drive went away during the copy. Retry copies the whole file again; if the Gateway doesn’t come back, hold BOOTSEL while plugging it in.',
         foot: 'The Gateway waits in its update drive until a copy goes through.'
       }
+    case 'many-drives':
+      return {
+        title: 'More than one update drive',
+        text: 'another RP2040 board is waiting in its update drive too. Unplug it, then Retry.',
+        foot: 'Nothing was written.'
+      }
     case 'no-reconnect':
       return {
         title: 'Didn’t reconnect',
@@ -104,7 +117,7 @@ export interface UpdateView {
   sub: string
   canClose: boolean
   /** Confirm: the board, its checks, the halves warning, the Gateway note. */
-  board: { name: string; sub: string }
+  board: { name: string; sub: string; chip: string; chipCls: string }
   checks: CheckView[]
   halves?: string
   note: string
@@ -121,7 +134,7 @@ export interface UpdateView {
 }
 
 export function updateView(s: UpdateState): UpdateView {
-  const from = s.from ?? 'version not reported'
+  const from = s.inDrive ? 'in its update drive' : (s.from ?? 'version not reported')
   const sub = `${from} → ${s.to} · firmware ${s.to}`
   const failed = s.phase === 'fail' && s.failure ? failView(s.failure, s.to) : undefined
   const done = s.phase === 'done' ? s.done : undefined
@@ -137,12 +150,20 @@ export function updateView(s: UpdateState): UpdateView {
             : 'Update finished',
     sub: done ? `${s.name} reports ${done.reports}` : sub,
     canClose: s.phase !== 'run',
-    board: { name: s.name, sub: `${from} → ${s.to}` },
+    board: {
+      name: s.name,
+      sub: `${from} → ${s.to}`,
+      ...(s.inDrive
+        ? { chip: 'IN UPDATE DRIVE', chipCls: 'vchip--warn' }
+        : { chip: 'UPDATE AVAILABLE', chipCls: 'vchip--upd' })
+    },
     checks: s.checks.map(checkView),
     ...(s.halves && {
       halves: `its USB side would be on ${s.halves.usb}.x and its cockpit side on ${s.halves.cockpit}.x. Update both halves together.`
     }),
-    note: 'it restarts to update and reconnects by itself. Keep it plugged in. If the update clears its axis calibration, this computer’s copy is restored automatically.',
+    note: s.inDrive
+      ? 'it restarts by itself once the copy lands, and reconnects. Keep it plugged in. If the update clears its axis calibration, this computer’s copy is restored automatically.'
+      : 'it restarts to update and reconnects by itself. Keep it plugged in. If the update clears its axis calibration, this computer’s copy is restored automatically.',
     steps: s.steps.map((st) => ({
       label: st.key === 'copy' && st.pct !== undefined ? `${STEP.copy} · ${st.pct}%` : STEP[st.key],
       cls: CLS[st.state],

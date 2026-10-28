@@ -36,7 +36,15 @@ export interface UpdateHostDeps {
   release(): ReleaseTarget | undefined
   /** Everything the USB side's update needs. */
   usb: UsbSidePorts
+  /** Update drives mounted while the link is down changed (the Firmware sheet's row, NodeHub). */
+  drivesChanged?(count: number): void
 }
+
+/**
+ * How often update drives are looked for while the Gateway link is down: a folder read (macOS,
+ * Linux) or a file check per drive letter (Windows), at the link's own retry pace.
+ */
+export const DRIVE_WATCH_MS = 5_000
 
 const versionText = (v: Version) => `${v.major}.${v.minor}.${v.patch}`
 const major = (v: string) => Number(v.split('.')[0])
@@ -53,7 +61,12 @@ export class UpdateHost {
     /** Where Retry starts. */
     retryFrom: number
     result?: RunResult
+    /** It waits in its update drive: the update starts at the copy. */
+    inDrive: boolean
   }
+  /** Update drives mounted while the link is down, as last looked for. */
+  private drives = 0
+  private watch?: ReturnType<typeof setInterval>
   /** The USB side's release from HELLO this connect: the dialog's "from". */
   private usbVersion?: string
 
@@ -70,7 +83,42 @@ export class UpdateHost {
 
   /** The relay, the link or the saved releases changed: the checks may have. */
   inputsChanged(): void {
+    this.watchDrives()
     if (this.open?.phase === 'confirm' || this.open?.phase === 'done') this.push()
+  }
+
+  /** App quit: the drive watch stops. */
+  dispose(): void {
+    if (this.watch) clearInterval(this.watch)
+    this.watch = undefined
+  }
+
+  /**
+   * Look for update drives while the link is down and no update runs (#173): a Gateway left in its
+   * drive (an interrupted copy, or BOOTSEL held) has no port, so this is the only way to see it.
+   * Stops, and reports none, while the link is up.
+   */
+  private watchDrives(): void {
+    const on = !this.deps.linkUp() && this.open?.phase !== 'run'
+    if (on && !this.watch) {
+      void this.lookForDrives()
+      this.watch = setInterval(() => void this.lookForDrives(), DRIVE_WATCH_MS)
+    } else if (!on && this.watch) {
+      this.dispose()
+      if (this.deps.linkUp()) this.setDrives(0)
+    }
+  }
+
+  private async lookForDrives(): Promise<void> {
+    const count = (await this.deps.usb.drive.list()).length
+    if (this.watch) this.setDrives(count)
+  }
+
+  private setDrives(count: number): void {
+    if (count === this.drives) return
+    this.drives = count
+    this.deps.drivesChanged?.(count)
+    if (this.open?.phase === 'confirm') this.push()
   }
 
   // ── intents ────────────────────────────────────────────────────────────────
@@ -83,7 +131,9 @@ export class UpdateHost {
     const to = o.flow.to
     const checks: UpdateCheck[] = [
       { kind: 'relay', ok: !this.deps.relayRunning() },
-      { kind: 'link', ok: this.deps.linkUp() },
+      o.inDrive
+        ? { kind: 'drive', ok: this.drives === 1 }
+        : { kind: 'link', ok: this.deps.linkUp() },
       {
         kind: 'image',
         ok: !!release && release.version === to && release.hasImage({ side: 'usb' }),
@@ -93,23 +143,28 @@ export class UpdateHost {
     const cockpit = this.deps.cockpitMajor()
     const halves =
       cockpit !== undefined && cockpit !== major(to) ? { usb: major(to), cockpit } : undefined
-    const steps: UpdateStep[] = USB_STEPS.map((key, n) => ({
-      key,
-      state:
-        o.phase === 'confirm' || n > o.at
-          ? 'waiting'
-          : n < o.at || o.phase === 'done'
-            ? 'done'
-            : o.phase === 'fail'
-              ? 'bad'
-              : 'on',
-      ...(key === 'copy' && n === o.at && o.phase === 'run' && { pct: o.pct })
-    }))
+    // From the drive the steps begin at the copy.
+    const first = o.inDrive ? 1 : 0
+    const steps = USB_STEPS.map(
+      (key, n): UpdateStep => ({
+        key,
+        state:
+          o.phase === 'confirm' || n > o.at
+            ? 'waiting'
+            : n < o.at || o.phase === 'done'
+              ? 'done'
+              : o.phase === 'fail'
+                ? 'bad'
+                : 'on',
+        ...(key === 'copy' && n === o.at && o.phase === 'run' && { pct: o.pct })
+      })
+    ).slice(first)
     const r = o.result
     return {
       target: o.target,
       name: 'Gateway · USB side',
       ...(o.from && { from: o.from }),
+      ...(o.inDrive && { inDrive: true as const }),
       to,
       phase: o.phase,
       checks,
@@ -124,7 +179,9 @@ export class UpdateHost {
           : o.phase === 'confirm'
             ? 0
             : Math.round(
-                ((o.at + (USB_STEPS[o.at] === 'copy' ? o.pct / 100 : 0)) / USB_STEPS.length) * 100
+                ((o.at - first + (USB_STEPS[o.at] === 'copy' ? o.pct / 100 : 0)) /
+                  (USB_STEPS.length - first)) *
+                  100
               ),
       ...(r && !r.ok && o.phase === 'fail' && { failure: r.failure }),
       ...(r?.ok && {
@@ -142,15 +199,19 @@ export class UpdateHost {
     if (this.open?.phase === 'run') return
     const release = this.deps.release()
     if (!release) return
+    // No port, but an update drive is mounted: the Gateway waits in it, and the update starts at
+    // the copy (#173 Update step 3).
+    const inDrive = !this.deps.linkUp() && this.drives > 0
     this.open = {
       target,
       flow: new UsbSideUpdate(release.version, this.deps.usb),
-      ...(this.usbVersion && { from: this.usbVersion }),
+      ...(!inDrive && this.usbVersion && { from: this.usbVersion }),
       ack: false,
       phase: 'confirm',
-      at: 0,
+      at: inDrive ? 1 : 0,
       pct: 0,
-      retryFrom: 0
+      retryFrom: inDrive ? 1 : 0,
+      inDrive
     }
     this.push()
   }
@@ -164,7 +225,7 @@ export class UpdateHost {
   /** Start: only from the confirm step, with every check passing. */
   async start(): Promise<void> {
     if (this.open?.phase !== 'confirm' || !this.state()?.canStart) return
-    await this.run(0)
+    await this.run(this.open.retryFrom)
   }
 
   /** Retry a failure from where it said Retry may start. */
@@ -187,6 +248,7 @@ export class UpdateHost {
   private async run(from: number): Promise<void> {
     const o = this.open!
     Object.assign(o, { phase: 'run', at: from, pct: 0, result: undefined })
+    this.watchDrives() // the run looks for its own drive
     this.push()
     const result = await o.flow.run(from, {
       step: (n) => {
@@ -209,6 +271,7 @@ export class UpdateHost {
       o.at = result.at
       o.retryFrom = result.retryFrom
     }
+    this.watchDrives()
     this.push()
   }
 

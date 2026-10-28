@@ -135,7 +135,9 @@ export class AppServices {
         },
         events: (rows) => this.journal.report(rows),
         now: () => Date.now()
-      }
+      },
+      // A Gateway waiting in its update drive shows on the Firmware sheet (#173).
+      drivesChanged: (count) => this.nodes.gatewayUsbDrives(count)
     })
     this.lines = new DeviceLineTap(this.nodes)
     this.recorder = new SessionRecorder()
@@ -257,6 +259,7 @@ export class AppServices {
     this.connection.shutdown()
     this.streamLog.close()
     this.nodes.dispose()
+    this.update.dispose()
   }
 
   /**

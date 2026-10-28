@@ -22,6 +22,7 @@ export interface FirmwareRowView {
 }
 
 const CHIP: Record<Exclude<FirmwareStatus, 'no-release'>, [string, string, string, string]> = {
+  'in-drive': ['IN UPDATE DRIVE', 'vchip--warn', 'warn', '!'],
   off: ['OFFLINE', 'vchip--mute', 'off', '✕'],
   'not-reported': ['NOT REPORTED', 'vchip--mute', '', ''],
   manual: ['MANUAL UPDATE ONLY', 'vchip--warn', 'warn', '!'],
@@ -35,6 +36,8 @@ const CHIP: Record<Exclude<FirmwareStatus, 'no-release'>, [string, string, strin
 function sub(r: FirmwareRow, target: string | undefined): string {
   const v = r.version ?? ''
   switch (r.status) {
+    case 'in-drive':
+      return 'waiting in its update drive'
     case 'off':
       return r.version ? `last reported ${v}` : 'no version reported'
     case 'not-reported':
