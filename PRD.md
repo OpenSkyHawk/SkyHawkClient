@@ -52,7 +52,7 @@ OpenSkyhawk builders/operators on Windows or macOS bringing up or flying the coc
 - **CDC interface** — the DCS-BIOS byte stream both ways (relay loop `:311`). This is the serial side SkyHawkClient owns. The CDC carries the DCS-BIOS export (binary) upstream and ASCII commands downstream; it does **not** carry HID (HID `0xAA 0x55` frames are demuxed off the UART and never written to CDC).
 - **HID interface** — a separate joystick the OS claims. Report struct (`SimGateway.cpp:17-21`): `uint8_t buttons[16]` (128×1-bit) + `uint8_t hats[2]` (4×4-bit nibbles) + `int16_t axes[8]` = **34 bytes**, no report ID. Axes 0-7 = Roll/Pitch/Throttle/Rudder/BrakeL/BrakeR/Zoom/spare; hats 0 = centred,1=N…8=NW; buttons bit-packed (button n → byte n/8, bit n%8).
 
-**Aircraft + decode reference:** `tools/gen_a4ec/data/A-4E-C.jsonp` is the committed DCS-BIOS A-4E-C control reference (313 outputs / 150 inputs, names match DCS-BIOS/Bort) — the source the firmware's `Firmware/Libraries/A4EC/*` headers are generated from. HID control names: `Firmware/Libraries/HIDControls/HIDControls.h` (axes `0x0010-1F`, hats `0x0020-2F`, buttons `0x0030-AF`). No `_ACFT_NAME` in-repo — the live aircraft name lives in DCS-BIOS **common metadata** (a stable cross-module address), so the app bundles that address; absent it, infers "A-4E-C" from observed `0x8400-0x8554` traffic.
+**Aircraft + decode reference:** `tools/gen_a4ec/data/A-4E-C.jsonp` is the committed DCS-BIOS A-4E-C control reference (313 outputs / 150 inputs, names match DCS-BIOS/Bort) — the source the firmware's `Firmware/Libraries/A4EC/*` headers are generated from. HID control names: `Firmware/Libraries/HIDControls/HIDControls.h` (axes `0x0010-1F`, hats `0x0020-2F`, buttons `0x0030-AF`). No `_ACFT_NAME` in-repo — the live aircraft name is DCS-BIOS `_ACFT_NAME`, which DCS sends in every export; the app reads it from the DCS stream and never infers the aircraft from export addresses (§6.2, #172, #186).
 
 **Remote / cross-machine DCS — SimGateway here, DCS elsewhere (the primary remote scenario):** DCS-BIOS is pure UDP, but its default **export multicast `239.255.50.10:5010` is bound to loopback (127.0.0.1)** — it does **not** reach another machine unless `BIOSConfig.lua` is edited to send a **unicast** copy to this app's IP. The robust remote path is instead a **TCP connection to `<DCS-host>:7778`, which is bidirectional** (receive export _and_ send commands over one socket — the `.cmd`'s TCP fallback already proves this against `127.0.0.1`; point it at the DCS PC's IP for remote).
 
@@ -81,7 +81,7 @@ Settings expose: source mode, DCS host + transport (`loopback-multicast | unicas
 - `bridge/dcsbios-config.ts` — discovery: read the user's `…/Saved Games/DCS*/Scripts/DCS-BIOS/BIOSConfig.lua` to learn configured export/command addresses; warn when a remote setup needs an edit.
 - `bridge/dcsbios-parser.ts` — decode the DCS-BIOS export protocol (sync frame → address/value words) for the log/telemetry; the parser is a **tap** — parsing never gates the relay (relay forwards raw bytes regardless).
 - `bridge/hid.ts` — `node-hid`: open the same composite device's HID interface in parallel (shared read; DCS keeps using it as a joystick), poll the 34-byte report, decode axes/buttons/hats.
-- `reference/` — the **vendored, generated** TS modules (see §7): A-4E-C address→{name,mask,type,range}, HID controlId→name, HID report layout, DCS-BIOS common-metadata address.
+- `reference/` — the **vendored, generated** TS modules (see §7): A-4E-C address→{name,mask,type,range}, HID controlId→name, HID report layout.
 - `stats.ts` — counters: throughput each way, frame rate, command rate/total/last, errors/resyncs, uptime, reconnects; selected telemetry values.
 
 **Renderer (`src/renderer/`)** — React + TS dashboard panels (§6), state via a light store (Zustand or context), fed by IPC events (throttled/batched ~30 Hz so the log can't flood React).
@@ -106,7 +106,8 @@ A committed `scripts/sync-a4ec.ts` (run via `npm run sync`, and as a `prebuild` 
 - `tools/gen_a4ec/data/A-4E-C.jsonp` → `a4ec-controls.generated.ts` (address→{name,mask,type,range,description}; both decode-by-address and command lookup).
 - `Firmware/Libraries/HIDControls/HIDControls.h` → `hid-controls.generated.ts` (controlId→name, range sentinels).
 - SimGateway HID report layout (`Firmware/Libraries/SimGateway/SimGateway.cpp:17-21`) → `hid-report-layout.generated.ts` (byte offsets/counts) — parsed or asserted against a checked-in expectation so a firmware change fails the sync loudly.
-- DCS-BIOS common metadata (`Firmware/ScratchPad/DCS-BIOS/.../doc/json/MetadataStart.json`) → `_ACFT_NAME` at address `0x0000` (string[24]) + version/export-rate → bundled constants.
+
+DCS-BIOS `_ACFT_NAME` is not synced: it is a DCS-BIOS protocol value (the `MetadataStart` module, address `0x0000`, up to 24 characters), read from the DCS stream and defined once, as `ACFT_NAME` in `main/dcs/bios-protocol.ts`.
 
 Generated files are committed (offline builds, like Bort), regenerated on demand. Header banner records source commit + timestamp. This is the "reference to the existing implementation" — loose coupling, no submodule, standalone build.
 
@@ -171,7 +172,7 @@ SkyHawkClient/
 ## 12. Decisions (all resolved — ready to build)
 
 - **DCS-BIOS `7778` bind:** binds **all interfaces** (`tcp_config.address="*"`, `udp_config.receive_address="*"`, DCS-BIOS v0.11.2). Remote = **TCP-connect `<host>:7778`**, **no host-side script**, Windows firewall (inbound TCP 7778) only. Local default = loopback multicast; UDP-unicast (`send_address` edit) optional. `dcsbios-config.ts` (reads `BIOSConfig.lua`) is convenience auto-fill, not required.
-- **`_ACFT_NAME`:** address **`0x0000`**, null-terminated string, max 24 bytes (`MetadataStart.json`) — read for the live module name; sync bundles the DCS-BIOS common metadata.
+- **`_ACFT_NAME`:** address **`0x0000`**, null-terminated string, max 24 characters (DCS-BIOS `MetadataStart`) — read from the DCS stream for the live module name. A DCS-BIOS protocol value, not a firmware one, so not synced; defined once, as `ACFT_NAME` in `main/dcs/bios-protocol.ts`.
 - **Sim-telemetry default readouts:** **RPM, IAS, Flap position, Pressure Altitude, Fuel quantity** (mapped to A-4E-C output addresses; render "—" if an address isn't exported). Everything else stays in the log.
 - **Sync source:** **pinned git URL + commit** of the OpenSkyhawk repo — `sync-a4ec.ts` sparse-fetches the pinned ref; generated files stay committed so normal builds need no network; CI's sync-check re-fetches the pin to confirm freshness.
 - **Replay format:** **superset of `dcsbios_data.json`** — adds direction/aircraft/session metadata, still loadable by the firmware repo's logger/replayer.
