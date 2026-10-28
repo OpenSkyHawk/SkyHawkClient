@@ -130,7 +130,8 @@ async function launch(fw: [number, number, number]) {
   return { app, gw }
 }
 
-describe('#173 the Gateway USB side, updated from the saved release', () => {
+// Real file I/O (the release cache) under fake timers: room for a slow CI runner.
+describe('#173 the Gateway USB side, updated from the saved release', { timeout: 20_000 }, () => {
   it('touch → drive → copy → reconnect → reports 0.3.0; the cleared calibration is restored, one row', async () => {
     const { app, gw } = await launch([0, 2, 0])
     expect(app.lastPush('cockpit:snapshot')!.firmware.rows[0]).toMatchObject({
@@ -192,10 +193,12 @@ describe('#173 the Gateway USB side, updated from the saved release', () => {
     expect(update(app)).toMatchObject({ phase: 'fail', failure: { kind: 'no-drive' } })
     expect(app.drive.files).toEqual([])
     // Plugged in holding BOOTSEL: the drive is there, and there is no port to touch.
+    app.serial.listed(false)
     app.drive.mounted = DRIVE
     app.drive.onCopied = () => gw.boot([0, 3, 0], { ...AXIS0 })
     const retried = app.invoke(CTRL.updateRetry)
     await gw.run(500)
+    app.serial.listed(true) // restarted into 0.3.0: a port again
     app.serial.open()
     await gw.run(4_000)
     await retried
@@ -207,10 +210,13 @@ describe('#173 the Gateway USB side, updated from the saved release', () => {
   it('closing after a failure gives the port back: the link looks for the Gateway again', async () => {
     const { app, gw } = await launch([0, 2, 0])
     await app.invoke(CTRL.updateOpen, { kind: 'usb' })
+    // The touch mounts its drive, and the copy fails: the port stays with the update.
+    app.drive.onTouch = () => (app.drive.mounted = DRIVE)
+    app.drive.failWrites = true
     const started = app.invoke(CTRL.updateStart)
-    await gw.run(11_000, 250)
+    await gw.run(500)
     await started
-    expect(update(app)?.failure).toEqual({ kind: 'no-drive' })
+    expect(update(app)?.failure).toEqual({ kind: 'copy-failed' })
     expect(app.lastPush('device:status')?.state).toBe('reconnecting') // held by the update
     await app.invoke(CTRL.updateClose)
     expect(app.lastPush('device:status')?.state).toBe('scanning')

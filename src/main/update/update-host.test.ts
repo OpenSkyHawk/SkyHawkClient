@@ -35,7 +35,7 @@ function host(
       handBack: () => setTimeout(() => ref.h!.usbFirmware({ major: 1, minor: 0, patch: 1 }), 1_000)
     },
     drive: {
-      find: () => Promise.resolve(mounted),
+      list: () => Promise.resolve(mounted ? [mounted] : []),
       write: (_r, _n, _b, pct) => {
         pct(100)
         mounted = undefined

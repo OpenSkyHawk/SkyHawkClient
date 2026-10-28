@@ -39,6 +39,12 @@ function harness(
     regressed?: number[]
     restoreOk?: boolean
     image?: false
+    /** Another RP2040 in BOOTSEL, its drive mounted all along. */
+    stray?: string
+    /** Where the Gateway's own drive mounts (macOS: `RPI-RP2 1` beside a stray). */
+    gatewayDrive?: string
+    /** The HELLO after the copy lands this late (ms after the hand-back). */
+    helloAfterMs?: number
   } = {}
 ) {
   let mounted: string | undefined
@@ -55,7 +61,7 @@ function harness(
       },
       touch: (path) => {
         calls.push(`touch ${path}`)
-        if (board.driveOnTouch !== false) mounted = DRIVE
+        if (board.driveOnTouch !== false) mounted = board.gatewayDrive ?? DRIVE
         return Promise.resolve()
       },
       handBack: () => {
@@ -68,11 +74,12 @@ function harness(
           const [major, minor, patch] = (board.comesBackOn ?? '1.0.1').split('.').map(Number)
           ref.flow!.helloAnswered({ major: major!, minor: minor!, patch: patch! })
           setTimeout(() => (snapshot = board.after), 300)
-        }, 2_000)
+        }, board.helloAfterMs ?? 2_000)
       }
     },
     drive: {
-      find: () => Promise.resolve(mounted),
+      list: () =>
+        Promise.resolve([...(board.stray ? [board.stray] : []), ...(mounted ? [mounted] : [])]),
       write: (root, name, _bytes, pct) => {
         calls.push(`write ${root} ${name}`)
         pct(50)
@@ -121,6 +128,7 @@ function harness(
     steps,
     pcts,
     mount: () => (mounted = DRIVE),
+    flow,
     setBoard: (patch: typeof board) => Object.assign(board, patch)
   }
 }
@@ -142,11 +150,27 @@ describe('UsbSideUpdate (#173)', () => {
     expect(h.pcts).toEqual([50, 100])
   })
 
-  it('a drive already mounted (a blank Gateway, BOOTSEL held) starts at the copy: no touch', async () => {
-    const h = harness()
+  it('no Gateway port, its drive mounted (a blank Gateway, BOOTSEL held): copies with no touch', async () => {
+    const h = harness({ port: undefined })
     h.mount()
     expect((await h.run()).ok).toBe(true)
-    expect(h.calls).not.toContain('take')
+    expect(h.calls).toEqual(['take', `write ${DRIVE} gateway-1.0.1.uf2`, 'handBack'])
+  })
+
+  it('another RP2040 already in BOOTSEL never gets the firmware: the Gateway is touched, its new drive used', async () => {
+    // macOS mounts the Gateway's drive beside the stray one as `RPI-RP2 1`.
+    const h = harness({ stray: DRIVE, gatewayDrive: `${DRIVE} 1` })
+    expect(await h.run()).toEqual({ ok: true, reports: '1.0.1' })
+    expect(h.calls).toEqual([
+      'take',
+      'touch /dev/gw',
+      `write ${DRIVE} 1 gateway-1.0.1.uf2`,
+      'handBack'
+    ])
+    // The Gateway doesn't appear: the stray drive still isn't used.
+    const none = harness({ stray: DRIVE, driveOnTouch: false })
+    expect(await none.run()).toMatchObject({ ok: false, failure: { kind: 'no-drive' } })
+    expect(none.calls.some((c) => c.startsWith('write'))).toBe(false)
   })
 
   it('no drive after the touch → no-drive, Retry from the touch; nothing was written', async () => {
@@ -157,7 +181,8 @@ describe('UsbSideUpdate (#173)', () => {
     const none = harness({ port: undefined, driveOnTouch: false })
     expect((await none.run()).ok).toBe(false)
     expect(none.calls).toEqual(['take'])
-    // Plugged in holding BOOTSEL, then Retry: copies and finishes.
+    // Plugged in holding BOOTSEL (its drive, no port), then Retry: copies and finishes.
+    h.setBoard({ port: undefined })
     h.mount()
     expect(await h.run(0)).toEqual({ ok: true, reports: '1.0.1' })
   })
@@ -190,6 +215,22 @@ describe('UsbSideUpdate (#173)', () => {
       at: 2,
       retryFrom: 1
     })
+  })
+
+  it('Retry after a reconnect that came too late: its HELLO is already in, so it finishes at once', async () => {
+    const h = harness({
+      helloAfterMs: 25_000,
+      before: { ...snap([true]) },
+      after: snap([false]),
+      copy: [0]
+    })
+    const p = h.flow.run(0, { step: () => {}, pct: () => {} })
+    await vi.advanceTimersByTimeAsync(21_000)
+    expect(await p).toMatchObject({ ok: false, failure: { kind: 'no-reconnect' }, retryFrom: 2 })
+    await vi.advanceTimersByTimeAsync(10_000) // it comes back at 25 s, with nothing waiting
+    const retry = h.flow.run(2, { step: () => {}, pct: () => {} })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(await retry).toEqual({ ok: true, reports: '1.0.1', calibration: 'restored' })
   })
 
   it('HELLO unanswered after the copy reads as no reconnect, not a wrong version', async () => {

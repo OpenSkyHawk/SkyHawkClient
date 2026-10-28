@@ -83,6 +83,19 @@ export class UsbSideUpdate {
   private calBefore?: CalSnapshot
   private started = false
   private hello?: (version: string | undefined) => void
+  /**
+   * The release the Gateway reported in its last HELLO since this run took the port: kept even
+   * with nothing waiting, so a Retry after a late reconnect needn't wait for a HELLO that already
+   * came. Cleared whenever the port is taken.
+   */
+  private lastHello?: string
+  /** The Gateway's update drive, once one appeared for it. */
+  private root?: string
+  /**
+   * Update drives already mounted when this run touched the Gateway: other RP2040s in BOOTSEL,
+   * which must never receive its firmware.
+   */
+  private strays: string[] = []
 
   constructor(
     readonly to: string,
@@ -96,6 +109,7 @@ export class UsbSideUpdate {
    * when it went unanswered.
    */
   helloAnswered(fw: { major: number; minor: number; patch: number } | undefined): void {
+    if (fw) this.lastHello = text(fw)
     this.hello?.(fw && text(fw))
   }
 
@@ -123,11 +137,21 @@ export class UsbSideUpdate {
       report.step(at)
       switch (USB_STEPS[at]) {
         case 'uf2': {
-          // A drive already mounted (a blank Gateway, or held BOOTSEL) needs no touch.
-          if (await this.ports.drive.find()) break
+          // Take the port first: every RP2040 in BOOTSEL mounts the same drive, so the Gateway's
+          // is the one that appears after its own touch, never one already there.
           const path = await this.ports.link.take()
-          if (path) await this.ports.link.touch(path).catch(() => {})
-          if (!(await this.waitForDrive())) return fail({ kind: 'no-drive' }, at, at)
+          this.lastHello = undefined
+          this.root = undefined
+          if (path) {
+            this.strays = await this.ports.drive.list()
+            await this.ports.link.touch(path).catch(() => {})
+          } else {
+            // No Gateway port: a blank Gateway, or one plugged in holding BOOTSEL. Its drive is
+            // the one mounted now.
+            this.strays = []
+          }
+          this.root = await this.waitForDrive()
+          if (!this.root) return fail({ kind: 'no-drive' }, at, at)
           break
         }
         case 'copy': {
@@ -144,7 +168,7 @@ export class UsbSideUpdate {
           reported = await this.reconnect()
           if (reported) break
           // Still in its update drive: the copy didn't take, so Retry copies again.
-          const stillDrive = !!(await this.ports.drive.find())
+          const stillDrive = !!this.root && (await this.ports.drive.list()).includes(this.root)
           return fail({ kind: 'no-reconnect' }, at, stillDrive ? at - 1 : at)
         }
         case 'ver':
@@ -166,11 +190,18 @@ export class UsbSideUpdate {
     this.ports.link.handBack()
   }
 
-  /** The drive, as soon as it is there, or undefined after `driveMs`. */
+  /**
+   * The Gateway's drive, as soon as it is there, or undefined after `driveMs`: the one it used
+   * before if that is still mounted, else one that wasn't mounted when this run touched it.
+   */
   private async waitForDrive(): Promise<string | undefined> {
     const end = this.ports.now() + this.timing.driveMs
     for (;;) {
-      const root = await this.ports.drive.find()
+      const mounted = await this.ports.drive.list()
+      const root =
+        this.root && mounted.includes(this.root)
+          ? this.root
+          : mounted.find((d) => !this.strays.includes(d))
       if (root || this.ports.now() >= end) return root
       await sleep(this.timing.pollMs)
     }
@@ -178,6 +209,11 @@ export class UsbSideUpdate {
 
   /** Give the port back and wait for the Gateway's HELLO: its version, or undefined. */
   private reconnect(): Promise<string | undefined> {
+    // It came back after an earlier wait gave up (Retry): its HELLO is already in.
+    if (this.lastHello) {
+      this.ports.link.handBack()
+      return Promise.resolve(this.lastHello)
+    }
     return new Promise((resolve) => {
       const timer = setTimeout(() => done(undefined), this.timing.reconnectMs)
       const done = (v: string | undefined) => {

@@ -4,7 +4,7 @@
 //
 // The copy is a plain write, never the system copy call: on macOS the system copy (fcopyfile, which
 // fs.copyFile also uses) took 41 s on the bench, a plain write 1 s (OpenSkyhawk#361).
-import { open, readFile } from 'node:fs/promises'
+import { open, readdir, readFile } from 'node:fs/promises'
 import { posix, win32 } from 'node:path'
 
 /** The boot ROM's volume label: its Board-ID, in the info file at the drive's root. */
@@ -15,10 +15,14 @@ export const UF2_INFO_FILE = 'INFO_UF2.TXT'
 /** Written in pieces this big, for the copy's progress. */
 const CHUNK = 16 * 1024
 
-/** The update drive, as the update flow uses it. */
+/**
+ * The update drives, as the update flow uses them. Every RP2040's boot ROM mounts as `RPI-RP2`, so
+ * another board in BOOTSEL looks the same as the Gateway: the flow tells them apart by which drive
+ * appears after its own touch.
+ */
 export interface Uf2Drive {
-  /** Where the drive is mounted now, or undefined. */
-  find(): Promise<string | undefined>
+  /** Every RP2040 update drive mounted now, by its root. */
+  list(): Promise<string[]>
   /**
    * Write `bytes` as `name` at the drive's root. True when every byte went out: the board restarts
    * as the last block lands, so the drive going away after that is success, not a failure.
@@ -26,18 +30,27 @@ export interface Uf2Drive {
   write(root: string, name: string, bytes: Uint8Array, pct: (n: number) => void): Promise<boolean>
 }
 
-/** Where the drive can be mounted on `platform`. Windows: every drive letter but A–C. */
-export function driveRoots(platform: NodeJS.Platform, user: string): string[] {
-  if (platform === 'darwin') return [`/Volumes/${UF2_LABEL}`]
+/**
+ * Where the drives can be mounted on `platform`: the folders that hold the mount points, and the
+ * names a drive may take there. macOS names a second drive with the same label `RPI-RP2 1`, so any
+ * name starting with the label counts. Windows: every drive letter but A–C.
+ */
+export function driveRoots(
+  platform: NodeJS.Platform,
+  user: string
+): { letters: string[] } | { parents: string[] } {
   if (platform === 'win32') {
-    return Array.from({ length: 23 }, (_, n) => `${String.fromCharCode(68 + n)}:\\`)
+    return { letters: Array.from({ length: 23 }, (_, n) => `${String.fromCharCode(68 + n)}:\\`) }
   }
-  return [`/media/${user}/${UF2_LABEL}`, `/run/media/${user}/${UF2_LABEL}`]
+  if (platform === 'darwin') return { parents: ['/Volumes'] }
+  return { parents: [`/media/${user}`, `/run/media/${user}`] }
 }
 
 /** The file operations the drive needs (node's, unless a test hands in its own). */
 export interface DriveFs {
   readText(path: string): Promise<string | undefined>
+  /** A folder's entries; none when it can't be read. */
+  list(dir: string): Promise<string[]>
   open(path: string): Promise<{
     write(chunk: Uint8Array): Promise<unknown>
     sync(): Promise<void>
@@ -47,6 +60,7 @@ export interface DriveFs {
 
 const NODE_FS: DriveFs = {
   readText: (path) => readFile(path, 'latin1').catch(() => undefined),
+  list: (dir) => readdir(dir).catch(() => []),
   open: (path) => open(path, 'w')
 }
 
@@ -57,12 +71,26 @@ export function uf2Drive(
 ): Uf2Drive {
   const join = env.platform === 'win32' ? win32.join : posix.join
   return {
-    async find() {
-      for (const root of driveRoots(env.platform, env.user)) {
+    async list() {
+      const where = driveRoots(env.platform, env.user)
+      const candidates =
+        'letters' in where
+          ? where.letters
+          : (
+              await Promise.all(
+                where.parents.map(async (dir) =>
+                  (await fs.list(dir))
+                    .filter((n) => n.startsWith(UF2_LABEL))
+                    .map((n) => join(dir, n))
+                )
+              )
+            ).flat()
+      const found: string[] = []
+      for (const root of candidates) {
         const info = await fs.readText(join(root, UF2_INFO_FILE))
-        if (info?.includes(UF2_LABEL)) return root
+        if (info?.includes(UF2_LABEL)) found.push(root)
       }
-      return undefined
+      return found
     },
     async write(root, name, bytes, pct) {
       let written = 0

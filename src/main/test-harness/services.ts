@@ -30,6 +30,8 @@ import type { UpdateTargetRef } from '@shared/update'
 const world = {
   userData: '',
   portPath: '/dev/fake',
+  /** The Gateway enumerates as a serial port (not in its BOOTSEL drive, not unplugged). */
+  portListed: true,
   serialNumber: 'TESTSERIAL',
   /** Every byte written to any serial port, in order: the wire, across reconnects. */
   serialOut: [] as Buffer[],
@@ -155,7 +157,7 @@ vi.doMock('../gateway/serial-bridge', () => ({
   PortNotFoundError: class PortNotFoundError extends Error {},
   SIMGATEWAY_VID: 0x2e8a,
   SIMGATEWAY_PID: 0x4134,
-  findSimGatewayPort: () => Promise.resolve(world.portPath),
+  findSimGatewayPort: () => Promise.resolve(world.portListed ? world.portPath : undefined),
   touchForBootloader: (path: string) => {
     world.touches.push(path)
     world.drive.onTouch?.()
@@ -168,7 +170,7 @@ vi.doMock('../dcs/transports', () => ({ createTransport: () => new FakeTransport
 // The update drive (#173): mounted where the test says, copies recorded, never the real disk.
 vi.doMock('../update/uf2-drive', () => ({
   uf2Drive: () => ({
-    find: () => Promise.resolve(world.drive.mounted),
+    list: () => Promise.resolve(world.drive.mounted ? [world.drive.mounted] : []),
     write: (root: string, name: string, bytes: Uint8Array, pct: (n: number) => void) => {
       if (world.drive.failWrites || world.drive.mounted !== root) return Promise.resolve(false)
       world.drive.files.push({ root, name, bytes })
@@ -242,6 +244,7 @@ function launch(opts: ServicesOptions) {
   Object.assign(world, {
     userData,
     portPath: opts.serial?.portPath ?? '/dev/fake',
+    portListed: true,
     serialNumber: opts.serial?.serialNumber ?? 'TESTSERIAL',
     serialOut: [],
     dcsOut: [],
@@ -385,6 +388,13 @@ function launch(opts: ServicesOptions) {
       /** The port closes under the app: the board is unplugged. */
       close(): void {
         port().closeCb()
+      },
+      /**
+       * Whether the Gateway enumerates as a serial port: not while it sits in its BOOTSEL update
+       * drive (#173).
+       */
+      listed(on: boolean): void {
+        world.portListed = on
       },
       /** The board sends these bytes (a string is taken byte for byte). */
       receive(data: string | Buffer | Uint8Array): void {
