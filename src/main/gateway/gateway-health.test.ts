@@ -82,6 +82,7 @@ describe('gatewayStatus — the one place the Gateway’s health is decided', ()
       kind: 'fault',
       label: 'I2C peripheral',
       note: undefined,
+      problem: true,
       firmware: { version: null, tooNew: false, supportedMajor: 1 }
     })
     expect(st({ faultId: 0x2a }).label).toBe('Unknown fault (0x2A)')
@@ -349,6 +350,8 @@ describe('gateway-health.recovered-alone', () => {
     const g = gatewayStatus(node0(), false, 're-plug')!
     expect(g).toMatchObject({ severity: 'warn', kind: 'ok', label: 'OK · 42 °C' })
     expect(g.alert).toBeUndefined()
+    expect(g.problem, 'a recovery is never "a problem"').toBeUndefined()
+    expect(g.noHealth).toBeUndefined()
     expect(g.recovered).toEqual({
       how: 're-plug',
       note: 'Recovered itself since it was plugged in — re-plugged itself to recover its link to this computer.'
@@ -370,8 +373,10 @@ describe('gateway-health.recovered-alone', () => {
   it('enough for a status before its cockpit side reports: unreported, warn', () => {
     expect(gatewayStatus(undefined, false, 'recovery')).toMatchObject({
       severity: 'warn',
-      kind: 'unreported'
+      kind: 'unreported',
+      noHealth: true
     })
+    expect(gatewayStatus(undefined, false, 'recovery')?.problem).toBeUndefined()
     expect(gatewayStatus(node0({ nodeKind: 0 }), false, 'recovery')).toMatchObject({
       severity: 'warn',
       kind: 'unreported',
@@ -391,7 +396,12 @@ describe('gateway-health.recovered-alone', () => {
 describe('gateway-health.recovered-with-fault', () => {
   it('bus-off and a recovery: err and the alert from bus-off, the recovery still on the status', () => {
     const g = gatewayStatus(node0({ boff: true }), false, 'recovery')!
-    expect(g).toMatchObject({ severity: 'err', kind: 'bus-off', recovered: { how: 'recovery' } })
+    expect(g).toMatchObject({
+      severity: 'err',
+      kind: 'bus-off',
+      problem: true,
+      recovered: { how: 'recovery' }
+    })
     expect(g.alert).toEqual(st({ boff: true }).alert)
   })
 

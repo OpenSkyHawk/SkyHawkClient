@@ -28,12 +28,11 @@ export function gatewayView(g: GatewayStatus | undefined, port?: string): Gatewa
   if (!g) return {}
   if (g.severity === 'ok') return { health: { text: g.label } }
   const tone = g.severity
-  // `ok` / `unreported` with a warn severity: the recovery is all there is to show.
-  const problem = g.kind !== 'ok' && g.kind !== 'unreported'
   const view: GatewayView = {
     pill: {
       cls: tone === 'err' ? 'devind--err' : 'devind--warn',
-      tip: problem
+      // Not a problem it reports: the recovery is all there is to show (main's `problem`).
+      tip: g.problem
         ? `Gateway reports a problem${port ? ` · ${port}` : ''} — click for details`
         : 'The Gateway recovered itself since it was plugged in — click for details'
     },
@@ -42,10 +41,10 @@ export function gatewayView(g: GatewayStatus | undefined, port?: string): Gatewa
   if (g.recovered) view.recovery = g.recovered.note
   // About the link, not something it reports (main's aboutLink): the popover's title says it.
   if (g.aboutLink) return { ...view, title: g.label, meta: g.note }
-  // Its cockpit side hasn't reported yet: no Health row.
-  if (g.kind === 'unreported') return view
+  // Its cockpit side hasn't reported yet (main's `noHealth`): no Health row.
+  if (g.noHealth) return view
   // Healthy beside a recovery: the row reads as it is, untoned.
-  return { ...view, health: { text: g.label, tone: problem ? tone : undefined, note: g.note } }
+  return { ...view, health: { text: g.label, tone: g.problem ? tone : undefined, note: g.note } }
 }
 
 /**

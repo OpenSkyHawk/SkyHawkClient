@@ -45,7 +45,8 @@ export type GatewayKind =
   | 'fault'
   /**
    * Its cockpit side hasn't reported its health yet, but it recovered itself (#169), which is
-   * enough for a status. No surface of its own: the Health row is hidden, the event log reads it as `ok`.
+   * enough for a status. No surface of its own: no Health row (`noHealth`), the event log reads
+   * it as `ok`.
    */
   | 'unreported'
 
@@ -77,6 +78,13 @@ export interface GatewayStatus {
   aboutLink?: true
   /** The Gateway's own firmware release, from its own status row (#171). */
   firmware?: GatewayFirmware
+  /**
+   * What it reports is a problem (`kind` neither `ok` nor `unreported`): the pill's tooltip says
+   * so, and Cockpit Attention shows its label. Absent beside a recovery alone (#169).
+   */
+  problem?: true
+  /** Its cockpit side has reported nothing yet (`unreported`, #169): the popover has no Health row. */
+  noHealth?: true
   /**
    * It re-plugged or restarted itself this boot (#169): evidence, not a fault. A second fact
    * beside `kind`, so neither hides the other; on its own it makes the status `warn`, never `err`

@@ -114,7 +114,8 @@ export function gatewayRecovery(
 /**
  * How far two reads' boot times may differ and still be the same boot. Each is the read time
  * minus the uptime the reply was built at, so they differ only by the reply's latency, which the
- * 2 s calibration request timeout bounds.
+ * 2 s calibration request timeout bounds. A PC clock step past it, or the ~49.7-day `millis()`
+ * wrap, may write one extra "recovered itself" row: accepted.
  */
 export const BOOT_MATCH_MS = 2000
 

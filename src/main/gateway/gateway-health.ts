@@ -90,13 +90,14 @@ const recoveredNote = (how: GatewayRecoveredHow): string =>
   `Recovered itself since it was plugged in — ${RECOVERED[how].detail}.`
 
 /** A recovery with nothing reported by its cockpit side yet: no Health row (`unreported`). */
-const UNREPORTED: GatewayStatus = { severity: 'ok', kind: 'unreported', label: DASH }
+const UNREPORTED: GatewayStatus = {
+  severity: 'ok',
+  kind: 'unreported',
+  label: DASH,
+  noHealth: true
+}
 
 const SEVERITY_RANK = { ok: 0, warn: 1, err: 2 } as const
-
-/** Its cockpit side reports a problem: `kind` is something to show (not ok, not unreported). */
-export const reportsProblem = (g: GatewayStatus | undefined): boolean =>
-  g !== undefined && g.kind !== 'ok' && g.kind !== 'unreported'
 
 /**
  * The Gateway's health from its own row (node 0), the roster timeout, and whether it recovered
@@ -113,7 +114,12 @@ export function gatewayStatus(
   recovered?: GatewayRecoveredHow
 ): GatewayStatus | undefined {
   // A recovery is enough for a status before its cockpit side reports.
-  const h = healthOf(row, notResponding) ?? (recovered ? UNREPORTED : undefined)
+  // Whether what it reports is a problem is decided here, once (`problem`): the surfaces read it.
+  const reported = healthOf(row, notResponding)
+  const h =
+    reported && reported.kind !== 'ok'
+      ? { ...reported, problem: true as const }
+      : (reported ?? (recovered ? UNREPORTED : undefined))
   if (!h) return undefined
   const s: GatewayStatus = recovered
     ? {
@@ -222,7 +228,7 @@ const RANK: Record<GatewayKind, number> = {
 
 /** The problem it shows, if any: `unreported` reads as `ok` here (nothing reported is no news). */
 const problemOf = (s: GatewayStatus | undefined): GatewayStatus | undefined =>
-  reportsProblem(s) ? s : undefined
+  s?.problem ? s : undefined
 
 /** The node rows' wording for each kind: event name and detail. */
 function said(s: GatewayStatus, row: NodeStatus | undefined): { event: string; detail?: string } {

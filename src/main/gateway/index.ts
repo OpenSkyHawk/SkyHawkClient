@@ -9,7 +9,7 @@ export {
 export { DeviceLineTap, type DeviceLine, type NodeLineSink } from './device-line-tap'
 export { SerialTrafficMonitor } from './serial-traffic-monitor'
 export { isLinkUp } from './link-state'
-export { GatewayWatch, RECOVERED_FLAG, reportsProblem, shownHealth } from './gateway-health'
+export { GatewayWatch, RECOVERED_FLAG, shownHealth } from './gateway-health'
 export { diagLogRow, gatewayRecovery, type GatewayDiag, type GatewayRecovery } from './gateway-diag'
 export { majorMismatch, reportedVersion, versionNotReported } from './firmware'
 export { encodeExportFrame } from './link-framing'

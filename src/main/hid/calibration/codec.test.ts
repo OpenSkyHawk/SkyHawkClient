@@ -453,8 +453,9 @@ describe('decodeDiag (#169)', () => {
     })
   })
 
-  it('codec.diag-widths: each field runs to the next offset, the last to RESERVED, and is read at that width', () => {
-    // The widths tile the record from 0 to RESERVED with no gap and no overlap.
+  it('codec.diag-widths: each field it reads runs to the next offset and is read at that width', () => {
+    // The fields it reads tile the record from 0 with no gap and no overlap, and end at or before
+    // RESERVED: a counter a later firmware adds there is no field this client reads.
     const tiled = FIELDS.map((f) => [CAL_DIAG_FIELD[f], CAL_DIAG_WIDTH[f]] as const).sort(
       (a, b) => a[0] - b[0]
     )
@@ -463,7 +464,7 @@ describe('decodeDiag (#169)', () => {
       expect(at).toBe(end)
       end = at + width
     }
-    expect(end).toBe(CAL_DIAG_FIELD.RESERVED)
+    expect(end).toBeLessThanOrEqual(CAL_DIAG_FIELD.RESERVED)
     // A field with every byte of its width set reads as its largest value, and spills into no
     // other field: the decoder reads exactly the derived width.
     const all = decodeDiag(diag())
@@ -475,8 +476,8 @@ describe('decodeDiag (#169)', () => {
     }
   })
 
-  it("diagWidths refuses a layout it can't read", () => {
-    expect(() => diagWidths({ A: 0, RESERVED: 3 })).toThrow(/3 bytes wide/)
+  it('diagWidths: each field to the next offset; a layout must end at RESERVED', () => {
+    expect(diagWidths({ A: 0, B: 4, RESERVED: 7 })).toEqual({ A: 4, B: 3 })
     expect(() => diagWidths({ A: 0, RESERVED: 2, B: 4 })).toThrow(/end at RESERVED/)
   })
 

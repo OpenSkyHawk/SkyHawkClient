@@ -411,13 +411,41 @@ export function decodeRaw(p: Uint8Array): RawSample {
   return { idx: p[F.IDX]!, raw: u16(p, F.RAW), cal: u16(p, F.CAL) }
 }
 
-type DiagField = Exclude<keyof typeof CAL_DIAG_FIELD, 'RESERVED'>
+/**
+ * The DIAG fields this client reads (#169): each GatewayDiag key and the CalDiagField it comes
+ * from. A counter a later firmware adds in the reserved bytes is not here until the client learns
+ * it, so it is neither read nor checked.
+ */
+const DIAG_READ = {
+  uptimeMs: 'UPTIME_MS',
+  firstUartErrMs: 'FIRST_UART_ERR_MS',
+  lastUartErrMs: 'LAST_UART_ERR_MS',
+  firstUsbLossMs: 'FIRST_USB_LOSS_MS',
+  lastUsbLossMs: 'LAST_USB_LOSS_MS',
+  uartOverrun: 'UART_OVERRUN',
+  uartFraming: 'UART_FRAMING',
+  uartBreak: 'UART_BREAK',
+  uartParity: 'UART_PARITY',
+  uartRxOverflow: 'UART_RX_OVERFLOW',
+  linesDropped: 'LINES_DROPPED',
+  linesCorrupt: 'LINES_CORRUPT',
+  linesOverlong: 'LINES_OVERLONG',
+  framesDropped: 'FRAMES_DROPPED',
+  uartRestarts: 'UART_RESTARTS',
+  usbReattaches: 'USB_REATTACHES',
+  cdcStalls: 'CDC_STALLS',
+  recoveryReboots: 'RECOVERY_REBOOTS',
+  watchdogResets: 'WATCHDOG_RESETS',
+  resetReason: 'RESET_REASON'
+} as const satisfies Record<keyof GatewayDiag, keyof typeof CAL_DIAG_FIELD>
+
+type DiagField = (typeof DIAG_READ)[keyof GatewayDiag]
 
 /**
- * Each field's width in bytes, from a CalDiagField-shaped offset table (#169): a field runs to the
- * next one's offset, the last to RESERVED. Nothing is restated, so a field is read at the width
- * the firmware lays it out.
- * @throws on a table whose RESERVED isn't last, or a width this client can't read (1, 2 or 4).
+ * Each field's width in bytes, from a CalDiagField-shaped offset table: a field runs to the next
+ * one's offset, the last to RESERVED. Nothing is restated, so a field is read at the width the
+ * firmware lays it out.
+ * @throws on a table whose RESERVED isn't last.
  */
 export function diagWidths<K extends string>(
   fields: Readonly<Record<K | 'RESERVED', number>>
@@ -430,17 +458,28 @@ export function diagWidths<K extends string>(
   const widths = {} as Record<K, number>
   for (let i = 0; i < byOffset.length - 1; i++) {
     const [name, at] = byOffset[i]!
-    const width = byOffset[i + 1]![1] - at
-    if (width !== 1 && width !== 2 && width !== 4) {
-      throw new Error(`calibration: DIAG field ${name} is ${width} bytes wide`)
-    }
-    widths[name as K] = width
+    widths[name as K] = byOffset[i + 1]![1] - at
   }
   return widths
 }
 
-/** The DIAG fields' widths, from the synced offsets (CAL_DIAG_FIELD). */
-export const CAL_DIAG_WIDTH: Readonly<Record<DiagField, number>> = diagWidths(CAL_DIAG_FIELD)
+/**
+ * The widths of the fields this client reads, from the synced offsets (CAL_DIAG_FIELD).
+ * @throws at load on a read field this client can't read (1, 2 or 4 bytes): a relayout the
+ *         layout pin (shared/firmware reference.test) fails on first. Unread fields aren't checked.
+ */
+export const CAL_DIAG_WIDTH: Readonly<Record<DiagField, number>> = (() => {
+  const all = diagWidths(CAL_DIAG_FIELD)
+  const read = {} as Record<DiagField, number>
+  for (const f of Object.values(DIAG_READ)) {
+    const width = all[f]
+    if (width !== 1 && width !== 2 && width !== 4) {
+      throw new Error(`calibration: DIAG field ${f} is ${width} bytes wide`)
+    }
+    read[f] = width
+  }
+  return read
+})()
 
 /** Unsigned little-endian of `width` bytes: a u32 `millis()` passes 2^31 after ~25 days up. */
 const uint = (p: Uint8Array, off: number, width: number): number => {
@@ -450,9 +489,9 @@ const uint = (p: Uint8Array, off: number, width: number): number => {
 }
 
 /**
- * DIAG (#169): the Gateway's link-health record. Reads the fields this client knows, each at its
- * synced offset and derived width; bytes from CAL_DIAG_FIELD.RESERVED on are sent as 0 and
- * ignored, so a later firmware can fill them.
+ * DIAG (#169): the Gateway's link-health record. Reads the fields this client knows (DIAG_READ),
+ * each at its synced offset and derived width; bytes from CAL_DIAG_FIELD.RESERVED on are sent as
+ * 0 and ignored, so a later firmware can fill them.
  * @throws on any length but CAL_DIAG_BYTES — the demux only hands over that one, so this is a
  *         programming error, never wire noise.
  */
@@ -460,29 +499,11 @@ export function decodeDiag(p: Uint8Array): GatewayDiag {
   if (p.length !== CAL_DIAG_BYTES) {
     throw new Error(`calibration: DIAG takes ${CAL_DIAG_BYTES} payload bytes, got ${p.length}`)
   }
-  const at = (f: DiagField) => uint(p, CAL_DIAG_FIELD[f], CAL_DIAG_WIDTH[f])
-  return {
-    uptimeMs: at('UPTIME_MS'),
-    firstUartErrMs: at('FIRST_UART_ERR_MS'),
-    lastUartErrMs: at('LAST_UART_ERR_MS'),
-    firstUsbLossMs: at('FIRST_USB_LOSS_MS'),
-    lastUsbLossMs: at('LAST_USB_LOSS_MS'),
-    uartOverrun: at('UART_OVERRUN'),
-    uartFraming: at('UART_FRAMING'),
-    uartBreak: at('UART_BREAK'),
-    uartParity: at('UART_PARITY'),
-    uartRxOverflow: at('UART_RX_OVERFLOW'),
-    linesDropped: at('LINES_DROPPED'),
-    linesCorrupt: at('LINES_CORRUPT'),
-    linesOverlong: at('LINES_OVERLONG'),
-    framesDropped: at('FRAMES_DROPPED'),
-    uartRestarts: at('UART_RESTARTS'),
-    usbReattaches: at('USB_REATTACHES'),
-    cdcStalls: at('CDC_STALLS'),
-    recoveryReboots: at('RECOVERY_REBOOTS'),
-    watchdogResets: at('WATCHDOG_RESETS'),
-    resetReason: at('RESET_REASON')
+  const d = {} as GatewayDiag
+  for (const [key, f] of Object.entries(DIAG_READ) as [keyof GatewayDiag, DiagField][]) {
+    d[key] = uint(p, CAL_DIAG_FIELD[f], CAL_DIAG_WIDTH[f])
   }
+  return d
 }
 
 // ── encoders ─────────────────────────────────────────────────────────────────

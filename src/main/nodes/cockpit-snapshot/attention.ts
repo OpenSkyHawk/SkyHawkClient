@@ -12,7 +12,7 @@ import type {
   StrayItem
 } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
-import { RECOVERED_FLAG, reportsProblem, shownHealth } from '../../gateway'
+import { RECOVERED_FLAG, shownHealth } from '../../gateway'
 import { isReportableNew, newState, strayKind } from '../node-model'
 import { FW_MISMATCH } from './views'
 
@@ -147,7 +147,7 @@ function gatewayAttention(
 ): CockpitAttention['gateway'] {
   const g = shownHealth(gateway, linkUp)
   if (!g || g.severity === 'ok') return undefined
-  const flag = reportsProblem(g) ? g.label : RECOVERED_FLAG
+  const flag = g.problem ? g.label : RECOVERED_FLAG
   return { flag, state: g.severity === 'err' ? 'off' : 'warn' }
 }
 
