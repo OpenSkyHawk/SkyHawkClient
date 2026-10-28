@@ -48,6 +48,21 @@ import {
   PDU_RAIL_FLAG_INFO,
   PDU_STATUS_FLAGS,
   PDU_STATUS_FLAG_INFO,
+  BOOT,
+  FIRMWARE_IMAGE,
+  FIRMWARE_IMAGE_CRC_VECTORS,
+  FIRMWARE_IMAGE_FIELD,
+  UPL_BEGIN_FIELD,
+  UPL_DATA_FIELD,
+  UPL_FLASH_FIELD,
+  UPL_INFO_ACK_FIELD,
+  UPL_PHASE,
+  UPL_PROTO,
+  UPL_RESULT,
+  UPL_RESULT_FIELD,
+  UPL_STATE,
+  UPL_STATUS_FIELD,
+  UPL_TARGET,
   type NodeFaultName
 } from '.'
 import { ACFT_NAME } from '../../main/dcs/bios-protocol'
@@ -370,5 +385,86 @@ describe('axis-cal.generated', () => {
     pinDiagLayout({ ...read, NEW_COUNTER: 47, RESERVED: 49 })
     expect(() => pinDiagLayout({ ...CAL_DIAG_FIELD, USB_REATTACHES: 41 })).toThrow()
     expect(() => pinDiagLayout({ ...CAL_DIAG_FIELD, RESERVED: 46 })).toThrow()
+  })
+})
+
+// The uploader client (main/update/uploader) and the identity-block parser (main/update/
+// firmware-image) are written for these values (#187): a firmware bump that moves one fails here.
+describe('upload-protocol.generated', () => {
+  it('pins the uploader limits, targets, states, phases and results', () => {
+    expect(UPL_PROTO).toEqual({
+      version: 1,
+      maxImageBytes: 124 * 1024,
+      chunkBytes: 256,
+      retries: 2
+    })
+    expect(UPL_TARGET).toEqual({ bridge: 0, unconfigured: 0xfe, nodeIdKeep: 0xff })
+    expect(UPL_STATE).toEqual({ IDLE: 0, STAGING: 1, STAGED: 2, FLASHING: 3 })
+    expect(UPL_PHASE).toEqual({
+      ENTERING_BOOT: 1,
+      CONNECTED: 2,
+      SETTING_ID: 3,
+      ERASING: 4,
+      WRITING: 5,
+      VERIFYING: 6,
+      REBOOTING: 7,
+      CONFIRMING: 8
+    })
+    expect(UPL_RESULT).toMatchObject({ NONE: 0, OK: 1, NO_RESPONSE: 2, TIMEOUT: 0x0a })
+  })
+
+  it('pins the UPL_* payload layouts against their legal lengths', () => {
+    expect(cal.CAL_TYPE.UPL_INFO).toBe(0x10)
+    expect(cal.CAL_TYPE.UPL_RESULT).toBe(0x92)
+    expect(UPL_INFO_ACK_FIELD).toMatchObject({ STATE: 4, LAST_TARGET: 5, LAST_RESULT: 6 })
+    expect(UPL_INFO_ACK_FIELD).toMatchObject({ LAST_MAJOR: 7, BRIDGE_MAJOR: 10 })
+    expect(CAL_PAYLOAD_LEN[cal.CAL_TYPE.UPL_INFO_ACK]).toBe(16)
+    expect(UPL_BEGIN_FIELD).toEqual({ LENGTH: 0, CRC: 4 })
+    expect(CAL_PAYLOAD_LEN[cal.CAL_TYPE.UPL_BEGIN]).toBe(8)
+    expect(UPL_DATA_FIELD).toEqual({ OFFSET: 0, BYTES: 4 })
+    expect(CAL_PAYLOAD_LEN[cal.CAL_TYPE.UPL_DATA]).toBe(UPL_DATA_FIELD.BYTES + UPL_PROTO.chunkBytes)
+    expect(UPL_FLASH_FIELD).toEqual({ TARGET: 0, NEW_NODE_ID: 1 })
+    expect(UPL_STATUS_FIELD).toMatchObject({ PHASE: 0, TARGET: 1, ATTEMPT: 2, BLOCK: 3, BLOCKS: 5 })
+    expect(UPL_RESULT_FIELD).toMatchObject({ RESULT: 0, TARGET: 1, MAJOR: 2, ATTEMPTS: 5 })
+    expect(UPL_RESULT_FIELD.SECONDS).toBe(6)
+    // UPL_DATA is client -> device only: larger than any frame the receiver holds.
+    expect(CAL_PAYLOAD_LEN[cal.CAL_TYPE.UPL_DATA]).toBeGreaterThan(CAL_PROTO.maxPayload)
+  })
+})
+
+describe('firmware-image.generated', () => {
+  it('pins the identity block the parser reads', () => {
+    expect(FIRMWARE_IMAGE).toEqual({
+      identityOffset: 0x200,
+      magic: 0x594b534f,
+      layoutVersion: 1,
+      unstamped: 0xffffffff,
+      blockBytes: 32
+    })
+    expect(FIRMWARE_IMAGE_FIELD).toMatchObject({
+      MAGIC: 0,
+      LAYOUT: 4,
+      SIZE: 6,
+      LENGTH: 8,
+      CRC: 12,
+      NODE_ID: 16,
+      NODE_KIND: 17,
+      FW_MAJOR: 18
+    })
+    expect(FIRMWARE_IMAGE_CRC_VECTORS).toEqual({
+      word12345678: 0xdf8a8a2b,
+      bytes00to0F: 0x081b46ca
+    })
+  })
+})
+
+describe('boot-protocol.generated', () => {
+  it('pins the bootloader timings the client reasons with', () => {
+    expect(BOOT).toEqual({
+      idleTimeoutMs: 30000,
+      catchWindowMs: 200,
+      attemptLimit: 3,
+      blockBytes: 64
+    })
   })
 })

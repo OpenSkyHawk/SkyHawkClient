@@ -37,6 +37,9 @@ export type Log = (tag: string, data?: unknown) => void
 /** Past the device's worst-case sector erase (~28 ms measured) by a wide margin. */
 const REPLY_TIMEOUT_MS = 2000
 
+/** Device -> client frames that answer no request: the uploader's progress and result (#366). */
+const UNSOLICITED: ReadonlySet<number> = new Set([CAL_TYPE.UPL_STATUS, CAL_TYPE.UPL_RESULT])
+
 /**
  * The device closes an idle session after CAL_PROTO.sessionTimeoutMs (30 s); a user reading a
  * dialog step sends nothing. The keepalive interval is client policy.
@@ -69,8 +72,11 @@ export class CalNackError extends Error {
  * rather than answered — so BAD_TYPE never reaches a client and silence is the only symptom.
  */
 export class CalTimeoutError extends Error {
-  constructor(readonly type: number) {
-    super(`calibration: no reply within ${REPLY_TIMEOUT_MS} ms`)
+  constructor(
+    readonly type: number,
+    timeoutMs = REPLY_TIMEOUT_MS
+  ) {
+    super(`calibration: no reply within ${timeoutMs} ms`)
     this.name = 'CalTimeoutError'
   }
 }
@@ -85,6 +91,7 @@ interface Pending {
 export class CalLink {
   private readonly demux = new CalDemux()
   private readonly pending = new Map<number, Pending>()
+  private readonly unsolicited = new Set<(f: CalFrame) => void>()
   private seq = 0
   private session = false
   private keepalive?: ReturnType<typeof setInterval>
@@ -136,6 +143,12 @@ export class CalLink {
       this.onRaw(decodeRaw(f.payload))
       return
     }
+    if (UNSOLICITED.has(f.type)) {
+      // The uploader's progress and result (#366): sent with SEQ 0 (Uploader.cpp sendStatus /
+      // finish), never a reply. Matching them by SEQ would hand them to whatever request held 0.
+      for (const cb of this.unsolicited) cb(f)
+      return
+    }
     const p = this.pending.get(f.seq)
     if (!p) {
       this.log('cal.unmatched', { type: f.type, seq: f.seq })
@@ -151,10 +164,13 @@ export class CalLink {
     p.resolve(f)
   }
 
-  /** Next SEQ that is not already awaiting a reply. */
+  /**
+   * Next SEQ that is not already awaiting a reply. Never 0: the Gateway sends its unsolicited
+   * uploader frames with SEQ 0, so a request on 0 could look answered by one.
+   */
   private nextSeq(): number {
-    for (let i = 0; i < 256; i++) {
-      this.seq = (this.seq + 1) & 0xff
+    for (let i = 0; i < 255; i++) {
+      this.seq = (this.seq % 255) + 1
       if (!this.pending.has(this.seq)) return this.seq
     }
     throw new Error('calibration: no free sequence number')
@@ -169,12 +185,17 @@ export class CalLink {
    * One write() per frame: node-serialport queues writes FIFO, which is what stops the 5 s
    * node-roster request that shares this port from interleaving mid-frame.
    */
-  private send(seq: number, type: number, frame: Uint8Array): Promise<CalFrame> {
+  private send(
+    seq: number,
+    type: number,
+    frame: Uint8Array,
+    timeoutMs = REPLY_TIMEOUT_MS
+  ): Promise<CalFrame> {
     return new Promise<CalFrame>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(seq)
-        reject(new CalTimeoutError(type))
-      }, REPLY_TIMEOUT_MS)
+        reject(new CalTimeoutError(type, timeoutMs))
+      }, timeoutMs)
       this.pending.set(seq, { type, resolve, reject, timer })
       this.write(Buffer.from(frame))
     })
@@ -183,6 +204,22 @@ export class CalLink {
   private request(type: number, payload?: Uint8Array): Promise<CalFrame> {
     const seq = this.nextSeq()
     return this.send(seq, type, buildFrame(type, seq, payload))
+  }
+
+  /**
+   * Any request on this channel, answered by its reply frame: the uploader's (#366), whose payload
+   * codec lives with its client (main/update/uploader), not here.
+   * @throws CalNackError when the Gateway refuses, CalTimeoutError when nothing answers in time.
+   */
+  exchange(type: number, payload?: Uint8Array, timeoutMs?: number): Promise<CalFrame> {
+    const seq = this.nextSeq()
+    return this.send(seq, type, buildFrame(type, seq, payload), timeoutMs)
+  }
+
+  /** The uploader's unsolicited frames (UPL_STATUS, UPL_RESULT); returns the unsubscribe. */
+  onUnsolicited(cb: (f: CalFrame) => void): () => void {
+    this.unsolicited.add(cb)
+    return () => this.unsolicited.delete(cb)
   }
 
   /**

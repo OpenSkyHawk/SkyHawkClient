@@ -35,6 +35,55 @@ const CAL_DATA = (() => {
   return p
 })()
 
+describe('CalLink and the uploader’s frames (#187)', () => {
+  const STATUS = Uint8Array.of(5, 0, 0, 10, 0, 27, 2, 0) // WRITING, target 0, block 10 of 539
+
+  it('never sends a request on SEQ 0, through any number of laps', () => {
+    const { link, written, sent, reply } = rig()
+    for (let i = 0; i < 600; i++) {
+      void link.getCal()
+      reply(CAL_TYPE.CAL_DATA, sent().seq, CAL_DATA)
+    }
+    expect(written.map((b) => b[5])).not.toContain(0)
+  })
+
+  it('hands UPL_STATUS / UPL_RESULT (SEQ 0) to the listener, never to a pending request', async () => {
+    const { link, sent, reply } = rig()
+    const seen: number[] = []
+    const off = link.onUnsolicited((f) => seen.push(f.type))
+    const p = link.exchange(CAL_TYPE.UPL_INFO)
+    const seq = sent().seq
+    reply(CAL_TYPE.UPL_STATUS, 0, STATUS)
+    // Even on the SEQ a request holds, a status is not its answer.
+    reply(CAL_TYPE.UPL_RESULT, seq, new Uint8Array(8))
+    reply(CAL_TYPE.UPL_INFO_ACK, seq, new Uint8Array(16))
+    await expect(p).resolves.toMatchObject({ type: CAL_TYPE.UPL_INFO_ACK, seq })
+    expect(seen).toEqual([CAL_TYPE.UPL_STATUS, CAL_TYPE.UPL_RESULT])
+    off()
+    reply(CAL_TYPE.UPL_STATUS, 0, STATUS)
+    expect(seen).toHaveLength(2)
+  })
+
+  it('exchange: a NACK is a CalNackError, silence a CalTimeoutError after its own timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const { link, sent, reply } = rig()
+      const refused = link.exchange(CAL_TYPE.UPL_FLASH, Uint8Array.of(0, 0xff))
+      reply(CAL_TYPE.NACK, sent().seq, Uint8Array.of(CAL_TYPE.UPL_FLASH, CAL_NACK.NOT_STAGED, 0xff))
+      await expect(refused).rejects.toMatchObject({ reason: CAL_NACK.NOT_STAGED })
+      const slow = link.exchange(CAL_TYPE.UPL_END, undefined, 5000)
+      let settled = false
+      const outcome = slow.catch((e: Error) => e).finally(() => (settled = true))
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(settled, 'still waiting past the default 2 s').toBe(false)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(await outcome).toBeInstanceOf(CalTimeoutError)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('CalLink request/response', () => {
   it('resolves a request against its echoed SEQ', async () => {
     const { link, sent, reply } = rig()
@@ -65,13 +114,15 @@ describe('CalLink request/response', () => {
   it('does not reuse a sequence number that is still in flight', async () => {
     // Consecutive SEQs differ from the increment alone, so two requests prove nothing. The
     // check only earns its keep once the counter wraps back into a SEQ still awaiting a reply —
-    // 256 requests later. A collision there would resolve the wrong caller's promise.
+    // 255 requests later (SEQ 0 is never used). A collision there would resolve the wrong
+    // caller's promise.
     vi.useFakeTimers()
     try {
       const { link, written } = rig()
-      const inflight = Array.from({ length: 256 }, () => link.getCal().catch(() => null))
+      const inflight = Array.from({ length: 255 }, () => link.getCal().catch(() => null))
       const seqs = written.map((b) => b[5]!)
-      expect(new Set(seqs).size, 'all 256 in-flight sequence numbers must be distinct').toBe(256)
+      expect(new Set(seqs).size, 'all 255 in-flight sequence numbers must be distinct').toBe(255)
+      expect(seqs).not.toContain(0)
 
       // Every value is now taken, so there is nothing safe left to allocate.
       await expect(link.getCal()).rejects.toThrow(/no free sequence number/)
@@ -90,9 +141,9 @@ describe('CalLink request/response', () => {
     reply(CAL_TYPE.HELLO_ACK, first, HELLO_ACK)
     await a
     written.length = 0
-    // A full lap of the 256-value space brings the counter back to `first` — which it can only
+    // A full lap of the 255-value space brings the counter back to `first` — which it can only
     // reach if answered requests are released from the pending map rather than accumulating.
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < 255; i++) {
       const p = link.getCal()
       reply(CAL_TYPE.CAL_DATA, sent().seq, CAL_DATA)
       await p

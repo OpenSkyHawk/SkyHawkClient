@@ -10,6 +10,9 @@
  *   Firmware/Libraries/FirmwareVersion/FirmwareVersion.h -> firmware-release.generated.ts
  *   Firmware/Libraries/NodeStatus/NodeStatus.h   -> node-status.generated.ts
  *   Firmware/Libraries/SimGateway/AxisCal.{h,cpp} -> axis-cal.generated.ts
+ *   Firmware/Libraries/SimGateway/UploadProtocol.h -> upload-protocol.generated.ts
+ *   Firmware/Libraries/FirmwareImage/FirmwareImage.h -> firmware-image.generated.ts
+ *   Firmware/Libraries/BootProtocol/BootProtocol.h -> boot-protocol.generated.ts
  *   Firmware/Libraries/PanelBridge/PanelBridge.cpp,
  *   Firmware/Libraries/PowerMonitor/TelemSchedule.h -> node-bus.generated.ts
  *   Firmware/NODE_IDS.md                         -> node-names.generated.ts
@@ -35,7 +38,7 @@ import { format } from 'prettier'
 
 const PIN = {
   repo: process.env.OPENSKYHAWK_REPO_URL ?? 'https://github.com/OpenSkyhawk/OpenSkyhawk.git',
-  commit: 'e82ac6eb7c6ada62135e39a065ddf652eaf35eaf'
+  commit: 'f9fed409d081ef746de47f1199a24621758d0606' // firmware-v0.3.0
 }
 
 const SRC = {
@@ -48,7 +51,10 @@ const SRC = {
   nodeIds: 'Firmware/NODE_IDS.md',
   panelBridge: 'Firmware/Libraries/PanelBridge/PanelBridge.cpp',
   telemSchedule: 'Firmware/Libraries/PowerMonitor/TelemSchedule.h',
-  firmwareVersion: 'Firmware/Libraries/FirmwareVersion/FirmwareVersion.h'
+  firmwareVersion: 'Firmware/Libraries/FirmwareVersion/FirmwareVersion.h',
+  uploadProtocol: 'Firmware/Libraries/SimGateway/UploadProtocol.h',
+  firmwareImage: 'Firmware/Libraries/FirmwareImage/FirmwareImage.h',
+  bootProtocol: 'Firmware/Libraries/BootProtocol/BootProtocol.h'
 }
 
 const REPO_ROOT = join(__dirname, '..')
@@ -217,15 +223,23 @@ const labelize = (name: string): string =>
 /**
  * `[static] constexpr <type> NAME = <value>;` — the scalar form the firmware uses for constants.
  *
- * `<value>` is a literal, or a sum of literals and other constants from the same source
- * (`CAL_MAX_FRAME = CAL_ENVELOPE_BYTES + CAL_MAX_PAYLOAD`), each resolved the same way. Anything
- * else (a cast, a product, a call) is not a value this parser can vouch for, so it fails the sync.
- * The first term may carry a leading `-`, for the signed sentinels
+ * `<value>` is a literal, or a sum of products of literals and other constants from the same
+ * source (`CAL_MAX_FRAME = CAL_ENVELOPE_BYTES + CAL_MAX_PAYLOAD`, `UPL_MAX_IMAGE_BYTES = 124u *
+ * 1024u`), each resolved the same way. A literal may carry an unsigned suffix (`0x594B534Fu`).
+ * Anything else (a cast, a call, a division) is not a value this parser can vouch for, so it fails
+ * the sync. The first term may carry a leading `-`, for the signed sentinels
  * (`DIE_TEMP_UNAVAILABLE = -128`); a `-` anywhere else is a subtraction, which still fails.
  */
 function constexprNum(src: string, name: string, where: string): number {
   const m = new RegExp(`constexpr\\s+\\w+\\s+${name}\\s*=\\s*([^;]+);`).exec(src)
   if (!m) throw new Error(`[sync] constant ${name} not found in ${where}`)
+  const factor = (raw: string): number => {
+    const f = raw.trim()
+    const lit = /^(0x[0-9A-Fa-f]+|\d+)[uU]?$/.exec(f)
+    if (lit) return Number(lit[1])
+    if (/^[A-Z_][A-Z0-9_]*$/.test(f)) return constexprNum(src, f, where)
+    throw new Error(`[sync] ${name} in ${where}: cannot evaluate '${m[1]!.trim()}'`)
+  }
   return m[1]!.split('+').reduce((sum, raw, i) => {
     let term = raw.trim()
     let sign = 1
@@ -233,9 +247,7 @@ function constexprNum(src: string, name: string, where: string): number {
       sign = -1
       term = term.slice(1).trim()
     }
-    if (/^(0x[0-9A-Fa-f]+|\d+)$/.test(term)) return sum + sign * Number(term)
-    if (/^[A-Z_][A-Z0-9_]*$/.test(term)) return sum + sign * constexprNum(src, term, where)
-    throw new Error(`[sync] ${name} in ${where}: cannot evaluate '${m[1]!.trim()}'`)
+    return sum + sign * term.split('*').reduce((p, f) => p * factor(f), 1)
   }, 0)
 }
 
@@ -1169,6 +1181,228 @@ export const FIRMWARE_RELEASE = { major: ${major}, minor: ${minor}, patch: ${pat
   )
 }
 
+// ── firmware uploader (#366, #367) ───────────────────────────────────────────
+
+/**
+ * An enum's entries with `prefix_` stripped from each name (UPL_RESULT_OK -> OK). Every entry
+ * must carry the prefix: one that doesn't belongs to another table, and fails the sync.
+ */
+function stripped(
+  es: { name: string; value: number; comment: string }[],
+  enumName: string,
+  prefix: string,
+  where: string
+): { name: string; value: number; comment: string }[] {
+  return es.map((e) => {
+    if (!e.name.startsWith(`${prefix}_`)) {
+      throw new Error(`[sync] ${enumName}.${e.name} in ${where}: expected the ${prefix}_ prefix`)
+    }
+    return { ...e, name: e.name.slice(prefix.length + 1) }
+  })
+}
+
+/**
+ * The Gateway uploader's USB contract (UploadProtocol.h): states, phases, results, targets and the
+ * UPL_* payload layouts. The type codes and NACK reasons are AxisCal.h's (axis-cal.generated.ts);
+ * each layout here is bounded by its type's one legal payload length from AxisCal.cpp.
+ */
+function genUploadProtocol(h: string, axisCal: string, axisCalCpp: string): string {
+  const where = 'UploadProtocol.h'
+  const num = (name: string) => constexprNum(h, name, where)
+  const types = parseEnum(axisCal, 'CalType', 'AxisCal.h').map((t) => t.name)
+  const lens = parseLenTable(axisCalCpp, axisCal, types)
+  const chunk = num('UPL_CHUNK_BYTES')
+
+  const enums = [
+    ['UplState', 'UPL_STATE', 'What the uploader is doing (UPL_INFO_ACK `state`).'],
+    ['UplPhase', 'UPL_PHASE', 'Where a flash is (UPL_STATUS `phase`).'],
+    [
+      'UplResult',
+      'UPL_RESULT',
+      'How a flash ended (UPL_RESULT `result`, UPL_INFO_ACK `lastResult`).'
+    ]
+  ] as const
+  const enumConsts = enums
+    .map(([enumName, prefix, doc]) => {
+      const es = stripped(parseEnum(h, enumName, where), enumName, prefix, where)
+      return `/** ${doc} From ${enumName} (UploadProtocol.h). */
+export const ${prefix} = {
+${offsetLines(es)}
+} as const
+
+export type ${enumName}Name = ${nameUnion(es.map((e) => e.name))}`
+    })
+    .join('\n\n')
+
+  const fieldTables = [
+    ['UplInfoAckField', 'UPL_INFO_ACK', 'CAL_T_UPL_INFO_ACK'],
+    ['UplBeginField', 'UPL_BEGIN', 'CAL_T_UPL_BEGIN'],
+    ['UplDataField', 'UPL_DATA', 'CAL_T_UPL_DATA'],
+    ['UplFlashField', 'UPL_FLASH', 'CAL_T_UPL_FLASH'],
+    ['UplStatusField', 'UPL_STATUS', 'CAL_T_UPL_STATUS'],
+    ['UplResultField', 'UPL_RESULT', 'CAL_T_UPL_RESULT']
+  ] as const
+  const fieldConsts = fieldTables
+    .map(([enumName, prefix, type]) => {
+      const bytes = lens[type]
+      if (bytes === undefined) throw new Error(`[sync] no payload length bounds ${enumName}`)
+      const es = stripped(parseOffsets(h, enumName, where, bytes), enumName, prefix, where)
+      return `/** ${enumName} (UploadProtocol.h): byte offsets into the ${type.slice(6)} payload, ${bytes} bytes. */
+export const ${prefix}_FIELD = {
+${offsetLines(es)}
+} as const`
+    })
+    .join('\n\n')
+
+  // UPL_DATA is its offset word and one chunk: anything else and the chunking is wrong.
+  const dataField = parseEnum(h, 'UplDataField', where)
+  const bytesAt = dataField.find((e) => e.name === 'UPL_DATA_BYTES')?.value
+  if (bytesAt === undefined || bytesAt + chunk !== lens.CAL_T_UPL_DATA) {
+    throw new Error(
+      `[sync] UPL_DATA is ${lens.CAL_T_UPL_DATA} bytes, not UPL_DATA_BYTES (${bytesAt}) + UPL_CHUNK_BYTES (${chunk})`
+    )
+  }
+  return (
+    banner([`${SRC.uploadProtocol} (the uploader's USB contract)`]) +
+    `
+/**
+ * The Gateway uploader (#366): the client stages an image over USB, the Gateway checks it and
+ * flashes a board's bootloader — the bus boards, or its own cockpit side (target 0, #367). Wire
+ * contract: FirmwarePlan/07-simgateway-api.md § Uploader. Multi-byte fields are little-endian.
+ */
+export const UPL_PROTO = {
+  /** UPL_INFO_ACK \`proto\`. */
+  version: ${num('UPL_PROTO_VERSION')},
+  /** The largest image the Gateway stages (an app on a 128 KB STM32F103CB). */
+  maxImageBytes: ${num('UPL_MAX_IMAGE_BYTES')},
+  /** UPL_DATA's data field: every chunk is this long, the last one 0xFF-padded. */
+  chunkBytes: ${chunk},
+  /** Whole-flash retries after a transport failure (UPL_STATUS \`attempt\` 1..retries). */
+  retries: ${num('UPL_RETRIES')}
+} as const
+
+/** UPL_FLASH \`target\` and \`newNodeId\` values besides a NODE_ID 1-63. */
+export const UPL_TARGET = {
+  /** The Gateway's own cockpit side (PanelBridge): the staged image, else the bundled one. */
+  bridge: ${hex(num('UPL_TARGET_BRIDGE'))},
+  /** The one bootloader on the bus with no NODE_ID yet. */
+  unconfigured: ${hex(num('UPL_TARGET_UNCONFIGURED'))},
+  /** \`newNodeId\`: don't change the NODE_ID. */
+  nodeIdKeep: ${hex(num('UPL_NODE_ID_KEEP'))}
+} as const
+
+${enumConsts}
+
+// Payload field offsets — byte offsets into a type's payload (not the frame). A field runs to the
+// next offset, the last to the type's payload length.
+
+${fieldConsts}
+`
+  )
+}
+
+// ── firmware image identity block (#362) ────────────────────────────────────
+
+/**
+ * The identity block every app image carries (FirmwareImage.h): where it is, its magic and
+ * layout, the field offsets, and the image CRC's test vectors. The field offsets are one
+ * comma-separated `constexpr` statement (`OFF_MAGIC = 0, OFF_LAYOUT = 4, …`).
+ */
+function genFirmwareImage(h: string): string {
+  const where = 'FirmwareImage.h'
+  const num = (name: string) => constexprNum(h, name, where)
+  const size = /static_assert\s*\(\s*sizeof\s*\(\s*Identity\s*\)\s*==\s*(\d+)/.exec(h)
+  if (!size)
+    throw new Error('[sync] static_assert(sizeof(Identity) == n) not found in FirmwareImage.h')
+  const blockBytes = Number(size[1])
+
+  const decl =
+    /constexpr\s+\w+\s+(OFF_[A-Z_]+\s*=\s*\d+(?:\s*,\s*OFF_[A-Z_]+\s*=\s*\d+)*)\s*;/.exec(h)
+  if (!decl) throw new Error('[sync] the OFF_* field offsets not found in FirmwareImage.h')
+  const offs = decl[1]!.split(',').map((part) => {
+    const m = /^\s*OFF_([A-Z_]+)\s*=\s*(\d+)\s*$/.exec(part)
+    if (!m) throw new Error(`[sync] FirmwareImage.h: cannot read '${part.trim()}'`)
+    return { name: m[1]!, value: Number(m[2]), comment: '' }
+  })
+  offs.forEach((e, i) => {
+    if (i > 0 && e.value <= offs[i - 1]!.value) {
+      throw new Error(`[sync] FirmwareImage.h OFF_${e.name}: offsets must ascend`)
+    }
+    if (e.value >= blockBytes) {
+      throw new Error(`[sync] FirmwareImage.h OFF_${e.name} = ${e.value}: past ${blockBytes} bytes`)
+    }
+  })
+  for (const need of ['MAGIC', 'LAYOUT', 'SIZE', 'LENGTH', 'CRC', 'NODE_ID', 'NODE_KIND']) {
+    if (!offs.some((e) => e.name === need)) {
+      throw new Error(`[sync] FirmwareImage.h: no OFF_${need}`)
+    }
+  }
+
+  return (
+    banner([`${SRC.firmwareImage} (the image identity block)`]) +
+    `
+/**
+ * The identity block at a fixed offset in every app image (#362): what the image is for and how
+ * long it is, stamped after linking. Multi-byte fields are little-endian. A newer layout may grow
+ * the block (\`blockSize\`): readers parse the prefix they know.
+ *
+ * The image CRC is CRC-32/MPEG-2 — poly 0x04C11DB7, init 0xFFFFFFFF, no reflection, no final XOR —
+ * over \`imageLength\` bytes read as 32-bit little-endian words, the \`imageCrc\` word skipped.
+ */
+export const FIRMWARE_IMAGE = {
+  /** From the app's start (the vector table's address). */
+  identityOffset: ${hex(num('IDENTITY_OFFSET'))},
+  /** "OSKY" in memory order, read as a little-endian u32. */
+  magic: ${hex(num('MAGIC'))},
+  layoutVersion: ${num('LAYOUT_VERSION')},
+  /** \`imageLength\` / \`imageCrc\` before the build stamps them. */
+  unstamped: ${hex(num('UNSTAMPED'))},
+  /** sizeof(Identity) at this layout: the prefix this client reads. */
+  blockBytes: ${blockBytes}
+} as const
+
+/** Field offsets inside the identity block (OFF_*). */
+export const FIRMWARE_IMAGE_FIELD = {
+${offsetLines(offs)}
+} as const
+
+/** The image CRC's test vectors (FirmwareImage.h). */
+export const FIRMWARE_IMAGE_CRC_VECTORS = {
+  /** One word, 0x12345678. */
+  word12345678: ${hex(num('CRC_VECTOR_WORD_12345678'))},
+  /** Bytes 0x00..0x0F (four words). */
+  bytes00to0F: ${hex(num('CRC_VECTOR_BYTES_00_0F'))}
+} as const
+`
+  )
+}
+
+// ── bootloader protocol (#363, #364) ─────────────────────────────────────────
+
+/** The bootloader timings and sizes the client reasons with (BootProtocol.h, namespace Boot). */
+function genBootProtocol(h: string): string {
+  const num = (name: string) => constexprNum(h, name, 'BootProtocol.h')
+  return (
+    banner([`${SRC.bootProtocol} (bootloader timings and sizes)`]) +
+    `
+/** The board bootloader's own timings and sizes (#363, #364). */
+export const BOOT = {
+  /**
+   * A bootloader entered on request, or caught at reset, with no command this long goes back to
+   * its app by itself (the app is still valid until the erase).
+   */
+  idleTimeoutMs: ${num('IDLE_TIMEOUT_MS')},
+  /** After every reset, a CONNECT within this long keeps the board in its bootloader. */
+  catchWindowMs: ${num('CATCH_WINDOW_MS')},
+  /** Failed boots in a row before the bootloader stops starting the app (APP_UNSTABLE). */
+  attemptLimit: ${num('ATTEMPT_LIMIT')},
+  /** Bytes per bootloader block: UPL_STATUS \`block\` / \`blocks\` count these. */
+  blockBytes: ${num('BLOCK_SIZE')}
+} as const
+`
+  )
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 async function writeGenerated(file: string, code: string): Promise<void> {
@@ -1190,6 +1424,12 @@ async function main(): Promise<void> {
     await writeGenerated('node-bus.generated.ts', genNodeBus(s.panelBridge, s.telemSchedule))
     await writeGenerated('usb-identity.generated.ts', genUsbIdentity(s.simGateway))
     await writeGenerated('firmware-release.generated.ts', genFirmwareRelease(s.firmwareVersion))
+    await writeGenerated(
+      'upload-protocol.generated.ts',
+      genUploadProtocol(s.uploadProtocol, s.axisCal, s.axisCalCpp)
+    )
+    await writeGenerated('firmware-image.generated.ts', genFirmwareImage(s.firmwareImage))
+    await writeGenerated('boot-protocol.generated.ts', genBootProtocol(s.bootProtocol))
   } finally {
     s.cleanup()
   }

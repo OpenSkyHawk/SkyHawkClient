@@ -54,13 +54,13 @@ describe('T32 Settings › About (B92, X7)', () => {
     expect(
       screen.getByText('NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, Gateway')
     ).toBeInTheDocument()
-    expect(value('Node registry')).toBe('e82ac6eView…')
+    expect(value('Node registry')).toBe('f9fed40View…')
   })
 
   it('the registry dialog: every NODE_ID, the bridge as the Gateway, On the bus from the roster', async () => {
     const { openRegistry } = await openAbout()
     const dlg = await openRegistry()
-    expect(within(dlg).getByText('NODE_IDS.md @ e82ac6e · 2026-10-26')).toBeInTheDocument()
+    expect(within(dlg).getByText('NODE_IDS.md @ f9fed40 · 2026-10-27')).toBeInTheDocument()
     expect(rows(dlg)).toEqual([
       '#0Gateway—serial link',
       '#1Center_ArmamentCenteryes',
