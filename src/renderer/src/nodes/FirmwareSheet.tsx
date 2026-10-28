@@ -12,6 +12,8 @@ export function FirmwareSheet(props: {
   sheet: FirmwareSheetData
   releaseCard: ReactNode
   onOpen: (nodeId: number) => void
+  /** A row's *Update*: the update dialog on that board (the app opens it, #173). */
+  onUpdate: (row: string) => void
   onClose: () => void
 }) {
   const { sheet } = props
@@ -57,6 +59,11 @@ export function FirmwareSheet(props: {
                     <span>{r.sub}</span>
                   </span>
                 </span>
+                {r.update && (
+                  <button className="toolbtn" onClick={() => props.onUpdate(r.key)}>
+                    Update
+                  </button>
+                )}
                 {r.opens !== undefined && (
                   <button
                     className="cog"

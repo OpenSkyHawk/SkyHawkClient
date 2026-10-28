@@ -117,6 +117,7 @@ import {
 } from '@shared/app'
 import type { LogEvent } from '@shared/events'
 import { RELEASES_STATE_DEFAULT, type ReleasesState } from '@shared/releases'
+import type { UpdateState } from '@shared/update'
 
 /** What main knows right now. Every field is optional: absent = main's state at launch. */
 export interface Scenario {
@@ -136,6 +137,8 @@ export interface Scenario {
   events?: LogEvent[]
   /** The release check and the saved releases (`releases:state`; `getReleases` answers it too). */
   releases?: ReleasesState
+  /** The firmware update dialog (`update:state`; `getUpdate` answers it too), #173. */
+  update?: UpdateState | null
   /**
    * The Firmware sheet's inputs (#173), into the Cockpit snapshot host; not pushed: the USB side's
    * HELLO_ACK release and the newest saved release (releases' `target()`).
@@ -233,6 +236,7 @@ const PUSHES: { [K in keyof Scenario]?: PushChannel | null } = {
   telemetry: null,
   events: 'events:batch',
   releases: 'releases:state',
+  update: 'update:state',
   firmware: null,
   cal: null,
   hid: 'hid:report',
@@ -332,6 +336,12 @@ export function installSkyhawkMock(): SkyhawkMock {
     getReleases: vi.fn(() => resolve(state.releases ?? RELEASES_STATE_DEFAULT)),
     checkReleases: vi.fn(() => resolve(undefined)),
     clearReleases: vi.fn(() => resolve(undefined)),
+    getUpdate: vi.fn(() => resolve(state.update ?? null)),
+    updateOpen: vi.fn(() => resolve(undefined)),
+    updateAck: vi.fn(() => resolve(undefined)),
+    updateStart: vi.fn(() => resolve(undefined)),
+    updateRetry: vi.fn(() => resolve(undefined)),
+    updateClose: vi.fn(() => resolve(undefined)),
     // An applied import: main's settings are what it answered, and its forms start over from them.
     applyConfigImport: after(
       vi.fn<SkyhawkApi['applyConfigImport']>(() => resolve({ ok: false as const, error: 'mock' })),

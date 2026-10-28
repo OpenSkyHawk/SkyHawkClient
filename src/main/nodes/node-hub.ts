@@ -307,6 +307,11 @@ export class NodeHub implements NodeLineSink {
     this.cockpit.firmwareChanged({ usb: fw })
   }
 
+  /** Update drives mounted while the link is down changed (#173; update's drive watch). */
+  gatewayUsbDrives(count: number): void {
+    this.cockpit.firmwareChanged({ usbDrives: count })
+  }
+
   /** The release the Firmware sheet compares with changed (#173; releases' `target()`). */
   releaseChanged(release: ReleaseTarget | undefined): void {
     this.cockpit.firmwareChanged({ release })

@@ -790,8 +790,11 @@ export interface OverviewSummary {
  * - `no-release`: nothing saved on this computer to compare with;
  * - `custom`: the release has no image for it;
  * - `update` / `newer` / `ok`: older than, newer than or the same as the release.
+ * The Gateway's USB side also reads `in-drive`: no port, but an update drive is mounted (an
+ * interrupted copy, or BOOTSEL held): *Update* finishes it (#173).
  */
 export type FirmwareStatus =
+  | 'in-drive'
   | 'off'
   | 'not-reported'
   | 'manual'
@@ -820,8 +823,17 @@ export interface FirmwareRow {
   notReported?: true
   /** `mismatch`: the Gateway's major. */
   gatewayMajor?: number
-  /** Counted in *Needs attention*: update available, major mismatch, manual update only. */
+  /**
+   * Counted in *Needs attention*: update available, major mismatch, manual update only, and the
+   * Gateway waiting in its update drive.
+   */
   attention: boolean
+  /**
+   * The row's *Update* (#173: the Gateway's USB side, while it is behind the saved release or waits
+   * in its update drive). The
+   * cockpit side's (#187) and the boards' (#175) come with their update flows.
+   */
+  action?: 'update'
 }
 
 /** The Cockpit's Firmware button and sheet (#173): every board against the release. */

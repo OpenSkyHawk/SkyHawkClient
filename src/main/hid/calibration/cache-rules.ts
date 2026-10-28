@@ -140,6 +140,23 @@ export function dropAxis(cache: CalCache, serial: string, idx?: number): CalCach
   return { ...cache, boards }
 }
 
+/**
+ * The read-back rule for a write: the device reports the axis calibrated, with exactly the
+ * endpoints written. The ACK only says "received"; this says "stored". The dialog's save and the
+ * restore after a firmware update (#173) both judge a COMMIT by it.
+ */
+export function storedAsWritten(
+  axis: CalSnapshot['axes'][number] | undefined,
+  written: { min: number; centre: number; max: number }
+): boolean {
+  return (
+    !!axis?.calibrated &&
+    axis.min === written.min &&
+    axis.centre === written.centre &&
+    axis.max === written.max
+  )
+}
+
 /** What this board has in the cache, or undefined — including when the serial is unknown. */
 export function boardFor(cache: CalCache, serial?: string): CachedBoard | undefined {
   return serial ? cache.boards[serial] : undefined

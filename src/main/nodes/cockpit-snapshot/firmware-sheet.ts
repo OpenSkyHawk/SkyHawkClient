@@ -25,13 +25,18 @@ export interface FirmwareInputs {
   usb?: FirmwareVersion
   /** The newest saved release; undefined while nothing is saved. */
   release?: ReleaseTarget
+  /**
+   * Update drives mounted while the link is down (update's drive watch, #173): the Gateway waiting
+   * in its drive. 0 or absent: none.
+   */
+  usbDrives?: number
 }
 
 const text = (v: FirmwareVersion): string => `${v.major}.${v.minor}.${v.patch}`
 const isZero = (v: FirmwareVersion) => v.major === 0 && v.minor === 0 && v.patch === 0
 
 /** The statuses counted in *Needs attention* (the design's `need`). */
-const ATTENTION: ReadonlySet<FirmwareStatus> = new Set(['update', 'mismatch', 'manual'])
+const ATTENTION: ReadonlySet<FirmwareStatus> = new Set(['update', 'mismatch', 'manual', 'in-drive'])
 
 /** A reported version against the release: no release, no image, or the version order. */
 function againstRelease(
@@ -53,10 +58,26 @@ const row = (r: Omit<FirmwareRow, 'attention'>): FirmwareRow => ({
 /** The Gateway's USB side: its HELLO_ACK this connect. */
 function usbRow(live: boolean, f: FirmwareInputs): FirmwareRow {
   const base = { key: 'usb', side: 'usb' as const, name: 'Gateway · USB side' }
+  // No port, but an update drive is mounted: an interrupted copy, or BOOTSEL held. Update finishes
+  // it when the release has the image.
+  if (!live && f.usbDrives) {
+    return row({
+      ...base,
+      status: 'in-drive',
+      ...(f.release?.hasImage({ side: 'usb' }) && { action: 'update' as const })
+    })
+  }
   if (!live || !f.usb) return row({ ...base, status: 'not-reported' })
   if (isZero(f.usb)) return row({ ...base, status: 'not-reported', notReported: true })
   const version = text(f.usb)
-  return row({ ...base, version, status: againstRelease(version, f.release, { side: 'usb' }) })
+  const status = againstRelease(version, f.release, { side: 'usb' })
+  // Behind the saved release, which has its image: the USB side's own update (#173).
+  return row({
+    ...base,
+    version,
+    status,
+    ...(status === 'update' && { action: 'update' as const })
+  })
 }
 
 /**

@@ -22,6 +22,31 @@ export function listSerialPorts(): Promise<SerialPortInfo[]> {
   return SerialPort.list()
 }
 
+/**
+ * The 1200-baud touch (#173): a port opened at 1200 baud and closed (DTR drops) reboots the
+ * Gateway's RP2040 into its UF2 drive. The Adafruit TinyUSB library does it (3.7.7 in firmware
+ * 0.3.0's dependencies.txt; SimGateway README.md:218); the firmware defines no constant for it,
+ * so the sync can't carry it — it is the library's convention, like the Arduino IDE's.
+ */
+export const TOUCH_BAUD = 1200
+
+/**
+ * Open `path` at TOUCH_BAUD and close it again: the Gateway restarts into its UF2 drive. The
+ * caller has released the port first. Rejects when the port won't open.
+ */
+export async function touchForBootloader(path: string): Promise<void> {
+  const port = new SerialPort({ path, baudRate: TOUCH_BAUD, autoOpen: false })
+  port.on('error', () => {}) // the board drops off the bus as the port closes
+  await new Promise<void>((resolve, reject) => port.open((err) => (err ? reject(err) : resolve())))
+  await new Promise<void>((resolve) => {
+    try {
+      port.close(() => resolve())
+    } catch {
+      resolve() // already gone with the reboot
+    }
+  })
+}
+
 /** USB-CDC ignores baud (virtual), but node-serialport requires a value. */
 const BAUD = USB_IDENTITY.baud
 const RECONNECT_MS = 2000
@@ -62,6 +87,8 @@ export class SerialBridge implements SerialLink {
   private port?: SerialPort
   private path?: string
   private stopped = false
+  /** stop()'s release of the port, still in flight or done. */
+  private releasing?: Promise<void>
   private timer?: ReturnType<typeof setTimeout>
   /**
    * An open attempt is in flight.
@@ -250,7 +277,12 @@ export class SerialBridge implements SerialLink {
     // discards the bridge on disconnect and builds a fresh one on connect, so a quick
     // disconnect/connect pair can still open the port while this release is in flight. `retry()`
     // recovers it 2 s later.
-    void this.disposePort()
+    this.releasing = this.disposePort()
+  }
+
+  /** After stop(): resolves once the port is released, before anything else opens it (#173). */
+  whenReleased(): Promise<void> {
+    return this.releasing ?? Promise.resolve()
   }
 
   write(data: Buffer): void {

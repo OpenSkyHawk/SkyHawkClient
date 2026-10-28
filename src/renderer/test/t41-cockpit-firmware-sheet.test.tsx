@@ -99,7 +99,7 @@ describe('T41 the Firmware button and sheet (#173)', () => {
       'true'
     )
     expect(rows()).toEqual([
-      '↑Gateway · USB sideUPDATE AVAILABLE1.0.0 → 1.0.1',
+      '↑Gateway · USB sideUPDATE AVAILABLE1.0.0 → 1.0.1Update',
       '↑PDU_Left · #3UPDATE AVAILABLE1.0.0 → 1.0.1',
       '↑PDU_Right · #4UPDATE AVAILABLE1.0.0 → 1.0.1',
       '!Left_Throttle · #10MANUAL UPDATE ONLY1.0.0 · no bootloader — update it with a programmer',
@@ -110,14 +110,16 @@ describe('T41 the Firmware button and sheet (#173)', () => {
         'Versions as each board reports them. The latest release is saved on this computer, so updates work offline. Panel groups run their own builds; boards without a bootloader need a programmer.'
       )
     ).toBeInTheDocument()
-    expect(within(sheet).queryByRole('button', { name: /^(Update|Retry|From file…)/ })).toBeNull()
+    // Only the Gateway's USB side updates from here so far (PR 2); the rest come with #187 / #175.
+    expect(within(sheet).getAllByRole('button', { name: 'Update' })).toHaveLength(1)
+    expect(within(sheet).queryByRole('button', { name: /^(Retry|From file…)/ })).toBeNull()
   })
 
   it('All: every chip the design draws for this PR', async () => {
     const { user, sheet } = await openSheet(BENCH)
     await user.click(within(sheet).getByRole('button', { name: 'All · 12' }))
     expect(rows()).toEqual([
-      '↑Gateway · USB sideUPDATE AVAILABLE1.0.0 → 1.0.1',
+      '↑Gateway · USB sideUPDATE AVAILABLE1.0.0 → 1.0.1Update',
       'Gateway · cockpit sideUP TO DATE1.0.1',
       '↑PDU_Left · #3UPDATE AVAILABLE1.0.0 → 1.0.1',
       '↑PDU_Right · #4UPDATE AVAILABLE1.0.0 → 1.0.1',
@@ -163,6 +165,17 @@ describe('T41 the Firmware button and sheet (#173)', () => {
     })
     expect(within(sheet).getByText('Every board runs the latest release.')).toBeInTheDocument()
     expect(button()).toHaveAttribute('title', 'Every board runs 1.0.1')
+  })
+
+  it('the Gateway waiting in its update drive (link down): its row, in Needs attention, with Update', async () => {
+    const { sheet } = await openSheet({
+      ...BENCH,
+      device: link('reconnecting'),
+      firmware: { release: savedRelease('1.0.1'), usbDrives: 1 }
+    })
+    expect(rows()[0]).toBe('!Gateway · USB sideIN UPDATE DRIVEwaiting in its update driveUpdate')
+    expect(within(sheet).getByRole('button', { name: 'Needs attention · 1' })).toBeInTheDocument()
+    expect(button()).toHaveTextContent('Firmware· 1')
   })
 
   it('link down: every row not reported; nothing needs attention, and it doesn’t say every board runs it', async () => {

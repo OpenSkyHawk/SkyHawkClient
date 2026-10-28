@@ -75,6 +75,9 @@ export interface ReleasesDeps {
 /** The event-log name of the check's own rows (its file). */
 const CHECK_FILE_TAG = 'release-check.json'
 
+/** The Gateway USB side's image in a release: its `.uf2` (`firmware-release-assets.yml:196-198`). */
+export const USB_IMAGE: ImageSelector = { side: 'usb', format: 'uf2' }
+
 /** Where an image comes from. #177's *From file…* adds `{ kind: 'file', … }` as a second kind. */
 export type ImageSourceRef = { kind: 'release'; version: string }
 
@@ -256,10 +259,7 @@ export class Releases {
       // The images the update flows install (#173 PR 2, #187, #175): the USB side's `.uf2`, a
       // node's app `.bin`. The manifest only, never a file read.
       hasImage: (of) =>
-        this.imageFor(
-          version,
-          'side' in of ? { side: 'usb', format: 'uf2' } : { nodeId: of.nodeId, format: 'bin' }
-        ).ok
+        this.imageFor(version, 'side' in of ? USB_IMAGE : { nodeId: of.nodeId, format: 'bin' }).ok
     }
   }
 
@@ -424,10 +424,24 @@ export class Releases {
 
   /**
    * An image's bytes and its manifest entry, its size and SHA-256 re-checked on every call. A
-   * missing or damaged file is repaired once (the version downloaded and unpacked again).
+   * missing or damaged file is repaired once (the version downloaded and unpacked again). Waits
+   * for the start scan.
    */
   getFile(source: ImageSourceRef, sel: ImageSelector): Promise<GetFileResult> {
     return this.sources[source.kind].get(source, sel)
+  }
+
+  /**
+   * The Gateway USB side's image of a saved `version`, for its update (#173): the bytes and the
+   * file's name, or why not in #192's words.
+   */
+  async usbImage(
+    version: string
+  ): Promise<{ ok: true; bytes: Uint8Array; name: string } | { ok: false; message: string }> {
+    const r = await this.getFile({ kind: 'release', version }, USB_IMAGE)
+    return r.ok
+      ? { ok: true, bytes: r.bytes, name: r.entry.name }
+      : { ok: false, message: r.message }
   }
 
   /**
@@ -451,6 +465,8 @@ export class Releases {
     const letGo = this.cache.hold(version)
     this.push() // Clear waits while an update reads
     try {
+      // An update asked at launch waits for the start scan, as the check does (#173).
+      await this.scanned
       let r = await this.cache.read(version, sel)
       if (r.kind === 'damaged') {
         const repaired = await this.repair(version)
