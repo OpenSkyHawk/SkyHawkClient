@@ -156,7 +156,8 @@ export class AppServices {
         // Nodes shows it: the Firmware row, the paused cockpit, the roster held.
         publish: (state) => this.nodes.cockpitSide(state),
         events: (rows) => this.journal.report(rows),
-        now: () => Date.now()
+        now: () => Date.now(),
+        log: debugLog
       },
       // A Gateway waiting in its update drive shows on the Firmware sheet (#173).
       drivesChanged: (count) => this.nodes.gatewayUsbDrives(count)

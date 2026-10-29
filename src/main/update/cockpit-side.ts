@@ -11,7 +11,12 @@ import {
   type CockpitSidePorts,
   type CockpitSideTiming
 } from './cockpit-side-update'
-import { UploaderClient, type UploaderLink, type UploaderTiming } from './uploader/uploader-client'
+import {
+  UploaderClient,
+  type UplLog,
+  type UploaderLink,
+  type UploaderTiming
+} from './uploader/uploader-client'
 import type { UplInfo } from './uploader/upl-codec'
 
 /** What nodes shows about the cockpit side, pushed on every change. */
@@ -33,6 +38,8 @@ export interface CockpitSideDeps extends CockpitSidePorts {
   publish(state: CockpitSideState): void
   timing?: Partial<CockpitSideTiming>
   uploaderTiming?: Partial<UploaderTiming>
+  /** The debug log: the uploader's requests, statuses and result. */
+  log?: UplLog
 }
 
 export class CockpitSide {
@@ -47,7 +54,7 @@ export class CockpitSide {
   private connect = 0
 
   constructor(private readonly deps: CockpitSideDeps) {
-    this.uploader = new UploaderClient(deps.link, deps.uploaderTiming)
+    this.uploader = new UploaderClient(deps.link, deps.uploaderTiming, deps.log)
   }
 
   /** HELLO answered on a connect (the USB side's release), or didn't: read UPL_INFO after it. */
