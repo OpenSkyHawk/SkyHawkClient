@@ -138,7 +138,7 @@ describe('update dialog words: the Gateway cockpit side (#187)', () => {
     expect(fail({ kind: 'no-response' }, 'refused')).toMatchObject({
       fail: {
         title: 'No response',
-        text: 'press the reset button on the Gateway board. If nothing happens within a few seconds, press it again. Check the cockpit is powered.'
+        text: 'click Retry, then press the reset button on the Gateway board while it tries again. If nothing happens within a few seconds, press it again. Check the cockpit is powered.'
       },
       foot: 'Nothing was written.'
     })
