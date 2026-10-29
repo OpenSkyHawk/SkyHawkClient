@@ -32,7 +32,7 @@ export function DevicePopover({ autoConnect }: { autoConnect: boolean }) {
   })
   const button = linkButton(deviceAction)
   const gw = gatewayView(deviceGateway, devicePort)
-  const fw = gatewayFirmwareView(deviceGateway?.firmware)
+  const fw = gatewayFirmwareView(deviceGateway?.firmware, deviceGateway?.cockpitSide)
   const cls = gw.pill?.cls ?? dev.cls
   const meta = gw.meta ?? dev.popMeta
 
@@ -96,7 +96,9 @@ export function DevicePopover({ autoConnect }: { autoConnect: boolean }) {
                 {fw && (
                   <div className="gw__row">
                     <span className="gw__k">Firmware</span>
-                    <span className={`gw__v${fw.warn ? ' gw--warn' : ''}`}>{fw.pop}</span>
+                    <span className={`gw__v${fw.err ? ' gw--err' : fw.warn ? ' gw--warn' : ''}`}>
+                      {fw.pop}
+                    </span>
                   </div>
                 )}
               </div>

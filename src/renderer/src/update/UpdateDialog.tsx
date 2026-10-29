@@ -8,6 +8,7 @@ import { updateView } from './update-view'
  * The firmware update dialog (#173; the shared dialog #187 and #175 reuse): confirm, run, failure,
  * result. Main runs the update and pushes each state (`update:state`); this only words it. The
  * app hands in what other topics do: *Stop relay* (dcs) and *Check for updates* (releases).
+ * *Update the USB side first* (#187) opens this topic's own USB-side update.
  */
 export function UpdateDialog(props: DialogProps) {
   const s = useUpdateStore((st) => st.update)
@@ -22,7 +23,7 @@ interface DialogProps {
 }
 
 function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
-  const { ackUpdate, startUpdate, retryUpdate, closeUpdate } = useUpdateStore.getState()
+  const { ackUpdate, startUpdate, retryUpdate, closeUpdate, openUpdate } = useUpdateStore.getState()
   const ref = useRef<HTMLElement>(null)
   const v = updateView(s)
   // Esc and the scrim close it, except while it runs (main refuses then too).
@@ -84,6 +85,15 @@ function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
                         Stop relay
                       </button>
                     )}
+                    {c.fix === 'usb-first' && (
+                      <button
+                        className="toolbtn"
+                        style={{ marginLeft: 'auto' }}
+                        onClick={() => openUpdate({ kind: 'usb' })}
+                      >
+                        Update the USB side first
+                      </button>
+                    )}
                     {c.fix === 'check-releases' && (
                       <button
                         className="toolbtn"
@@ -127,7 +137,7 @@ function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
                 <div>
                   <i>i</i>
                   <span>
-                    <b>Gateway</b> — {v.note}
+                    <b>{v.note.title}</b> — {v.note.text}
                   </span>
                 </div>
               </div>
@@ -135,23 +145,23 @@ function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
           )}
           {s.phase === 'run' && (
             <>
+              {v.runNote && (
+                <div className={`sh__fault ${v.runNote.cls}`} role="status">
+                  <b>{v.runNote.title}</b> — {v.runNote.text}
+                </div>
+              )}
               <div className="up__cur">
                 <span className="node__dot on" aria-hidden="true" />
                 {s.name}
               </div>
-              <div className="up__ph" aria-label="Steps">
-                {v.steps.map((p) => (
-                  <div key={p.label} className={`up__p ${p.cls}`}>
-                    <i>{p.sym}</i>
-                    {p.label}
-                  </div>
-                ))}
-              </div>
+              <Steps v={v} />
               <div className="hbar" title={v.pctText} role="img" aria-label={v.pctText}>
                 <i style={{ width: `${v.pct}%` }} />
               </div>
             </>
           )}
+          {/* The steps stay until the dialog closes: the last ones pass in milliseconds. */}
+          {(s.phase === 'fail' || s.phase === 'done') && <Steps v={v} />}
           {v.fail && (
             <div className="sh__fault sh__fault--err" role="alert">
               <b>{v.fail.title}</b> — {v.fail.text}
@@ -186,7 +196,7 @@ function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
                 Cancel
               </button>
               <button className="browse" disabled={!s.canStart} onClick={startUpdate}>
-                Update to {s.to}
+                {v.startLabel}
               </button>
             </>
           )}
@@ -208,5 +218,19 @@ function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
         </div>
       </section>
     </>
+  )
+}
+
+/** The run's steps, each ticked, failed, current or waiting. */
+function Steps({ v }: { v: ReturnType<typeof updateView> }) {
+  return (
+    <div className="up__ph" aria-label="Steps">
+      {v.steps.map((p) => (
+        <div key={p.label} className={`up__p ${p.cls}`}>
+          <i>{p.sym}</i>
+          {p.label}
+        </div>
+      ))}
+    </div>
   )
 }

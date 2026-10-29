@@ -120,6 +120,23 @@ export interface NodeHubDeps {
   mappingEvents?: MappingFileEvents
   log?: Log
   link?: NodeHubLink
+  /**
+   * The Gateway's USB side answers its uploader now (#187; update's CockpitSide): asked when the
+   * roster goes silent, to tell the cockpit side's silence from the whole Gateway's.
+   */
+  probeUsbSide?: () => Promise<boolean>
+}
+
+/**
+ * The Gateway's cockpit side as the update topic knows it (#187): whether its USB side has the
+ * uploader, the bundled cockpit-side version, an update of it running, and whether its silence is
+ * expected now.
+ */
+export interface CockpitSideInput {
+  uploader: boolean
+  bundled?: string
+  updating?: { from?: string; to: string }
+  quiet: boolean
 }
 
 /** Shortest gap between takes of the PDU pages. ~3 PDUs send ~3 frames/s between them. */
@@ -164,6 +181,9 @@ export class NodeHub implements NodeLineSink {
   private legacyNodesWarned = false
   private readonly link: NodeHubLink
   private readonly log: Log
+  private readonly probeUsbSide?: () => Promise<boolean>
+  /** An update of the cockpit side runs (#187): the roster holds. */
+  private cockpitUpdating = false
   private readonly errorCbs = new Set<(tag: string, message: string) => void>()
   private readonly defaults = registryDefaults(NODE_NAMES)
   private telemPushedAt = 0
@@ -201,6 +221,7 @@ export class NodeHub implements NodeLineSink {
   ) {
     this.link = deps.link ?? NO_LINK
     this.log = deps.log ?? (() => {})
+    this.probeUsbSide = deps.probeUsbSide
     this.store = new MappingStore({
       file: deps.mappingFile,
       defaults: this.defaults,
@@ -256,12 +277,52 @@ export class NodeHub implements NodeLineSink {
       const now = Date.now()
       this.flush(this.roster.takeDirty())
       this.onEvents(this.gateway.tick(now, this.link.exportGated))
+      if (this.gateway.takeProbe()) this.probe()
       if (this.gateway.reaskDue(now)) this.requestNodes()
       if (this.gateway.takeChanged()) {
+        // The cockpit side's silence decides whether the boards are known (#187).
+        this.modelDirty = true
         this.link.pushGatewayHealth(this.gateway.status())
         this.cockpit.linkChanged()
       }
     }
+  }
+
+  /**
+   * The roster went silent: ask the Gateway's uploader whether its USB side still answers (#187).
+   * With no one to ask, the answer is no.
+   */
+  private probe(): void {
+    const ask = this.probeUsbSide?.() ?? Promise.resolve(false)
+    void ask
+      .catch(() => false)
+      .then((answers) => this.onEvents(this.gateway.probed(answers, Date.now())))
+  }
+
+  /**
+   * The Gateway's cockpit side as the update topic knows it (#187): its uploader and bundle for the
+   * Firmware sheet; while its update runs, the roster holds (no board is judged absent by the
+   * restarted bridge's short roster) and the Gateway's silence is not news; then the next whole
+   * roster after a poll period judges the boards. The poll goes on: the Gateway drops it while
+   * flashing, and its rows tell a run that lost its result what the cockpit side runs now.
+   */
+  cockpitSide(s: CockpitSideInput): void {
+    this.gateway.cockpitSide({ uploader: s.uploader, quiet: s.quiet })
+    const updating = !!s.updating
+    if (updating !== this.cockpitUpdating) {
+      this.cockpitUpdating = updating
+      if (updating) this.roster.hold()
+      else this.roster.release(Date.now() + NODES_POLL_MS)
+    }
+    this.cockpit.firmwareChanged({
+      bridge: { uploader: s.uploader, ...(s.bundled && { bundled: s.bundled }) },
+      cockpitUpdating: s.updating
+    })
+  }
+
+  /** The cockpit side sends no status while its USB side answers (#187): no board is known. */
+  private get cockpitSilent(): boolean {
+    return !!this.gateway.status()?.cockpitSide
   }
 
   /** `device:status` went out with a new link state (the connection's onStatus). */
@@ -542,10 +603,10 @@ export class NodeHub implements NodeLineSink {
 
   /** What the one availability rule reads for each board, as it stands now. */
   private signals(now: number): (nodeId: number) => AvailabilitySignals {
-    const rows = new Map(this.roster.snapshot().map((n) => [n.nodeId, n]))
+    const rows = new Map(this.rosterRows().map((n) => [n.nodeId, n]))
     const pages = new Map(this.telem.snapshot(now).map((t) => [t.nodeId, t]))
     const seen = this.roster.seenInfo()
-    const rosterComplete = this.roster.rosterCompleteAt() !== undefined
+    const rosterComplete = this.rosterCompleteAt() !== undefined
     return (nodeId) => ({
       status: rows.get(nodeId),
       seen: seen.get(nodeId),
@@ -647,12 +708,24 @@ export class NodeHub implements NodeLineSink {
     return this.update((f) => setHidden(f, this.defaults, nodeId, on))
   }
 
+  /**
+   * The roster as the boards are judged by: none while the cockpit side doesn't respond (#187) —
+   * the Gateway can't see the bus, so every board is unknown, never offline.
+   */
+  private rosterRows(): NodeStatus[] {
+    return this.cockpitSilent ? [] : this.roster.snapshot()
+  }
+
+  private rosterCompleteAt(): number | undefined {
+    return this.cockpitSilent ? undefined : this.roster.rosterCompleteAt()
+  }
+
   /** The model as it stands, stamped with the rev of the last push (a newer push has a higher one). */
   private model(now: number): NodeModel {
     const model = buildNodeModel({
-      roster: this.roster.snapshot().map(withFaultInfo),
+      roster: this.rosterRows().map(withFaultInfo),
       seen: this.roster.seenInfo(),
-      rosterCompleteAt: this.roster.rosterCompleteAt(),
+      rosterCompleteAt: this.rosterCompleteAt(),
       telemetry: this.telem.snapshot(now),
       defaults: this.defaults,
       file: this.mapping(),

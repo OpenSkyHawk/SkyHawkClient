@@ -12,8 +12,11 @@ export function FirmwareSheet(props: {
   sheet: FirmwareSheetData
   releaseCard: ReactNode
   onOpen: (nodeId: number) => void
-  /** A row's *Update*: the update dialog on that board (the app opens it, #173). */
-  onUpdate: (row: string) => void
+  /**
+   * A row's *Update* or *Retry*: the update dialog on that board, or on the USB side first
+   * (`usb-first`, #187). The app opens it (#173).
+   */
+  onUpdate: (row: string, action: 'update' | 'retry' | 'usb-first') => void
   onClose: () => void
 }) {
   const { sheet } = props
@@ -60,8 +63,8 @@ export function FirmwareSheet(props: {
                   </span>
                 </span>
                 {r.update && (
-                  <button className="toolbtn" onClick={() => props.onUpdate(r.key)}>
-                    Update
+                  <button className="toolbtn" onClick={() => props.onUpdate(r.key, r.action!)}>
+                    {r.button}
                   </button>
                 )}
                 {r.opens !== undefined && (

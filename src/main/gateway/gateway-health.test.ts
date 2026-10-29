@@ -502,3 +502,89 @@ describe('events: one Log › Events row per new recovery', () => {
     expect(short(w.report(node0(), 'r', 7))).toEqual(['Gateway: error-passive cleared [info]'])
   })
 })
+
+describe('#187 whose silence: the cockpit side’s, or the whole Gateway’s', () => {
+  const T = 1_000_000
+  /** A watch that has answered once, its uploader known, then a request unanswered for 5 s. */
+  function silent(uploader: boolean, answered = true) {
+    const w = new GatewayWatch()
+    w.cockpitSide({ uploader, quiet: false })
+    if (answered) w.answered('_NODE_STATUS_END 1', T)
+    w.asked(T)
+    return w
+  }
+
+  it('with an uploader, the silence is asked about once, never judged on the clock alone', () => {
+    const w = silent(true)
+    expect(w.tick(T + GATEWAY_NO_ANSWER_MS)).toEqual([])
+    expect(w.status()?.kind).not.toBe('not-responding')
+    expect(w.takeProbe()).toBe(true)
+    expect(w.takeProbe()).toBe(false)
+    // While the probe is out, the clock asks nothing more.
+    w.tick(T + GATEWAY_NO_ANSWER_MS + 200)
+    expect(w.takeProbe()).toBe(false)
+  })
+
+  it('the USB side answers: the cockpit side is not responding — red, its own words, never “unplug”', () => {
+    const w = silent(true)
+    w.tick(T + GATEWAY_NO_ANSWER_MS)
+    w.takeProbe()
+    const rows = w.probed(true, T + GATEWAY_NO_ANSWER_MS + 10)
+    expect(w.status()).toMatchObject({
+      severity: 'err',
+      kind: 'not-responding',
+      label: 'Cockpit side not responding',
+      cockpitSide: true,
+      problem: true
+    })
+    expect(`${w.status()!.note} ${w.status()!.alert!.text}`).not.toMatch(/unplug|CAN|USB|serial/i)
+    expect(w.status()!.note).toMatch(/reset button on the Gateway board/)
+    expect(short(rows)).toEqual([
+      'Gateway: cockpit side not responding · the Gateway answers; its cockpit side doesn’t [error]'
+    ])
+    // Its first row clears it.
+    expect(short(w.answered('_NODE_STATUS ...', T + 20_000))).toEqual([
+      'Gateway: responding again [info]'
+    ])
+    expect(w.status()?.cockpitSide).toBeUndefined()
+  })
+
+  it('the USB side doesn’t answer either: #94’s Gateway not responding', () => {
+    const w = silent(true)
+    w.tick(T + GATEWAY_NO_ANSWER_MS)
+    w.takeProbe()
+    w.probed(false, T + GATEWAY_NO_ANSWER_MS + 10)
+    expect(w.status()).toMatchObject({ kind: 'not-responding', label: 'Not responding' })
+    expect(w.status()?.cockpitSide).toBeUndefined()
+  })
+
+  it('silent since the port opened (a bridge waiting in its bootloader): still judged (C4)', () => {
+    const w = silent(true, false)
+    w.tick(T + GATEWAY_NO_ANSWER_MS)
+    expect(w.takeProbe()).toBe(true)
+    w.probed(true, T + GATEWAY_NO_ANSWER_MS + 10)
+    expect(w.status()?.cockpitSide).toBe(true)
+  })
+
+  it('a probe whose answer outlives a calibration pause still counts', () => {
+    const w = silent(true)
+    w.tick(T + GATEWAY_NO_ANSWER_MS)
+    w.takeProbe()
+    w.tick(T + GATEWAY_NO_ANSWER_MS + 100, true) // the probe itself gates the export
+    w.probed(true, T + GATEWAY_NO_ANSWER_MS + 150)
+    expect(w.status()?.cockpitSide).toBe(true)
+  })
+
+  it('quiet (its update runs, or it returns to its app): the clock is paused, nothing is judged', () => {
+    const w = silent(true)
+    w.cockpitSide({ uploader: true, quiet: true })
+    w.tick(T + 60_000)
+    expect(w.takeProbe()).toBe(false)
+    expect(w.status()?.kind).not.toBe('not-responding')
+    // #94's rule doesn't fire meanwhile either.
+    const old = silent(false)
+    old.cockpitSide({ uploader: false, quiet: true })
+    old.tick(T + 60_000)
+    expect(old.status()?.kind).not.toBe('not-responding')
+  })
+})

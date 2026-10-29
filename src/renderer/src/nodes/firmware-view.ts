@@ -17,11 +17,18 @@ export interface FirmwareRowView {
   sub: string
   /** The board it opens (its panel); a Gateway side opens nothing yet (#177's Gateway sheet). */
   opens?: number
-  /** Its *Update* (#173: the Gateway's USB side), as main offers it. */
+  /** Its button (#173: the Gateway's USB side; #187: its cockpit side), as main offers it. */
   update?: true
+  /** The button's words: *Retry* when the cockpit side doesn't respond (#187), else *Update*. */
+  button?: 'Update' | 'Retry'
+  /** What it opens: the row's own update, or the USB side's first (#187). */
+  action?: 'update' | 'retry' | 'usb-first'
 }
 
 const CHIP: Record<Exclude<FirmwareStatus, 'no-release'>, [string, string, string, string]> = {
+  updating: ['UPDATING', 'vchip--upd', 'on', '↻'],
+  paused: ['PAUSED', 'vchip--mute', '', ''],
+  'not-responding': ['NOT RESPONDING', 'vchip--err', 'off', '✕'],
   'in-drive': ['IN UPDATE DRIVE', 'vchip--warn', 'warn', '!'],
   off: ['OFFLINE', 'vchip--mute', 'off', '✕'],
   'not-reported': ['NOT REPORTED', 'vchip--mute', '', ''],
@@ -35,7 +42,15 @@ const CHIP: Record<Exclude<FirmwareStatus, 'no-release'>, [string, string, strin
 
 function sub(r: FirmwareRow, target: string | undefined): string {
   const v = r.version ?? ''
+  // The cockpit side's target is the version its USB side carries, when it carries one (#187).
+  const to = r.to ?? target
   switch (r.status) {
+    case 'updating':
+      return `${r.version ?? 'not responding'} → ${to}`
+    case 'paused':
+      return 'Gateway cockpit side updating'
+    case 'not-responding':
+      return 'the Gateway answers; its cockpit side doesn’t'
     case 'in-drive':
       return 'waiting in its update drive'
     case 'off':
@@ -52,9 +67,10 @@ function sub(r: FirmwareRow, target: string | undefined): string {
         ? `${v} · no image for #${r.nodeId} in ${target}`
         : `${v} · panel groups install their own build`
     case 'update':
-      return `${v} → ${target}`
+      if (r.action === 'usb-first') return `${v} → ${to} · update the USB side first`
+      return r.bundled ? `${v} → ${to} · carried by the USB side` : `${v} → ${to}`
     case 'newer':
-      return `${v} · the release is ${target}`
+      return r.bundled ? `${v} · the USB side carries ${to}` : `${v} · the release is ${target}`
     case 'ok':
     case 'no-release':
       return v
@@ -65,7 +81,11 @@ export function firmwareRowView(r: FirmwareRow, target: string | undefined): Fir
   const name = r.nodeId === undefined ? r.name : `${r.name} · #${r.nodeId}`
   const opens = {
     ...(r.nodeId !== undefined && { opens: r.nodeId }),
-    ...(r.action === 'update' && { update: true as const })
+    ...(r.action && {
+      update: true as const,
+      button: r.action === 'retry' ? ('Retry' as const) : ('Update' as const),
+      action: r.action
+    })
   }
   if (r.status === 'no-release')
     return { key: r.key, name, dot: '', sym: '', sub: sub(r, target), ...opens }

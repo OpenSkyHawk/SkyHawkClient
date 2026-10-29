@@ -8,8 +8,12 @@
 // look again (or copy again while the drive is still there); the wrong version → never on its own.
 import type { LogEventInput } from '@shared/events'
 import type { CalSnapshot } from '@shared/hid/calibration'
-import type { UpdateCalibration, UpdateFailure, UpdateStepKey } from '@shared/update'
+import type { ReleaseTarget } from '@shared/releases'
+import type { UpdateCalibration, UpdateCheck, UpdateFailure, UpdateStepKey } from '@shared/update'
 import type { Uf2Drive } from './uf2-drive'
+import type { FlowView, RunResult, StepReport, UpdateFlow } from './update-flow'
+
+export type { RunResult, StepReport } from './update-flow'
 
 /** What the flow needs from the rest of the app. */
 export interface UsbSidePorts {
@@ -63,22 +67,32 @@ export const USB_STEPS: readonly UpdateStepKey[] = ['uf2', 'copy', 'rec', 'ver']
 /** The USB side's rough time, for the confirm step (#361: about 5 s in all). */
 export const USB_ESTIMATE_SEC = 5
 
-/** Told as the run goes: a step starts, the copy's progress. */
-export interface StepReport {
-  step(index: number): void
-  pct(n: number): void
+/**
+ * What the dialog reads about the USB side from the host at each push (update-host.ts): the link,
+ * the update drives its watch found, the release, the cockpit side's major, and the USB side's
+ * release from HELLO when the dialog opened.
+ */
+export interface UsbSideDialog {
+  /** It waits in its update drive (no port): the update starts at the copy. */
+  inDrive: boolean
+  from?: string
+  linkUp(): boolean
+  drives(): number
+  release(): ReleaseTarget | undefined
+  cockpitMajor(): number | undefined
 }
 
-export type RunResult =
-  | { ok: true; reports: string; calibration?: UpdateCalibration }
-  | { ok: false; failure: UpdateFailure; at: number; retryFrom: number }
+const major = (v: string) => Number(v.split('.')[0])
 
 const text = (v: { major: number; minor: number; patch: number }) =>
   `${v.major}.${v.minor}.${v.patch}`
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-export class UsbSideUpdate {
+export class UsbSideUpdate implements UpdateFlow {
+  readonly target = { kind: 'usb' } as const
+  readonly name = 'Gateway · USB side'
+  readonly estimateSec = USB_ESTIMATE_SEC
   private readonly timing: UsbSideTiming
   private image?: { bytes: Uint8Array; name: string }
   /** Calibration as the Gateway reported it before anything happened; read once, at the first run. */
@@ -103,9 +117,55 @@ export class UsbSideUpdate {
 
   constructor(
     readonly to: string,
-    private readonly ports: UsbSidePorts
+    private readonly ports: UsbSidePorts,
+    private readonly dialog?: UsbSideDialog
   ) {
     this.timing = { ...TIMING, ...ports.timing }
+  }
+
+  steps(): readonly UpdateStepKey[] {
+    return USB_STEPS
+  }
+
+  /** From the drive the steps begin at the copy. */
+  first(): number {
+    return this.dialog?.inDrive ? 1 : 0
+  }
+
+  /** Waiting in its drive, the drive check stands in for the link's; then the saved image. */
+  checks(): UpdateCheck[] {
+    const d = this.dialog
+    if (!d) return []
+    const drives = d.drives()
+    const release = d.release()
+    return [
+      d.inDrive
+        ? {
+            kind: 'drive',
+            ok: drives === 1,
+            ...(drives !== 1 && { problem: drives ? ('many' as const) : ('none' as const) })
+          }
+        : { kind: 'link', ok: d.linkUp() },
+      {
+        kind: 'image',
+        ok: !!release && release.version === this.to && release.hasImage({ side: 'usb' }),
+        version: this.to
+      }
+    ]
+  }
+
+  view(): FlowView {
+    const d = this.dialog
+    const cockpit = d?.cockpitMajor()
+    const halves =
+      cockpit !== undefined && cockpit !== major(this.to)
+        ? { usb: major(this.to), cockpit }
+        : undefined
+    return {
+      ...(d?.from && { from: d.from }),
+      ...(d?.inDrive && { inDrive: true as const }),
+      ...(halves && { halves })
+    }
   }
 
   /**
@@ -204,10 +264,10 @@ export class UsbSideUpdate {
   /**
    * The dialog closed (#173): if a failure left the port taken — no drive, or a failed copy — the
    * link gets it back and looks for the Gateway again. A run that never took it (one started from
-   * the update drive) leaves the link as the user set it.
+   * the update drive) leaves the link as the user set it. After a result the link has it already.
    */
-  close(): void {
-    if (this.took) this.ports.link.handBack()
+  close(phase: 'confirm' | 'fail' | 'done' = 'fail'): void {
+    if (phase === 'fail' && this.took) this.ports.link.handBack()
   }
 
   /**

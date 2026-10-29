@@ -11,6 +11,15 @@
 // The re-ask that goes with it lives here too (G1): an unanswered request is asked again every
 // GATEWAY_REASK_MS, so one lost reply is answered long before the deadline and never trips it.
 //
+// Since the uploader (#187) the roster's silence has two causes: the whole Gateway, or only its
+// cockpit side, which sends every status row (it may wait in its bootloader after an interrupted
+// update). With an uploader to ask, the silence is judged by asking it (`probe`): it answers →
+// the cockpit side is *not responding* (its own wording: Retry the update, the board's reset
+// button, never "unplug", which only restarts the USB side); it doesn't → the Gateway is. This
+// silence counts even before a first answer since the port opened. While the cockpit side is
+// expected to be silent — its update runs, or it returns to its app after a refused one — the
+// clock is paused (`quiet`), as during a calibration exchange.
+//
 // It also shows that the Gateway recovered itself this boot (#169): gateway-diag decides whether
 // and how, from its DIAG record; this module words it, beside what its cockpit side reports.
 // Evidence, not a fault: warn at most, never the alert, never "a problem".
@@ -111,11 +120,12 @@ const SEVERITY_RANK = { ok: 0, warn: 1, err: 2 } as const
 export function gatewayStatus(
   row: NodeStatus | undefined,
   notResponding: boolean,
-  recovered?: GatewayRecoveredHow
+  recovered?: GatewayRecoveredHow,
+  cockpitSilent = false
 ): GatewayStatus | undefined {
   // A recovery is enough for a status before its cockpit side reports.
   // Whether what it reports is a problem is decided here, once (`problem`): the surfaces read it.
-  const reported = healthOf(row, notResponding)
+  const reported = healthOf(row, notResponding, cockpitSilent)
   const h =
     reported && reported.kind !== 'ok'
       ? { ...reported, problem: true as const }
@@ -132,7 +142,26 @@ export function gatewayStatus(
   return row ? { ...s, firmware: gatewayFirmware(row) } : s
 }
 
-function healthOf(row: NodeStatus | undefined, notResponding: boolean): GatewayStatus | undefined {
+/** The cockpit side doesn't respond while the USB side does (#187): the Firmware row's Retry. */
+const COCKPIT_NOT_RESPONDING: GatewayStatus = {
+  severity: 'err',
+  kind: 'not-responding',
+  label: 'Cockpit side not responding',
+  note: 'The Gateway answers, but its cockpit side doesn’t report. Retry the update from the Firmware sheet; if it still doesn’t answer, press the reset button on the Gateway board and check the cockpit is powered.',
+  alert: {
+    head: 'Gateway’s cockpit side not responding',
+    text: 'the Gateway answers, but its cockpit side doesn’t, so panel inputs aren’t reaching DCS. Retry the update from the Firmware sheet; if it still doesn’t answer, press the reset button on the Gateway board and check the cockpit is powered.'
+  },
+  aboutLink: true,
+  cockpitSide: true
+}
+
+function healthOf(
+  row: NodeStatus | undefined,
+  notResponding: boolean,
+  cockpitSilent = false
+): GatewayStatus | undefined {
+  if (cockpitSilent) return COCKPIT_NOT_RESPONDING
   if (notResponding) {
     return {
       severity: 'err',
@@ -234,7 +263,12 @@ const problemOf = (s: GatewayStatus | undefined): GatewayStatus | undefined =>
 function said(s: GatewayStatus, row: NodeStatus | undefined): { event: string; detail?: string } {
   switch (s.kind) {
     case 'not-responding':
-      return { event: 'not responding', detail: `no answer for ${SECS} s` }
+      return s.cockpitSide
+        ? {
+            event: 'cockpit side not responding',
+            detail: 'the Gateway answers; its cockpit side doesn’t'
+          }
+        : { event: 'not responding', detail: `no answer for ${SECS} s` }
     case 'bus-off':
       return { event: flag('boff').label }
     case 'overheat':
@@ -248,7 +282,9 @@ function said(s: GatewayStatus, row: NodeStatus | undefined): { event: string; d
 
 /** Same problem, so no row: the kind, and for a fault its code (a new code is news). */
 const sameProblem = (a?: GatewayStatus, b?: GatewayStatus): boolean =>
-  (a?.kind ?? 'ok') === (b?.kind ?? 'ok') && (a?.kind !== 'fault' || a.label === b?.label)
+  (a?.kind ?? 'ok') === (b?.kind ?? 'ok') &&
+  (a?.kind !== 'fault' || a.label === b?.label) &&
+  !a?.cockpitSide === !b?.cockpitSide
 
 /**
  * Rows for a change in what the Gateway shows (worst problem only, as every surface shows it): the
@@ -316,6 +352,15 @@ export class GatewayWatch {
   private answeredOnce = false
   /** How it recovered itself this boot, from this port's connect read (#169). */
   private recovery?: GatewayRecoveredHow
+  /** Its USB side has the uploader to ask when the roster goes silent (#187). */
+  private uploader = false
+  /** The cockpit side's silence is expected now: its update runs, or it returns to its app. */
+  private quiet = false
+  /** The roster went silent: the uploader is to be asked who is (takeProbe). */
+  private probeDue = false
+  private probing = false
+  /** The USB side answers, its cockpit side sends nothing: the cockpit side is not responding. */
+  private cockpitSilent = false
   /**
    * The last recovery each Gateway got an Events row for, by USB serial ('' for one that reports
    * none). Held for this app run only, never on disk, and kept through reset(): a reconnect to the
@@ -333,8 +378,51 @@ export class GatewayWatch {
     this.noAnswer = false
     this.answeredOnce = false
     this.recovery = undefined
+    this.probeDue = false
+    this.probing = false
+    this.cockpitSilent = false
     this.current = undefined
     this.changed = true
+  }
+
+  /**
+   * What the update topic knows about the cockpit side (#187): whether the USB side has an
+   * uploader to ask, and whether the cockpit side's silence is expected now (its update runs, or
+   * it returns to its app): then the clock is paused, as during a calibration exchange.
+   */
+  cockpitSide(s: { uploader: boolean; quiet: boolean }): void {
+    this.uploader = s.uploader
+    this.quiet = s.quiet
+    if (s.quiet) this.askedAt = undefined
+  }
+
+  /** True once when the roster went silent and the uploader is to be asked who is (`probed`). */
+  takeProbe(): boolean {
+    if (!this.probeDue) return false
+    this.probeDue = false
+    this.probing = true
+    return true
+  }
+
+  /**
+   * The uploader's answer to the silence: it answers → the cockpit side is not responding; it
+   * doesn't → the Gateway is, once it has answered since the port opened (else the clock starts
+   * over: nothing to judge yet). An answer meanwhile, or a quiet time, wins.
+   */
+  probed(usbAnswers: boolean, now: number): LogEventInput[] {
+    if (!this.probing) return []
+    this.probing = false
+    if (this.quiet) return []
+    if (usbAnswers) {
+      this.cockpitSilent = true
+      return this.update('device: the Gateway answers; its cockpit side sends no status', now)
+    }
+    if (!this.answeredOnce) {
+      this.askedAt = undefined
+      return []
+    }
+    this.noAnswer = true
+    return this.update(`device: no roster reply for ${SECS} s`, now)
   }
 
   /** A roster request went out. A later one doesn't restart the clock. */
@@ -362,8 +450,11 @@ export class GatewayWatch {
   answered(raw: string, now: number): LogEventInput[] {
     this.askedAt = undefined
     this.answeredOnce = true
-    if (!this.noAnswer) return []
+    this.probeDue = false
+    this.probing = false
+    if (!this.noAnswer && !this.cockpitSilent) return []
     this.noAnswer = false
+    this.cockpitSilent = false
     return this.update(raw, now)
   }
 
@@ -387,22 +478,28 @@ export class GatewayWatch {
 
   /**
    * Called on the link's flush tick while the port is open. `paused`: a calibration exchange holds
-   * the link, and a roster request going unanswered then is not news, so the clock starts over.
-   * Clock only: "not responding" ends with an answer, never with a pause. Armed by its first
-   * answer since the port opened.
+   * the link, and a roster request going unanswered then is not news, so the clock starts over;
+   * so it does while the cockpit side is quiet (#187). Clock only: "not responding" ends with an
+   * answer, never with a pause. Without an uploader to ask, armed by its first answer since the
+   * port opened.
    */
   tick(now: number, paused = false): LogEventInput[] {
-    if (paused) this.askedAt = undefined
-    const silent =
-      this.answeredOnce && this.askedAt !== undefined && now - this.askedAt >= GATEWAY_NO_ANSWER_MS
-    if (this.noAnswer || !silent) return []
+    if (paused || this.quiet) this.askedAt = undefined
+    const silent = this.askedAt !== undefined && now - this.askedAt >= GATEWAY_NO_ANSWER_MS
+    if (this.noAnswer || this.cockpitSilent || !silent) return []
+    // With an uploader to ask, the silence is judged by asking it (#187): whose is it?
+    if (this.uploader) {
+      if (!this.probing) this.probeDue = true
+      return []
+    }
+    if (!this.answeredOnce) return []
     this.noAnswer = true
     return this.update(`device: no roster reply for ${SECS} s`, now)
   }
 
   private update(raw: string, now: number, newRecovery?: GatewayRecoveredHow): LogEventInput[] {
     const prev = this.current
-    const next = gatewayStatus(this.row, this.noAnswer, this.recovery)
+    const next = gatewayStatus(this.row, this.noAnswer, this.recovery, this.cockpitSilent)
     if (JSON.stringify(prev) !== JSON.stringify(next)) {
       this.current = next
       this.changed = true

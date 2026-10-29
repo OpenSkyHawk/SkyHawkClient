@@ -86,6 +86,11 @@ export interface GatewayStatus {
   /** Its cockpit side has reported nothing yet (`unreported`, #169): the popover has no Health row. */
   noHealth?: true
   /**
+   * `not-responding` is its cockpit side's (#187): the Gateway's USB side still answers, its cockpit
+   * side sends no status. Its Firmware row reads *not responding*, with *Retry the update*.
+   */
+  cockpitSide?: true
+  /**
    * It re-plugged or restarted itself this boot (#169): evidence, not a fault. A second fact
    * beside `kind`, so neither hides the other; on its own it makes the status `warn`, never `err`
    * and never the alert. `note` is the popover's line. Shown on every connection to that boot,

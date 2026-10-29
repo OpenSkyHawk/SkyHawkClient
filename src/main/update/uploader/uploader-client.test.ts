@@ -27,7 +27,13 @@ const ID = (() => {
  * A Gateway on the wire: `cut` stops every byte both ways; `drop` loses the next client frame of a
  * type, `dropIn` the next Gateway frame of a type.
  */
-function rig(opts: { bundle?: Uint8Array; uploader?: boolean } = {}) {
+function rig(
+  opts: {
+    bundle?: Uint8Array
+    uploader?: boolean
+    log?: (tag: string, data?: unknown) => void
+  } = {}
+) {
   const wire = {
     cut: false,
     drop: undefined as number | undefined,
@@ -53,7 +59,7 @@ function rig(opts: { bundle?: Uint8Array; uploader?: boolean } = {}) {
     }
     link.ingest(Buffer.from(b))
   }, opts.bundle)
-  const client = new UploaderClient(uploaderLink(link))
+  const client = new UploaderClient(uploaderLink(link), undefined, opts.log)
   const count = (type: number) => fake.requests.filter((t) => t === type).length
   return { link, fake, client, wire, count }
 }
@@ -362,5 +368,22 @@ describe('the simulated Gateway keeps to Uploader.cpp', () => {
     const e = client.stage(BRIDGE_030, ID).catch((x: unknown) => x)
     await vi.advanceTimersByTimeAsync(2000)
     expect(await e).toBeInstanceOf(UplNoAnswer)
+  })
+})
+
+describe('uploader client: the debug log', () => {
+  it('logs each answer but the chunks’, every status and the result', async () => {
+    const lines: [string, unknown][] = []
+    const { client } = rig({ bundle: BRIDGE_030, log: (tag, data) => lines.push([tag, data]) })
+    await client.info()
+    const done = client.flash(UPL_TARGET.bridge, UPL_TARGET.nodeIdKeep, () => {})
+    await vi.advanceTimersByTimeAsync(3_000)
+    await done
+    const tags = lines.map(([t]) => t)
+    expect(tags[0]).toBe('upl')
+    expect(tags[1]).toBe('upl.info')
+    expect(lines).toContainEqual(['upl', { request: 'UPL_FLASH', answer: 'ok' }])
+    expect(tags.filter((t) => t === 'upl.status').length).toBeGreaterThan(5)
+    expect(lines.at(-1)).toEqual(['upl.result', expect.objectContaining({ result: 'OK' })])
   })
 })

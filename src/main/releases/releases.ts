@@ -445,6 +445,21 @@ export class Releases {
   }
 
   /**
+   * A board's app image of a saved `version` (#187: the Gateway's cockpit side, node 0): the bytes
+   * and the file's name, or why not in #192's words. `board` breaks node 0's tie with its bootloader
+   * for every format but `bin`; asked here only for the `bin`.
+   */
+  async nodeImage(
+    version: string,
+    nodeId: number
+  ): Promise<{ ok: true; bytes: Uint8Array; name: string } | { ok: false; message: string }> {
+    const r = await this.getFile({ kind: 'release', version }, { nodeId, format: 'bin' })
+    return r.ok
+      ? { ok: true, bytes: r.bytes, name: r.entry.name }
+      : { ok: false, message: r.message }
+  }
+
+  /**
    * The manifest entry a selector means in a saved version, from its manifest only: never an
    * image file, a SHA-256 or a download.
    */

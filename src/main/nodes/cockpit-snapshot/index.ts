@@ -107,7 +107,8 @@ export function buildCockpitSnapshot(i: CockpitSnapshotInput): CockpitBuild {
     },
     nodesCard: nodesSummary(views, outages, strays, zones, live),
     settings: settingsNodes(i.model, i.registry, live),
-    firmware
+    firmware,
+    cockpitUpdating: live && !!i.firmware?.cockpitUpdating
   }
   return stray.nextAt === undefined ? { snapshot } : { snapshot, nextAt: stray.nextAt }
 }

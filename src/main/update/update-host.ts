@@ -2,27 +2,30 @@
 // the confirm step's checks, the run's steps, a failure and Retry, the result. It pushes
 // `update:state` after every change; the renderer only words it.
 //
-// A target supplies its own steps and run (the Gateway's USB side here; #187's cockpit side and
-// #175's boards add theirs); the host owns what every update shares: the relay and link checks,
-// *I understand*, one update at a time, Retry from where the failure says, and Close.
+// A target supplies its own steps, checks and run (update-flow.ts: the Gateway's USB side, #173,
+// and its cockpit side, #187; #175's boards add theirs); the host owns what every update shares:
+// the relay check, *I understand*, one update at a time, the phase and the progress, Retry from
+// where the failure says, and Close. The USB side's drive watch stays here too: it runs while no
+// update does.
 import type { Emit } from '@shared/app'
 import type { ReleaseTarget } from '@shared/releases'
 import type {
   UpdateCheck,
+  UpdateNote,
   UpdatePushChannels,
   UpdateState,
   UpdateStep,
+  UpdateStepKey,
   UpdateTargetRef
 } from '@shared/update'
-import {
-  USB_ESTIMATE_SEC,
-  USB_STEPS,
-  UsbSideUpdate,
-  type RunResult,
-  type UsbSidePorts
-} from './usb-side-update'
+import { CockpitSide, type CockpitSideDeps } from './cockpit-side'
+import type { RunResult, UpdateFlow } from './update-flow'
+import { UsbSideUpdate, type UsbSidePorts } from './usb-side-update'
 
 type Version = { major: number; minor: number; patch: number }
+
+/** The steps whose progress fills the bar between them: a copy, staging, writing. */
+const PCT_STEPS: ReadonlySet<UpdateStepKey> = new Set(['copy', 'stage', 'write'])
 
 /** What the dialog reads from the rest of the app at each push. */
 export interface UpdateHostDeps {
@@ -38,6 +41,8 @@ export interface UpdateHostDeps {
   release(): ReleaseTarget | undefined
   /** Everything the USB side's update needs. */
   usb: UsbSidePorts
+  /** Everything the cockpit side's needs (#187); none: no cockpit-side updates. */
+  cockpit?: CockpitSideDeps
   /** Update drives mounted while the link is down changed (the Firmware sheet's row, NodeHub). */
   drivesChanged?(count: number): void
 }
@@ -49,22 +54,20 @@ export interface UpdateHostDeps {
 export const DRIVE_WATCH_MS = 5_000
 
 const versionText = (v: Version) => `${v.major}.${v.minor}.${v.patch}`
-const major = (v: string) => Number(v.split('.')[0])
 
 export class UpdateHost {
+  /** The Gateway's cockpit side as the uploader reported it this connect (#187). */
+  readonly cockpit?: CockpitSide
   private open?: {
-    target: UpdateTargetRef
-    flow: UsbSideUpdate
-    from?: string
+    flow: UpdateFlow
     ack: boolean
     phase: UpdateState['phase']
     at: number
     pct: number
+    note?: UpdateNote
     /** Where Retry starts. */
     retryFrom: number
     result?: RunResult
-    /** It waits in its update drive: the update starts at the copy. */
-    inDrive: boolean
   }
   /** Update drives mounted while the link is down, as last looked for. */
   private drives = 0
@@ -77,20 +80,35 @@ export class UpdateHost {
   constructor(
     private readonly emit: Emit<keyof UpdatePushChannels>,
     private readonly deps: UpdateHostDeps
-  ) {}
+  ) {
+    if (deps.cockpit) this.cockpit = new CockpitSide(deps.cockpit)
+  }
 
   /** HELLO answered on a connect, or didn't (hid/calibration's usbFirmware). */
   usbFirmware(fw: Version | undefined): void {
     this.usbVersion = fw && versionText(fw)
-    this.open?.flow.helloAnswered(fw)
+    const flow = this.open?.flow
+    if (flow instanceof UsbSideUpdate) flow.helloAnswered(fw)
   }
 
-  /** The relay, the link or the saved releases changed: the checks may have. */
+  /**
+   * The connect's calibration read is over (hid/calibration's connectRead): the cockpit side's
+   * uploader is read next, once per connect (#187).
+   */
+  connectRead(): void {
+    this.cockpit?.connected(this.usbVersion)
+  }
+
+  /**
+   * The relay, the link, a calibration session or the saved releases changed: the checks may
+   * have.
+   */
   inputsChanged(): void {
     this.watchDrives()
+    if (!this.deps.linkUp()) this.cockpit?.linkDown()
     // The Gateway came back as a port while the dialog waited to copy to its drive: that update no
     // longer applies; its row offers the ordinary one.
-    if (this.open?.inDrive && this.open.phase === 'confirm' && this.deps.linkUp()) {
+    if (this.open?.flow.view().inDrive && this.open.phase === 'confirm' && this.deps.linkUp()) {
       this.open = undefined
       this.push()
       return
@@ -102,6 +120,7 @@ export class UpdateHost {
   dispose(): void {
     if (this.watch) clearInterval(this.watch)
     this.watch = undefined
+    this.cockpit?.dispose()
   }
 
   /**
@@ -110,7 +129,9 @@ export class UpdateHost {
    * Stops, and reports none, while the link is up.
    */
   private watchDrives(): void {
-    const on = !this.deps.linkUp() && this.open?.phase !== 'run'
+    // A run cut off from its Gateway looks too: it may come back in its update drive (#187).
+    const o = this.open
+    const on = !this.deps.linkUp() && (o?.phase !== 'run' || !!o.flow.detachable?.())
     if (on && !this.watch) {
       void this.lookForDrives()
       this.watch = setInterval(() => void this.lookForDrives(), DRIVE_WATCH_MS)
@@ -150,57 +171,42 @@ export class UpdateHost {
   state(): UpdateState | null {
     const o = this.open
     if (!o) return null
-    const release = this.deps.release()
-    const to = o.flow.to
+    const flow = o.flow
     const checks: UpdateCheck[] = [
       { kind: 'relay', ok: !this.deps.relayRunning() },
-      o.inDrive
-        ? {
-            kind: 'drive',
-            ok: this.drives === 1,
-            ...(this.drives !== 1 && {
-              problem: this.drives ? ('many' as const) : ('none' as const)
-            })
-          }
-        : { kind: 'link', ok: this.deps.linkUp() },
-      {
-        kind: 'image',
-        ok: !!release && release.version === to && release.hasImage({ side: 'usb' }),
-        version: to
-      }
+      ...flow.checks()
     ]
-    const cockpit = this.deps.cockpitMajor()
-    const halves =
-      cockpit !== undefined && cockpit !== major(to) ? { usb: major(to), cockpit } : undefined
-    // From the drive the steps begin at the copy.
-    const first = o.inDrive ? 1 : 0
-    const steps = USB_STEPS.map(
-      (key, n): UpdateStep => ({
-        key,
-        state:
-          o.phase === 'confirm' || n > o.at
-            ? 'waiting'
-            : n < o.at || o.phase === 'done'
-              ? 'done'
-              : o.phase === 'fail'
-                ? 'bad'
-                : 'on',
-        ...(key === 'copy' && n === o.at && o.phase === 'run' && { pct: o.pct })
-      })
-    ).slice(first)
+    const view = flow.view()
+    const keys = flow.steps()
+    // Steps before the first aren't listed (the USB side, from its drive).
+    const first = flow.first()
+    const steps = keys
+      .map(
+        (key, n): UpdateStep => ({
+          key,
+          state:
+            o.phase === 'confirm' || n > o.at
+              ? 'waiting'
+              : n < o.at || o.phase === 'done'
+                ? 'done'
+                : o.phase === 'fail'
+                  ? 'bad'
+                  : 'on',
+          ...(PCT_STEPS.has(key) && n === o.at && o.phase === 'run' && { pct: o.pct })
+        })
+      )
+      .slice(first)
     const r = o.result
     return {
-      target: o.target,
-      name: 'Gateway · USB side',
-      ...(o.from && { from: o.from }),
-      ...(o.inDrive && { inDrive: true as const }),
-      to,
+      target: flow.target,
+      name: flow.name,
+      ...view,
+      to: flow.to,
       phase: o.phase,
       checks,
-      ...(halves && { halves }),
       ack: o.ack,
-      canStart: checks.every((c) => c.ok) && (!halves || o.ack),
-      estimateSec: USB_ESTIMATE_SEC,
+      canStart: checks.every((c) => c.ok) && (!view.halves || o.ack),
+      estimateSec: flow.estimateSec,
       steps,
       pct:
         o.phase === 'done'
@@ -208,11 +214,14 @@ export class UpdateHost {
           : o.phase === 'confirm'
             ? 0
             : Math.round(
-                ((o.at - first + (USB_STEPS[o.at] === 'copy' ? o.pct / 100 : 0)) /
-                  (USB_STEPS.length - first)) *
+                ((o.at - first + (PCT_STEPS.has(keys[o.at]!) ? o.pct / 100 : 0)) /
+                  (keys.length - first)) *
                   100
               ),
+      ...(o.note && o.phase === 'run' && { note: o.note }),
+      ...(o.phase === 'run' && flow.detachable?.() && { closable: true as const }),
       ...(r && !r.ok && o.phase === 'fail' && { failure: r.failure }),
+      ...(r && !r.ok && o.phase === 'fail' && r.after && { after: r.after }),
       ...(r?.ok && {
         done: { reports: r.reports, ...(r.calibration && { calibration: r.calibration }) }
       }),
@@ -226,23 +235,46 @@ export class UpdateHost {
    */
   openUpdate(target: UpdateTargetRef): void {
     if (this.open?.phase === 'run') return
-    const release = this.deps.release()
-    if (!release) return
-    // No port, but an update drive is mounted: the Gateway waits in it, and the update starts at
-    // the copy (#173 Update step 3).
-    const inDrive = !this.deps.linkUp() && this.drives > 0
+    const flow = target.kind === 'cockpit' ? this.cockpitFlow() : this.usbFlow()
+    if (!flow) return
     this.open = {
-      target,
-      flow: new UsbSideUpdate(release.version, this.deps.usb),
-      ...(!inDrive && this.usbVersion && { from: this.usbVersion }),
+      flow,
       ack: false,
       phase: 'confirm',
-      at: inDrive ? 1 : 0,
+      at: flow.first(),
       pct: 0,
-      retryFrom: inDrive ? 1 : 0,
-      inDrive
+      retryFrom: flow.first()
     }
     this.push()
+    // What the confirm step reads first (a saved image's identity), pushed when it is in.
+    const opened = this.open
+    void flow.prepare?.().then(() => {
+      if (this.open === opened && opened.phase === 'confirm') this.push()
+    })
+  }
+
+  /**
+   * The USB side's update to the release the sheet compares with: none with nothing saved. No
+   * port, but an update drive is mounted: the Gateway waits in it, and the update starts at the
+   * copy (#173 Update step 3).
+   */
+  private usbFlow(): UpdateFlow | undefined {
+    const release = this.deps.release()
+    if (!release) return undefined
+    const inDrive = !this.deps.linkUp() && this.drives > 0
+    return new UsbSideUpdate(release.version, this.deps.usb, {
+      inDrive,
+      ...(!inDrive && this.usbVersion && { from: this.usbVersion }),
+      linkUp: () => this.deps.linkUp(),
+      drives: () => this.drives,
+      release: () => this.deps.release(),
+      cockpitMajor: () => this.deps.cockpitMajor()
+    })
+  }
+
+  /** The cockpit side's update (#187): to the bundle, else the saved release. */
+  private cockpitFlow(): UpdateFlow | undefined {
+    return this.cockpit?.flow(this.deps.release())
   }
 
   ack(on: boolean): void {
@@ -261,14 +293,26 @@ export class UpdateHost {
   async retry(): Promise<void> {
     if (this.open?.phase !== 'fail') return
     // From the drive the update never restarts the Gateway: Retry starts at the copy at the latest.
-    await this.run(this.open.inDrive ? Math.max(this.open.retryFrom, 1) : this.open.retryFrom)
+    await this.run(Math.max(this.open.retryFrom, this.open.flow.first()))
   }
 
-  /** Close the dialog; never while it runs. */
+  /**
+   * Close the dialog; never while it runs — except while the run waits for a Gateway it lost
+   * (#187): then the run is left to the Gateway, which finishes on its own.
+   */
   close(): void {
-    if (!this.open || this.open.phase === 'run') return
-    // A failure may have left the port taken: the link looks for the Gateway again.
-    if (this.open.phase === 'fail') this.open.flow.close()
+    const o = this.open
+    if (!o) return
+    if (o.phase === 'run') {
+      if (!o.flow.detachable?.()) return
+      o.flow.detach?.()
+      this.open = undefined
+      this.watchDrives()
+      this.push()
+      return
+    }
+    // What the run held goes back: the port after a failure (USB side), the staged image (#187).
+    o.flow.close(o.phase)
     this.open = undefined
     this.push()
   }
@@ -277,7 +321,7 @@ export class UpdateHost {
 
   private async run(from: number): Promise<void> {
     const o = this.open!
-    Object.assign(o, { phase: 'run', at: from, pct: 0, result: undefined })
+    Object.assign(o, { phase: 'run', at: from, pct: 0, note: undefined, result: undefined })
     this.watchDrives() // the run looks for its own drive
     this.push()
     const result = await o.flow.run(from, {
@@ -290,12 +334,19 @@ export class UpdateHost {
         if (n === o.pct) return
         o.pct = n
         this.push()
+      },
+      note: (note) => {
+        o.note = note
+        this.watchDrives()
+        this.push()
       }
     })
+    // Closed while cut off (#187): nobody waits for this result.
+    if (this.open !== o) return
     o.result = result
     if (result.ok) {
       o.phase = 'done'
-      o.at = USB_STEPS.length - 1
+      o.at = o.flow.steps().length - 1
     } else {
       o.phase = 'fail'
       o.at = result.at

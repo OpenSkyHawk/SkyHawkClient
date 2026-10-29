@@ -65,6 +65,8 @@ export interface BuiltRelease {
 }
 
 export interface BuildOptions {
+  /** Real bytes for some images, by file name (a stamped cockpit-side `.bin`, #187). */
+  images?: Record<string, Uint8Array>
   /** Change the zip's entries before it is zipped (a zip-slip name, a swapped image…). */
   entries?: (entries: Record<string, Uint8Array>) => void
   /** Change the flat manifest after it is built from the entries (schema 3, a bad path…). */
@@ -86,14 +88,14 @@ export function buildRelease(version: string, opts: BuildOptions = {}): BuiltRel
     size: number
   ) => {
     const path = `${top}${folder}/${name}`
-    const bytes = image(path, size)
+    const bytes = opts.images?.[name] ?? image(path, size)
     entries[path] = bytes
     files.push({
       name,
       path,
       board,
       format,
-      size,
+      size: bytes.length,
       sha256: sha(bytes),
       ...(node === 'usb' ? { side: 'usb' as const } : node === '-' ? {} : { nodeId: node })
     })

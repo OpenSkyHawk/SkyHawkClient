@@ -1,7 +1,7 @@
 // #173: the Firmware button's tooltip and the Overview banner's words, for the counts the bench
 // tests don't reach.
 import { describe, expect, it } from 'vitest'
-import type { FirmwareBanner, FirmwareSheet } from '@shared/nodes'
+import type { FirmwareBanner, FirmwareRow, FirmwareSheet } from '@shared/nodes'
 import { firmwareBannerText, firmwareButton, firmwareRowView } from './firmware-view'
 
 const banner = (over: Partial<FirmwareBanner>): FirmwareBanner => ({
@@ -46,5 +46,62 @@ describe('firmware words (#173)', () => {
     )
     expect(r).toMatchObject({ chip: 'CUSTOM FIRMWARE', sub: '1.0.0 · no image in 1.0.1' })
     expect(r.opens).toBeUndefined()
+  })
+})
+
+describe('the Gateway cockpit side’s row in words (#187)', () => {
+  const ck = (over: Partial<FirmwareRow>): FirmwareRow => ({
+    key: 'cockpit',
+    side: 'cockpit',
+    name: 'Gateway · cockpit side',
+    status: 'update',
+    attention: true,
+    ...over
+  })
+
+  it('against the bundle: carried by the USB side; behind the release: the USB side first', () => {
+    const carried = firmwareRowView(
+      ck({ version: '1.0.0', to: '1.0.1', bundled: true, action: 'update' }),
+      '1.0.1'
+    )
+    expect(carried).toMatchObject({
+      chip: 'UPDATE AVAILABLE',
+      sub: '1.0.0 → 1.0.1 · carried by the USB side',
+      button: 'Update',
+      action: 'update'
+    })
+    expect(
+      firmwareRowView(
+        ck({ version: '1.0.0', to: '1.0.2', bundled: true, action: 'usb-first' }),
+        '1.0.2'
+      )
+    ).toMatchObject({ sub: '1.0.0 → 1.0.2 · update the USB side first', button: 'Update' })
+    expect(
+      firmwareRowView(
+        ck({ status: 'newer', version: '1.0.2', to: '1.0.1', bundled: true }),
+        '1.0.1'
+      ).sub
+    ).toBe('1.0.2 · the USB side carries 1.0.1')
+  })
+
+  it('not responding: red, Retry; updating; every board paused', () => {
+    expect(
+      firmwareRowView(ck({ status: 'not-responding', to: '1.0.1', action: 'retry' }), '1.0.1')
+    ).toMatchObject({
+      chip: 'NOT RESPONDING',
+      chipCls: 'vchip--err',
+      dot: 'off',
+      sub: 'the Gateway answers; its cockpit side doesn’t',
+      button: 'Retry'
+    })
+    expect(
+      firmwareRowView(ck({ status: 'updating', version: '1.0.0', to: '1.0.1' }), '1.0.1')
+    ).toMatchObject({ chip: 'UPDATING', sym: '↻', sub: '1.0.0 → 1.0.1' })
+    expect(
+      firmwareRowView(
+        { key: '1', nodeId: 1, name: 'Left_AFCS', status: 'paused', attention: false },
+        '1.0.1'
+      )
+    ).toMatchObject({ chip: 'PAUSED', sub: 'Gateway cockpit side updating' })
   })
 })

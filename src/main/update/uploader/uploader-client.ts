@@ -115,12 +115,17 @@ const outcomeOf = (info: UplInfo): UplOutcome => ({
 /** How a flash ended for the client: the Gateway's result, or contact lost before it came. */
 export type FlashEnd = { lost: false; outcome: UplOutcome } | { lost: true }
 
+/** Port: the debug log, handed in by app (debug.log lives in app). */
+export type UplLog = (tag: string, data?: unknown) => void
+
 export class UploaderClient {
   private readonly timing: UploaderTiming
 
   constructor(
     private readonly link: UploaderLink,
-    timing?: Partial<UploaderTiming>
+    timing?: Partial<UploaderTiming>,
+    /** Every request's answer but the chunks', each status and the result (`upl`, `upl.*`). */
+    private readonly log: UplLog = () => {}
   ) {
     this.timing = { ...TIMING, ...timing }
   }
@@ -128,6 +133,13 @@ export class UploaderClient {
   /** Send `request`; its reply frame, or a typed refusal / silence. */
   private async ask(request: UplRequest, payload?: Uint8Array): Promise<UplFrame> {
     const r = await this.link.exchange(UPL_TYPE[request], payload)
+    // A chunk's ACK is one of hundreds: only a chunk that went wrong is logged.
+    if (request !== 'UPL_DATA' || !r.ok) {
+      this.log('upl', {
+        request,
+        answer: r.ok ? 'ok' : 'nack' in r ? (nackReasonName(r.nack) ?? r.nack) : 'no answer'
+      })
+    }
     if (r.ok) return r.frame
     if ('nack' in r) throw new UplRefused(request, nackReasonName(r.nack) ?? String(r.nack))
     throw new UplNoAnswer(request)
@@ -139,7 +151,9 @@ export class UploaderClient {
    */
   async info(): Promise<UplInfo | undefined> {
     try {
-      return decodeInfoAck((await this.ask('UPL_INFO')).payload)
+      const info = decodeInfoAck((await this.ask('UPL_INFO')).payload)
+      this.log('upl.info', info)
+      return info
     } catch (e) {
       if (e instanceof UplNoAnswer) return undefined
       throw e
@@ -157,6 +171,7 @@ export class UploaderClient {
     id: { imageLength: number; imageCrc: number },
     progress?: (pct: number) => void
   ): Promise<void> {
+    this.log('upl.stage', { imageLength: id.imageLength, imageCrc: id.imageCrc })
     await this.ask('UPL_BEGIN', encodeBegin(id.imageLength, id.imageCrc))
     const chunk = UPL_PROTO.chunkBytes
     for (let off = 0; off < id.imageLength; off += chunk) {
@@ -213,9 +228,14 @@ export class UploaderClient {
     const ended = new Promise<FlashEnd>((resolve) => (finish = resolve))
     // Listen before asking: the first UPL_STATUS follows the ACK at once.
     const off = this.link.onUnsolicited((f) => {
-      if (f.type === UPL_TYPE.UPL_STATUS) status(decodeStatus(f.payload))
-      else if (f.type === UPL_TYPE.UPL_RESULT) {
-        finish({ lost: false, outcome: decodeResult(f.payload) })
+      if (f.type === UPL_TYPE.UPL_STATUS) {
+        const s = decodeStatus(f.payload)
+        this.log('upl.status', s)
+        status(s)
+      } else if (f.type === UPL_TYPE.UPL_RESULT) {
+        const outcome = decodeResult(f.payload)
+        this.log('upl.result', outcome)
+        finish({ lost: false, outcome })
       }
     })
     try {
@@ -226,7 +246,9 @@ export class UploaderClient {
     }
     let missed = 0
     const miss = () => {
-      if (++missed >= this.timing.lostAfter) finish({ lost: true })
+      if (++missed < this.timing.lostAfter) return
+      this.log('upl.lost', { missed })
+      finish({ lost: true })
     }
     const probe = setInterval(() => {
       this.link
@@ -236,7 +258,11 @@ export class UploaderClient {
           missed = 0
           const info = decodeInfoAck(r.frame.payload)
           // Not flashing any more, and no UPL_RESULT came first: it was lost; the answer holds it.
-          if (info.state !== 'FLASHING') finish({ lost: false, outcome: outcomeOf(info) })
+          if (info.state !== 'FLASHING') {
+            const outcome = outcomeOf(info)
+            this.log('upl.result', outcome)
+            finish({ lost: false, outcome })
+          }
         })
         // Any other failure of the channel (not a NACK or a silence) is a miss too, never an
         // unhandled rejection.

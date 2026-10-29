@@ -92,6 +92,16 @@ export class FakeUploader {
   stepMs = 100
   /** Every request the client sent, by type, in order (KEEPALIVE included). */
   readonly requests: number[] = []
+  /**
+   * The bundle went between UPL_INFO and UPL_FLASH (a race the client must survive): UPL_INFO
+   * still names it, UPL_FLASH 0 with nothing staged answers NOT_STAGED.
+   */
+  bundleGone = false
+  /**
+   * Called as each flash ends, with its result and the version then reported: the test's bridge
+   * reacts (its version, its silence).
+   */
+  onFlashEnd?: (result: UplResultName, reported: string) => void
 
   private img = new Uint8Array(UPL_PROTO.maxImageBytes)
   private len = 0
@@ -210,7 +220,7 @@ export class FakeUploader {
       case T.UPL_FLASH: {
         const target = f.payload[0]!
         if (target === UPL_TARGET.bridge && this.state === UPL_STATE.IDLE) {
-          if (!this.bundle) return this.nack(f, 'NOT_STAGED')
+          if (!this.bundle || this.bundleGone) return this.nack(f, 'NOT_STAGED')
           const id = parseIdentity(this.bundle)
           if (!id.ok) throw new Error('fake uploader: the bundle has no identity block')
           this.img.fill(0xff)
@@ -256,6 +266,7 @@ export class FakeUploader {
           : '0.0.0'
       this.lastFw = ver(reported)
       this.state = UPL_STATE.STAGED // the image stays staged: the client may flash it again
+      this.onFlashEnd?.(script.result ?? 'OK', reported)
       if (!this.clientHere()) return
       const p = new Uint8Array(CAL_PAYLOAD_LEN[UPL_TYPE.UPL_RESULT]!)
       p[RESULT.RESULT] = result

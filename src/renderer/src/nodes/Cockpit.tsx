@@ -36,8 +36,11 @@ export function Cockpit({
 }: {
   psuView: PsuView
   releaseCard?: ReactNode
-  /** A Firmware sheet row's *Update*, by row key (the app opens the update dialog, #173). */
-  onUpdate?: (row: string) => void
+  /**
+   * A Firmware sheet row's *Update* or *Retry*, by row key and what it opens (the app opens the
+   * update dialog, #173, #187).
+   */
+  onUpdate?: (row: string, action: 'update' | 'retry' | 'usb-first') => void
 }) {
   /** Everything the tab decides, as main built it (cockpit:snapshot, R3.2). */
   const snap = useNodesStore((s) => s.cockpit)
@@ -185,9 +188,15 @@ export function Cockpit({
               {fwButton.count > 0 && <b>· {fwButton.count}</b>}
             </button>
           </div>
+          {snap.cockpitUpdating && (
+            <div className="hint" role="status" style={{ margin: '0 0 8px' }}>
+              Paused while the Gateway’s cockpit side updates
+            </div>
+          )}
           <Plan
             layout={layout}
             live={live}
+            paused={snap.cockpitUpdating}
             psuW={live ? snap.band.band.watts : null}
             psuName={psuName}
             psuRating={limits.w}
@@ -204,6 +213,10 @@ export function Cockpit({
               attention={snap.attention}
               opens={snap.opens}
               onOpenGateway={() => set({ devicePopOpen: true })}
+              onOpenFirmware={() => {
+                setOpen(null)
+                setFirmwareOpen(true)
+              }}
               onShowOutage={(pduId) => {
                 setQuery('')
                 setIssuesOnly(false)
@@ -411,6 +424,8 @@ function Band(props: { band: CockpitBand; live: boolean; linkDownAt?: number; li
 function Plan(props: {
   layout: PlanLayout
   live: boolean
+  /** The Gateway's cockpit side updates (#187): every tile keeps its colour and shows ↻. */
+  paused: boolean
   psuW: number | null
   /** The supply's model, or `PSU`. */
   psuName: string
@@ -488,6 +503,7 @@ function Plan(props: {
           <Group
             key={g.key}
             g={g}
+            paused={props.paused}
             focused={g.pdu !== null && g.pdu.entry.nodeId === props.focusPdu}
             lit={props.lit}
             onOpen={props.onOpen}
@@ -512,6 +528,7 @@ function Plan(props: {
 
 function Group(props: {
   g: PlanGroup
+  paused: boolean
   focused: boolean
   lit: (v: NodeView) => boolean
   onOpen: (nodeId: number) => void
@@ -577,7 +594,13 @@ function Group(props: {
               : state === 'unknown'
                 ? ' tile2--unknown'
                 : ''
-        const tip = flag ? ` — ${flag}` : state === 'unknown' ? ' — no status yet' : ''
+        const tip = props.paused
+          ? ' — paused while the Gateway’s cockpit side updates'
+          : flag
+            ? ` — ${flag}`
+            : state === 'unknown'
+              ? ' — no status yet'
+              : ''
         return (
           <button
             key={t.view.entry.nodeId}
@@ -587,8 +610,8 @@ function Group(props: {
             onClick={() => props.onOpen(t.view.entry.nodeId)}
           >
             <span className="tile2__t">{t.short}</span>
-            <span className="tile2__s" aria-label={flag}>
-              {STATE_SYMBOL[state]}
+            <span className="tile2__s" aria-label={props.paused ? 'paused' : flag}>
+              {props.paused ? '↻' : STATE_SYMBOL[state]}
             </span>
           </button>
         )
@@ -611,6 +634,8 @@ function Attention(props: {
   /** Where each board opens (main's, D6): a cog reads "Review" when it opens the Adopt dialog. */
   opens: Record<number, BoardOpens>
   onOpenGateway: () => void
+  /** The Firmware sheet, on *Needs attention* (#187: the cockpit side doesn't respond). */
+  onOpenFirmware: () => void
   onShowOutage: (pduId: number) => void
   onShowAll: () => void
   /** Open a board: its panel, or Adopt on it, as main routes it. */
@@ -619,7 +644,7 @@ function Attention(props: {
   onAdopt: () => void
 }) {
   const { live } = props
-  const { gateway, shown, count, more, newCount: fresh } = props.attention
+  const { gateway, cockpitSide, shown, count, more, newCount: fresh } = props.attention
   return (
     <div className="card field">
       <div className="panel-h">
@@ -660,6 +685,24 @@ function Attention(props: {
                 title="Details"
                 aria-label="Gateway details"
                 onClick={props.onOpenGateway}
+              >
+                <Cog />
+              </button>
+            </li>
+          )}
+          {cockpitSide && (
+            <li key="cockpit-side">
+              <Dot state="off" />
+              <span className="att__t">
+                <b>Gateway · cockpit side</b>
+                <br />
+                <span>{cockpitSide.flag}</span>
+              </span>
+              <button
+                className="cog"
+                title="Firmware"
+                aria-label="Gateway cockpit side firmware"
+                onClick={props.onOpenFirmware}
               >
                 <Cog />
               </button>
