@@ -266,6 +266,10 @@ describe('T42 the Gateway USB side’s update (#173)', () => {
     expect(within(d).getByText('Gateway · USB side didn’t update')).toBeInTheDocument()
     expect(within(d).getByRole('alert')).toHaveTextContent(text)
     expect(within(d).getByText(foot)).toBeInTheDocument()
+    // The steps stay, the failed one marked, until the dialog closes.
+    expect(within(d).getByLabelText('Steps')).toHaveTextContent(
+      '✕Restarting the Gateway to update it·Copying the firmware·Reconnecting·Confirming the version it reports'
+    )
     const buttons = within(d)
       .getAllByRole('button')
       .map((b) => b.textContent)
@@ -300,6 +304,10 @@ describe('T42 the Gateway USB side’s update (#173)', () => {
     expect(within(d).getByText('Gateway · USB side reports 1.0.1')).toBeInTheDocument()
     expect(within(d).getByRole('list', { name: 'Result' })).toHaveTextContent(
       `✓Gateway · USB side${sub}`
+    )
+    // Every step stays ticked until the dialog closes: the last ones pass in milliseconds.
+    expect(within(d).getByLabelText('Steps')).toHaveTextContent(
+      '✓Restarting the Gateway to update it✓Copying the firmware✓Reconnecting✓Confirming the version it reports'
     )
     if (note) expect(within(d).getByText(note)).toBeInTheDocument()
     expect(

@@ -154,19 +154,14 @@ function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
                 <span className="node__dot on" aria-hidden="true" />
                 {s.name}
               </div>
-              <div className="up__ph" aria-label="Steps">
-                {v.steps.map((p) => (
-                  <div key={p.label} className={`up__p ${p.cls}`}>
-                    <i>{p.sym}</i>
-                    {p.label}
-                  </div>
-                ))}
-              </div>
+              <Steps v={v} />
               <div className="hbar" title={v.pctText} role="img" aria-label={v.pctText}>
                 <i style={{ width: `${v.pct}%` }} />
               </div>
             </>
           )}
+          {/* The steps stay until the dialog closes: the last ones pass in milliseconds. */}
+          {(s.phase === 'fail' || s.phase === 'done') && <Steps v={v} />}
           {v.fail && (
             <div className="sh__fault sh__fault--err" role="alert">
               <b>{v.fail.title}</b> — {v.fail.text}
@@ -223,5 +218,19 @@ function UpdateBox({ s, ...props }: DialogProps & { s: UpdateState }) {
         </div>
       </section>
     </>
+  )
+}
+
+/** The run's steps, each ticked, failed, current or waiting. */
+function Steps({ v }: { v: ReturnType<typeof updateView> }) {
+  return (
+    <div className="up__ph" aria-label="Steps">
+      {v.steps.map((p) => (
+        <div key={p.label} className={`up__p ${p.cls}`}>
+          <i>{p.sym}</i>
+          {p.label}
+        </div>
+      ))}
+    </div>
   )
 }
