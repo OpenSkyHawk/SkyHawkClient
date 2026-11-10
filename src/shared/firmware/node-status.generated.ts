@@ -53,6 +53,19 @@ export const HEARTBEAT_FLAGS = {
   EPVF: 0x2
 } as const
 
+/**
+ * The row's BOOT_STATE (#365): NODE_BOOT_STATE_APP while the app runs, else the bootloader's
+ * BootState (boot-protocol.generated.ts BOOT_STATE), with the UPDATING bit set while update traffic
+ * for the board flowed in the last NODE_BOOT_UPDATING_MS.
+ */
+export const NODE_BOOT_STATE = {
+  APP: 0x0,
+  UPDATING: 0x80
+} as const
+
+/** How long the UPDATING bit stays set after the board's last update traffic. */
+export const NODE_BOOT_UPDATING_MS = 3000
+
 /** HB_n `esr` (the row's ESR field): bit position of the transmit error counter, the low byte. */
 export const HB_ESR_TEC_SHIFT = 0
 
