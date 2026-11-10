@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { USB_IDENTITY } from '@shared/firmware'
+
+// Lower-case, no 0x: the form the OS port list reports.
+const hex = (id: number) => id.toString(16).padStart(4, '0')
 
 /**
  * A stand-in for the real port that records what happened to it.
@@ -22,7 +26,9 @@ class FakePort {
 
   static list() {
     return Promise.resolve(
-      FakePort.present ? [{ path: 'COM3', vendorId: '2e8a', productId: '4134' }] : []
+      FakePort.present
+        ? [{ path: 'COM3', vendorId: hex(USB_IDENTITY.vid), productId: hex(USB_IDENTITY.pid) }]
+        : []
     )
   }
 
