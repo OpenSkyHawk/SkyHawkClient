@@ -506,6 +506,11 @@ export interface AttentionItem {
   outage?: PduOutage
   /** A new board on the bus that can't be adopted (#93): its cog opens the Adopt dialog. */
   stray?: boolean
+  /**
+   * Its bootloader holds it (#175): *Needs firmware* / *Won't start*. Its cog opens the Firmware
+   * sheet on *Needs attention*.
+   */
+  firmware?: true
 }
 
 /** A new board that can't be adopted, and what Attention says about it (strayNew). */
@@ -675,8 +680,11 @@ export interface BoardPanel {
   /** The boxes at the top of the Status tab, stacked. */
   faults: FaultBox[]
   actions: BoardActions
-  /** The Status tab's Firmware section (#171): the release it reports, or why there is none. */
-  firmware: { installed: string; hint?: string }
+  /**
+   * The Status tab's Firmware section (#171): the release it reports, or why there is none, and
+   * its Firmware sheet row (#175: the chip, the *No bootloader* box and the note).
+   */
+  firmware: { installed: string; hint?: string; row?: FirmwareRow }
   /** Panel groups: "Reported by the node". */
   status?: Row[]
   /** Panel groups: its power zone, as resolved (D7). */
@@ -789,6 +797,8 @@ export interface OverviewSummary {
 /**
  * A Firmware sheet row against the release (#173), first match in this order (`fwInfo`):
  * - `off`: offline; `version` is what it last reported, if anything;
+ * - `needs-firmware` / `wont-start` (#175): its bootloader holds it — the app is invalid (an update
+ *   didn't finish), or it kept restarting (`APP_UNSTABLE`); never while update traffic flows;
  * - `not-reported`: link down, no row yet, or its row reads 0.0.0 (`notReported`);
  * - `manual`: no bootloader (#175's rule: `bootloader` 00 on a row that reports a version);
  * - `mismatch`: another major than the Gateway (#171);
@@ -807,6 +817,8 @@ export type FirmwareStatus =
   | 'not-responding'
   | 'in-drive'
   | 'off'
+  | 'needs-firmware'
+  | 'wont-start'
   | 'not-reported'
   | 'manual'
   | 'mismatch'
@@ -841,9 +853,11 @@ export interface FirmwareRow {
   to?: string
   /** The cockpit side's target is the one its USB side carries (#187). */
   bundled?: true
+  /** `needs-firmware` / `wont-start` (#175): the saved release has an image for it. */
+  image?: true
   /**
-   * Counted in *Needs attention*: update available, major mismatch, manual update only, and the
-   * Gateway waiting in its update drive.
+   * Counted in *Needs attention*: update available, major mismatch, manual update only, a board its
+   * bootloader holds (#175), and the Gateway waiting in its update drive or not responding.
    */
   attention: boolean
   /**

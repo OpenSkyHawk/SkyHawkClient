@@ -143,7 +143,7 @@ describe('update dialog words: the Gateway cockpit side (#187)', () => {
       foot: 'Nothing was written.'
     })
     expect(fail({ kind: 'write-failed' }, 'erased')).toMatchObject({
-      fail: { title: 'Stuck in its bootloader' },
+      fail: { title: 'Needs firmware' },
       foot: 'Nothing else changed. The cockpit side waits in its bootloader; Retry finishes it.'
     })
     expect(fail({ kind: 'refused', why: 'wrong-kind' }, 'refused').foot).toBe(

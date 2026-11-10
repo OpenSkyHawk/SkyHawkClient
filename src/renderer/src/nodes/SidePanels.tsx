@@ -17,6 +17,7 @@ import { Chevron, Sheet, useNow } from '../app/kit'
 import { useNodesStore } from './store'
 import { mappingPatch, reportAge, zoneOptions } from './panel-view'
 import { Dot } from './Dot'
+import { boardFirmwareView } from './firmware-view'
 
 function Fault({ box }: { box: FaultBox }) {
   return (
@@ -40,15 +41,31 @@ function Rows({ rows }: { rows: { k: string; v: string }[] }) {
 }
 
 /** The Status tab's Firmware section (#171): the release the board reports, or why there is none. */
+/** The docs' bootloader page: what a board without one needs (#175). */
+const BOOTLOADER_DOCS = 'https://openskyhawk.github.io/OpenSkyhawk/firmware/bootloader/'
+
 function Firmware({ fw }: { fw: BoardPanel['firmware'] }) {
+  const v = boardFirmwareView(fw)
   return (
     <div className="sh__sec">
       <div className="section-h">Firmware</div>
       <div className="dev__row">
         <span className="dev__k">Installed</span>
-        <span className="dev__v">{fw.installed}</span>
+        <span className="dev__v fw__ver">
+          {v.installed}
+          {v.chip && <span className={`vchip ${v.chipCls}`}>{v.chip}</span>}
+        </span>
       </div>
-      {fw.hint && <div className="hint sh__hint">{fw.hint}</div>}
+      {v.noBootloader && (
+        <div className="sh__fault sh__fault--warn">
+          <b>No bootloader</b> — this board can’t be updated from here. Flash it once with a
+          programmer, using the bootstrap image from the release; after that it updates from here.{' '}
+          <a className="fw__doc" href={BOOTLOADER_DOCS} target="_blank" rel="noreferrer">
+            About the bootloader ↗
+          </a>
+        </div>
+      )}
+      {v.note && <div className="hint sh__hint">{v.note}</div>}
     </div>
   )
 }

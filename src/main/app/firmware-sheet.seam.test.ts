@@ -87,3 +87,79 @@ describe('#173 the Firmware sheet, wire to pushes', () => {
     expect(app.lastPush('cockpit:snapshot')!.overview.firmware).toBeNull()
   })
 })
+
+/** A v4 row as `row`, with its bootloader byte and BOOT_STATE given (#175). */
+const bootRow = (
+  id: number,
+  kind: number,
+  v: [number, number, number],
+  bootloader: number,
+  bootState: number
+) =>
+  `_NODE_STATUS ${hex(id)}01000064000a00001e000000${hex(kind)}${v.map(hex).join('')}${hex(bootloader)}${hex(bootState)}\n`
+
+/** Board 1 (a panel group) and board 3 (PDU_Left, which 0.3.0 has an image for). */
+const BOTH = {
+  'node-mapping.json': { version: 4, nodes: { 1: { added: true }, 3: { added: true } } }
+}
+
+describe('#175 board status chips: the row BOOT_STATE, wire to pushes', () => {
+  async function rows(...lines: string[]) {
+    const github = new FakeGitHub()
+    github.publish(buildRelease('0.3.0'))
+    const app = makeServices({ github: github.fetch, paths: { files: BOTH } })
+    await vi.waitFor(() => expect(app.lastPush('releases:state')?.cached).toHaveLength(1))
+    const run = gateway(app, [0, 3, 0])
+    app.serial.open()
+    app.serial.receive(
+      row(0, 3, [0, 3, 0]) + lines.join('') + `_NODE_STATUS_END ${lines.length + 1}\n`
+    )
+    await run(400)
+    return app
+  }
+
+  it('APP_INVALID reads needs firmware, before the 0.0.0 a bootloader reports; an Attention item opens the sheet', async () => {
+    const app = await rows(bootRow(3, 2, [0, 0, 0], 1, 0x02), bootRow(1, 1, [0, 3, 0], 1, 0x02))
+    expect(status(app, '3')).toMatchObject({
+      status: 'needs-firmware',
+      image: true,
+      attention: true
+    })
+    // A panel group has no image in a release: the chip only (#177 adds From file…).
+    expect(status(app, '1')).toMatchObject({ status: 'needs-firmware', version: '0.3.0' })
+    expect(status(app, '1')?.image).toBeUndefined()
+    const snap = app.lastPush('cockpit:snapshot')!
+    expect(snap.attention.items.filter((i) => i.firmware)).toEqual([
+      expect.objectContaining({ key: 'b-1', nodeId: 1, flag: 'NEEDS FIRMWARE', state: 'off' }),
+      expect.objectContaining({ key: 'b-3', nodeId: 3, flag: 'NEEDS FIRMWARE', state: 'off' })
+    ])
+    expect(snap.panels[3]!.firmware.row?.status).toBe('needs-firmware')
+    expect(firmware(app).attention).toBe(2)
+  })
+
+  it('APP_UNSTABLE reads won’t start', async () => {
+    const app = await rows(bootRow(3, 2, [0, 3, 0], 1, 0x04))
+    expect(status(app, '3')).toMatchObject({ status: 'wont-start', image: true })
+    // Ahead of board 1, which sends no row here (offline).
+    expect(app.lastPush('cockpit:snapshot')!.attention.items[0]).toMatchObject({
+      key: 'b-3',
+      flag: 'WON’T START',
+      firmware: true
+    })
+  })
+
+  it('no chip while update traffic flows (the UPDATING bit), nor for the short waits', async () => {
+    for (const bootState of [0x82, 0x84, 0x01, 0x05]) {
+      const app = await rows(bootRow(3, 2, [0, 3, 0], 1, bootState))
+      expect(status(app, '3')?.status).toBe('ok')
+      expect(app.lastPush('cockpit:snapshot')!.attention.items.some((i) => i.firmware)).toBe(false)
+    }
+  })
+
+  it('bootloader 00 with a version is manual; with 0.0.0 it is not reported', async () => {
+    const manual = await rows(bootRow(3, 2, [0, 3, 0], 0, 0))
+    expect(status(manual, '3')).toMatchObject({ status: 'manual', version: '0.3.0' })
+    const silent = await rows(bootRow(3, 2, [0, 0, 0], 0, 0))
+    expect(status(silent, '3')).toMatchObject({ status: 'not-reported', notReported: true })
+  })
+})

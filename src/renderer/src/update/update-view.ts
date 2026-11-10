@@ -240,7 +240,7 @@ function failView(
       return { ...REFUSED[f.why], foot: left }
     case 'write-failed':
       return {
-        title: 'Stuck in its bootloader',
+        title: 'Needs firmware',
         text: `writing failed after ${RETRIES} automatic retries. Its bootloader is intact and waits for an image — nothing is lost. Retry finishes it.`,
         foot: left
       }

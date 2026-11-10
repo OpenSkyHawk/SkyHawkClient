@@ -3,6 +3,7 @@
 // Gateway's own row carries the bridge's build. Within a major firmware only appends (D22), so a
 // newer major than this client supports may not read right, and boards on different majors don't
 // work together on the bus.
+import { BOOT_STATE, NODE_BOOT_STATE } from '@shared/firmware'
 import type { FirmwareVersion, GatewayFirmware } from '@shared/gateway'
 import type { NodeStatus } from '@shared/nodes'
 
@@ -39,6 +40,21 @@ export function newerThanClient(v: FirmwareVersion): boolean {
  */
 export function noBootloader(row: NodeStatus | undefined): boolean {
   return !!row && reportedVersion(row) !== null && row.bootloader === 0
+}
+
+/**
+ * Its bootloader holds the board and won't start its app (#175, the row's BOOT_STATE): the app is
+ * invalid — an update didn't finish — (`needs-firmware`), or it kept restarting (`wont-start`).
+ * Never while update traffic for it flows (the UPDATING bit): that is an update, not trouble. The
+ * short waits (REQUESTED, CAUGHT) end on their own and read nothing.
+ */
+export function bootTrouble(
+  row: NodeStatus | undefined
+): 'needs-firmware' | 'wont-start' | undefined {
+  if (!row || row.bootState & NODE_BOOT_STATE.UPDATING) return undefined
+  if (row.bootState === BOOT_STATE.APP_INVALID) return 'needs-firmware'
+  if (row.bootState === BOOT_STATE.APP_UNSTABLE) return 'wont-start'
+  return undefined
 }
 
 /** The Gateway's firmware from its own row, judged against the major this client supports. */

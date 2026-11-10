@@ -4015,9 +4015,25 @@ select.input {
   color: var(--gold);
   background: rgba(244, 179, 33, 0.14);
 }
+.vchip--err {
+  color: #ff9a9a;
+  background: rgba(255, 90, 90, 0.14);
+}
 .vchip--mute {
   color: var(--muted-2);
   background: rgba(255, 255, 255, 0.06);
+}
+/* a board's Status › Firmware section (#175): its chip beside the version, the docs link */
+.fw__ver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.fw__doc {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  white-space: nowrap;
 }
 /* the plan toolbar's button: its dot, then *Firmware · n* */
 .fwbtn {

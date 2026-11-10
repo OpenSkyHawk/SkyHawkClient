@@ -12,6 +12,7 @@ export { isLinkUp } from './link-state'
 export { GatewayWatch, RECOVERED_FLAG, shownHealth } from './gateway-health'
 export { diagLogRow, gatewayRecovery, type GatewayDiag, type GatewayRecovery } from './gateway-diag'
 export {
+  bootTrouble,
   majorMismatch,
   newerThanClient,
   noBootloader,
