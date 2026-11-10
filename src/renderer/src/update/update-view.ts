@@ -83,10 +83,11 @@ function checkView(c: UpdateCheck): CheckView | undefined {
             text: `The saved image isn’t built for #${c.nodeId} · Gateway · cockpit side.`
           }
     case 'fits':
+      // No number when it fits: the Gateway's limit isn't the board's flash, which it checks itself.
       return c.ok
         ? {
             ok: true,
-            text: `Fits the ${c.maxKb} KB limit; the board checks its own flash before anything is erased`
+            text: 'Fits the board; the board checks its own flash before anything is erased.'
           }
         : { ok: false, text: `The image is bigger than the ${c.maxKb} KB a board takes.` }
   }

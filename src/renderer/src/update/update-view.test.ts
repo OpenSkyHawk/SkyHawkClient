@@ -85,7 +85,7 @@ describe('update dialog words: the Gateway cockpit side (#187)', () => {
       { ok: true, text: 'Built for #0 · Gateway · cockpit side — matches this board' },
       {
         ok: true,
-        text: 'Fits the 124 KB limit; the board checks its own flash before anything is erased'
+        text: 'Fits the board; the board checks its own flash before anything is erased.'
       }
     ])
   })
