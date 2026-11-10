@@ -143,6 +143,13 @@ describe('a board its bootloader holds, in words (#175)', () => {
     expect(firmwareButton({ ...sheet, target: undefined }).dot).toBe('off')
   })
 
+  it('a board its bootloader holds: its note, never the not-reported hint', () => {
+    const row = board({ status: 'needs-firmware', image: true, notReported: true })
+    expect(
+      boardFirmwareView({ installed: 'version not reported', hint: 'not this', row }).note
+    ).toBe('The last update didn’t finish. Update it again.')
+  })
+
   it('the board’s Firmware section: the chip beside the version, and the note only with an image', () => {
     const row = board({ status: 'needs-firmware', version: '0.3.0', image: true })
     expect(boardFirmwareView({ installed: '0.3.0', row })).toEqual({
@@ -169,8 +176,20 @@ describe('a board its bootloader holds, in words (#175)', () => {
 
   it('no bootloader gets its box; not reported keeps its hint and no chip', () => {
     expect(
-      boardFirmwareView({ installed: '0.3.0', row: board({ status: 'manual', version: '0.3.0' }) })
+      boardFirmwareView({
+        installed: '0.3.0',
+        noBootloader: true,
+        row: board({ status: 'manual', version: '0.3.0' })
+      })
     ).toMatchObject({ chip: 'MANUAL UPDATE ONLY', noBootloader: true })
+    // Offline with the version it last reported: the box still shows, as drawn.
+    expect(
+      boardFirmwareView({
+        installed: '0.3.0',
+        noBootloader: true,
+        row: board({ status: 'off', version: '0.3.0' })
+      }).noBootloader
+    ).toBe(true)
     const hint = 'This board hasn’t reported its firmware version yet.'
     expect(
       boardFirmwareView({

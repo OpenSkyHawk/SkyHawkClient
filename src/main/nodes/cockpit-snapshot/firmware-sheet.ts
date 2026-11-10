@@ -10,7 +10,7 @@
 // (#187) is compared with the version its USB side carries (the bundle), else the release; it reads
 // *updating* while its update runs, every board *paused*, and *not responding* when the Gateway
 // answers but its cockpit side sends nothing. A board its bootloader holds (#175) reads *needs
-// firmware* or *won't start*, from its row's BOOT_STATE (gateway's bootTrouble).
+// firmware* or *won't start*, from its row's BOOT_STATE (views' boardFirmware).
 import type { DeviceStatus, FirmwareVersion } from '@shared/gateway'
 import type {
   FirmwareBanner,
@@ -20,7 +20,7 @@ import type {
   NodeView
 } from '@shared/nodes'
 import type { ReleaseTarget } from '@shared/releases'
-import { bootTrouble, noBootloader, reportedVersion } from '../../gateway'
+import { reportedVersion } from '../../gateway'
 
 /** What the snapshot reads besides the node views and the link. */
 export interface FirmwareInputs {
@@ -176,7 +176,7 @@ function boardRow(v: NodeView, live: boolean, f: FirmwareInputs): FirmwareRow {
     return row({ ...base, status: 'off', ...(version && { version }) })
   }
   // Before the version: a board in its bootloader may not report one.
-  const trouble = bootTrouble(e.status)
+  const trouble = v.firmware.boot
   if (trouble) {
     return row({
       ...base,
@@ -192,7 +192,7 @@ function boardRow(v: NodeView, live: boolean, f: FirmwareInputs): FirmwareRow {
       ...(v.firmware.notReported && { notReported: true })
     })
   }
-  if (noBootloader(e.status)) return row({ ...base, version, status: 'manual' })
+  if (v.firmware.noBootloader) return row({ ...base, version, status: 'manual' })
   if (v.firmware.mismatch) {
     return row({ ...base, version, status: 'mismatch', gatewayMajor: v.firmware.mismatch.gateway })
   }

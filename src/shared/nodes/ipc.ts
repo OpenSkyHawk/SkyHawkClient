@@ -492,8 +492,24 @@ export interface BoardFirmware {
   version: FirmwareVersion | null
   /** Its row reads 0.0.0. Unset for a reported version and for a board with no row. */
   notReported?: true
-  /** It runs another major than the Gateway (neither side 0.0.0): reflash it. */
+  /**
+   * It runs another major than the Gateway (neither side 0.0.0): reflash it. Never while its
+   * bootloader holds it (`boot`): the row still carries the old app's version.
+   */
   mismatch?: { board: number; gateway: number }
+  /** Its bootloader holds it (#175, the row's BOOT_STATE): the app is invalid, or kept restarting. */
+  boot?: BootTrouble
+  /** It runs with no bootloader (#175's rule), so only a programmer updates it. */
+  noBootloader?: true
+}
+
+/** Why a board's bootloader holds it (#175): its app is invalid, or it kept restarting. */
+export type BootTrouble = 'needs-firmware' | 'wont-start'
+
+/** Each bootloader state's chip (#175): the Firmware sheet's and the Attention line. */
+export const BOOT_CHIP: Record<BootTrouble, string> = {
+  'needs-firmware': 'NEEDS FIRMWARE',
+  'wont-start': 'WON’T START'
 }
 
 export interface AttentionItem {
@@ -682,9 +698,10 @@ export interface BoardPanel {
   actions: BoardActions
   /**
    * The Status tab's Firmware section (#171): the release it reports, or why there is none, and
-   * its Firmware sheet row (#175: the chip, the *No bootloader* box and the note).
+   * its Firmware sheet row (#175: the chip and the note), and *No bootloader* (its box: offline
+   * with a version it last reported, too).
    */
-  firmware: { installed: string; hint?: string; row?: FirmwareRow }
+  firmware: { installed: string; hint?: string; row?: FirmwareRow; noBootloader?: true }
   /** Panel groups: "Reported by the node". */
   status?: Row[]
   /** Panel groups: its power zone, as resolved (D7). */

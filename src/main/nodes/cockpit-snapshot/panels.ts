@@ -161,16 +161,17 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
  * The Firmware section of the Status tab (#171): the release the board reports, "version not
  * reported" when its row reads 0.0.0, or a dash with no row. It shows what the board says; a
  * mismatch is the box at the top. Its Firmware sheet row (#175) rides along: one judgement for the
- * sheet and the panel.
+ * sheet and the panel. A board its bootloader holds may read 0.0.0: its row's note says why, so
+ * the not-reported hint is left out.
  */
 export function boardFirmwareRows(v: NodeView, row?: FirmwareRow): BoardPanel['firmware'] {
-  const { version, notReported } = v.firmware
-  const r = row ? { row } : {}
+  const { version, notReported, boot, noBootloader } = v.firmware
+  const r = { ...(row && { row }), ...(noBootloader && { noBootloader }) }
   if (version) return { installed: versionText(version), ...r }
   if (!notReported) return { installed: DASH, ...r }
   return {
     installed: 'version not reported',
-    hint: 'This board hasn’t reported its firmware version yet.',
+    ...(!boot && { hint: 'This board hasn’t reported its firmware version yet.' }),
     ...r
   }
 }

@@ -12,7 +12,13 @@ import type {
   NodeView,
   PduReadings
 } from '@shared/nodes'
-import { majorMismatch, reportedVersion, versionNotReported } from '../../gateway'
+import {
+  bootTrouble,
+  majorMismatch,
+  noBootloader,
+  reportedVersion,
+  versionNotReported
+} from '../../gateway'
 import { nodeFlagChips, pduAlertFlags } from '../faults'
 import { newReason } from '../node-model'
 
@@ -47,14 +53,22 @@ export function nodeHealth(e: NodeModelEntry, r: PduReadings = {}): NodeHealth {
 /** The tile and Attention flag for a board on another firmware major than the Gateway (#171). */
 export const FW_MISMATCH = 'FW MISMATCH'
 
-/** A board's release, and whether it runs another major than the Gateway (#171). */
+/**
+ * A board's release, whether it runs another major than the Gateway (#171), and whether its
+ * bootloader holds it or it has none (#175): the one judgement the sheet, Attention, the tile and
+ * the panel read. A board its bootloader holds is no mismatch: the row keeps the old app's version
+ * (PanelBridge updates only the bootloader bytes), and Needs firmware already says to reflash it.
+ */
 export function boardFirmware(e: NodeModelEntry, gateway?: GatewayFirmware): BoardFirmware {
   const version = reportedVersion(e.status)
-  const mismatch = majorMismatch(version, gateway)
+  const boot = bootTrouble(e.status)
+  const mismatch = boot ? undefined : majorMismatch(version, gateway)
   return {
     version,
     ...(versionNotReported(e.status) && { notReported: true as const }),
-    ...(mismatch && { mismatch })
+    ...(mismatch && { mismatch }),
+    ...(boot && { boot }),
+    ...(noBootloader(e.status) && { noBootloader: true as const })
   }
 }
 

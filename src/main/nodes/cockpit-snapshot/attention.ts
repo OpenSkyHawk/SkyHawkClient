@@ -12,6 +12,7 @@ import type {
   PduOutage,
   StrayItem
 } from '@shared/nodes'
+import { BOOT_CHIP } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
 import { RECOVERED_FLAG, shownHealth } from '../../gateway'
 import { isReportableNew, newState, strayKind } from '../node-model'
@@ -33,12 +34,6 @@ const withoutMismatch = (flag: string | undefined): string =>
     .filter((f) => f && f !== FW_MISMATCH)
     .join(' · ')
 
-/** A board its bootloader holds (#175): its Attention line, the Firmware sheet's chip. */
-const BOOT_FLAG: Partial<Record<FirmwareRow['status'], string>> = {
-  'needs-firmware': 'NEEDS FIRMWARE',
-  'wont-start': 'WON’T START'
-}
-
 /**
  * Boards their bootloader holds first (#175: the sheet's rows, whose cog opens the Firmware sheet),
  * then firmware mismatches (#171: reflash before chasing faults), then PDU outages, then offline
@@ -56,8 +51,10 @@ export function attentionItems(
   const folded = new Set(outages.flatMap((o) => o.nodeIds))
   const items: (AttentionItem & { rank: number })[] = []
   for (const r of firmware) {
-    const flag = BOOT_FLAG[r.status]
-    if (!flag || r.nodeId === undefined) continue
+    // A board its bootloader holds (#175): its line is the Firmware sheet's chip.
+    if ((r.status !== 'needs-firmware' && r.status !== 'wont-start') || r.nodeId === undefined)
+      continue
+    const flag = BOOT_CHIP[r.status]
     items.push({
       key: `b-${r.nodeId}`,
       nodeId: r.nodeId,

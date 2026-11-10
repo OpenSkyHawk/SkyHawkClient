@@ -105,15 +105,18 @@ const BOTH = {
 
 describe('#175 board status chips: the row BOOT_STATE, wire to pushes', () => {
   async function rows(...lines: string[]) {
+    return rowsOn([0, 3, 0], ...lines)
+  }
+
+  /** As `rows`, with the Gateway's cockpit side on `gw`. */
+  async function rowsOn(gw: [number, number, number], ...lines: string[]) {
     const github = new FakeGitHub()
     github.publish(buildRelease('0.3.0'))
     const app = makeServices({ github: github.fetch, paths: { files: BOTH } })
     await vi.waitFor(() => expect(app.lastPush('releases:state')?.cached).toHaveLength(1))
     const run = gateway(app, [0, 3, 0])
     app.serial.open()
-    app.serial.receive(
-      row(0, 3, [0, 3, 0]) + lines.join('') + `_NODE_STATUS_END ${lines.length + 1}\n`
-    )
+    app.serial.receive(row(0, 3, gw) + lines.join('') + `_NODE_STATUS_END ${lines.length + 1}\n`)
     await run(400)
     return app
   }
@@ -134,6 +137,9 @@ describe('#175 board status chips: the row BOOT_STATE, wire to pushes', () => {
       expect.objectContaining({ key: 'b-3', nodeId: 3, flag: 'NEEDS FIRMWARE', state: 'off' })
     ])
     expect(snap.panels[3]!.firmware.row?.status).toBe('needs-firmware')
+    // It reads 0.0.0 because its bootloader holds it: the row's note says so, not the hint.
+    expect(snap.panels[3]!.firmware).toMatchObject({ installed: 'version not reported' })
+    expect(snap.panels[3]!.firmware.hint).toBeUndefined()
     expect(firmware(app).attention).toBe(2)
   })
 
@@ -156,9 +162,22 @@ describe('#175 board status chips: the row BOOT_STATE, wire to pushes', () => {
     }
   })
 
+  it('after a major bump and a failed update, the old version in its row is no mismatch', async () => {
+    // PanelBridge keeps the app's version while the bootloader runs: 0.3.0 against a 1.x Gateway.
+    const app = await rowsOn([1, 0, 0], bootRow(3, 2, [0, 3, 0], 1, 0x02))
+    const snap = app.lastPush('cockpit:snapshot')!
+    expect(status(app, '3')?.status).toBe('needs-firmware')
+    expect(snap.attention.items.filter((i) => i.nodeId === 3).map((i) => i.key)).toEqual(['b-3'])
+    const view = snap.views.find((v) => v.entry.nodeId === 3)!
+    expect(view.firmware.mismatch).toBeUndefined()
+    expect(view.health.flag ?? '').not.toMatch(/FW MISMATCH/)
+    expect(snap.panels[3]!.faults.map((f) => f.title)).not.toContain('Firmware mismatch')
+  })
+
   it('bootloader 00 with a version is manual; with 0.0.0 it is not reported', async () => {
     const manual = await rows(bootRow(3, 2, [0, 3, 0], 0, 0))
     expect(status(manual, '3')).toMatchObject({ status: 'manual', version: '0.3.0' })
+    expect(manual.lastPush('cockpit:snapshot')!.panels[3]!.firmware.noBootloader).toBe(true)
     const silent = await rows(bootRow(3, 2, [0, 0, 0], 0, 0))
     expect(status(silent, '3')).toMatchObject({ status: 'not-reported', notReported: true })
   })

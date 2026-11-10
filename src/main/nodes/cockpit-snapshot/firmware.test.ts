@@ -19,10 +19,16 @@ import { healthBand } from './band'
 import { boardFirmwareRows, nodeFaultBoxes, nodeStatusRows } from './panels'
 import { nodeViews } from './views'
 
-/** A board in your cockpit, online, reporting firmware `fw` ([0, 0, 0] = not reported). */
+/** A board in your cockpit, online, with a bootloader, reporting firmware `fw` ([0, 0, 0] = not reported). */
 const board = (nodeId: number, fw: [number, number, number], over: Partial<NodeModelEntry> = {}) =>
   node(nodeId, {
-    status: nodeStatus(nodeId, { nodeKind: 1, fwMajor: fw[0], fwMinor: fw[1], fwPatch: fw[2] }),
+    status: nodeStatus(nodeId, {
+      nodeKind: 1,
+      fwMajor: fw[0],
+      fwMinor: fw[1],
+      fwPatch: fw[2],
+      bootloader: 1
+    }),
     ...over
   })
 

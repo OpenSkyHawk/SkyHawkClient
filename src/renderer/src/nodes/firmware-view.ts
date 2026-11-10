@@ -1,12 +1,13 @@
 // The Firmware button, sheet rows and Overview banner in words (#173), pure: main decides every
 // row's status, the count and what can update (`cockpit:snapshot` firmware, overview.firmware);
 // this only words them, as the design's `fwInfo` table draws them (CockpitMap.dc.html:837-850).
-import type {
-  BoardPanel,
-  FirmwareBanner,
-  FirmwareRow,
-  FirmwareSheet,
-  FirmwareStatus
+import {
+  BOOT_CHIP,
+  type BoardPanel,
+  type FirmwareBanner,
+  type FirmwareRow,
+  type FirmwareSheet,
+  type FirmwareStatus
 } from '@shared/nodes'
 
 /** One row as drawn: its dot, chip and the line beside the chip. */
@@ -37,8 +38,8 @@ const CHIP: Record<Exclude<FirmwareStatus, 'no-release'>, [string, string, strin
   'not-responding': ['NOT RESPONDING', 'vchip--err', 'off', '✕'],
   'in-drive': ['IN UPDATE DRIVE', 'vchip--warn', 'warn', '!'],
   off: ['OFFLINE', 'vchip--mute', 'off', '✕'],
-  'needs-firmware': ['NEEDS FIRMWARE', 'vchip--err', 'off', '✕'],
-  'wont-start': ['WON’T START', 'vchip--err', 'off', '✕'],
+  'needs-firmware': [BOOT_CHIP['needs-firmware'], 'vchip--err', 'off', '✕'],
+  'wont-start': [BOOT_CHIP['wont-start'], 'vchip--err', 'off', '✕'],
   'not-reported': ['NOT REPORTED', 'vchip--mute', '', ''],
   manual: ['MANUAL UPDATE ONLY', 'vchip--warn', 'warn', '!'],
   mismatch: ['MAJOR MISMATCH', 'vchip--warn', 'warn', '!'],
@@ -111,7 +112,7 @@ export interface BoardFirmwareView {
   /** Absent where the version line says it already (not reported, offline with none). */
   chip?: string
   chipCls?: string
-  /** No bootloader: the warning box with *About the bootloader ↗*. */
+  /** No bootloader, offline too: the warning box with *About the bootloader ↗*. */
   noBootloader: boolean
   note?: string
 }
@@ -145,11 +146,12 @@ export function boardFirmwareView(fw: BoardPanel['firmware']): BoardFirmwareView
     r.status === 'not-reported' ||
     (r.status === 'off' && !r.version)
   const [chip, chipCls] = quiet ? [] : CHIP[r.status as Exclude<FirmwareStatus, 'no-release'>]
-  const note = fw.hint ?? (r && boardNote(r))
+  // The row's note first: a board its bootloader holds says why it reads 0.0.0 (main sends no hint).
+  const note = (r && boardNote(r)) ?? fw.hint
   return {
     installed: fw.installed,
     ...(chip && { chip, chipCls }),
-    noBootloader: r?.status === 'manual',
+    noBootloader: !!fw.noBootloader,
     ...(note && { note })
   }
 }
