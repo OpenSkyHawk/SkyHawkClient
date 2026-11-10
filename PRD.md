@@ -15,7 +15,7 @@ SkyHawkClient replaces that connector with one branded, cross-platform GUI app t
 **Goals (v1, "Lean MVP"):**
 
 - Drop-in functional replacement for `connect-serial-port.cmd` on Windows **and** macOS.
-- Auto-detect the SimGateway (USB VID `0x2E8A` / PID `0x4134`); manual port override.
+- Auto-detect the SimGateway (USB VID `0x2E8A` / PID `0x1166`); manual port override.
 - Bidirectional DCS-BIOS relay, byte-for-byte, in the live data path.
 - Dashboard: connection state, aircraft loaded, stream/command/telemetry stats.
 - Live **decoded** DCS-BIOS log (control names + values) with filter/search, pause/autoscroll, export, raw↔decoded toggle.
@@ -58,7 +58,7 @@ OpenSkyhawk builders/operators on Windows or macOS bringing up or flying the coc
 
 **Confirmed against the local DCS-BIOS v0.11.2 `BIOSConfig.lua`** (`Firmware/ScratchPad/DCS-BIOS/.../BIOSConfig.lua`): `tcp_config = {{ address = "*", port = 7778 }}` and `udp_config = {{ receive_address = "*", receive_port = 7778, send_address = "239.255.50.10", send_port = 5010 }}`. So **port 7778 binds all interfaces** (TCP server _and_ UDP command receiver) — a remote machine reaches it with **no host-side script**; the only host requirement is opening the **Windows firewall for inbound TCP 7778**. Only the export _multicast_ (`send_address = 239.255.50.10`) is loopback, hence TCP is the clean remote transport; a UDP-only alternative is the one-line `send_address = "<this-app-IP>"` edit (still no running script). So: SimGateway in the Mac → app TCP-connects to `192.168.85.25:7778` → relays both ways to the SimGateway serial. In **Monitor mode** the same applies minus the serial; HID needs a local USB device, so it is simply absent on a remote-only test box. A `BIOSConfig.lua` reader (`dcsbios-config.ts`) is a convenience — auto-fill host/ports + warn — not a requirement for the TCP path.
 
-**USB enumeration / interface identity:** the composite SimGateway presents the OS **two interfaces under one device** ("A-4E Skyhawk", VID `0x2E8A`/PID `0x4134`) — a **CDC serial port** (COMx / `/dev/cu.usbmodem*`) and a **HID joystick**. The app picks the serial port by VID/PID + CDC class. Firmware follow-up (§12): give the CDC its own **interface string descriptor** (TinyUSB `iInterface`) so the port advertises a friendly name like the HID product string already does.
+**USB enumeration / interface identity:** the composite SimGateway presents the OS **two interfaces under one device** ("A-4E Skyhawk", VID `0x2E8A`/PID `0x1166`) — a **CDC serial port** (COMx / `/dev/cu.usbmodem*`) and a **HID joystick**. The app picks the serial port by VID/PID + CDC class. Firmware follow-up (§12): give the CDC its own **interface string descriptor** (TinyUSB `iInterface`) so the port advertises a friendly name like the HID product string already does.
 
 ## 5. Architecture
 
@@ -75,7 +75,7 @@ Settings expose: source mode, DCS host + transport (`loopback-multicast | unicas
 
 **Main process (`src/main/`)**
 
-- `bridge/serial.ts` — `node-serialport`: enumerate ports, match VID/PID `0x2E8A/0x4134` + CDC class to pick the SimGateway port, open, read/write raw bytes, auto-reconnect on unplug. (Two-interface identity: §4.)
+- `bridge/serial.ts` — `node-serialport`: enumerate ports, match VID/PID `0x2E8A/0x1166` + CDC class to pick the SimGateway port, open, read/write raw bytes, auto-reconnect on unplug. (Two-interface identity: §4.)
 - `bridge/dcsbios-net.ts` — the live DCS-BIOS transport: loopback multicast `239.255.50.10:5010` (export in) / UDP `7778` (commands out), **or TCP-connect `<DCS-host>:7778`** (bidirectional — remote DCS), or a unicast listen port. Drives the byte-for-byte relay in Bridge mode (export→serial, serial→DCS).
 - `bridge/replay.ts` — record the raw stream (+ timing) to a capture file; replay a capture as a synthetic export source into the parser/relay (optionally out to the serial). Reuses the firmware repo's `dcsbios_data.json` capture shape where practical.
 - `bridge/dcsbios-config.ts` — discovery: read the user's `…/Saved Games/DCS*/Scripts/DCS-BIOS/BIOSConfig.lua` to learn configured export/command addresses; warn when a remote setup needs an edit.

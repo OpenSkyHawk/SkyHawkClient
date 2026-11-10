@@ -23,6 +23,7 @@ import type { RecordState, ReplayLoad } from '@shared/dcs'
 import type { AdoptRequest, AdoptSpec, MappingPatch, ResetOptions } from '@shared/nodes'
 import type { FetchPort } from '../releases'
 import type { UpdateTargetRef } from '@shared/update'
+import { USB_IDENTITY } from '@shared/firmware'
 
 // ── the outside world, faked ─────────────────────────────────────────────────
 
@@ -157,8 +158,8 @@ vi.doMock('electron', () => ({
 vi.doMock('../gateway/serial-bridge', () => ({
   SerialBridge: FakeSerial,
   PortNotFoundError: class PortNotFoundError extends Error {},
-  SIMGATEWAY_VID: 0x2e8a,
-  SIMGATEWAY_PID: 0x4134,
+  SIMGATEWAY_VID: USB_IDENTITY.vid,
+  SIMGATEWAY_PID: USB_IDENTITY.pid,
   findSimGatewayPort: () => Promise.resolve(world.portListed ? world.portPath : undefined),
   touchForBootloader: (path: string) => {
     world.touches.push(path)

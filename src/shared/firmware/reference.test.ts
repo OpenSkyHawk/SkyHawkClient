@@ -132,7 +132,7 @@ describe('hid-report-layout.generated', () => {
 describe('usb-identity.generated', () => {
   it('pins the SimGateway USB identity', () => {
     expect(USB_IDENTITY.vid).toBe(0x2e8a)
-    expect(USB_IDENTITY.pid).toBe(0x4134)
+    expect(USB_IDENTITY.pid).toBe(0x1166)
     expect(USB_IDENTITY.manufacturer).toBe('OpenSkyhawk')
     expect(USB_IDENTITY.product).toBe('A-4E Skyhawk')
     expect(USB_IDENTITY.cdcInterface).toBe('A-4E Skyhawk DCS-BIOS')
