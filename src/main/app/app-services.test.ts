@@ -75,14 +75,18 @@ class FakeTransport {
   }
 }
 
-vi.mock('../gateway/serial-bridge', () => ({
-  SerialBridge: FakeSerial,
-  PortNotFoundError: class extends Error {},
-  SIMGATEWAY_VID: 0x2e8a,
-  SIMGATEWAY_PID: 0x4134,
-  findSimGatewayPort: () => Promise.resolve('/dev/fake'),
-  listSerialPorts: () => Promise.resolve([{ path: '/dev/fake', serialNumber: 'TESTSERIAL' }])
-}))
+// vi.mock is hoisted above the imports, so the synced identity is loaded inside the factory.
+vi.mock('../gateway/serial-bridge', async () => {
+  const { USB_IDENTITY } = await import('@shared/firmware')
+  return {
+    SerialBridge: FakeSerial,
+    PortNotFoundError: class extends Error {},
+    SIMGATEWAY_VID: USB_IDENTITY.vid,
+    SIMGATEWAY_PID: USB_IDENTITY.pid,
+    findSimGatewayPort: () => Promise.resolve('/dev/fake'),
+    listSerialPorts: () => Promise.resolve([{ path: '/dev/fake', serialNumber: 'TESTSERIAL' }])
+  }
+})
 vi.mock('../dcs/transports', () => ({ createTransport: () => new FakeTransport() }))
 // Keep the node mapping off the real disk.
 vi.mock('../nodes/mapping-file', () => ({

@@ -1,6 +1,7 @@
 // T32 — Settings › About: version, ids, and the node registry with its On the bus column.
 import { describe, expect, it } from 'vitest'
 import { screen, within } from '@testing-library/react'
+import { NODE_REGISTRY_SOURCE } from '@shared/firmware'
 import type { NodeModel } from '@shared/nodes'
 import { Settings } from '../src/app/settings/Settings'
 import pkg from '../../../package.json'
@@ -41,6 +42,9 @@ const rows = (dlg: HTMLElement) =>
     .getAllByText(/^#\d+$/)
     .map((id) => id.parentElement!.textContent)
 
+/** The synced registry's commit as About prints it: its first seven characters. */
+const SHORT_COMMIT = NODE_REGISTRY_SOURCE.commit.slice(0, 7)
+
 describe('T32 Settings › About (B92, X7)', () => {
   it('version, app id and licence', async () => {
     await openAbout()
@@ -54,13 +58,15 @@ describe('T32 Settings › About (B92, X7)', () => {
     expect(
       screen.getByText('NODE_IDS.md · 6 nodes: 3 PDUs, 2 panel groups, Gateway')
     ).toBeInTheDocument()
-    expect(value('Node registry')).toBe('f9fed40View…')
+    expect(value('Node registry')).toBe(`${SHORT_COMMIT}View…`)
   })
 
   it('the registry dialog: every NODE_ID, the bridge as the Gateway, On the bus from the roster', async () => {
     const { openRegistry } = await openAbout()
     const dlg = await openRegistry()
-    expect(within(dlg).getByText('NODE_IDS.md @ f9fed40 · 2026-10-27')).toBeInTheDocument()
+    expect(
+      within(dlg).getByText(`NODE_IDS.md @ ${SHORT_COMMIT} · ${NODE_REGISTRY_SOURCE.date}`)
+    ).toBeInTheDocument()
     expect(rows(dlg)).toEqual([
       '#0Gateway—serial link',
       '#1Center_ArmamentCenteryes',

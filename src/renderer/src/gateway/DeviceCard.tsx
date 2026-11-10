@@ -5,7 +5,7 @@ import { useGatewayStore } from './store'
 import { deviceView, linkButton } from './link-view'
 import { gatewayFirmwareView } from './gateway-view'
 
-/** `0x2E8A / 0x4134`: the USB ids as the device card prints them. */
+/** `0x2E8A / 0x1166`: the USB ids as the device card prints them. */
 const VID_PID = `${hex4(USB_IDENTITY.vid)} / ${hex4(USB_IDENTITY.pid)}`
 
 /**

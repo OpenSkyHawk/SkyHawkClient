@@ -24,7 +24,7 @@ Download: [GitHub Releases](https://github.com/OpenSkyHawk/SkyHawkClient/release
 
 ## Features
 
-- Auto-detects SimGateway by USB VID/PID (`0x2E8A / 0x4134`) + CDC class
+- Auto-detects SimGateway by USB VID/PID (`0x2E8A / 0x1166`) + CDC class
 - Bidirectional DCS-BIOS relay (local multicast, TCP to remote DCS, or unicast)
 - Live decoded DCS-BIOS log — filter, pause, export TSV, raw ↔ named toggle
 - Sim telemetry gauges: RPM, IAS (kt), Flap, Press Alt (ft), Fuel

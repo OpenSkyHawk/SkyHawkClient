@@ -17,7 +17,7 @@ const HINT = {
     'No DCS — feed the parser/UI from a recorded capture; optionally drive the Gateway over the same link.'
 }
 
-/** The board's USB ids as the card prints them, e.g. `0x2E8A / 0x4134` (from the synced identity). */
+/** The board's USB ids as the card prints them, e.g. `0x2E8A / 0x1166` (from the synced identity). */
 const hex4 = (n: number) => `0x${n.toString(16).toUpperCase().padStart(4, '0')}`
 const VID_PID = `${hex4(USB_IDENTITY.vid)} / ${hex4(USB_IDENTITY.pid)}`
 
