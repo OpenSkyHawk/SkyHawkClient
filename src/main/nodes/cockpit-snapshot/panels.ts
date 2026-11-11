@@ -11,6 +11,7 @@ import {
   type BoardPanel,
   type FaultBox,
   type FedBoard,
+  type FirmwareRow,
   type NodeModelEntry,
   type NodeStatus,
   type NodeView,
@@ -159,15 +160,19 @@ export function nodeFaultBoxes(v: NodeView): FaultBox[] {
 /**
  * The Firmware section of the Status tab (#171): the release the board reports, "version not
  * reported" when its row reads 0.0.0, or a dash with no row. It shows what the board says; a
- * mismatch is the box at the top.
+ * mismatch is the box at the top. Its Firmware sheet row (#175) rides along: one judgement for the
+ * sheet and the panel. A board its bootloader holds may read 0.0.0: its row's note says why, so
+ * the not-reported hint is left out.
  */
-export function boardFirmwareRows(v: NodeView): BoardPanel['firmware'] {
-  const { version, notReported } = v.firmware
-  if (version) return { installed: versionText(version) }
-  if (!notReported) return { installed: DASH }
+export function boardFirmwareRows(v: NodeView, row?: FirmwareRow): BoardPanel['firmware'] {
+  const { version, notReported, boot, noBootloader } = v.firmware
+  const r = { ...(row && { row }), ...(noBootloader && { noBootloader }) }
+  if (version) return { installed: versionText(version), ...r }
+  if (!notReported) return { installed: DASH, ...r }
   return {
     installed: 'version not reported',
-    hint: 'This board hasn’t reported its firmware version yet.'
+    ...(!boot && { hint: 'This board hasn’t reported its firmware version yet.' }),
+    ...r
   }
 }
 
@@ -401,18 +406,24 @@ function fedBoards(members: Members, views: NodeView[], pduId: number): FedBoard
  * clicking it opens the Adopt dialog (D6, members.ts boardOpens — the same membership). A panel
  * group shows its resolved power zone (D7: `zones`, one per board). A PDU feeds the boards in your
  * cockpit whose zone it is, hidden ones included; that count is what Forget says it unlinks (X7: an
- * outage counts only the ones that could have dropped with it, pduOutages).
+ * outage counts only the ones that could have dropped with it, pduOutages). `firmware`: the Firmware
+ * sheet's rows (#175), each board's beside its version.
  */
 export function boardPanels(
   views: NodeView[],
   outages: PduOutage[],
   members: Members,
-  zones: ReadonlyMap<number, PowerZone>
+  zones: ReadonlyMap<number, PowerZone>,
+  firmware: FirmwareRow[] = []
 ): Record<number, BoardPanel> {
   const out: Record<number, BoardPanel> = {}
   for (const v of views) {
     const e = v.entry
     if (!members.get(e.nodeId)) continue
+    const fw = boardFirmwareRows(
+      v,
+      firmware.find((r) => r.nodeId === e.nodeId)
+    )
     let p: BoardPanel
     if (e.kind === 'pdu') {
       const feeds = fedBoards(members, views, e.nodeId)
@@ -422,7 +433,7 @@ export function boardPanels(
           outages.some((o) => o.pduId === e.nodeId)
         ),
         actions: boardActions(e, feeds.length),
-        firmware: boardFirmwareRows(v),
+        firmware: fw,
         rails: pduRailRows(v),
         board: pduBoardRows(v),
         feeds,
@@ -440,7 +451,7 @@ export function boardPanels(
       p = {
         faults: nodeFaultBoxes(v),
         actions: boardActions(e),
-        firmware: boardFirmwareRows(v),
+        firmware: fw,
         status: nodeStatusRows(v),
         zone: zones.get(e.nodeId) ?? { status: 'none' }
       }

@@ -105,7 +105,7 @@ export class UplNoAnswer extends Error {
  * A flash's result as UPL_INFO_ACK keeps it, for when UPL_RESULT never arrived. `NONE` there means
  * the Gateway's USB side restarted during the flash and lost it (it is kept in RAM only).
  */
-const outcomeOf = (info: UplInfo): UplOutcome => ({
+export const outcomeOf = (info: UplInfo): UplOutcome => ({
   via: 'info',
   result: info.lastResult,
   target: info.lastTarget,

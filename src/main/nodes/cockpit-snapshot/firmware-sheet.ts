@@ -9,7 +9,8 @@
 // The chips are the design's `fwInfo` (CockpitMap.dc.html:817-858), in its order. The cockpit side
 // (#187) is compared with the version its USB side carries (the bundle), else the release; it reads
 // *updating* while its update runs, every board *paused*, and *not responding* when the Gateway
-// answers but its cockpit side sends nothing. Stuck and app unstable (#175) join it later.
+// answers but its cockpit side sends nothing. A board its bootloader holds (#175) reads *needs
+// firmware* or *won't start*, from its row's BOOT_STATE (views' boardFirmware).
 import type { DeviceStatus, FirmwareVersion } from '@shared/gateway'
 import type {
   FirmwareBanner,
@@ -19,7 +20,7 @@ import type {
   NodeView
 } from '@shared/nodes'
 import type { ReleaseTarget } from '@shared/releases'
-import { noBootloader, reportedVersion } from '../../gateway'
+import { reportedVersion } from '../../gateway'
 
 /** What the snapshot reads besides the node views and the link. */
 export interface FirmwareInputs {
@@ -49,6 +50,8 @@ const ATTENTION: ReadonlySet<FirmwareStatus> = new Set([
   'update',
   'mismatch',
   'manual',
+  'needs-firmware',
+  'wont-start',
   'in-drive',
   'not-responding'
 ])
@@ -172,6 +175,16 @@ function boardRow(v: NodeView, live: boolean, f: FirmwareInputs): FirmwareRow {
   if (e.notSeen || e.availability === 'offline') {
     return row({ ...base, status: 'off', ...(version && { version }) })
   }
+  // Before the version: a board in its bootloader may not report one.
+  const trouble = v.firmware.boot
+  if (trouble) {
+    return row({
+      ...base,
+      status: trouble,
+      ...(version && { version }),
+      ...(f.release?.hasImage({ nodeId: e.nodeId }) && { image: true as const })
+    })
+  }
   if (!version) {
     return row({
       ...base,
@@ -179,7 +192,7 @@ function boardRow(v: NodeView, live: boolean, f: FirmwareInputs): FirmwareRow {
       ...(v.firmware.notReported && { notReported: true })
     })
   }
-  if (noBootloader(e.status)) return row({ ...base, version, status: 'manual' })
+  if (v.firmware.noBootloader) return row({ ...base, version, status: 'manual' })
   if (v.firmware.mismatch) {
     return row({ ...base, version, status: 'mismatch', gatewayMajor: v.firmware.mismatch.gateway })
   }

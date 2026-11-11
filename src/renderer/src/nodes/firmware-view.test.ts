@@ -2,7 +2,12 @@
 // tests don't reach.
 import { describe, expect, it } from 'vitest'
 import type { FirmwareBanner, FirmwareRow, FirmwareSheet } from '@shared/nodes'
-import { firmwareBannerText, firmwareButton, firmwareRowView } from './firmware-view'
+import {
+  boardFirmwareView,
+  firmwareBannerText,
+  firmwareButton,
+  firmwareRowView
+} from './firmware-view'
 
 const banner = (over: Partial<FirmwareBanner>): FirmwareBanner => ({
   version: '1.0.1',
@@ -103,5 +108,98 @@ describe('the Gateway cockpit side’s row in words (#187)', () => {
         '1.0.1'
       )
     ).toMatchObject({ chip: 'PAUSED', sub: 'Gateway cockpit side updating' })
+  })
+})
+
+describe('a board its bootloader holds, in words (#175)', () => {
+  const board = (over: Partial<FirmwareRow>): FirmwareRow => ({
+    key: '3',
+    nodeId: 3,
+    name: 'PDU_Left',
+    kind: 'pdu',
+    status: 'ok',
+    attention: false,
+    ...over
+  })
+
+  it('the sheet: red chips, a red dot, and the button’s dot turns red', () => {
+    const needs = board({ status: 'needs-firmware', attention: true, image: true })
+    expect(firmwareRowView(needs, '0.3.0')).toMatchObject({
+      name: 'PDU_Left · #3',
+      chip: 'NEEDS FIRMWARE',
+      chipCls: 'vchip--err',
+      dot: 'off',
+      sym: '✕',
+      sub: 'the last update didn’t finish'
+    })
+    expect(firmwareRowView(board({ status: 'wont-start' }), '0.3.0')).toMatchObject({
+      chip: 'WON’T START',
+      sub: 'its firmware kept restarting'
+    })
+    // No button until the board's update lands.
+    expect(firmwareRowView(needs, '0.3.0').update).toBeUndefined()
+    const sheet: FirmwareSheet = { target: '0.3.0', rows: [needs], attention: 1, allCurrent: false }
+    expect(firmwareButton(sheet).dot).toBe('off')
+    expect(firmwareButton({ ...sheet, target: undefined }).dot).toBe('off')
+  })
+
+  it('a board its bootloader holds: its note, never the not-reported hint', () => {
+    const row = board({ status: 'needs-firmware', image: true, notReported: true })
+    expect(
+      boardFirmwareView({ installed: 'version not reported', hint: 'not this', row }).note
+    ).toBe('The last update didn’t finish. Update it again.')
+  })
+
+  it('the board’s Firmware section: the chip beside the version, and the note only with an image', () => {
+    const row = board({ status: 'needs-firmware', version: '0.3.0', image: true })
+    expect(boardFirmwareView({ installed: '0.3.0', row })).toEqual({
+      installed: '0.3.0',
+      chip: 'NEEDS FIRMWARE',
+      chipCls: 'vchip--err',
+      noBootloader: false,
+      note: 'The last update didn’t finish. Update it again.'
+    })
+    expect(
+      boardFirmwareView({ installed: '0.3.0', row: board({ status: 'wont-start', image: true }) })
+        .note
+    ).toBe(
+      'Its firmware kept restarting, so the board stopped running it. Install a different version.'
+    )
+    const panel = board({ status: 'wont-start', kind: 'panel' })
+    expect(boardFirmwareView({ installed: '0.3.0', row: panel })).toEqual({
+      installed: '0.3.0',
+      chip: 'WON’T START',
+      chipCls: 'vchip--err',
+      noBootloader: false
+    })
+  })
+
+  it('no bootloader gets its box; not reported keeps its hint and no chip', () => {
+    expect(
+      boardFirmwareView({
+        installed: '0.3.0',
+        noBootloader: true,
+        row: board({ status: 'manual', version: '0.3.0' })
+      })
+    ).toMatchObject({ chip: 'MANUAL UPDATE ONLY', noBootloader: true })
+    // Offline with the version it last reported: the box still shows, as drawn.
+    expect(
+      boardFirmwareView({
+        installed: '0.3.0',
+        noBootloader: true,
+        row: board({ status: 'off', version: '0.3.0' })
+      }).noBootloader
+    ).toBe(true)
+    const hint = 'This board hasn’t reported its firmware version yet.'
+    expect(
+      boardFirmwareView({
+        installed: 'version not reported',
+        hint,
+        row: board({ status: 'not-reported', notReported: true })
+      })
+    ).toEqual({ installed: 'version not reported', noBootloader: false, note: hint })
+    expect(
+      boardFirmwareView({ installed: '—', row: board({ status: 'off' }) }).chip
+    ).toBeUndefined()
   })
 })

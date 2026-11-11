@@ -1,7 +1,14 @@
 // The Firmware button, sheet rows and Overview banner in words (#173), pure: main decides every
 // row's status, the count and what can update (`cockpit:snapshot` firmware, overview.firmware);
 // this only words them, as the design's `fwInfo` table draws them (CockpitMap.dc.html:837-850).
-import type { FirmwareBanner, FirmwareRow, FirmwareSheet, FirmwareStatus } from '@shared/nodes'
+import {
+  BOOT_CHIP,
+  type BoardPanel,
+  type FirmwareBanner,
+  type FirmwareRow,
+  type FirmwareSheet,
+  type FirmwareStatus
+} from '@shared/nodes'
 
 /** One row as drawn: its dot, chip and the line beside the chip. */
 export interface FirmwareRowView {
@@ -31,6 +38,8 @@ const CHIP: Record<Exclude<FirmwareStatus, 'no-release'>, [string, string, strin
   'not-responding': ['NOT RESPONDING', 'vchip--err', 'off', '✕'],
   'in-drive': ['IN UPDATE DRIVE', 'vchip--warn', 'warn', '!'],
   off: ['OFFLINE', 'vchip--mute', 'off', '✕'],
+  'needs-firmware': [BOOT_CHIP['needs-firmware'], 'vchip--err', 'off', '✕'],
+  'wont-start': [BOOT_CHIP['wont-start'], 'vchip--err', 'off', '✕'],
   'not-reported': ['NOT REPORTED', 'vchip--mute', '', ''],
   manual: ['MANUAL UPDATE ONLY', 'vchip--warn', 'warn', '!'],
   mismatch: ['MAJOR MISMATCH', 'vchip--warn', 'warn', '!'],
@@ -55,6 +64,10 @@ function sub(r: FirmwareRow, target: string | undefined): string {
       return 'waiting in its update drive'
     case 'off':
       return r.version ? `last reported ${v}` : 'no version reported'
+    case 'needs-firmware':
+      return 'the last update didn’t finish'
+    case 'wont-start':
+      return 'its firmware kept restarting'
     case 'not-reported':
       return r.notReported ? 'version not reported' : ''
     case 'manual':
@@ -93,16 +106,78 @@ export function firmwareRowView(r: FirmwareRow, target: string | undefined): Fir
   return { key: r.key, name, dot, sym, chip, chipCls, sub: sub(r, target), ...opens }
 }
 
+/** A board's Status › Firmware section as drawn (CM:340-345): its chip, the boxes and the note. */
+export interface BoardFirmwareView {
+  installed: string
+  /** Absent where the version line says it already (not reported, offline with none). */
+  chip?: string
+  chipCls?: string
+  /** No bootloader, offline too: the warning box with *About the bootloader ↗*. */
+  noBootloader: boolean
+  note?: string
+}
+
+/** The note under a board's version (`fwDetail` note), by its sheet row. */
+function boardNote(r: FirmwareRow): string | undefined {
+  switch (r.status) {
+    case 'off':
+      return r.version ? 'Offline — it can be updated once it reports again.' : undefined
+    case 'mismatch':
+      return 'Boards on a different major version than the Gateway don’t work together on the bus.'
+    case 'paused':
+      return 'Paused while the Gateway’s cockpit side updates.'
+    // With no image in the release, the chip alone (#177 adds From file…).
+    case 'needs-firmware':
+      return r.image ? 'The last update didn’t finish. Update it again.' : undefined
+    case 'wont-start':
+      return r.image
+        ? 'Its firmware kept restarting, so the board stopped running it. Install a different version.'
+        : undefined
+    default:
+      return undefined
+  }
+}
+
+export function boardFirmwareView(fw: BoardPanel['firmware']): BoardFirmwareView {
+  const r = fw.row
+  const quiet =
+    !r ||
+    r.status === 'no-release' ||
+    r.status === 'not-reported' ||
+    (r.status === 'off' && !r.version)
+  const [chip, chipCls] = quiet ? [] : CHIP[r.status as Exclude<FirmwareStatus, 'no-release'>]
+  // The row's note first: a board its bootloader holds says why it reads 0.0.0 (main sends no hint).
+  const note = (r && boardNote(r)) ?? fw.hint
+  return {
+    installed: fw.installed,
+    ...(chip && { chip, chipCls }),
+    noBootloader: !!fw.noBootloader,
+    ...(note && { note })
+  }
+}
+
 const boards = (n: number) => `${n} board${n === 1 ? '' : 's'}`
+
+/** Rows that turn the button's dot red (`fwStuck`): nothing runs there until it is fixed. */
+const DOWN: ReadonlySet<FirmwareStatus> = new Set([
+  'not-responding',
+  'needs-firmware',
+  'wont-start'
+])
 
 /** The plan toolbar's *Firmware · n* button: the count, its dot and its tooltip. */
 export function firmwareButton(s: FirmwareSheet): { count: number; dot: string; title: string } {
   const n = s.attention
+  const down = s.rows.some((r) => DOWN.has(r.status))
   if (!s.target)
-    return { count: n, dot: n ? 'new' : '', title: 'No firmware release saved on this computer' }
+    return {
+      count: n,
+      dot: down ? 'off' : n ? 'new' : '',
+      title: 'No firmware release saved on this computer'
+    }
   return {
     count: n,
-    dot: n ? 'new' : s.allCurrent ? 'on' : '',
+    dot: down ? 'off' : n ? 'new' : s.allCurrent ? 'on' : '',
     title: n
       ? `${boards(n)} need${n === 1 ? 's' : ''} attention · latest release ${s.target}`
       : s.allCurrent

@@ -49,6 +49,9 @@ import {
   PDU_STATUS_FLAGS,
   PDU_STATUS_FLAG_INFO,
   BOOT,
+  BOOT_STATE,
+  NODE_BOOT_STATE,
+  NODE_BOOT_UPDATING_MS,
   FIRMWARE_IMAGE,
   FIRMWARE_IMAGE_CRC_VECTORS,
   FIRMWARE_IMAGE_FIELD,
@@ -466,5 +469,17 @@ describe('boot-protocol.generated', () => {
       attemptLimit: 3,
       blockBytes: 64
     })
+  })
+
+  it("pins the bootloader states and the row's BOOT_STATE the status chips read (#365)", () => {
+    expect(BOOT_STATE).toEqual({
+      REQUESTED: 0x01,
+      APP_INVALID: 0x02,
+      UNCONFIGURED: 0x03,
+      APP_UNSTABLE: 0x04,
+      CAUGHT: 0x05
+    })
+    expect(NODE_BOOT_STATE).toEqual({ APP: 0x00, UPDATING: 0x80 })
+    expect(NODE_BOOT_UPDATING_MS).toBe(3000)
   })
 })

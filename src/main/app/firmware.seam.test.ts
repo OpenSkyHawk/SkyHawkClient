@@ -35,7 +35,7 @@ describe('#171 firmware releases, wire to pushes', () => {
       tooNew: false,
       supportedMajor: 1
     })
-    expect(snapshot(app).panels[1]!.firmware).toEqual({ installed: '1.0.3' })
+    expect(snapshot(app).panels[1]!.firmware).toMatchObject({ installed: '1.0.3' })
     expect(snapshot(app).attention.items).toEqual([])
   })
 
@@ -50,7 +50,7 @@ describe('#171 firmware releases, wire to pushes', () => {
     app.serial.receive(row(1, 1, [2, 0, 0]))
     app.clock.advance(250)
     expect(snapshot(app).attention.items).toEqual([])
-    expect(snapshot(app).panels[1]!.firmware).toEqual({ installed: '2.0.0' })
+    expect(snapshot(app).panels[1]!.firmware).toMatchObject({ installed: '2.0.0' })
   })
 
   it('a board that hasn’t reported (0.0.0) is never a mismatch', () => {
@@ -66,7 +66,7 @@ describe('#171 firmware releases, wire to pushes', () => {
       tooNew: false,
       supportedMajor: 1
     })
-    expect(snapshot(app).panels[1]!.firmware).toEqual({ installed: '0.1.0' })
+    expect(snapshot(app).panels[1]!.firmware).toMatchObject({ installed: '0.1.0' })
     expect(snapshot(app).attention.items).toEqual([])
   })
 

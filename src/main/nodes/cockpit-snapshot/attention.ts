@@ -5,12 +5,14 @@ import type { GatewayStatus } from '@shared/gateway'
 import type {
   AttentionItem,
   CockpitAttention,
+  FirmwareRow,
   NodeModel,
   NodeModelEntry,
   NodeView,
   PduOutage,
   StrayItem
 } from '@shared/nodes'
+import { BOOT_CHIP } from '@shared/nodes'
 import { lastSeenLabel } from '@shared/format'
 import { RECOVERED_FLAG, shownHealth } from '../../gateway'
 import { isReportableNew, newState, strayKind } from '../node-model'
@@ -33,7 +35,8 @@ const withoutMismatch = (flag: string | undefined): string =>
     .join(' · ')
 
 /**
- * Firmware mismatches first (#171: reflash before chasing faults), then PDU outages, then offline
+ * Boards their bootloader holds first (#175: the sheet's rows, whose cog opens the Firmware sheet),
+ * then firmware mismatches (#171: reflash before chasing faults), then PDU outages, then offline
  * (incl. bus-off), then warnings — each by NODE_ID.
  * Nodes that dropped with their PDU are folded into its outage item. New boards that can be
  * adopted have their own prompt; ones that can't (`strays`) are warnings, after the rest. A PDU
@@ -42,10 +45,26 @@ const withoutMismatch = (flag: string | undefined): string =>
 export function attentionItems(
   views: NodeView[],
   outages: PduOutage[],
-  strays: StrayItem[] = []
+  strays: StrayItem[] = [],
+  firmware: FirmwareRow[] = []
 ): AttentionItem[] {
   const folded = new Set(outages.flatMap((o) => o.nodeIds))
   const items: (AttentionItem & { rank: number })[] = []
+  for (const r of firmware) {
+    // A board its bootloader holds (#175): its line is the Firmware sheet's chip.
+    if ((r.status !== 'needs-firmware' && r.status !== 'wont-start') || r.nodeId === undefined)
+      continue
+    const flag = BOOT_CHIP[r.status]
+    items.push({
+      key: `b-${r.nodeId}`,
+      nodeId: r.nodeId,
+      name: r.name,
+      state: 'off',
+      flag,
+      firmware: true,
+      rank: -2
+    })
+  }
   for (const v of views) {
     const { state } = v.health
     const mismatch = v.firmware.mismatch
@@ -163,9 +182,10 @@ export function cockpitAttention(
   outages: PduOutage[],
   strays: StrayItem[],
   live: boolean,
-  gatewayStatus: GatewayStatus | undefined
+  gatewayStatus: GatewayStatus | undefined,
+  firmware: FirmwareRow[] = []
 ): CockpitAttention {
-  const items = live ? attentionItems(views, outages, strays) : []
+  const items = live ? attentionItems(views, outages, strays, firmware) : []
   const gateway = gatewayAttention(gatewayStatus, live)
   // The Gateway answers, its cockpit side doesn't (#187): Retry the update from the Firmware sheet.
   const cockpitSide = live && shownHealth(gatewayStatus, live)?.cockpitSide

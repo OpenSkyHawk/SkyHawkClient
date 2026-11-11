@@ -686,6 +686,19 @@ export const HEARTBEAT_FLAGS = {
 ${bits(hbFlags)}
 } as const
 
+/**
+ * The row's BOOT_STATE (#365): NODE_BOOT_STATE_APP while the app runs, else the bootloader's
+ * BootState (boot-protocol.generated.ts BOOT_STATE), with the UPDATING bit set while update traffic
+ * for the board flowed in the last NODE_BOOT_UPDATING_MS.
+ */
+export const NODE_BOOT_STATE = {
+  APP: ${hex(nsNum('NODE_BOOT_STATE_APP'))},
+  UPDATING: ${hex(nsNum('NODE_BOOT_STATE_UPDATING'))}
+} as const
+
+/** How long the UPDATING bit stays set after the board's last update traffic. */
+export const NODE_BOOT_UPDATING_MS = ${nsNum('NODE_BOOT_UPDATING_MS')}
+
 /** HB_n \`esr\` (the row's ESR field): bit position of the transmit error counter, the low byte. */
 export const HB_ESR_TEC_SHIFT = ${nsNum('HB_ESR_TEC_SHIFT')}
 
@@ -1382,8 +1395,10 @@ export const FIRMWARE_IMAGE_CRC_VECTORS = {
 /** The bootloader timings and sizes the client reasons with (BootProtocol.h, namespace Boot). */
 function genBootProtocol(h: string): string {
   const num = (name: string) => constexprNum(h, name, 'BootProtocol.h')
+  const states = parseEnum(h, 'BootState', 'BootProtocol.h')
+  const stateLines = states.map((e) => `  ${e.name}: ${hex(e.value)}`).join(',\n')
   return (
-    banner([`${SRC.bootProtocol} (bootloader timings and sizes)`]) +
+    banner([`${SRC.bootProtocol} (bootloader timings, sizes and states)`]) +
     `
 /** The board bootloader's own timings and sizes (#363, #364). */
 export const BOOT = {
@@ -1398,6 +1413,15 @@ export const BOOT = {
   attemptLimit: ${num('ATTEMPT_LIMIT')},
   /** Bytes per bootloader block: UPL_STATUS \`block\` / \`blocks\` count these. */
   blockBytes: ${num('BLOCK_SIZE')}
+} as const
+
+/**
+ * Why a board is in its bootloader (BootState): its announcement's STATE, and the _NODE_STATUS
+ * row's BOOT_STATE while it isn't running its app (#365). REQUESTED and CAUGHT are short waits
+ * with the app still valid; APP_INVALID and APP_UNSTABLE wait for an image and never time out.
+ */
+export const BOOT_STATE = {
+${stateLines}
 } as const
 `
   )

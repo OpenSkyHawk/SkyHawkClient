@@ -723,17 +723,29 @@ function Attention(props: {
                 {/* The cog opens the board as main routes it (D6): its panel while it is in your
                     cockpit — for a PDU outage the PDU's, and the plan also outlines that PDU's
                     group: the nodes that dropped with it — else the Adopt dialog on it. */}
-                <button
-                  className="cog"
-                  title={review ? 'Review' : 'Details'}
-                  aria-label={`${i.name} ${review ? 'review' : 'details'}`}
-                  onClick={() => {
-                    if (i.outage) props.onShowOutage(i.nodeId)
-                    props.onOpen(i.nodeId)
-                  }}
-                >
-                  <Cog />
-                </button>
+                {i.firmware ? (
+                  // Its bootloader holds it (#175): fixed from the Firmware sheet.
+                  <button
+                    className="cog"
+                    title="Firmware"
+                    aria-label={`${i.name} firmware`}
+                    onClick={props.onOpenFirmware}
+                  >
+                    <Cog />
+                  </button>
+                ) : (
+                  <button
+                    className="cog"
+                    title={review ? 'Review' : 'Details'}
+                    aria-label={`${i.name} ${review ? 'review' : 'details'}`}
+                    onClick={() => {
+                      if (i.outage) props.onShowOutage(i.nodeId)
+                      props.onOpen(i.nodeId)
+                    }}
+                  >
+                    <Cog />
+                  </button>
+                )}
               </li>
             )
           })}
